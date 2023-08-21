@@ -84,7 +84,7 @@ class TestShowLatenciesDefault(asynctest.TestCase):
             ),
         ]
         exp_data_types = [str, str, str, float, float, float, float]
-        rc = await controller.LiveClusterRootController(user="admin", password="admin")  # type: ignore
+        rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
         actual_out = await util.capture_stdout(rc.execute, ["show", "latencies", "-v"])
         output_list = test_util.get_separate_output(actual_out)
         (
@@ -113,7 +113,7 @@ class TestShowLatenciesWithArguments(asynctest.TestCase):
         time.sleep(20)
 
     async def setUp(self):
-        self.rc = await controller.LiveClusterRootController(user="admin", password="admin")  # type: ignore
+        self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
 
     @classmethod
     def tearDownClass(self):
@@ -576,11 +576,15 @@ class TestShowDistribution(asynctest.TestCase):
     def setUpClass(cls):
         lib.start()
         lib.populate_db("show-dis-test")
-        lib.safe_sleep(3)
+        cmd = "manage config namespace test param nsup-hist-period to 5"
+        test_util.run_asadm(
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{cmd}' -Uadmin -Padmin"
+        )
+        time.sleep(20)
 
     async def setUp(self) -> None:
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
 
     @classmethod
@@ -642,7 +646,7 @@ def get_data(exp_first: str | float | int, data: list[list[str | float | int]]):
 class TestShowUsers(asynctest.TestCase):
     async def setUp(self):
         lib.start()
-        self.rc = await controller.LiveClusterRootController(user="admin", password="admin")  # type: ignore
+        self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
 
     def tearDown(self):
@@ -883,7 +887,7 @@ class TestShowUsers(asynctest.TestCase):
 class TestShowUsersStats(asynctest.TestCase):
     async def setUp(self):
         lib.start()
-        self.rc = await controller.LiveClusterRootController(user="admin", password="admin")  # type: ignore
+        self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
 
     def tearDown(self):
@@ -952,7 +956,7 @@ class TestShowRoles(asynctest.TestCase):
     async def setUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
 
@@ -1200,7 +1204,7 @@ end
         lib.start()
         self.path = lib.write_file("test.lua", self.udf_contents)
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
         await util.capture_stdout(

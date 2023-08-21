@@ -561,7 +561,7 @@ class Projectors(object):
             Keyword Arguments:
             filter_exc -- List of exception types to convert to strings.
             """
-            super().__init__(FieldType.undefined, source, *keys, **kwargs)
+            super().__init__(FieldType.string, source, *keys, **kwargs)
             self.filter_exc = kwargs.get("filter_exc", [])
 
         def do_project(self, sheet, sources):

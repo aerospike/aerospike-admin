@@ -14,7 +14,7 @@
 
 import copy
 
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ModifierHelp
 import lib.health as health
 from lib.utils import util
 
@@ -22,8 +22,28 @@ from .collectinfo_command_controller import CollectinfoCommandController
 
 
 @CommandHelp(
-    "Checks for common inconsistencies and print if there is any.",
-    "This command is still in beta and its output should not be directly acted upon without further analysis.",
+    "Displays all lines from cluster logs (collectinfos) matched with input strings.",
+    short_msg="Displays health summary",
+    usage="[-dv] [-f <query_file>] [-o <output_file>] [-oc <output_filter_category>] [-wl <output_filter_warn_level>]",
+    modifiers=(
+        ModifierHelp(
+            "-f <string>", "Query file path. Default: inbuilt health queries."
+        ),
+        ModifierHelp(
+            "-o <string>",
+            "Output file path. This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
+        ),
+        ModifierHelp("-v", "Enable to display extra details of assert errors."),
+        ModifierHelp("-d", "Enable to display extra details of exceptions."),
+        ModifierHelp(
+            "-oc <string>",
+            "Output filter Category. This parameter works if Query file path provided, otherwise health command will work in interactive mode. Format: string of dot (.) separated category levels",
+        ),
+        ModifierHelp(
+            "-wl <string>",
+            "Output filter Warning level. Expected value CRITICAL or WARNING or INFO. This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
+        ),
+    ),
 )
 class HealthCheckController(CollectinfoCommandController):
     health_check_input_created = False
@@ -31,20 +51,6 @@ class HealthCheckController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set()
 
-    @CommandHelp(
-        "Displays all lines from cluster logs (collectinfos) matched with input strings.",
-        "  Options:",
-        "    -f <string>     - Query file path. Default: inbuilt health queries.",
-        "    -o <string>     - Output file path. ",
-        "                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
-        "    -v              - Enable to display extra details of assert errors.",
-        "    -d              - Enable to display extra details of exceptions.",
-        "    -oc <string>    - Output filter Category. ",
-        "                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
-        "                      Format : string of dot (.) separated category levels",
-        "    -wl <string>    - Output filter Warning level. Expected value CRITICAL or WARNING or INFO ",
-        "                      This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
-    )
     def _do_default(self, line):
         output_file = util.get_arg_and_delete_from_mods(
             line=line,

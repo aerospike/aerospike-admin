@@ -21,14 +21,63 @@ from lib.live_cluster.get_controller import (
     GetStatisticsController,
 )
 from lib.utils import util
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ModifierHelp
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
 
 @CommandHelp(
-    "Checks for common inconsistencies and print if there is any.",
-    "This command is still in beta and its output should not be directly acted upon without further analysis.",
+    "Displays health summary. If remote server System credentials provided, then it will collect remote system stats and analyse that also. If credentials are not available then it will collect only localhost system statistics. This command is still in beta and its output should not be directly acted upon without further analysis.",
+    short_msg="Displays health summary",
+    usage="[-dv] [-f <query_file>] [-o <output_file>] [-n <num_snapshots>] [-s <sleep_seconds>] [-oc <output_filter_category>] [-wl <output_filter_warn_level>] [--enable-ssh --ssh-user <user> --ssh-pwd <user> --ssh-key <key_path> [--ssh-port <port>]  [--ssh-cf <cred_file_path>]]",
+    modifiers=(
+        ModifierHelp("-f", "Query file path", default="inbuilt health queries."),
+        ModifierHelp(
+            "-o",
+            "Output file path. This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
+        ),
+        ModifierHelp("-v", "Enable to display extra details of assert errors."),
+        ModifierHelp("-d", "Enable to display extra details of exceptions."),
+        ModifierHelp("-n", "Number of snapshots", default="1"),
+        ModifierHelp(
+            "-s",
+            "Sleep time in seconds between each snapshot",
+            default="1 sec",
+        ),
+        ModifierHelp(
+            "-oc",
+            "Output filter Category. This parameter works if Query file path provided, otherwise health command will work in interactive mode. Format: string of dot (.) separated category levels",
+        ),
+        ModifierHelp(
+            "-wl",
+            "Output filter Warning level. Expected value CRITICAL or WARNING or INFO. This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
+        ),
+        ModifierHelp(
+            "--enable-ssh",
+            "Enables the collection of system statistics from a remote server.",
+        ),
+        ModifierHelp(
+            "--ssh-user",
+            "Default user ID for remote servers. This is the ID of a user of the system, not the ID of an Aerospike user.",
+        ),
+        ModifierHelp(
+            "--ssh-pwd",
+            "Default password or passphrase for key for remote servers. This is the user's password for logging into the system, not a password for logging into Aerospike.",
+        ),
+        ModifierHelp(
+            "--ssh-port",
+            "Default SSH port for remote servers",
+            default="22",
+        ),
+        ModifierHelp(
+            "--ssh-key",
+            "Default SSH key (file path) for remote servers.",
+        ),
+        ModifierHelp(
+            "--ssh-cf",
+            'Remote System Credentials file path. If the server credentials are not in the credentials file, then authentication is attempted with the default credentials. File format: each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD-or-PASSPHRASE>,<SSH_KEY>. Examples: "1.2.3.4,uid,pwd" "1.2.3.4:3232,uid,pwd" "1.2.3.4:3232,uid,,key_path" "1.2.3.4:3232,uid,passphrase,key_path" "[2001::1234:10],uid,pwd" "[2001::1234:10]:3232,uid,,key_path"',
+        ),
+    ),
     hide=True,
 )
 class HealthCheckController(LiveClusterCommandController):
@@ -95,39 +144,6 @@ class HealthCheckController(LiveClusterCommandController):
         elif stanza == "health":
             return await self.cluster.info_health_outliers(nodes=self.nodes)
 
-    @CommandHelp(
-        "Displays health summary. If remote server System credentials provided, then it will collect remote system stats",
-        "and analyse that also. If credentials are not available then it will collect only localhost system statistics.",
-        "  Options:",
-        "    -f           <string>     - Query file path. Default: inbuilt health queries.",
-        "    -o           <string>     - Output file path. ",
-        "                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
-        "    -v                        - Enable to display extra details of assert errors.",
-        "    -d                        - Enable to display extra details of exceptions.",
-        "    -n           <int>        - Number of snapshots. Default: 1",
-        "    -s           <int>        - Sleep time in seconds between each snapshot. Default: 1 sec",
-        "    -oc          <string>     - Output filter Category. ",
-        "                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
-        "                                Format : string of dot (.) separated category levels",
-        "    -wl          <string>     - Output filter Warning level. Expected value CRITICAL or WARNING or INFO ",
-        "                                This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
-        "    --enable-ssh              - Enables the collection of system statistics from a remote server.",
-        "    --ssh-user   <string>     - Default user ID for remote servers. This is the ID of a user of the system, not the ID of an Aerospike user.",
-        "    --ssh-pwd    <string>     - Default password or passphrase for key for remote servers. This is the user's password for logging into",
-        "                                the system, not a password for logging into Aerospike.",
-        "    --ssh-port   <int>        - Default SSH port for remote servers. Default: 22",
-        "    --ssh-key    <string>     - Default SSH key (file path) for remote servers.",
-        "    --ssh-cf     <string>     - Remote System Credentials file path.",
-        "                                If the server credentials are not in the credentials file, then authentication is attempted with the default",
-        "                                credentials.",
-        "                                File format : each line should contain <IP[:PORT]>,<USER_ID>,<PASSWORD or PASSPHRASE>,<SSH_KEY>",
-        "                                Example:  1.2.3.4,uid,pwd",
-        "                                          1.2.3.4:3232,uid,pwd",
-        "                                          1.2.3.4:3232,uid,,key_path",
-        "                                          1.2.3.4:3232,uid,passphrase,key_path",
-        "                                          [2001::1234:10],uid,pwd",
-        "                                          [2001::1234:10]:3232,uid,,key_path",
-    )
     async def _do_default(self, line):
         output_file = util.get_arg_and_delete_from_mods(
             line=line,

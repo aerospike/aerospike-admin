@@ -12,13 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from lib.live_cluster.get_controller import GetFeaturesController
-from lib.utils import util
-from lib.base_controller import CommandHelp
+from lib.utils import constants
+from lib.base_controller import CommandHelp, ModifierHelp
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
+with_modifier_help = ModifierHelp(constants.Modifiers.WITH, constants.ModifierHelp.WITH)
 
-@CommandHelp("Lists the features in use in a running Aerospike cluster.")
+
+@CommandHelp(
+    "Lists the features in use in a running Aerospike cluster.",
+    usage=f"[{constants.Modifiers.LIKE} <feature-substring>] [{constants.ModifierUsage.WITH}]",
+    modifiers=(
+        ModifierHelp(constants.Modifiers.LIKE, "Filter features by substring match"),
+        with_modifier_help,
+    ),
+)
 class FeaturesController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "like"])

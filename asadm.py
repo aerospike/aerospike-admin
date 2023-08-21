@@ -21,7 +21,10 @@ try:
 except:
     pass
 
+from signal import SIGINT, SIGTERM
 from lib.utils.logger import logger  # THIS MUST BE THE FIRST IMPORT
+from lib.live_cluster.client import Cluster, Addr_Port_TLSName
+from lib.live_cluster.get_controller import GetConfigController, GetStatisticsController
 from lib.base_controller import ShellException
 import inspect
 import cmd
@@ -84,14 +87,14 @@ PRIVILEGED_PROMPT = "Admin+> "
 class AerospikeShell(cmd.Cmd, AsyncObject):
     async def __init__(
         self,
-        admin_version,
-        seeds,
-        user=None,
-        password=None,
+        admin_version: str,
+        seeds: list[Addr_Port_TLSName],
+        user: str | None = None,
+        password: str | None = None,
         auth_mode=AuthMode.INTERNAL,
         use_services_alumni=False,
         use_services_alt=False,
-        log_path="",
+        log_path: str = "",
         mode=AdminMode.LIVE_CLUSTER,
         ssl_context=None,
         only_connect_seed=False,
@@ -106,10 +109,13 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         self.privileged_mode = False
         if mode == AdminMode.LOG_ANALYZER:
             self.name = "Aerospike Log Analyzer Shell"
+            self.prompt = "Log-analyzer> "
         elif mode == AdminMode.COLLECTINFO_ANALYZER:
             self.name = "Aerospike Collectinfo Shell"
+            self.prompt = "Collectinfo-analyzer> "
         else:
             self.name = "Aerospike Interactive Shell"
+            self.set_default_prompt()
 
         if not execute_only_mode:
             print(
@@ -129,20 +135,20 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     log_path = " "
 
                 self.ctrl = LogAnalyzerRootController(admin_version, log_path)
-                self.prompt = "Log-analyzer> "
 
             elif mode == AdminMode.COLLECTINFO_ANALYZER:
                 if not log_path:
                     logger.error(
-                        "You have not specified any collectinfo path. Usage: asadm -c -f <collectinfopath>"
+                        "You have not specified any collectinfo path. Usage: asadm -c -f <path/to/collectinfo.tgz>"
                     )
                     await self.do_exit("")
-                    sys.exit(1)
+                    self.connected = False
+                    return
 
                 self.ctrl = CollectinfoRootController(
                     admin_version, clinfo_path=log_path
                 )
-                self.prompt = "Collectinfo-analyzer> "
+
                 if not execute_only_mode:
                     self.intro = str(self.ctrl.log_handler)
 
@@ -153,10 +159,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                             password = getpass.getpass("Enter Password:")
                         else:
                             password = sys.stdin.readline().strip()
-
-                    if not info.hasbcrypt:
-                        await self.do_exit("")
-                        logger.critical("Authentication failed: bcrypt not installed.")
 
                 self.ctrl = await LiveClusterRootController(
                     seeds,
@@ -173,15 +175,12 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
                 if not self.ctrl.cluster.get_live_nodes():
                     await self.do_exit("")
-                    if self.execute_only_mode:
-                        self.connected = False
-                        return
-                    else:
-                        logger.critical(
-                            "Not able to connect any cluster with " + str(seeds) + "."
-                        )
+                    self.connected = False
+                    logger.error(
+                        "Not able to connect any cluster with " + str(seeds) + "."
+                    )
+                    return
 
-                self.set_default_prompt()
                 self.intro = ""
                 if execute_only_mode:
                     if privileged_mode:
@@ -193,24 +192,40 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     )
 
                     if cluster_visibility_error_nodes:
-                        self.intro += (
-                            terminal.fg_red()
-                            + "Cluster Visibility error (Please check services list): %s"
+                        logger.warning(
+                            terminal.fg_yellow()
+                            + "Some nodes are unable to connect to other nodes in the cluster. %s"
                             % (", ".join(cluster_visibility_error_nodes))
                             + terminal.fg_clear()
-                            + "\n"
                         )
 
                     cluster_down_nodes = await self.ctrl.cluster.get_down_nodes()
 
                     if cluster_down_nodes:
-                        self.intro += (
-                            terminal.fg_red()
-                            + "Extra nodes in alumni list: %s"
+                        logger.warning(
+                            terminal.fg_yellow()
+                            + "Some nodes have become unreachable by other nodes in the cluster. Check their peers lists: %s"
                             % (", ".join(cluster_down_nodes))
                             + terminal.fg_clear()
-                            + "\n"
                         )
+
+                    active_stop_writes = await self.active_stop_writes(
+                        self.ctrl.cluster
+                    )
+
+                    if active_stop_writes:
+                        logger.warning(
+                            terminal.fg_yellow()
+                            + "This cluster is currently in stop writes. Run `show stop-writes` for more details."
+                            + terminal.fg_clear()
+                        )
+
+                    if (
+                        cluster_visibility_error_nodes
+                        or cluster_down_nodes
+                        or active_stop_writes
+                    ):
+                        print("", file=self.stdout)
 
         except Exception as e:
             await self.do_exit("")
@@ -230,6 +245,31 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         for command in commands:
             if command != "help":
                 self.commands.add(command)
+
+    async def active_stop_writes(self, cluster: Cluster):
+        """
+        Checks for active stop writes in the cluster. Only callable from live cluster mode.
+        """
+        stat_getter = GetStatisticsController(cluster)
+        config_getter = GetConfigController(cluster)
+
+        (
+            service_stats,
+            ns_stats,
+            ns_configs,
+            set_stats,
+            set_configs,
+        ) = await asyncio.gather(
+            stat_getter.get_service(),
+            stat_getter.get_namespace(),
+            config_getter.get_namespace(),
+            stat_getter.get_sets(),
+            config_getter.get_sets(),
+        )
+        stop_writes_dict = common.create_stop_writes_summary(
+            service_stats, ns_stats, ns_configs, set_stats, set_configs
+        )
+        return common.active_stop_writes(stop_writes_dict)
 
     def set_prompt(self, prompt, color="green"):
         self.prompt = prompt
@@ -308,7 +348,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
         off the received input, and dispatch to action methods, passing them
         the remainder of the line as argument.
-
         """
 
         self.preloop()
@@ -384,9 +423,23 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 )
 
             sys.stdout.write(terminal.reset())
+            signals = [SIGINT, SIGTERM]
+            loop = asyncio.get_event_loop()
 
             try:
-                response = await self.ctrl.execute(line)
+                task = asyncio.create_task(self.ctrl.execute(line))
+
+                if task:
+                    """
+                    Keyboard interrupts behave differently in asyncio.
+                    We need ctrl-c to propagate up through the caller rather then event loop. This
+                    is important for the 'watch' command where sometimes ctrl-c will propagate to
+                    asyncio.run() which will terminate asadm rather than return to prompt.
+                    """
+                    for signal in signals:
+                        loop.add_signal_handler(signal, task.cancel)
+
+                response = await task
 
                 if response == "EXIT":
                     return "exit"
@@ -397,8 +450,16 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 elif response == "DISABLE":
                     self.set_default_prompt()
 
+            except asyncio.CancelledError:
+                """
+                Interrupt in the middle of executing a command.
+                """
+                pass
             except Exception as e:
                 logger.error(e)
+            finally:
+                for signal in signals:
+                    loop.remove_signal_handler(signal)
         return ""  # line was handled by execute
 
     # overloaded to support async
@@ -420,7 +481,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 line.append("")
 
         if len(line) > 0:
-            self.ctrl._init_commands()  # dirty
+            self.ctrl._init()  # dirty
             cmds = self.ctrl.commands.get_key(line[0])
         else:
             cmds = []
@@ -614,7 +675,7 @@ async def execute_asinfo_commands(
 
         result = await assock.info(command)
 
-        if result == -1 or result is None:
+        if result is None:
             result = IOError("Error: Invalid command '%s'" % command)
 
         view.CliView.asinfo({node_name: result}, line_separator, False, None)
@@ -624,18 +685,16 @@ async def execute_asinfo_commands(
 
 async def main():
     loop = asyncio.get_event_loop()
+    admin_version = get_version()
 
-    if get_version == "development":
-        loop.set_debug(True)
-    else:
+    if admin_version != "development":
         # Do nothing in production. It is likely that another error occurred too that will be displayed.
         loop.set_exception_handler(lambda loop, context: None)
 
     cli_args = conf.get_cli_args()
 
-    admin_version = get_version()
-
     if cli_args.debug:
+        loop.set_debug(True)
         logger.setLevel(logging.DEBUG)
 
     if cli_args.help:
@@ -717,7 +776,8 @@ async def main():
 
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
-    shell = await AerospikeShell(
+
+    shell: AerospikeShell = await AerospikeShell(
         admin_version,
         seeds,
         user=cli_args.user,
@@ -807,12 +867,8 @@ async def main():
                 sys.exit(1)
 
             cleanup()
-            logger.critical("Not able to connect any cluster with " + str(seeds) + ".")
 
-    try:
-        await cmdloop(shell, func, args, use_yappi, single_command)
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    await cmdloop(shell, func, args, use_yappi, single_command)
     await shell.close()
 
     try:
@@ -835,7 +891,7 @@ async def cmdloop(shell, func, args, use_yappi, single_command):
     try:
         if use_yappi:
             yappi.start()
-            func(*args)
+            await func(*args)
             yappi.get_func_stats().print_all()
         else:
             await func(*args)
@@ -882,5 +938,7 @@ def get_version():
 if __name__ == "__main__":
     try:
         asyncio.run(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
     except Exception:
         pass

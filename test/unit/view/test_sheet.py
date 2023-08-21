@@ -113,9 +113,8 @@ class SheetTest(unittest.TestCase):
         self.assertEqual(value["raw"], "v")
         self.assertEqual(value["converted"], "v")
 
-    def test_sheet_project_boolean(self):
-        test_sheet = Sheet((Field("F", Projectors.Boolean("d", "f")),), from_source="d")
-        samples = [
+    @parameterized.expand(
+        [
             ("true", True, "True"),
             ("True", True, "True"),
             ("Garbage", True, "True"),
@@ -124,52 +123,44 @@ class SheetTest(unittest.TestCase):
             ("False", False, "False"),
             (False, False, "False"),
         ]
+    )
+    def test_sheet_project_boolean(self, input, expected_raw, expected_converted):
+        test_sheet = Sheet((Field("F", Projectors.Boolean("d", "f")),), from_source="d")
+        sources = dict(d=dict(n0=dict(f=input)))
+        render = do_render(test_sheet, "test", sources)
+        value = render["groups"][0]["records"][0]["F"]
 
-        def test_it(sample):
-            sources = dict(d=dict(n0=dict(f=sample[0])))
-            render = do_render(test_sheet, "test", sources)
-            value = render["groups"][0]["records"][0]["F"]
+        self.assertEqual(value["raw"], expected_raw)
+        self.assertEqual(value["converted"], expected_converted)
 
-            self.assertEqual(value["raw"], sample[1], str(sample))
-            self.assertEqual(value["converted"], sample[2], str(sample))
-
-        for sample in samples:
-            test_it(sample)
-
-    def test_sheet_project_float(self):
-        test_sheet = Sheet((Field("F", Projectors.Float("d", "f")),), from_source="d")
-        samples = [
+    @parameterized.expand(
+        [
             ("1.25", 1.25, "1.25"),
             (1.25, 1.25, "1.25"),
             ("42", 42.0, "42.0"),
             (42, 42.0, "42.0"),
         ]
+    )
+    def test_sheet_project_float(self, input, expected_raw, expected_converted):
+        test_sheet = Sheet((Field("F", Projectors.Float("d", "f")),), from_source="d")
+        sources = dict(d=dict(n0=dict(f=input)))
+        render = do_render(test_sheet, "test", sources)
+        value = render["groups"][0]["records"][0]["F"]
 
-        def test_it(sample):
-            sources = dict(d=dict(n0=dict(f=sample[0])))
-            render = do_render(test_sheet, "test", sources)
-            value = render["groups"][0]["records"][0]["F"]
+        self.assertEqual(value["raw"], expected_raw)
+        self.assertEqual(value["converted"], expected_converted)
 
-            self.assertEqual(value["raw"], sample[1], str(sample))
-            self.assertEqual(value["converted"], sample[2], str(sample))
-
-        for sample in samples:
-            test_it(sample)
-
-    def test_sheet_project_number(self):
+    @parameterized.expand(
+        [("42", 42, "42"), (42, 42, "42"), ("1.25", 1, "1"), (1.25, 1, "1")]
+    )
+    def test_sheet_project_number(self, input, expected_raw, expected_converted):
         test_sheet = Sheet((Field("F", Projectors.Number("d", "f")),), from_source="d")
-        samples = [("42", 42, "42"), (42, 42, "42"), ("1.25", 1, "1"), (1.25, 1, "1")]
+        sources = dict(d=dict(n0=dict(f=input)))
+        render = do_render(test_sheet, "test", sources)
+        value = render["groups"][0]["records"][0]["F"]
 
-        def test_it(sample):
-            sources = dict(d=dict(n0=dict(f=sample[0])))
-            render = do_render(test_sheet, "test", sources)
-            value = render["groups"][0]["records"][0]["F"]
-
-            self.assertEqual(value["raw"], sample[1], str(sample))
-            self.assertEqual(value["converted"], sample[2], str(sample))
-
-        for sample in samples:
-            test_it(sample)
+        self.assertEqual(value["raw"], expected_raw)
+        self.assertEqual(value["converted"], expected_converted)
 
     @parameterized.expand(
         [
@@ -812,6 +803,28 @@ class SheetTest(unittest.TestCase):
 
         for record in records:
             self.assertEqual(len(record), 2)
+
+    def test_sheet_dynamic_field_infer_projectors(self):
+        test_sheet = Sheet((DynamicFields("d"),), from_source="d")
+        sources = dict(
+            d=dict(
+                n0=dict(f=1, g=2.345, h="1234E2", i="1", j="1.0"),
+                n2=dict(f=1, g=2.345, h="1234E2", i="1", j="1.0"),
+                n3=dict(f=1, g=2.345, h="1234E2", i="1", j="1.0"),
+            )
+        )
+        render = do_render(test_sheet, "test", sources)
+        records = render["groups"][0]["records"]
+
+        self.assertEqual(len(records), 3)
+
+        for record in records:
+            self.assertEqual(len(record), 5)
+            self.assertEqual(record["f"]["raw"], 1)
+            self.assertEqual(record["g"]["raw"], 2.345)
+            self.assertEqual(record["h"]["raw"], "1234E2")
+            self.assertEqual(record["i"]["raw"], 1)
+            self.assertEqual(record["j"]["raw"], 1.0)
 
     def test_sheet_dynamic_field_selector(self):
         test_sheet = Sheet((DynamicFields("d"),), from_source="d")

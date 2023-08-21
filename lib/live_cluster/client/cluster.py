@@ -212,7 +212,7 @@ class Cluster(AsyncObject):
         # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
 
-    def get_visibility_error_nodes(self):
+    def get_visibility_error_nodes(self) -> list[str]:
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
 
@@ -225,12 +225,14 @@ class Cluster(AsyncObject):
             peers = client_util.flatten(node.peers)
             not_visible = set(visible) - set(peers)
 
+            # There should be cluster size - 1 nodes not visible because each nodes has
+            # cluster-1 peers.
             if len(not_visible) != 1:
                 cluster_visibility_error_nodes.append(node.key)
 
         return cluster_visibility_error_nodes
 
-    async def get_down_nodes(self):
+    async def get_down_nodes(self) -> list[str]:
         cluster_down_nodes = []
         for k in self.nodes.keys():
             try:
@@ -254,7 +256,7 @@ class Cluster(AsyncObject):
                         if _key not in cluster_down_nodes:
                             cluster_down_nodes.append(_key)
             except Exception as e:
-                self.logger.debug(e, include_traceback=True)
+                self.logger.debug(e)
 
         return cluster_down_nodes
 
@@ -277,7 +279,7 @@ class Cluster(AsyncObject):
                         if not node.alive:
                             aliases[node_key] = key
             except Exception as e:
-                self.logger.debug(e, include_traceback=True)
+                self.logger.debug(e)
 
     async def find_new_nodes(self):
         added_endpoints = []
@@ -375,7 +377,7 @@ class Cluster(AsyncObject):
 
             self._refresh_node_liveliness()
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e)
 
         finally:
             self.clear_node_list()
@@ -453,16 +455,22 @@ class Cluster(AsyncObject):
 
     def get_nodes(
         self,
-        nodes: Literal[constants.NodeSelection.ALL, constants.NodeSelection.PRINCIPAL, constants.NodeSelection.RANDOM] | list[str],
+        nodes: Literal[
+            constants.NodeSelection.ALL,
+            constants.NodeSelection.PRINCIPAL,
+            constants.NodeSelection.RANDOM,
+        ]
+        | list[str],
     ) -> list[Node]:
         use_nodes = []
 
         # TODO: Make an enum or class to store the different node selections
         if nodes == constants.NodeSelection.ALL:
-            use_nodes = list(self.nodes.values())
+            use_nodes = [node for node in self.nodes.values() if node.alive]
         elif nodes == constants.NodeSelection.RANDOM:
-            randint = random.randint(0, len(self.nodes) - 1)
-            use_nodes = [list(self.nodes.values())[randint]]
+            live_nodes = [node for node in self.nodes.values() if node.alive]
+            randint = random.randint(0, len(live_nodes) - 1)
+            use_nodes = [live_nodes[randint]]
         elif nodes == constants.NodeSelection.PRINCIPAL:
             principal = self.get_expected_principal()
             use_nodes = self.get_node(principal)
@@ -579,7 +587,7 @@ class Cluster(AsyncObject):
             if not new_node.alive:
                 if not force:
                     # Check other endpoints
-                    new_node.close()
+                    await new_node.close()
                     return None
             self.update_node(new_node)
             self.update_aliases(self.aliases, new_node.service_addresses, new_node.key)
@@ -587,7 +595,7 @@ class Cluster(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
             self.logger.error(e)
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e)
         return None
 
     @staticmethod

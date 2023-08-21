@@ -14,6 +14,7 @@
 
 from collections import OrderedDict
 from itertools import groupby
+import math
 from operator import itemgetter
 
 from lib.utils import util
@@ -331,15 +332,27 @@ class BaseRSheet(object):
         for entry in entries:
             try:
                 int(entry)
-                has_int = True
-                continue
+
+                if not "." in str(entry):
+                    has_int = True
+                    continue
             except (ValueError, TypeError):
                 pass
 
             try:
-                float(entry)
-                has_float = True
-                continue
+                if isinstance(entry, str) and any(
+                    [not c.isdigit() and c != "." for c in entry]
+                ):
+                    """
+                    It is possible that a NodeID is parsable as a float. We do not want
+                    to parse strings like "1234E2" ~ 123400.0 as floats. Check to see if
+                    string contains any non-digit characters.
+                    """
+                    pass
+                else:
+                    float(entry)
+                    has_float = True
+                    continue
             except (ValueError, TypeError):
                 pass
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ModifierHelp
 from lib.collectinfo_analyzer.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -21,10 +21,13 @@ from lib.utils import constants, util, version
 
 from .collectinfo_command_controller import CollectinfoCommandController
 
+Modifiers = constants.Modifiers
+ModifierUsageHelp = constants.ModifierUsage
+
 
 @CommandHelp(
-    'The "info" command provides summary tables for various aspects',
-    "of Aerospike functionality.",
+    "Commands that display summary tables for various aspects of Aerospike functionality.",
+    short_msg="Provides summary tables for various aspects of Aerospike functionality",
 )
 class InfoController(CollectinfoCommandController):
     def __init__(self):
@@ -40,7 +43,9 @@ class InfoController(CollectinfoCommandController):
         await self.controller_map["namespace"]()(line[:])
         self.do_xdr(line)
 
-    @CommandHelp("Displays network summary information.")
+    @CommandHelp(
+        "Displays network information for the cluster",
+    )
     def do_network(self, line):
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
         for timestamp in sorted(service_stats.keys()):
@@ -58,7 +63,7 @@ class InfoController(CollectinfoCommandController):
                 builds,
                 cluster=cinfo_log,
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
     def _convert_key_to_tuple(self, stats):
@@ -67,7 +72,7 @@ class InfoController(CollectinfoCommandController):
             stats[key_tuple] = stats[key]
             del stats[key]
 
-    @CommandHelp("Displays set summary information.")
+    @CommandHelp("Displays summary information for each set")
     def do_set(self, line):
         set_stats = self.stats_getter.get_sets()
 
@@ -79,10 +84,16 @@ class InfoController(CollectinfoCommandController):
                 set_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
-    @CommandHelp("Displays Cross Datacenter Replication (XDR) summary information.")
+    @CommandHelp(
+        "Displays summary information for each datacenter",
+        usage=f"[for <dc-substring>]",
+        modifiers=(
+            ModifierHelp(Modifiers.FOR, "Filter datacenters using a substring match"),
+        ),
+    )
     def do_xdr(self, line):
         old_stats = self.stats_getter.get_xdr()
         new_stats = self.stats_getter.get_xdr_dcs(for_mods=self.mods["for"])
@@ -98,6 +109,10 @@ class InfoController(CollectinfoCommandController):
 
             for xdr_node in old_stats[timestamp].keys():
                 xdr_enable[xdr_node] = True
+                build = builds.get(xdr_node)
+
+                if not build:
+                    continue
 
                 if version.LooseVersion(builds[xdr_node]) < version.LooseVersion(
                     constants.SERVER_NEW_XDR5_VERSION
@@ -112,7 +127,7 @@ class InfoController(CollectinfoCommandController):
                     xdr_enable,
                     cluster=cinfo_log,
                     timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
 
             if old_xdr_stats:
@@ -122,13 +137,13 @@ class InfoController(CollectinfoCommandController):
                     xdr_enable,
                     cluster=cinfo_log,
                     timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
 
     # pre 5.0
     @CommandHelp(
-        "Displays datacenter summary information.",
-        'Replaced by "info xdr" for server >= 5.0.',
+        'Displays summary information for each datacenter. Replaced by "info xdr" for server >= 5.0.',
+        hide=True,
     )
     def do_dc(self, line):
         dc_stats = self.log_handler.info_statistics(stanza=constants.STAT_DC, flip=True)
@@ -190,7 +205,7 @@ class InfoController(CollectinfoCommandController):
                     util.flip_keys(dc_stats[timestamp]),
                     self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                     timestamp=timestamp,
-                    **self.mods
+                    **self.mods,
                 )
 
             if nodes_running_v5_or_higher:
@@ -200,7 +215,9 @@ class InfoController(CollectinfoCommandController):
                     + "Use 'info xdr' instead."
                 )
 
-    @CommandHelp("Displays secondary index (SIndex) summary information).")
+    @CommandHelp(
+        "Displays summary information for Secondary Indexes",
+    )
     def do_sindex(self, line):
         sindex_stats = self.stats_getter.get_sindex()
         ns_configs = self.config_getter.get_namespace()
@@ -214,13 +231,13 @@ class InfoController(CollectinfoCommandController):
                 ns_configs[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
 
 @CommandHelp(
-    'The "namespace" command provides summary tables for various aspects',
-    "of Aerospike namespaces.",
+    "A collection of commands that display summary tables for various aspects of Aerospike namespaces",
+    short_msg="Provides summary tables for various aspects of Aerospike functionality",
 )
 class InfoNamespaceController(CollectinfoCommandController):
     def __init__(self):
@@ -228,12 +245,12 @@ class InfoNamespaceController(CollectinfoCommandController):
         self.config_getter = GetConfigController(self.log_handler)
         self.stat_getter = GetStatisticsController(self.log_handler)
 
-    @CommandHelp("Displays usage and objects information for namespaces")
+    @CommandHelp("Displays usage and objects information for each namespace")
     def _do_default(self, line):
         self.do_usage(line)
         self.do_object(line)
 
-    @CommandHelp("Displays usage information for each namespace.")
+    @CommandHelp("Displays usage information for each namespace")
     def do_usage(self, line):
         ns_stats = self.stat_getter.get_namespace()
 
@@ -245,7 +262,7 @@ class InfoNamespaceController(CollectinfoCommandController):
                 ns_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )
 
     @CommandHelp("Displays object information for each namespace.")
@@ -263,5 +280,5 @@ class InfoNamespaceController(CollectinfoCommandController):
                 rack_ids.get(timestamp, {}),
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )

@@ -15,11 +15,17 @@
 from lib.collectinfo_analyzer.collectinfo_command_controller import (
     CollectinfoCommandController,
 )
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ModifierHelp
 from lib.utils import constants, common
 
 
-@CommandHelp("Displays features used in Aerospike cluster.")
+@CommandHelp(
+    "Lists the features in use in a running Aerospike cluster.",
+    usage=f"[{constants.Modifiers.LIKE} <feature-substring>]",
+    modifiers=(
+        ModifierHelp(constants.Modifiers.LIKE, "Filter features by substring match"),
+    ),
+)
 class FeaturesController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["like"])
@@ -78,5 +84,5 @@ class FeaturesController(CollectinfoCommandController):
                 features,
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
-                **self.mods
+                **self.mods,
             )

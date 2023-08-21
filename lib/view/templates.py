@@ -15,13 +15,14 @@
 from datetime import datetime
 import itertools
 from typing import Iterable, Literal, Union
+from lib.live_cluster.client.types import ASInfoError
 from lib.view.sheet.decleration import (
     ComplexAggregator,
     EntryData,
     NoEntryException,
     FieldSorter,
 )
-from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoError
+from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoResponseError
 from lib.view.sheet import (
     Aggregators,
     Converters,
@@ -2206,12 +2207,34 @@ grep_count_sheet = Sheet(
     default_style=SheetStyle.rows,
 )
 
+
+def format_asinfo_error(msg: str):
+    """Shortens strings of the form
+    "Failed to set XDR configuration parameter period-ms to 1000 : Unknown error occurred."
+    to "Unknown error occurred"
+    """
+    if msg.lower().startswith(ASINFO_RESPONSE_OK):
+        return msg
+
+    try:
+        reason: str = msg.split(":")[1]
+        reason = reason.strip(" .")
+    except IndexError:
+        return msg
+
+    return reason
+
+
 node_info_responses = Sheet(
     (
         node_field,
         Field(
             "Response",
-            Projectors.Exception("data", None, filter_exc=[ASInfoError]),
+            Projectors.Func(
+                FieldType.string,
+                format_asinfo_error,
+                Projectors.Exception("data", None, filter_exc=[ASInfoError]),
+            ),
             formatters=(
                 Formatters.green_alert(
                     lambda edata: edata.value.startswith(ASINFO_RESPONSE_OK)

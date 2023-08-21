@@ -36,7 +36,7 @@ from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoClusterStableError,
     ASInfoConfigError,
-    ASInfoError,
+    ASInfoResponseError,
 )
 
 with warnings.catch_warnings():
@@ -113,7 +113,6 @@ class NodeInitTest(asynctest.TestCase):
         def as_socket_mock():
             mock = AsyncMock()
             mock.get_session_info = Mock()
-            mock.settimeout = Mock()
             return mock
 
         as_socket_mock_used_for_login = as_socket_mock()
@@ -286,7 +285,7 @@ class NodeTest(asynctest.TestCase):
     # TODO: Make unit tests for socket pool
     async def test_get_connection_uses_socket_pool(self):
         class ASSocket_Mock(AsyncMock):
-            settimeout = Mock()
+            pass
 
         as_socket_mock1 = ASSocket_Mock()
         as_socket_mock2 = ASSocket_Mock()
@@ -309,7 +308,7 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock = as_socket_mock.return_value
 
         class ASSocket_Mock(AsyncMock):
-            settimeout = Mock()
+            pass
 
         as_socket_in_pool = ASSocket_Mock()
         as_socket_in_pool.is_connected.return_value = False
@@ -1127,18 +1126,13 @@ class NodeTest(asynctest.TestCase):
             "foo", "bar", dc="DC1", namespace="NS"
         )
 
-        self.info_mock.assert_called_with(
-            "set-config:context=xdr;foo=bar;dc=DC1;namespace=NS", self.ip
+        self.info_mock.assert_has_calls(
+            [call("set-config:context=xdr;foo=bar;dc=DC1;namespace=NS", self.ip)]  # type: ignore
         )
         self.assertEqual(
             actual.message, "Failed to set XDR configuration parameter foo to bar"
         )
-        """
-        This response has to do with the ASInfoConfigError trying to determine the cause of the
-        error. It first checks to see if the context exists and since the config_handler
-        is mocked it thinks xdr (same for the rest of tests) is a bad subcontext.
-        """
-        self.assertEqual(actual.response, "Invalid subcontext xdr")
+        self.assertEqual(actual.response, "DC does not exist")
 
     async def test_info_logs(self):
         self.info_mock.return_value = "0:path0;1:path1;2:path2"
@@ -1164,7 +1158,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_set_config_logging("path-DNE", "foo", "bar")
 
-        self.assertIsInstance(actual, ASInfoError)
+        self.assertIsInstance(actual, ASInfoResponseError)
         self.assertEqual(
             actual.message, "Failed to set logging configuration parameter foo to bar"
         )
@@ -1258,11 +1252,11 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
 
-        self.assertIsInstance(actual, ASInfoConfigError)
+        self.assertIsInstance(actual, ASInfoResponseError)
         self.assertEqual(
             actual.message, "Failed to set namespace configuration parameter foo to bar"
         )
-        self.assertEqual(actual.response, "Invalid subcontext namespace")
+        self.assertEqual(actual.response, "Namespace does not exist")
 
     async def test_info_set_config_network_success(self):
         self.info_mock.return_value = "ok"
@@ -1956,9 +1950,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_cluster_stable_with_errors(self):
         self.info_mock.return_value = "ERROR::cluster-not-specified-size"
-        expected = ASInfoClusterStableError(
-            "Cluster is unstable", "ERROR::cluster-not-specified-size"
-        )
+        expected = ASInfoClusterStableError("ERROR::cluster-not-specified-size")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
@@ -1972,9 +1964,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.return_value = "ERROR::unstable-cluster"
-        expected = ASInfoClusterStableError(
-            "Cluster is unstable", "ERROR::unstable-cluster"
-        )
+        expected = ASInfoClusterStableError("ERROR::unstable-cluster")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
@@ -1988,7 +1978,9 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.return_value = "ERROR::foo"
-        expected = ASInfoError("Failed to check cluster stability", "ERROR::foo")
+        expected = ASInfoResponseError(
+            "Failed to check cluster stability", "ERROR::foo"
+        )
 
         actual = await self.node.info_cluster_stable(namespace="bar")
 
@@ -3739,7 +3731,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_jobs_kill_returns_error(self):
         self.info_mock.return_value = "not Ok"
-        expected = ASInfoError("Failed to kill job", "not Ok")
+        expected = ASInfoResponseError("Failed to kill job", "not Ok")
 
         actual = await self.node.info_jobs_kill("foo", "123")
 
@@ -3763,7 +3755,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_scan_abort_returns_error(self):
         self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "not Ok"
-        expected = ASInfoError("Failed to kill job", "not Ok")
+        expected = ASInfoResponseError("Failed to kill job", "not Ok")
 
         actual = await self.node.info_scan_abort("123")
 
@@ -3787,7 +3779,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_query_abort_returns_error(self):
         self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "not Ok"
-        expected = ASInfoError("Failed to kill job", "not Ok")
+        expected = ASInfoResponseError("Failed to kill job", "not Ok")
 
         actual = await self.node.info_query_abort("123")
 
@@ -3809,7 +3801,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_scan_abort_all_with_feature_present_and_error(self):
         self.node.features = ["query-show"]
         self.info_mock.return_value = "error"
-        expected = ASInfoError("Failed to abort all scans", "error")
+        expected = ASInfoResponseError("Failed to abort all scans", "error")
 
         actual = await self.node.info_scan_abort_all()
 
@@ -3826,7 +3818,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_query_abort_all_with_error(self):
         self.info_mock.return_value = "error"
-        expected = ASInfoError("Failed to abort all queries", "error")
+        expected = ASInfoResponseError("Failed to abort all queries", "error")
 
         actual = await self.node.info_query_abort_all()
 
@@ -3834,10 +3826,7 @@ class NodeTest(asynctest.TestCase):
 
     @patch("lib.live_cluster.client.assocket.ASSocket.create_user")
     @patch("lib.live_cluster.client.node.Node._get_connection")
-    @patch("lib.live_cluster.client.assocket.ASSocket.settimeout")
-    async def test_admin_cadmin(
-        self, set_timeout_mock, get_connection_mock, create_user_mock
-    ):
+    async def test_admin_cadmin(self, get_connection_mock, create_user_mock):
         get_connection_mock.return_value = ASSocket(
             self.node.ip,
             self.node.port,
@@ -3850,13 +3839,11 @@ class NodeTest(asynctest.TestCase):
         )
         expected = 1
         create_user_mock.return_value = expected
-        set_timeout_mock.return_value = None
 
         actual = await self.node._admin_cadmin(
             ASSocket.create_user, (1, 2, 3), self.node.ip, self.node.port
         )
 
-        set_timeout_mock.assert_called_with(None)
         get_connection_mock.assert_called_with(self.node.ip, self.node.port)
         create_user_mock.assert_called_with(get_connection_mock.return_value, 1, 2, 3)
         self.assertEqual(actual, expected)

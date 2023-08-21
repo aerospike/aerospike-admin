@@ -25,7 +25,7 @@ import signal
 import time
 
 # the port to use for one of the cluster nodes
-PORT = 3000
+PORT = 10000
 # the namespace to be used for the tests
 NAMESPACE = "test"
 # the set to be used for the tests
@@ -34,22 +34,28 @@ DC = "DC1"
 CLIENT_ATTEMPTS = 20
 
 # the number of server nodes to use
-N_NODES = 2
+NODE_CAPACITY = 3
+DEFAULT_N_NODES = 2
 
 WORK_DIRECTORY = "work"
 LUA_DIRECTORY = "work/lua"
-STATE_DIRECTORIES = ["state-%d" % i for i in range(1, N_NODES + 1)]
-UDF_DIRECTORIES = ["udf-%d" % i for i in range(1, N_NODES + 1)]
+STATE_DIRECTORIES = ["state-%d" % i for i in range(1, NODE_CAPACITY + 1)]
+UDF_DIRECTORIES = ["udf-%d" % i for i in range(1, NODE_CAPACITY + 1)]
 LOG_PATH = "/var/log/aerospike/aerospike.log"
 
 if sys.platform == "linux":
     USE_VALGRIND = False
 else:
     USE_VALGRIND = False
-DOCKER_CLIENT = docker.from_env()
+
+# Fixes issue where call fails during vscode pytest discovery causing not tests to be found
+try:
+    DOCKER_CLIENT = docker.from_env()
+except:
+    pass
 
 # a list of docker instances running server nodes
-NODES = [None for i in range(N_NODES)]
+NODES = [None for i in range(NODE_CAPACITY)]
 # the aerospike client
 CLIENT = None
 
@@ -198,6 +204,7 @@ def create_conf_file(
     peer_addr,
     enable_security: bool,
     index,
+    access_address="127.0.0.1",
 ):
     """
     Create an Aerospike configuration file from the given template.
@@ -217,6 +224,7 @@ def create_conf_file(
         "fabric_port": str(port_base + 1),
         "heartbeat_port": str(port_base + 2),
         "info_port": str(port_base + 3),
+        "access_address": access_address,
         "peer_connection": "# no peer connection"
         if not peer_addr
         else "mesh-seed-address-port " + peer_addr[0] + " " + str(peer_addr[1] + 2),
@@ -264,11 +272,71 @@ def connect_client():
                 raise
 
 
+def start_server(first_base, index, access_address="127.0.0.1"):
+    global CLIENT
+    global NODES
+    global RUNNING
+    global SERVER_IP
+
+    temp_file = absolute_path("aerospike.conf")
+    mount_dir = absolute_path(WORK_DIRECTORY)
+
+    try:
+        feat_key = os.environ["FEATKEY"]
+    except:
+        raise Exception(
+            "Env var FEATKEY must be set with a base64 encoded feature key file."
+        )
+
+    base = first_base + 1000 * (index - 1)
+    conf_file = create_conf_file(
+        temp_file,
+        base,
+        None if index == 1 else (SERVER_IP, first_base),
+        True,
+        index,
+        access_address=access_address,
+    )
+    cmd = "/usr/bin/asd --foreground --config-file %s --instance %s" % (
+        CONTAINER_DIR + "/" + get_file(conf_file, base=mount_dir),
+        str(index - 1),
+    )
+    print("running in docker: %s" % cmd)
+    try:
+        container = DOCKER_CLIENT.containers.get("aerospike-%d" % (index))
+        container.remove(force=True)
+    except:
+        pass
+
+    container = DOCKER_CLIENT.containers.run(
+        "aerospike/aerospike-server-enterprise:latest",
+        command=cmd,
+        ports={
+            str(base) + "/tcp": str(base),
+            str(base + 1) + "/tcp": str(base + 1),
+            str(base + 2) + "/tcp": str(base + 2),
+            str(base + 3) + "/tcp": str(base + 3),
+        },
+        volumes={mount_dir: {"bind": CONTAINER_DIR, "mode": "rw"}},
+        tty=True,
+        detach=True,
+        environment={
+            "FEATURES": "{}".format(feat_key),
+        },
+        name="aerospike-%d" % (index),
+    )
+
+    NODES[index - 1] = container
+    container.reload()
+    return container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
+
+
 def start(do_reset=True):
     global CLIENT
     global NODES
     global RUNNING
     global SERVER_IP
+    global DEFAULT_N_NODES
 
     if not RUNNING:
         RUNNING = True
@@ -279,61 +347,11 @@ def start(do_reset=True):
             init_work_dir()
             init_state_dirs()
 
-            temp_file = absolute_path("aerospike.conf")
-            mount_dir = absolute_path(WORK_DIRECTORY)
-
-            try:
-                feat_key = os.environ["FEATKEY"]
-            except:
-                raise Exception(
-                    "Env var FEATKEY must be set with a base64 encoded feature key file."
-                )
-
             first_base = PORT
-            for index in range(1, 3):
-                base = first_base + 1000 * (index - 1)
-                conf_file = create_conf_file(
-                    temp_file,
-                    base,
-                    None if index == 1 else (SERVER_IP, first_base),
-                    True,
-                    index,
-                )
-                cmd = "/usr/bin/asd --foreground --config-file %s --instance %s" % (
-                    CONTAINER_DIR + "/" + get_file(conf_file, base=mount_dir),
-                    str(index - 1),
-                )
-                print("running in docker: %s" % cmd)
-                try:
-                    container = DOCKER_CLIENT.containers.get("aerospike-%d" % (index))
-                    container.remove(force=True)
-                except:
-                    pass
-
-                container = DOCKER_CLIENT.containers.run(
-                    "aerospike/aerospike-server-enterprise:6.2.0.8",
-                    command=cmd,
-                    ports={
-                        str(base) + "/tcp": str(base),
-                        str(base + 1) + "/tcp": str(base + 1),
-                        str(base + 2) + "/tcp": str(base + 2),
-                        str(base + 3) + "/tcp": str(base + 3),
-                    },
-                    volumes={mount_dir: {"bind": CONTAINER_DIR, "mode": "rw"}},
-                    tty=True,
-                    detach=True,
-                    environment={
-                        "FEATURES": "{}".format(feat_key),
-                    },
-                    name="aerospike-%d" % (index),
-                )
-
-                NODES[index - 1] = container
+            for index in range(1, DEFAULT_N_NODES + 1):
+                ip = start_server(first_base, index)
                 if index == 1:
-                    container.reload()
-                    SERVER_IP = container.attrs["NetworkSettings"]["Networks"][
-                        "bridge"
-                    ]["IPAddress"]
+                    SERVER_IP = ip
         else:
             SERVER_IP = "127.0.0.1"
 
@@ -383,7 +401,7 @@ def stop():
             CLIENT = None
 
         print("Stopping asd")
-        for i in range(0, N_NODES):
+        for i in range(0, NODE_CAPACITY):
             if NODES[i] is not None:
                 NODES[i].stop()
                 NODES[i].remove()
@@ -463,7 +481,7 @@ def populate_db(set_name: str):
                 "int-str-mix": str(idx % 5) if idx >= 80 else idx % 10,
             }
             keys.append(key)
-            CLIENT.put(key, bins, policy=write_policy)
+            CLIENT.put(key, bins, {"ttl": 3600 * (idx + 1)}, policy=write_policy)
     except:
         print("Failed to fully populate the DB")
         raise

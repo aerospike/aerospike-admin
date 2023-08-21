@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from typing import Any, Literal
+from typing import Any
 
 from lib.utils import common, util
 from lib.utils.constants import NodeSelection, NodeSelectionType
@@ -163,12 +163,10 @@ class _CollectinfoSnapshot:
                 )
 
                 # "node_name" was stored in collectinfo file in asadm 2.15.0
-                if not node_names_dict:
-                    node_names = self.cinfo_data.keys()
-                    for node_name in node_names:
-                        self.node_names[node_name] = node_name
-                else:
-                    for node_ips in node_names_dict:
+                for node_ips in node_names_dict:
+                    if not node_names_dict[node_ips]:
+                        self.node_names[node_ips] = node_ips
+                    else:
                         self.node_names[node_ips] = node_names_dict[node_ips]
             else:
                 return {}

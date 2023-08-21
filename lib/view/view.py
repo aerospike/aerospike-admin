@@ -12,20 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import datetime
 import locale
 import logging
 from os import path
 import sys
 import time
-from io import StringIO
 from pydoc import pipepager
-from typing import Any, Tuple
+from typing import Any, TextIO, Tuple
 
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
-from lib.live_cluster.client import Cluster
-from lib.live_cluster.client.node import ASInfoError
+from lib.live_cluster.client import Cluster, ASInfoError
 from lib.utils import file_size, constants, util
 from lib.utils.common import (
     StopWritesDict,
@@ -314,7 +313,7 @@ class CliView(object):
                 ns = key.split()[0]
 
                 sindex_type = (
-                    ns_configs.get(node, {}).get(ns).get("sindex-type", "shmem")
+                    ns_configs.get(node, {}).get(ns, {}).get("sindex-type", "shmem")
                 )
 
                 sindex_stats[node][key]["sindex-type"] = sindex_type
@@ -409,7 +408,9 @@ class CliView(object):
             sources = dict(
                 node_names=node_names,
                 histogram={
-                    h: d.get("data", {}) for h, d in node_data.items() if h != "columns"
+                    h: d.get("values", {})
+                    for h, d in node_data.items()
+                    if h != "columns"
                 },
             )
 
@@ -1411,129 +1412,98 @@ class CliView(object):
             yield val
 
     @staticmethod
-    async def watch(ctrl, line):
-        diff_highlight = True
-        sleep = 2.0
+    async def watch(
+        real_stdout: TextIO,
+        output: str,
+        line: str,
+        sleep: float,
+        count: int,
+        previous: str | None,
+        diff_highlight: bool,
+    ) -> str:
         num_iterations = False
-
-        try:
-            sleep = float(line[0])
-            line.pop(0)
-        except Exception:
-            pass
-        else:
-            try:
-                num_iterations = int(line[0])
-                line.pop(0)
-            except Exception:
-                pass
-
-        if line[0] == "--no-diff":
-            diff_highlight = False
-            line.pop(0)
 
         if not terminal.color_enabled:
             diff_highlight = False
 
-        real_stdout = sys.stdout
+        # try:
+        highlight = False
 
-        try:
-            sys.stdout = mystdout = StringIO()
-            previous = None
-            count = 1
+        if previous and diff_highlight:
+            result = []
+            prev_iterator = CliView.group_output(previous)
+            next_peeked = []
+            next_iterator = CliView.group_output(output)
+            next_iterator = CliView.peekable(next_peeked, next_iterator)
 
-            while True:
-                highlight = False
-                await ctrl.execute(line[:])
-                output = mystdout.getvalue()
-                mystdout.truncate(0)
-                mystdout.seek(0)
+            for prev_group in prev_iterator:
+                if "\033" in prev_group:
+                    # skip prev escape seq
+                    continue
 
-                if previous and diff_highlight:
-                    result = []
-                    prev_iterator = CliView.group_output(previous)
-                    next_peeked = []
-                    next_iterator = CliView.group_output(output)
-                    next_iterator = CliView.peekable(next_peeked, next_iterator)
-
-                    for prev_group in prev_iterator:
-                        if "\033" in prev_group:
-                            # skip prev escape seq
-                            continue
-
-                        for next_group in next_iterator:
-                            if "\033" in next_group:
-                                # add current escape seq
-                                result += next_group
-                                continue
-                            elif next_group == "\n":
-                                if prev_group != "\n":
-                                    next_peeked.append(next_group)
-                                    break
-                                if highlight:
-                                    result += terminal.uninverse()
-                                    highlight = False
-                            elif prev_group == next_group:
-                                if highlight:
-                                    result += terminal.uninverse()
-                                    highlight = False
-                            else:
-                                if not highlight:
-                                    result += terminal.inverse()
-                                    highlight = True
-
-                            result += next_group
-
-                            if "\n" == prev_group and "\n" != next_group:
-                                continue
-                            break
-
-                    for next_group in next_iterator:
-                        if next_group == " " or next_group == "\n":
-                            if highlight:
-                                result += terminal.uninverse()
-                                highlight = False
-                        else:
-                            if not highlight:
-                                result += terminal.inverse()
-                                highlight = True
-
+                for next_group in next_iterator:
+                    if "\033" in next_group:
+                        # add current escape seq
                         result += next_group
+                        continue
+                    elif next_group == "\n":
+                        if prev_group != "\n":
+                            next_peeked.append(next_group)
+                            break
+                        if highlight:
+                            result += terminal.uninverse()
+                            highlight = False
+                    elif prev_group == next_group:
+                        if highlight:
+                            result += terminal.uninverse()
+                            highlight = False
+                    else:
+                        if not highlight:
+                            result += terminal.inverse()
+                            highlight = True
 
-                    if highlight:
-                        result += terminal.reset()
-                        highlight = False
+                    result += next_group
 
-                    result = "".join(result)
-                    previous = output
-                else:
-                    result = output
-                    previous = output
-
-                ts = time.time()
-                st = datetime.datetime.fromtimestamp(ts).strftime(" %Y-%m-%d %H:%M:%S")
-                command = " ".join(line)
-                print(
-                    "[%s '%s' sleep: %ss iteration: %s" % (st, command, sleep, count),
-                    end=" ",
-                    file=real_stdout,
-                )
-                if num_iterations:
-                    print(" of %s" % (num_iterations), end=" ", file=real_stdout)
-                print("]", file=real_stdout)
-                print(result, file=real_stdout)
-
-                if num_iterations and num_iterations <= count:
+                    if "\n" == prev_group and "\n" != next_group:
+                        continue
                     break
 
-                count += 1
-                time.sleep(sleep)
+            for next_group in next_iterator:
+                if next_group == " " or next_group == "\n":
+                    if highlight:
+                        result += terminal.uninverse()
+                        highlight = False
+                else:
+                    if not highlight:
+                        result += terminal.inverse()
+                        highlight = True
 
-        except (KeyboardInterrupt, SystemExit):
-            return
-        finally:
-            sys.stdout = real_stdout
-            print("")
+                result += next_group
+
+            if highlight:
+                result += terminal.reset()
+                highlight = False
+
+            result = "".join(result)
+            previous = output
+        else:
+            result = output
+            previous = output
+
+        ts = time.time()
+        st = datetime.datetime.fromtimestamp(ts).strftime(" %Y-%m-%d %H:%M:%S")
+        command = " ".join(line)
+        print(
+            "[%s '%s' sleep: %ss iteration: %s" % (st, command, sleep, count),
+            end=" ",
+            file=real_stdout,
+        )
+        if num_iterations:
+            print(" of %s" % (num_iterations), end=" ", file=real_stdout)
+        print("]", file=real_stdout)
+        print(result, file=real_stdout)
+
+        return previous
 
     @staticmethod
     def print_info_responses(title, responses, cluster, **mods):

@@ -35,16 +35,19 @@ from typing_extensions import NotRequired
 import distro
 import socket
 import time
-import urllib.request
-import urllib.error
-import urllib.parse
+from urllib import request, error, parse
 import aiohttp
 import zipfile
 from collections import OrderedDict
 from dateutil import parser as date_parser
 
 from lib.utils import constants, file_size, util, version, data
-from lib.utils.types import NamespaceDict, NodeDict
+from lib.utils.types import (
+    NamespaceDict,
+    StopWritesDict,
+    StopWritesEntry,
+    StopWritesEntryKey,
+)
 from lib.view import terminal
 
 logger = logging.getLogger("asadm")
@@ -1616,20 +1619,6 @@ def create_summary(
 ####### Stop-Writes #########
 
 
-class StopWritesEntry(TypedDict):
-    metric: str
-    metric_usage: int | float
-    stop_writes: bool
-    metric_threshold: NotRequired[int | float]
-    config: NotRequired[str]
-    namespace: NotRequired[str]
-    set: NotRequired[str]
-
-
-StopWritesEntryKey = tuple[str | None, str | None, str]
-StopWritesDict = NodeDict[dict[StopWritesEntryKey, StopWritesEntry]]
-
-
 def _create_stop_writes_entry(
     node_sw_metrics: dict[StopWritesEntryKey, StopWritesEntry],
     metric: str,
@@ -1904,6 +1893,18 @@ def create_stop_writes_summary(
     return stop_writes_metrics
 
 
+def active_stop_writes(stop_writes_dict: StopWritesDict):
+    """
+    Checks for active stop writes in the cluster. Only callable from live cluster mode.
+    """
+    for node_entry in stop_writes_dict.values():
+        for sw_entry in node_entry.values():
+            if sw_entry["stop_writes"] == True:
+                return True
+
+    return False
+
+
 #############################
 
 ########## Histogram ##########
@@ -2105,11 +2106,11 @@ def _get_bucket_range(current_bucket, next_bucket, width, rblock_size_bytes):
 
 
 def _create_range_key(s, e):
-    return "%s to %s" % (s, e)
+    return "%s-%s" % (s, e)
 
 
 def _string_to_bytes(k):
-    k = k.split(" to ")
+    k = k.split("-")
     s = k[0]
     b = {
         "K": 1024**1,
@@ -2156,15 +2157,21 @@ def _restructure_new_log_histogram(histogram_data):
                 except Exception:
                     continue
 
+        columns = sorted(columns, key=_string_to_bytes)
+
         for host_id, host_data in ns_data.items():
             if not host_data or isinstance(host_data, Exception):
                 continue
+
+            sorted_host_data = {}
 
             for k in columns:
                 if k not in host_data["values"].keys():
                     host_data["values"][k] = 0
 
-        ns_data["columns"] = sorted(columns, key=_string_to_bytes)
+                sorted_host_data[k] = host_data["values"][k]
+
+            host_data["values"] = sorted_host_data
 
     return histogram_data
 
@@ -2244,8 +2251,14 @@ def _parse_new_log_histogram(histogram, histogram_data):
     return result
 
 
-def create_histogram_output(histogram_name, histogram_data, **params):
-    if "byte_distribution" not in params or not params["byte_distribution"]:
+def create_histogram_output(
+    histogram_name,
+    histogram_data,
+    byte_distribution=False,
+    bucket_count=None,
+    builds=None,
+):
+    if not byte_distribution:
         return _create_histogram_percentiles_output(histogram_name, histogram_data)
 
     try:
@@ -2257,11 +2270,11 @@ def create_histogram_output(histogram_name, histogram_data, **params):
     except Exception as e:
         raise e
 
-    if "bucket_count" not in params or "builds" not in params:
+    if not bucket_count or not builds:
         return {}
 
     return _create_bytewise_histogram_percentiles_output(
-        histogram_data, params["bucket_count"], params["builds"]
+        histogram_data, bucket_count, builds
     )
 
 
@@ -2364,6 +2377,25 @@ def _create_fail_string(cloud_provider):
     )
 
 
+class NoRedirect(request.HTTPRedirectHandler):
+    """
+    Disallow redirects when requesting a magic IP. Redirects should not happen in a properly
+    configured cloud instance. If a redirect occurs it is either not a cloud instance and
+    we are being sent to some type of proxy which will give the incorrect response
+    (TOOLS-2050 which is what prompted this change) or (hard to believe) we are going to
+    another machine in the cloud in which case we will get instance info from the wrong machine.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise request.HTTPError(
+            req.full_url, code, "Redirects disabled for cloud magic urls", headers, fp
+        )
+
+
+_opener = request.build_opener(NoRedirect)
+request.install_opener(_opener)
+
+
 def _get_aws_metadata(response_str, prefix="", old_response=""):
     aws_c = ""
     aws_metadata_base_url = "http://169.254.169.254/latest/meta-data"
@@ -2381,8 +2413,8 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
         else:
             urls_to_join = [aws_metadata_base_url, prefix, rsp]
             meta_url = "/".join(urls_to_join)
-            req = urllib.request.Request(meta_url)
-            r = urllib.request.urlopen(req)
+            req = request.Request(meta_url)
+            r = request.urlopen(req)
             if r.code != 404:
                 response = r.read().strip().decode("utf-8")
                 if response == old_response:
@@ -2430,8 +2462,8 @@ def _collect_aws_data(cmd=""):
     ]
     try:
         out += "\nRequesting . . . {0}".format(aws_metadata_base_url)
-        req = urllib.request.Request(aws_metadata_base_url)
-        r = urllib.request.urlopen(req)
+        req = request.Request(aws_metadata_base_url)
+        r = request.urlopen(req)
         if r.code == 200:
             rsp = r.read().decode("utf-8")
             aws_rsp += _get_aws_metadata(rsp, "/")
@@ -2470,10 +2502,8 @@ def _get_gce_metadata(response_str, fields_to_ignore=[], prefix=""):
         meta_url = "/".join(urls_to_join)
 
         try:
-            req = urllib.request.Request(
-                meta_url, headers={"Metadata-Flavor": "Google"}
-            )
-            r = urllib.request.urlopen(req)
+            req = request.Request(meta_url, headers={"Metadata-Flavor": "Google"})
+            r = request.urlopen(req)
 
             if r.code != 404:
                 response = r.read().strip().decode("utf-8")
@@ -2500,10 +2530,10 @@ def _collect_gce_data(cmd=""):
 
     try:
         out += "\nRequesting . . . {0}".format(gce_metadata_base_url)
-        req = urllib.request.Request(
+        req = request.Request(
             gce_metadata_base_url, headers={"Metadata-Flavor": "Google"}
         )
-        r = urllib.request.urlopen(req)
+        r = request.urlopen(req, timeout=gce_timeout)
 
         if r.code == 200:
             rsp = r.read().decode("utf-8")
@@ -2531,10 +2561,8 @@ def _collect_azure_data(cmd=""):
 
     try:
         out += "\nRequesting . . . {0}".format(azure_metadata_base_url)
-        req = urllib.request.Request(
-            azure_metadata_base_url, headers={"Metadata": "true"}
-        )
-        r = urllib.request.urlopen(req)
+        req = request.Request(azure_metadata_base_url, headers={"Metadata": "true"})
+        r = request.urlopen(req)
 
         if r.code == 200:
             rsp = r.read().decode("utf-8")

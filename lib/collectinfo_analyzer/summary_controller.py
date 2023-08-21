@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ModifierHelp
 from lib.utils import common, constants, util
 
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -20,9 +20,18 @@ from .collectinfo_command_controller import CollectinfoCommandController
 
 @CommandHelp(
     "Displays summary of Aerospike cluster.",
-    "  Options:",
-    "    -l                  - Enable to display namespace output in List view. Default: Table view",
-    "    --agent-unstable    - When processing UDA entries allow instances where the cluster is unstable.",
+    usage=f"[-l] [--agent-unstable]",
+    modifiers=(
+        ModifierHelp(
+            "-l",
+            "Enable to display namespace output in list view.",
+            default="table view",
+        ),
+        ModifierHelp(
+            "--agent-unstable",
+            "When processing UDA entries allow instances where the cluster is unstable.",
+        ),
+    ),
 )
 class SummaryController(CollectinfoCommandController):
     def __init__(self):

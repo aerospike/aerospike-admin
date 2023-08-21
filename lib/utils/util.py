@@ -609,6 +609,23 @@ def add_dicts(d1, d2):
     return d1
 
 
+def filter_exceptions(data: Any):
+    """
+    Takes a dict or list and removes all values that are exceptions
+    """
+    if isinstance(data, dict):
+        for _k in list(data.keys()):
+            if isinstance(data[_k], Exception):
+                del data[_k]
+            else:
+                filter_exceptions(data[_k])
+    elif isinstance(data, list):
+        for val in data:
+            filter_exceptions(val)
+
+    return data
+
+
 def pct_to_value(data, d_pct):
     """
     Function takes dictionary with base value, and dictionary with percentage and converts percentage to value.

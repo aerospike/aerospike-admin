@@ -14,14 +14,21 @@
 
 import unittest
 from pytest import PytestUnraisableExceptionWarning
-from lib.base_controller import BaseController, ShellException
+from lib.base_controller import (
+    BaseController,
+    CommandController,
+    CommandHelp,
+    ModifierHelp,
+    ShellException,
+)
 from mock import MagicMock, patch
 from mock.mock import AsyncMock, call
+from parameterized import parameterized
 
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoClusterStableError,
-    ASInfoError,
+    ASInfoResponseError,
     ASProtocolError,
     ASResponse,
     Cluster,
@@ -33,6 +40,7 @@ from lib.live_cluster.live_cluster_command_controller import (
     LiveClusterCommandController,
 )
 from lib.live_cluster.manage_controller import (
+    LiveClusterManageCommandController,
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
     ManageACLQuotasRoleController,
@@ -62,6 +70,160 @@ import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import asynctest
+
+
+@CommandHelp(
+    "I am ROOT!!!",
+)
+class FakeRoot(BaseController):
+    def __init__(self):
+        self.modifiers = set()
+
+        self.controller_map = {"fakea1": FakeCommand1, "fakeb2": FakeCommand2}
+
+
+@CommandHelp(
+    "Fake Command 1 Help",
+    short_msg="Fake Command 1 Help.",
+    usage="<default usage>",
+)
+class FakeCommand1(LiveClusterManageCommandController):
+    def __init__(self):
+        pass
+
+    @CommandHelp(
+        "Fake Command 1 Default",
+    )
+    async def _do_default(self, line):
+        return await self.do_cmd(line[:])
+
+    @CommandHelp(
+        "Fake Command 1 cmd but is hidden so should not be in the list",
+        hide=True,
+    )
+    async def do_cmd(self, line):
+        return "fake1", line
+
+
+@CommandHelp(
+    "Fake Command 2 Help. Here is a really long line that should wrap around. Let's check if it does. We need to make sure it is long enough",
+    short_msg="Fake Command 2 Help.",
+    usage="<default usage>",
+)
+class FakeCommand2(LiveClusterManageCommandController):
+    def __init__(self):
+        self.controller_arg = "arg2"
+
+    @CommandHelp("Fake Command 2 Default")
+    async def _do_default(self, line):
+        return await self.do_cmd(line[:])
+
+    @CommandHelp(
+        "cmd help",
+    )
+    async def do_cmd(self, line):
+        return "fake2", line
+
+    @CommandHelp(
+        "foo help",
+        usage="<foo usage>",
+        modifiers=(
+            ModifierHelp("one", "all about one", default="1"),
+            ModifierHelp("two", "all about two", default="2"),
+        ),
+    )
+    async def do_foo(self, line):
+        return "foo", line
+
+    async def do_for(self, line):
+        return "for", line
+
+    async def do_zoo(self, line):
+        return "zoo", line
+
+
+class BaseControllerTest(asynctest.TestCase):
+    maxDiff = None
+
+    @parameterized.expand(
+        [
+            (
+                [],
+                """
+I am ROOT!!!.
+
+Usage:   COMMAND
+
+Commands:
+
+    Default     Print this help message
+    fakea1      Fake Command 1 Help
+    fakeb2      Fake Command 2 Help
+
+Run 'help COMMAND' for more information on a command.
+""",
+            ),
+            (["fake"], "ShellException"),
+            (
+                ["fakea1"],
+                """
+Fake Command 1 Help.
+
+Usage:  fakea1 COMMAND
+or
+Usage:  fakea1 <default usage>
+
+Commands:
+
+    Default     Fake Command 1 Default
+
+Run 'help fakea1 COMMAND' for more information on a command.
+""",
+            ),
+            (
+                ["fakeb2"],
+                """
+Fake Command 2 Help. Here is a really long line that should wrap around. Let's
+check if it does. We need to make sure it is long enough.
+
+Usage:  fakeb2 <arg2> COMMAND
+or
+Usage:  fakeb2 <arg2> <default usage>
+
+Commands:
+
+    Default     Fake Command 2 Default
+    cmd         cmd help
+    foo         foo help
+
+Run 'help fakeb2 COMMAND' for more information on a command.
+""",
+            ),
+            (
+                ["fakeb2", "foo"],
+                """
+foo help.
+
+Usage:  fakeb2 <arg2> foo <foo usage>
+
+        one     - all about one
+                  Default: 1
+        two     - all about two
+                  Default: 2
+""",
+            ),
+        ]
+    )
+    def test_execute_help(self, line, expected_result):
+        r = FakeRoot()
+
+        try:
+            actual_result = r.execute_help(line)
+            print(actual_result)
+        except ShellException:
+            self.assertEqual(expected_result, "ShellException")
+        else:
+            self.assertListEqual(expected_result.split("\n"), actual_result.split("\n"))
 
 
 @asynctest.fail_on(active_handles=True)
@@ -1221,11 +1383,12 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
         self.root_controller = LiveClusterCommandController(self.cluster)
         self.node = list(self.cluster.nodes.values())[0]
         self.node.conf_schema_handler = JsonDynamicConfigHandler(
-            constants.CONFIG_SCHEMAS_HOME, "5.5"
+            constants.CONFIG_SCHEMAS_HOME, "5.6.0"
         )
+        self.node.alive = True
         self.cluster.update_node(self.node)
         self.controller = ManageConfigController()
-        self.controller.context = ["manage", "config"]
+        self.controller._context = ["manage", "config"]
         ManageConfigLeafController.mods = {}
         self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
@@ -1235,34 +1398,21 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    def test_auto_complete(self):
-        class TestCase:
-            def __init__(self, line, possible_completions):
-                self.line = line
-                self.possible_completions = possible_completions
-
-        def run_test(tc: TestCase):
-            actual = self.controller.complete(tc.line.split(" "))
-            self.assertCountEqual(
-                tc.possible_completions,
-                actual,
-                'Failed with input: "{}"'.format(tc.line),
-            )
-
-        test_cases = [
-            TestCase("net", ["network"]),
-            TestCase("network", ["network"]),
-            TestCase("network ", ["fabric", "heartbeat"]),
-            TestCase("network fab", ["fabric"]),
-            TestCase("network fabric", []),
-            TestCase("network fabric ", []),
-            TestCase(
+    @parameterized.expand(
+        [
+            ("net", ["network"]),
+            ("network", ["network"]),
+            ("network ", ["fabric", "heartbeat"]),
+            ("network fab", ["fabric"]),
+            ("network fabric", []),
+            ("network fabric ", []),
+            (
                 "network fabric param",
                 [
                     "param",
                 ],
             ),
-            TestCase(
+            (
                 "network fabric param ",
                 [
                     "channel-bulk-recv-threads",
@@ -1272,74 +1422,79 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
                     "recv-rearm-threshold",
                 ],
             ),
-            TestCase(
+            (
                 "network heartbeat param ",
                 ["connect-timeout-ms", "interval", "mtu", "protocol", "timeout"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol",
                 ["protocol to"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol ",
                 ["to"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol to",
                 ["to"],
             ),
-            TestCase(
+            (
                 "network heartbeat param protocol to none",
                 [],
             ),
-            TestCase(
+            (
                 "namespace",
                 ["namespace"],
             ),
-            TestCase(
+            (
                 "namespace ",
                 ["<ns>"],
             ),
-            TestCase(
+            (
                 "namespace test",
                 [],
             ),
-            TestCase(
+            (
                 "namespace test ",
                 ["geo2dsphere-within", "index-type", "set", "storage-engine"],
             ),
-            TestCase(
+            (
                 "namespace test set ",
                 ["<set>"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param co",
                 ["compression", "compression-level"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression",
                 ["compression", "compression-level"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression ",
                 ["to"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression-level to ",
                 ["<int>"],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression-level to <int>",
                 [],
             ),
-            TestCase(
+            (
                 "namespace test storage-engine param compression-level to <int> ",
                 [],
             ),
         ]
-
-        for tc in test_cases:
-            run_test(tc)
+    )
+    def test_auto_complete(self, line, possible_completions):
+        actual = self.controller.complete(line.split(" "))
+        self.assertCountEqual(
+            possible_completions,
+            actual,
+            'Failed with input: "{}"'.format(line),
+        )
 
 
 class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
@@ -1579,11 +1734,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
     async def test_create_fails_with_asinfo_error(self):
         line = "numeric a-index ns test bin a ctx list_value(1)".split()
         self.cluster_mock.info_sindex_create.return_value = {
-            "1.1.1.1": ASInfoError("foo", "ERROR::bar")
+            "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
         }
 
         await self.assertAsyncRaisesRegex(
-            ASInfoError, "bar", self.controller.execute(line)
+            ASInfoResponseError, "bar", self.controller.execute(line)
         )
 
     async def test_ctx_invalid_format(self):
@@ -1661,11 +1816,11 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
     async def test_create_fails_with_asinfo_error(self):
         line = "a-index ns test set testset".split()
         self.cluster_mock.info_sindex_delete.return_value = {
-            "1.1.1.1": ASInfoError("foo", "ERROR::bar")
+            "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
         }
 
         await self.assertAsyncRaisesRegex(
-            ASInfoError, "bar", self.controller.execute(line)
+            ASInfoResponseError, "bar", self.controller.execute(line)
         )
 
 
@@ -1959,7 +2114,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
         )
 
     async def test_logs_error_when_asprotocol_error_returned(self):
-        as_error = ASInfoError("An error message", "test-resp")
+        as_error = ASInfoResponseError("An error message", "test-resp")
         line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
         self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
 
@@ -2048,7 +2203,7 @@ class ManageTruncateUndoControllerTest(asynctest.TestCase):
         )
 
     async def test_logs_error_when_asprotocol_error_returned(self):
-        as_error = ASInfoError("An error message", "test-resp")
+        as_error = ASInfoResponseError("An error message", "test-resp")
         line = "ns test set test-set undo"
         self.cluster_mock.info_truncate_undo.return_value = {"principal_ip": as_error}
 
@@ -2106,7 +2261,7 @@ class ManageReclusterControllerTest(asynctest.TestCase):
         )
 
     async def test_logs_error_when_asinfo_error_returned(self):
-        as_error = ASInfoError("An error message", "test-resp")
+        as_error = ASInfoResponseError("An error message", "test-resp")
         line = ""
         self.cluster_mock.info_recluster.return_value = {"principal_ip": as_error}
 
@@ -2523,7 +2678,7 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 {
                     "1.1.1.1": "ABC",
                     "2.2.2.2": "ABC",
-                    "3.3.3.3": ASInfoClusterStableError("", "foo"),
+                    "3.3.3.3": ASInfoClusterStableError("foo"),
                 },
                 False,
             ),
@@ -2544,12 +2699,12 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 )
 
         self.assertRaises(
-            ASInfoError,
+            ASInfoResponseError,
             self.controller._check_and_log_cluster_stable,
             {
                 "1.1.1.1": "ABC",
                 "2.2.2.2": "ABC",
-                "3.3.3.3": ASInfoError("", "foo"),
+                "3.3.3.3": ASInfoResponseError("", "foo"),
             },
         )
 
@@ -2640,7 +2795,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -2650,7 +2805,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_from_roster_set(self):
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
@@ -2776,7 +2931,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -2786,7 +2941,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_from_roster_set(self):
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -2939,7 +3094,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster_set(self):
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -3065,7 +3220,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster(self):
         line = "ns test"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -3076,7 +3231,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster_set(self):
         line = "ns test"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["ABC", "DEF"]}
         }

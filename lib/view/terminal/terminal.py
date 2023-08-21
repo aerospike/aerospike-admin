@@ -49,7 +49,7 @@ esc = None
 term = None
 
 sclear_code = None
-cur_format: Union[list[str], set[str], None] = None
+cur_format: list[str] | set[str] | None = None
 
 
 def enable_color(is_enable):

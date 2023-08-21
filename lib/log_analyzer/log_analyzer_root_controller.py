@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.base_controller import BaseController, CommandHelp
+from lib.base_controller import BaseController, CommandHelp, ModifierHelp
 from lib.utils import util
 from lib.view import terminal
 from lib.view.view import CliView
@@ -54,33 +54,50 @@ class LogAnalyzerRootController(BaseController):
         return "EXIT"
 
     @CommandHelp(
-        "Returns documentation related to a command",
-        'for example, to retrieve documentation for the "info"',
-        'command use "help info".',
+        "Displays the documentation for the specified command.",
+        "For example, to see the documentation for the 'count' command,",
+        "use the command 'help count'.",
+        short_msg="Displays the documentation for the specified command",
+        hide=True,
     )
     def do_help(self, line):
-        self.execute_help(line)
+        self.view.print_result(self.execute_help(line))
 
 
 @CommandHelp(
     "Displays all lines from server logs matched with input strings.",
-    "  Options:",
-    "    -s <string>  - Space seprated Strings to search in log files, MANDATORY - NO DEFAULT",
-    "                   Format -s 'string1' 'string2'... 'stringn'",
-    "    -a           - Set 'AND'ing of search strings (provided with -s): Finding lines with all search strings in it.",
-    "                   Default is 'OR'ing: Finding lines with atleast one search string in it.",
-    "    -v <string>  - Non-matching strings (space separated).",
-    "    -i           - Perform case insensitive matching of search strings (-s) and non-matching strings (-v).",
-    "                   By default it is case sensitive.",
-    "    -u           - Set to find unique lines.",
-    "    -f <string>  - Log time from which to analyze.",
-    "                   May use the following formats:  'Sep 22 2011 22:40:14', -3600, or '-1:00:00'.",
-    "                   Default: head",
-    "    -d <string>  - Maximum time period to analyze.",
-    "                   May use the following formats: 3600 or 1:00:00.",
-    "    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n '1,2,5'.",
-    "                   If not set then runs on all server logs in selected list.",
-    "    -p <int>     - Showing output in pages with p entries per page. default: 10.",
+    modifiers=(
+        ModifierHelp(
+            "-s",
+            "Space-separated strings to search in log files. Format: -s 'string1' 'string2' ... 'stringn'",
+        ),
+        ModifierHelp(
+            "-a",
+            "Set 'AND'ing of search strings (provided with -s): Finding lines with all search strings in it. Default is 'OR'ing: Finding lines with at least one search string in it.",
+        ),
+        ModifierHelp("-v", "Non-matching strings (space separated)."),
+        ModifierHelp(
+            "-i",
+            "Perform case-insensitive matching of search strings (-s) and non-matching strings (-v)",
+        ),
+        ModifierHelp("-u", "Set to find unique lines."),
+        ModifierHelp(
+            "-f",
+            "Log time from which to analyze. May use the following formats: 'Sep 22 2011 22:40:14', -3600, or '-1:00:00'",
+            default="head",
+        ),
+        ModifierHelp(
+            "-d",
+            "Maximum time period to analyze. May use the following formats: 3600 or 1:00:00.",
+        ),
+        ModifierHelp(
+            "-n",
+            "Comma-separated node numbers. You can get these numbers by the list command. Example: -n '1,2,5'. If not set, then runs on all server logs in the selected list.",
+        ),
+        ModifierHelp(
+            "-p", "Showing output in pages with p entries per page", default="10"
+        ),
+    ),
 )
 class GrepController(LogAnalyzerCommandController):
     def __init__(self):
@@ -94,27 +111,48 @@ class GrepController(LogAnalyzerCommandController):
 
 @CommandHelp(
     "Displays count of lines from server logs matched with input strings.",
-    "  Options:",
-    "    -s <string>  - Space seprated Strings to search in log files, MANDATORY - NO DEFAULT",
-    "                   Format -s 'string1' 'string2'... 'stringn'",
-    "    -a           - Set 'AND'ing of search strings (provided with -s): Finding lines with all serach strings in it.",
-    "                   Default is 'OR'ing: Finding lines with atleast one search string in it.",
-    "    -v <string>  - Non-matching strings (space separated).",
-    "    -i           - Perform case insensitive matching of search strings (-s) and non-matching strings (-v).",
-    "                   By default it is case sensitive.",
-    "    -u           - Set to find unique lines.",
-    "    -f <string>  - Log time from which to analyze.",
-    "                   May use the following formats:  'Sep 22 2011 22:40:14', -3600, or '-1:00:00'.",
-    "                   default: head",
-    "    -d <string>  - Maximum time period to analyze.",
-    "                   May use the following formats: 3600 or 1:00:00.",
-    "    -t <string>  - Counting matched lines per interval of t.",
-    "                   May use the following formats: 60 or 1:00:00. default: 600 seconds.",
-    "    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n '1,2,5'.",
-    "                   If not set then runs on all server logs in selected list.",
-    "    -p <int>     - Showing output in pages with p entries per page. default: 10.",
-    "    -r           - Repeat output table title and row header after every <terminal width> columns.",
-    "                   default: False, no repetition.",
+    modifiers=(
+        ModifierHelp(
+            "-s",
+            "Space separated strings to search in log files. Format: -s 'string-1' 'string-2' ... 'string-n'",
+        ),
+        ModifierHelp(
+            "-a",
+            "Set 'AND'ing of search strings (provided with -s): Finding lines with all search strings in it. Default is 'OR'ing: Finding lines with at least one search string in it.",
+        ),
+        ModifierHelp("-v", "Non-matching strings (space separated)."),
+        ModifierHelp(
+            "-i",
+            "Perform case insensitive matching of search strings (-s) and non-matching strings (-v)",
+        ),
+        ModifierHelp("-u", "Set to find unique lines."),
+        ModifierHelp(
+            "-f",
+            "Log time from which to analyze. May use the following formats: 'Sep 22 2011 22:40:14', -3600, or '-1:00:00'.",
+            default="head",
+        ),
+        ModifierHelp(
+            "-d",
+            "Maximum time period to analyze. May use the following formats: 3600 or 1:00:00.",
+        ),
+        ModifierHelp(
+            "-t",
+            "Counting matched lines per interval of t. May use the following formats: 60 or 1:00:00",
+            default="600 seconds",
+        ),
+        ModifierHelp(
+            "-n",
+            "Comma separated node numbers. You can get these numbers by the list command. Example: -n '1,2,5'. If not set, then runs on all server logs in the selected list.",
+        ),
+        ModifierHelp(
+            "-p", "Showing output in pages with p entries per page.", default="10"
+        ),
+        ModifierHelp(
+            "-r",
+            "Repeat output table title and row header after every <terminal width> columns",
+            default="False, no repetition.",
+        ),
+    ),
 )
 class CountController(LogAnalyzerCommandController):
     def __init__(self):
@@ -128,32 +166,45 @@ class CountController(LogAnalyzerCommandController):
 
 @CommandHelp(
     "Displays set of values and difference between consecutive values for input string in server logs.",
-    "Currently it is working for following KEY and VALUE patterns:",
-    "        1) KEY<space>VALUE",
-    "        2) KEY<space>(VALUE)",
-    "        3) KEY<space>(Comma separated VALUE list)",
-    "        4) KEY<space>(VALUE",
-    "        5) VALUE1(VALUE2)<space>KEY",
-    "  Options:",
-    "    -s <string>  - The Key to search in log files, MANDATORY - NO DEFAULT",
-    "                   Multiple strings can be given to analyse actual context, but these multiple search strings should",
-    "                   present in same line and in same order as they mentioned here.",
-    '                   Ex. to analyse key "avail pct" across all namespace : -s "avail pct" ',
-    '                       to analyse key "avail pct" for namespace test : -s test "avail pct"',
-    "    -i           - Perform case insensitive matching. By default it is case sensitive.",
-    "    -f <string>  - Log time from which to analyze.",
-    "                   May use the following formats:  'Sep 22 2011 22:40:14', -3600, or '-1:00:00'.",
-    "                   default: head",
-    "    -d <string>  - Maximum time period to analyze.",
-    "                   May use the following formats: 3600 or 1:00:00.",
-    "    -t <string>  - Analysis slice interval in seconds or time format (hh:mm:ss). default: 10 seconds.",
-    "    -l <string>  - Show results with at least one diff value greater than or equal to limit.",
-    "    -k <string>  - Show 0-th then every k-th result. default: 1.",
-    "    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n '1,2,5'.",
-    "                   If not set then runs on all server logs in selected list.",
-    "    -p <int>     - Showing output in pages with p entries per page. default: 10.",
-    "    -r <int>     - Repeating output table title and row header after every r node columns.",
-    "                   default: 0, no repetition.",
+    usage="-s <string> [-i] [-f <string>] [-d <string>] [-t <string>] [-l <int>] [-k <int>] [-n <string>] [-p <int>] [-r <int>]",
+    modifiers=(
+        ModifierHelp(
+            "-s",
+            "The Key to search in log files. Multiple strings can be given to analyze actual context, but these multiple search strings should be present in the same line and in the same order as they are mentioned here. Example: to analyze key 'avail pct' across all namespaces: -s 'avail pct', to analyze key 'avail pct' for namespace test: -s test 'avail pct'. Currently it is working for the following KEY and VALUE patterns: 'KEY<space>VALUE', 'KEY<space>(VALUE)', 'KEY<space>(Comma separated VALUE list)', 'KEY<space>(VALUE', and 'VALUE1(VALUE2)<space>KEY'",
+        ),
+        ModifierHelp("-i", "Perform case insensitive matching"),
+        ModifierHelp(
+            "-f",
+            "Log time from which to analyze. May use the following formats: 'Sep 22 2011 22:40:14', -3600, or '-1:00:00'",
+            default="head",
+        ),
+        ModifierHelp(
+            "-d",
+            "Maximum time period to analyze. May use the following formats: 3600 or 1:00:00.",
+        ),
+        ModifierHelp(
+            "-t",
+            "Analysis slice interval in seconds or time format (hh:mm:ss)",
+            default="10",
+        ),
+        ModifierHelp(
+            "-l",
+            "Show results with at least one diff value greater than or equal to the limit.",
+        ),
+        ModifierHelp("-k", "Show 0-th then every k-th result", default="1"),
+        ModifierHelp(
+            "-n",
+            "Comma separated node numbers. You can get these numbers by the list command. Example: -n '1,2,5'. If not set, then runs on all server logs in the selected list.",
+        ),
+        ModifierHelp(
+            "-p", "Showing output in pages with p entries per page", default="10."
+        ),
+        ModifierHelp(
+            "-r",
+            "Repeating output table title and row header after every r node columns",
+            default="0, no repetition.",
+        ),
+    ),
 )
 class DiffController(LogAnalyzerCommandController):
     def __init__(self):
@@ -167,22 +218,44 @@ class DiffController(LogAnalyzerCommandController):
 
 @CommandHelp(
     "Displays histogram information for Aerospike server log.",
-    "  Options:",
-    "    -h <string>  - Histogram Name, MANDATORY - NO DEFAULT",
-    '    -f <string>  - Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00,',
-    "                   default: head",
-    "    -d <string>  - Maximum duration for which to analyze, e.g. 3600 or 1:00:00",
-    "    -t <string>  - Analysis slice interval, default: 10,  e.g. 3600 or 1:00:00",
-    "    -b <string>  - Number of buckets to display, default: 3",
-    "    -e <string>  - Show 0-th then every e-th bucket, default: 3",
-    "    -o           - Showing original time range for slices. Default is showing time with seconds value rounded to next nearest multiple of 10.",
-    "    -n <string>  - Comma separated node numbers. You can get these numbers by list command. Ex. : -n '1,2,5'",
-    "                   If not set then runs on all server logs in selected list.",
-    "    -p <int>     - Showing output in pages with p entries per page. default: 10.",
-    "    -r <int>     - Repeating output table title and row header after every r node columns.",
-    "                   default: 0, no repetition.",
-    "    -N <string>  - Namespace name. It will display histogram latency for ns namespace.",
-    "                   This feature is available for namespace level histograms in server >= 3.9.",
+    usage="-h <histogram-name> [-f <start-time>] [-d <duration>] [-t <interval>] [-b <bucket-count>] [-e <exponent-increment>] [-o] [-n <nodes>] [-p <entries-per-page>] [-r <int>] [-N <ns>]",
+    modifiers=(
+        ModifierHelp("-h", "Histogram Name"),
+        ModifierHelp(
+            "-f",
+            'Log time from which to analyze e.g. head or "Sep 22 2011 22:40:14" or -3600 or -1:00:00.',
+            default="head",
+        ),
+        ModifierHelp(
+            "-d", "Maximum duration for which to analyze, e.g. 3600 or 1:00:00"
+        ),
+        ModifierHelp(
+            "-t", "Analysis slice interval, e.g. 3600 or 1:00:00", default="10"
+        ),
+        ModifierHelp("-b", "Number of buckets to display", default="3"),
+        ModifierHelp("-e", "Show 0-th then every 2^e-th bucket", default="3"),
+        ModifierHelp(
+            "-o",
+            "Showing original time range for slices. Default is showing time with seconds value rounded to next nearest multiple of 10.",
+        ),
+        ModifierHelp(
+            "-n",
+            "Comma separated node numbers. You can get these numbers using the 'list' command. If not set, then runs on all server logs in selected list.",
+            default="all",
+        ),
+        ModifierHelp(
+            "-p", "Showing output in pages with p entries per page", default="10"
+        ),
+        ModifierHelp(
+            "-r",
+            "Repeating output table title and row header after every r node columns",
+            default="0, no repetition.",
+        ),
+        ModifierHelp(
+            "-N",
+            "Namespace name. It will display histogram latency for ns namespace.",
+        ),
+    ),
 )
 class HistogramController(LogAnalyzerCommandController):
     def __init__(self):
@@ -195,10 +268,8 @@ class HistogramController(LogAnalyzerCommandController):
 
 
 @CommandHelp(
-    "Adds server logs.",
-    "For log file of server (version >=3.7.1), "
-    "asadm fetches node ID from log and set it as a display name. Otherwise uses MD5_<MD5_hash_of_path>.",
-    "Format : add 'server log path1' 'server log path2' 'server log directory path' ...",
+    "Adds server logs for analysis",
+    usage="log/file/path.log [log/file/path2.log ...]",
 )
 class AddController(LogAnalyzerCommandController):
     def __init__(self):
@@ -229,7 +300,6 @@ class AddController(LogAnalyzerCommandController):
 @CommandHelp("Displays list of all server logs.")
 class ListController(LogAnalyzerCommandController):
     def __init__(self):
-        self.controller_map = {}
         self.modifiers = set()
 
     def _do_default(self, line):
@@ -260,14 +330,18 @@ class ListController(LogAnalyzerCommandController):
 
 
 @CommandHelp(
-    "Select list of server logs. Use 'all' to add all server logs.",
-    "or specify server log numbers",
-    "Use 'list' command for list of server logs and respective numbers.",
-    "Format : select all  OR  select 1 2 3",
+    "Select list of server logs",
+    modifiers=(
+        ModifierHelp("all", "Select all server logs"),
+        ModifierHelp(
+            "<server-log-num>",
+            "Select server log with given number.  Use the 'list' command for list of server logs and respective numbers",
+        ),
+    ),
+    usage="all | <server-log-num> [<server-log-num> ...]",
 )
 class SelectController(LogAnalyzerCommandController):
     def __init__(self):
-        self.controller_map = {}
         self.modifiers = set()
 
     def _do_default(self, line):
@@ -275,10 +349,15 @@ class SelectController(LogAnalyzerCommandController):
 
 
 @CommandHelp(
-    "Remove Logs from list of server logs. Use 'all' to remove all server logs.",
-    "or specify server log numbers",
-    "Use 'list' command for list of server logs and respective numbers.",
-    "Format : remove all   OR remove 1 2 3",
+    "Remove Logs from list of server logs",
+    modifiers=(
+        ModifierHelp("all", "Deselect all server logs"),
+        ModifierHelp(
+            "<server-log-num>",
+            "Deselect server log with given number.  Use the 'list' command for list of server logs and respective numbers",
+        ),
+    ),
+    usage="all | <server-log-num> [<server-log-num> ...]",
 )
 class RemoveController(LogAnalyzerCommandController):
     def __init__(self):
@@ -288,23 +367,19 @@ class RemoveController(LogAnalyzerCommandController):
         self.log_handler.remove_logs_by_index(line)
 
 
-@CommandHelp("Set pager for output")
+@CommandHelp("Turn terminal pager on and off")
 class PagerController(LogAnalyzerCommandController):
     def __init__(self):
         self.modifiers = set()
 
-    def _do_default(self, line):
-        self.execute_help(line)
-
     @CommandHelp(
-        "Displays output with vertical and horizontal paging for each output table same as linux 'less' command.",
-        "Use arrow keys to scroll output and 'q' to end page for table.",
-        "All linux less commands can work in this pager option.",
+        "Displays output with vertical and horizontal paging for each output table same as linux 'less' command. Use arrow keys to scroll output and 'q' to end page for table. All linux less commands can work in this pager option.",
+        short_msg="Enables output paging. Similar to linux 'less'",
     )
     def do_on(self, line):
         CliView.pager = CliView.LESS
 
-    @CommandHelp("Removes pager and prints output normally")
+    @CommandHelp("Disables paging and prints output normally")
     def do_off(self, line):
         CliView.pager = CliView.NO_PAGER
 

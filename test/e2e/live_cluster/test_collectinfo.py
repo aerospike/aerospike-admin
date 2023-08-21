@@ -97,8 +97,9 @@ class TestCollectinfo(asynctest.TestCase):
         ("show users stat", ["Connections"], None),
         ("show udfs", [], None),
         ("show sindex", [], None),
-        ("show stop-writes", [], None),
+        ("show stop-writes", ["Usage", "Usage%"], None),
         ("health", [], None),
+        ("summary", [], None),
     ]
 
     maxDiff = None
@@ -181,10 +182,9 @@ class TestCollectinfo(asynctest.TestCase):
         collectinfo_cmd = "collectinfo --output-prefix asadm_test_"
         live_mode_cmds = cls.get_cmds()
         live_mode_cmds.append(collectinfo_cmd)
+        cmds = "; ".join(live_mode_cmds)
         live_mode_cp = util.run_asadm(
-            "-h {} -e '{}' -Uadmin -Padmin --json --pmap".format(
-                lib.SERVER_IP, "; ".join(live_mode_cmds)
-            )
+            f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmds}' -Uadmin -Padmin --json --pmap"
         )
 
         # with open("out.txt", "w") as f:

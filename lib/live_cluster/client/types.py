@@ -16,7 +16,7 @@ from enum import IntEnum, unique
 import logging
 from typing import Literal, Union
 
-Addr_Port_TLSName = tuple[str, int, str]
+Addr_Port_TLSName = tuple[str, int, str | None]
 
 
 @unique
@@ -167,13 +167,33 @@ class ASProtocolError(Exception):
 
 
 ASINFO_RESPONSE_OK = "ok"
+GENERIC_ERROR_MSG = "Unknown error occurred"
 
 
 class ASInfoError(Exception):
-    generic_error = "Unknown error occurred"
-
-    def __init__(self, message: str, server_resp: str):
+    def __init__(self, message: str, response: str | None = None):
         self.message = message
+        self.response = response
+
+    def __str__(self):
+        if self.response:
+            return "{} : {}.".format(self.message, self.response)
+        else:
+            return "{}.".format(self.message)
+
+    def __eq__(self, o: object) -> bool:
+        if (
+            isinstance(o, ASInfoError)
+            and self.message == o.message
+            and self.response == o.response
+        ):
+            return True
+
+        return False
+
+
+class ASInfoResponseError(ASInfoError):
+    def __init__(self, message: str, server_resp: str):
         self.raw_response = server_resp
 
         # Success can either be "ok", "OK", or "" :(
@@ -191,30 +211,28 @@ class ASInfoError(Exception):
             elif server_resp.startswith("fail") or server_resp.startswith("FAIL"):
                 server_resp = server_resp.split(":")[2]
 
-            self.response = server_resp.strip(" .")
+            clean_resp = server_resp.strip(" .")
 
         except IndexError:
-            self.response = self.generic_error
+            clean_resp = GENERIC_ERROR_MSG
 
-    def __str__(self):
-        return "{} : {}.".format(self.message, self.response)
+        super().__init__(message, clean_resp)
 
     def __eq__(self, o: object) -> bool:
         if (
-            isinstance(o, ASInfoError)
-            and self.message == o.message
-            and self.response == o.response
+            isinstance(o, ASInfoResponseError)
             and self.raw_response == o.raw_response
+            and super().__eq__(o)
         ):
             return True
 
         return False
 
 
-class ASInfoConfigError(ASInfoError):
+class ASInfoConfigError(ASInfoResponseError):
     def __init__(self, message, resp, node, context, param, value):
         self.message = message
-        self.response = super().generic_error
+        self.response = GENERIC_ERROR_MSG
         self.logger = logging.getLogger("asadm")
 
         is_valid_context, invalid_context = self._check_context(node, context[:])
@@ -257,9 +275,10 @@ class ASInfoConfigError(ASInfoError):
         return True, ""
 
 
-class ASInfoNotAuthenticatedError(ASInfoError):
+class ASInfoNotAuthenticatedError(ASInfoResponseError):
     pass
 
 
-class ASInfoClusterStableError(ASInfoError):
-    pass
+class ASInfoClusterStableError(ASInfoResponseError):
+    def __init__(self, server_resp: str):
+        super().__init__("Cluster is unstable", server_resp)
