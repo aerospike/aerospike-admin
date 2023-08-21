@@ -36,6 +36,7 @@ from . import sys_cmd_parser
 from .types import (
     ASInfoConfigError,
     ASInfoError,
+    ASInfoResponseError,
     ASINFO_RESPONSE_OK,
     ASInfoNotAuthenticatedError,
     ASInfoClusterStableError,
@@ -83,6 +84,8 @@ def async_return_exceptions(func):
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
+        except (ASInfoError, ASProtocolError) as e:
+            return e
         except Exception as e:
             args[0].alive = False
             return e
@@ -380,7 +383,9 @@ class Node(AsyncObject):
     async def connect(self, address, port):
         try:
             if not await self.login():
-                raise IOError("Login Error")
+                raise IOError(
+                    "Login Error"
+                )  # TODO: Better error message that is displayed to user to indicate the node is reachable but we could not login
 
             # At startup the socket_pool is empty.  Login adds its socket to the pool.
             # This ensures that the following call uses the same socket as login(). This is
@@ -452,7 +457,7 @@ class Node(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)  # type: ignore
+            self.logger.debug(e)  # type: ignore
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -497,7 +502,7 @@ class Node(AsyncObject):
         )
 
         if not await sock.connect():
-            logger.debug(
+            self.logger.debug(
                 "%s:%s failed to connect to socket %s", self.ip, self.port, sock
             )
             await sock.close()
@@ -606,7 +611,7 @@ class Node(AsyncObject):
 
     async def has_peers_changed(self):
         try:
-            new_generation = await self.info("peers-generation")
+            new_generation = await self._info("peers-generation")
             if self.peers_generation != new_generation:
                 self.peers_generation = new_generation
                 return True
@@ -630,15 +635,13 @@ class Node(AsyncObject):
                 sock = self.socket_pool[port].pop()
 
                 if await sock.is_connected():
-                    if not self.ssl_context:
-                        sock.settimeout(self._timeout)
                     break
 
                 await sock.close()
                 sock = None
 
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e)
 
         if sock:
             return sock
@@ -713,7 +716,7 @@ class Node(AsyncObject):
     # will get that ip to which asadm can't connect. It will create new
     # issues in future process.
     @util.async_cached
-    async def _info_cinfo(self, command, ip=None, port=None):
+    async def _info_cinfo(self, command, ip=None, port=None) -> str:
         if ip is None:
             ip = self.ip
         if port is None:
@@ -731,7 +734,6 @@ class Node(AsyncObject):
                     # TODO: same code is in _admin_cadmin. management of socket_pool should
                     # be abstracted.
                     if len(self.socket_pool[port]) < self.socket_pool_max_size:
-                        sock.settimeout(None)
                         self.socket_pool[port].add(sock)
 
                     else:
@@ -740,7 +742,7 @@ class Node(AsyncObject):
                 except Exception:
                     await sock.close()
 
-            if result != -1 and result is not None:
+            if result is not None:
                 self.logger.debug(
                     "%s:%s info cmd '%s' and sock %s returned %s",
                     self.ip,
@@ -752,7 +754,7 @@ class Node(AsyncObject):
                 return result
 
             else:
-                raise IOError("Error: Invalid command '%s'" % command)
+                raise ASInfoError("Invalid command '%s'" % command)
 
         except Exception as ex:
             if sock:
@@ -776,7 +778,7 @@ class Node(AsyncObject):
         Arguments:
         command -- the info command to execute on this node
         """
-        return await self._info_cinfo(command, self.ip)
+        return await self._info(command)
 
     async def _info(self, command):
         """
@@ -800,7 +802,7 @@ class Node(AsyncObject):
         string -- this node's id.
         """
 
-        return await self.info("node")
+        return await self._info("node")
 
     @async_return_exceptions
     async def info_ip_port(self):
@@ -896,7 +898,7 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
-        return self._info_peers_helper(await self.info(self._get_info_peers_call()))
+        return self._info_peers_helper(await self._info(self._get_info_peers_call()))
 
     def _get_info_peers_alumni_call(self):
         if self.enable_tls:
@@ -915,7 +917,7 @@ class Node(AsyncObject):
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
         return self._info_peers_helper(
-            await self.info(self._get_info_peers_alumni_call())
+            await self._info(self._get_info_peers_alumni_call())
         )
 
     def _get_info_peers_alt_call(self):
@@ -932,7 +934,9 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
-        return self._info_peers_helper(await self.info(self._get_info_peers_alt_call()))
+        return self._info_peers_helper(
+            await self._info(self._get_info_peers_alt_call())
+        )
 
     def _get_info_peers_list_calls(self) -> list[str]:
         calls = []
@@ -954,7 +958,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_peers_list(self) -> list[Addr_Port_TLSName]:
         results = await asyncio.gather(
-            *[self.info(call) for call in self._get_info_peers_list_calls()]
+            *[self._info(call) for call in self._get_info_peers_list_calls()]
         )
         return self._aggregate_peers(results)
 
@@ -1004,7 +1008,9 @@ class Node(AsyncObject):
         Returns:
         list -- [(ip,port,tls_name),...]
         """
-        return self._info_service_helper(await self.info(self._get_service_info_call()))
+        return self._info_service_helper(
+            await self._info(self._get_service_info_call())
+        )
 
     ###### Service End ######
 
@@ -1017,7 +1023,7 @@ class Node(AsyncObject):
         dictionary -- statistic name -> value
         """
 
-        return client_util.info_to_dict(await self.info("statistics"))
+        return client_util.info_to_dict(await self._info("statistics"))
 
     @async_return_exceptions
     async def info_namespaces(self):
@@ -1028,7 +1034,7 @@ class Node(AsyncObject):
         list -- list of namespaces
         """
 
-        return client_util.info_to_list(await self.info("namespaces"))
+        return client_util.info_to_list(await self._info("namespaces"))
 
     @async_return_exceptions
     async def info_namespace_statistics(self, namespace):
@@ -1039,7 +1045,7 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
 
-        ns_stat = client_util.info_to_dict(await self.info("namespace/%s" % namespace))
+        ns_stat = client_util.info_to_dict(await self._info("namespace/%s" % namespace))
 
         # Due to new server feature namespace add/remove with rolling restart,
         # there is possibility that different nodes will have different namespaces.
@@ -1068,7 +1074,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_set_statistics(self, namespace, set_):
-        set_stat = await self.info("sets/{}/{}".format(namespace, set_))
+        set_stat = await self._info("sets/{}/{}".format(namespace, set_))
 
         if set_stat[-1] == ";":
             set_stat = client_util.info_colon_to_dict(set_stat[0:-1])
@@ -1079,7 +1085,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_all_set_statistics(self):
-        stats = await self.info("sets")
+        stats = await self._info("sets")
         stats = client_util.info_to_list(stats)
         if not stats:
             return {}
@@ -1103,7 +1109,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_health_outliers(self):
-        stats = await self.info("health-outliers")
+        stats = await self._info("health-outliers")
         stats = client_util.info_to_list(stats)
         if not stats:
             return {}
@@ -1119,7 +1125,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_best_practices(self):
         failed_practices = []
-        resp = await self.info("best-practices")
+        resp = await self._info("best-practices")
 
         resp_dict = client_util.info_to_dict(resp)
 
@@ -1135,7 +1141,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_bin_statistics(self):
-        stats = client_util.info_to_list(await self.info("bins"))
+        stats = client_util.info_to_list(await self._info("bins"))
         if not stats:
             return {}
         stats.pop()
@@ -1169,10 +1175,10 @@ class Node(AsyncObject):
         if version.LooseVersion(build) < version.LooseVersion(
             constants.SERVER_NEW_XDR5_VERSION
         ):
-            return client_util.info_to_dict(await self.info("dc/%s" % dc))
+            return client_util.info_to_dict(await self._info("dc/%s" % dc))
 
         return client_util.info_to_dict(
-            await self.info("get-stats:context=xdr;dc=%s" % dc)
+            await self._info("get-stats:context=xdr;dc=%s" % dc)
         )
 
     @async_return_exceptions
@@ -1208,13 +1214,13 @@ class Node(AsyncObject):
         ):
             return {}
 
-        return client_util.info_to_dict(await self.info("statistics/xdr"))
+        return client_util.info_to_dict(await self._info("statistics/xdr"))
 
     @async_return_exceptions
     async def info_xdr_dc_namespaces_statistics(self, dc: str, namespaces: list[str]):
         all_ns_stats = await asyncio.gather(
             *[
-                self.info("get-stats:context=xdr;dc={};namespace={}".format(dc, ns))
+                self._info("get-stats:context=xdr;dc={};namespace={}".format(dc, ns))
                 for ns in namespaces
             ]
         )
@@ -1273,7 +1279,7 @@ class Node(AsyncObject):
         dcs = await self.info_dcs()
 
         if dc in dcs:
-            raise ASInfoError(ErrorsMsgs.DC_CREATE_FAIL, ErrorsMsgs.DC_EXISTS)
+            raise ASInfoResponseError(ErrorsMsgs.DC_CREATE_FAIL, ErrorsMsgs.DC_EXISTS)
 
         build = await self.info_build()
         req = "set-config:context=xdr;dc={};action=create"
@@ -1284,10 +1290,10 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc)
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(ErrorsMsgs.DC_CREATE_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.DC_CREATE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1298,7 +1304,7 @@ class Node(AsyncObject):
         logger.debug("Found dcs: %s", dcs)
 
         if dc not in dcs:
-            raise ASInfoError(ErrorsMsgs.DC_DELETE_FAIL, "DC does not exist")
+            raise ASInfoResponseError(ErrorsMsgs.DC_DELETE_FAIL, "DC does not exist")
 
         build = await self.info_build()
         req = "set-config:context=xdr;dc={};action=delete"
@@ -1309,10 +1315,10 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc)
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(ErrorsMsgs.DC_DELETE_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.DC_DELETE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1333,16 +1339,16 @@ class Node(AsyncObject):
                 try:
                     int(rewind)
                 except ValueError:
-                    raise ASInfoError(
+                    raise ASInfoResponseError(
                         ErrorsMsgs.DC_NS_ADD_FAIL,
                         ErrorsMsgs.INVALID_REWIND,
                     )
             req += ";rewind={}".format(rewind)
 
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(ErrorsMsgs.DC_NS_ADD_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.DC_NS_ADD_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1357,10 +1363,10 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, namespace)
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(ErrorsMsgs.DC_NS_REMOVE_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.DC_NS_REMOVE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1375,10 +1381,10 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, node)
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(ErrorsMsgs.DC_NODE_ADD_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.DC_NODE_ADD_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1393,10 +1399,10 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, node)
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
-            raise ASInfoError(ErrorsMsgs.DC_NODE_REMOVE_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.DC_NODE_REMOVE_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -1420,7 +1426,7 @@ class Node(AsyncObject):
         if namespace:
             req += ";namespace={}".format(namespace)
 
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             context = ["xdr"]
@@ -1429,7 +1435,7 @@ class Node(AsyncObject):
                 context.append("dc")
 
                 if dc not in await self.info_dcs():
-                    raise ASInfoError(
+                    raise ASInfoResponseError(
                         "Failed to set XDR configuration parameter {} to {}".format(
                             param, value
                         ),
@@ -1460,7 +1466,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_logs(self):
         id_file_dict = {}
-        ls = client_util.info_to_list(await self.info("logs"))
+        ls = client_util.info_to_list(await self._info("logs"))
 
         for pair in ls:
             id, file = pair.split(":")
@@ -1474,12 +1480,12 @@ class Node(AsyncObject):
         error_message = "Failed to set logging configuration parameter {} to {}"
 
         if file not in logs:
-            raise ASInfoError(
+            raise ASInfoResponseError(
                 error_message.format(param, value),
                 "{} does not exist".format(file),
             )
 
-        resp = await self.info("log-set:id={};{}={}".format(logs[file], param, value))
+        resp = await self._info("log-set:id={};{}={}".format(logs[file], param, value))
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoConfigError(
@@ -1495,7 +1501,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_set_config_service(self, param, value):
-        resp = await self.info("set-config:context=service;{}={}".format(param, value))
+        resp = await self._info("set-config:context=service;{}={}".format(param, value))
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoConfigError(
@@ -1531,7 +1537,7 @@ class Node(AsyncObject):
         if set_:
             req += ";set={}".format(set_)
 
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp != ASINFO_RESPONSE_OK:
             context = ["namespace"]
@@ -1543,7 +1549,7 @@ class Node(AsyncObject):
                 context.append(subcontext)
 
             if namespace not in await self.info_namespaces():
-                raise ASInfoError(
+                raise ASInfoResponseError(
                     "Failed to set namespace configuration parameter {} to {}".format(
                         param, value
                     ),
@@ -1571,7 +1577,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_network(self, param, value, subcontext):
         new_param = ".".join([subcontext, param])
-        resp = await self.info(
+        resp = await self._info(
             "set-config:context=network;{}={}".format(new_param, value)
         )
 
@@ -1600,7 +1606,7 @@ class Node(AsyncObject):
         if subcontext:
             new_param = ".".join([subcontext, param])
 
-        resp = await self.info(
+        resp = await self._info(
             "set-config:context=security;{}={}".format(new_param, value)
         )
 
@@ -1640,17 +1646,17 @@ class Node(AsyncObject):
         elif stanza == "xdr":
             config = await self.info_xdr_config()
         elif not stanza:
-            config = client_util.info_to_dict(await self.info("get-config:"))
+            config = client_util.info_to_dict(await self._info("get-config:"))
         else:
             config = client_util.info_to_dict(
-                await self.info("get-config:context=%s" % stanza)
+                await self._info("get-config:context=%s" % stanza)
             )
         return config
 
     @async_return_exceptions
     async def info_single_namespace_config(self, namespace):
         return client_util.info_to_dict(
-            await self.info("get-config:context=namespace;id=%s" % namespace)
+            await self._info("get-config:context=namespace;id=%s" % namespace)
         )
 
     @async_return_exceptions
@@ -1668,12 +1674,12 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_xdr_config(self):
-        return client_util.info_to_dict(await self.info("get-config:context=xdr"))
+        return client_util.info_to_dict(await self._info("get-config:context=xdr"))
 
     @async_return_exceptions
     async def info_xdr_single_dc_config(self, dc):
         return client_util.info_to_dict(
-            await self.info("get-config:context=xdr;dc=%s" % dc)
+            await self._info("get-config:context=xdr;dc=%s" % dc)
         )
 
     @async_return_exceptions
@@ -1699,13 +1705,10 @@ class Node(AsyncObject):
         if version.LooseVersion(build) < version.LooseVersion(
             constants.SERVER_NEW_XDR5_VERSION
         ):
-            configs = await self.info("get-dc-config")
-
-            if not configs or isinstance(configs, Exception):
-                configs = await self.info("get-dc-config:")
-
-            if not configs or isinstance(configs, Exception):
-                return configs
+            try:
+                configs = await self._info("get-dc-config")
+            except Exception as e:
+                configs = await self._info("get-dc-config:")
 
             result = client_util.info_to_dict_multi_level(
                 configs,
@@ -1929,7 +1932,7 @@ class Node(AsyncObject):
         data = {}
 
         try:
-            hist_info = await self.info(cmd)
+            hist_info = await self._info(cmd)
         except Exception:
             return data
         tdata = hist_info.split(";")
@@ -2023,7 +2026,7 @@ class Node(AsyncObject):
                 namespaces = ns_set
             else:
                 try:
-                    namespaces = (await self.info("namespaces")).split(";")
+                    namespaces = (await self._info("namespaces")).split(";")
                 except Exception:
                     return data
             micro_benchmarks = [
@@ -2045,7 +2048,7 @@ class Node(AsyncObject):
         hist_info = []
         for cmd in cmd_latencies:
             try:
-                hist_info.append(await self.info(cmd))
+                hist_info.append(await self._info(cmd))
             except Exception:
                 return data
             if hist_info[-1].startswith("error"):
@@ -2169,7 +2172,7 @@ class Node(AsyncObject):
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
             xdr_data = client_util.info_to_dict(
-                await self.info("get-config:context=xdr")
+                await self._info("get-config:context=xdr")
             )
 
             if xdr_data is None:
@@ -2182,7 +2185,7 @@ class Node(AsyncObject):
 
             return client_util.info_to_list(dcs, delimiter=",")
 
-        dcs = await self.info("dcs")
+        dcs = await self._info("dcs")
 
         if dcs == "":
             return []
@@ -2197,7 +2200,7 @@ class Node(AsyncObject):
         Returns:
         dict -- {<file-name>: {"filename": <file-name>, "hash": <hash>, "type": 'LUA'}, . . .}
         """
-        udf_data = await self.info("udf-list")
+        udf_data = await self._info("udf-list")
 
         if not udf_data:
             return {}
@@ -2227,10 +2230,10 @@ class Node(AsyncObject):
             + ";content="
             + content
         )
-        resp = await self.info(command)
+        resp = await self._info(command)
 
         if resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
-            raise ASInfoError(ErrorsMsgs.UDF_UPLOAD_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.UDF_UPLOAD_FAIL, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2246,14 +2249,16 @@ class Node(AsyncObject):
 
         # Server does not check if udf exists
         if udf_file_name not in existing_names:
-            raise ASInfoError(
+            raise ASInfoResponseError(
                 "Failed to remove UDF {}".format(udf_file_name), ErrorsMsgs.UDF_DNE
             )
         command = "udf-remove:filename=" + udf_file_name + ";"
-        resp = await self.info(command)
+        resp = await self._info(command)
 
         if resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
-            raise ASInfoError("Failed to remove UDF {}".format(udf_file_name), resp)
+            raise ASInfoResponseError(
+                "Failed to remove UDF {}".format(udf_file_name), resp
+            )
 
         return ASINFO_RESPONSE_OK
 
@@ -2268,10 +2273,10 @@ class Node(AsyncObject):
         Returns: {"roster": [node_id[@rack_id], ...], "pending_roster": [node_id[@rack_id], ...], "observed_nodes": [node_id[@rack_id], ...]}
         """
         req = "roster:namespace={}".format(namespace)
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp.startswith("ERROR"):
-            raise ASInfoError(ErrorsMsgs.ROSTER_READ_FAIL, resp)
+            raise ASInfoResponseError(ErrorsMsgs.ROSTER_READ_FAIL, resp)
 
         response = client_util.info_to_dict(resp, delimiter=":")
 
@@ -2297,7 +2302,7 @@ class Node(AsyncObject):
         if namespace is not None:
             return await self.info_roster_namespace(namespace)
 
-        roster_data = await self.info("roster:")
+        roster_data = await self._info("roster:")
 
         if not roster_data:
             return {}
@@ -2321,10 +2326,10 @@ class Node(AsyncObject):
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
         req = "roster-set:namespace={};nodes={}".format(namespace, ",".join(node_ids))
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError(
+            raise ASInfoResponseError(
                 "Failed to set roster for namespace {}".format(namespace), resp
             )
 
@@ -2354,16 +2359,15 @@ class Node(AsyncObject):
 
         req += ";".join(args)
 
-        resp = await self.info(req)
-
-        if isinstance(resp, Exception):
-            raise resp
+        resp = await self._info(req)
 
         if "error" in resp.lower():
             if "cluster-not-specified-size" in resp or "unstable-cluster" in resp:
                 raise ASInfoClusterStableError(resp)
 
-            raise ASInfoError(ErrorsMsgs.UNABLE_TO_DETERMINE_CLUSTER_STABILITY, resp)
+            raise ASInfoResponseError(
+                ErrorsMsgs.UNABLE_TO_DETERMINE_CLUSTER_STABILITY, resp
+            )
 
         return resp
 
@@ -2377,7 +2381,7 @@ class Node(AsyncObject):
         Returns:
         dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
         """
-        rack_data = await self.info("racks:")
+        rack_data = await self._info("racks:")
 
         if not rack_data:
             return {}
@@ -2422,7 +2426,7 @@ class Node(AsyncObject):
         Returns:
         dict -- {ns1: rack_id, ns2: rack_id, ...}
         """
-        resp = await self.info("rack-ids")
+        resp = await self._info("rack-ids")
         rack_data = {}
 
         if not resp:
@@ -2445,7 +2449,7 @@ class Node(AsyncObject):
 
         data = {}
         datums = await asyncio.gather(
-            *[self.info(command % (namespace, histogram)) for namespace in namespaces]
+            *[self._info(command % (namespace, histogram)) for namespace in namespaces]
         )
 
         for namespace, datum in zip(namespaces, datums):
@@ -2498,7 +2502,7 @@ class Node(AsyncObject):
     async def info_sindex(self):
         return [
             client_util.info_to_dict(v, ":")
-            for v in client_util.info_to_list(await self.info("sindex"))
+            for v in client_util.info_to_list(await self._info("sindex"))
             if v != ""
         ]
 
@@ -2511,7 +2515,7 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         return client_util.info_to_dict(
-            await self.info("sindex/%s/%s" % (namespace, indexname))
+            await self._info("sindex/%s/%s" % (namespace, indexname))
         )
 
     @async_return_exceptions
@@ -2551,10 +2555,12 @@ class Node(AsyncObject):
 
         command += "indexdata={},{}".format(bin_name, bin_type)
 
-        resp = await self.info(command)
+        resp = await self._info(command)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to create sindex {}".format(index_name), resp)
+            raise ASInfoResponseError(
+                "Failed to create sindex {}".format(index_name), resp
+            )
 
         return ASINFO_RESPONSE_OK
 
@@ -2574,10 +2580,12 @@ class Node(AsyncObject):
                 namespace, set_, index_name
             )
 
-        resp = await self.info(command)
+        resp = await self._info(command)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to delete sindex {}".format(index_name), resp)
+            raise ASInfoResponseError(
+                "Failed to delete sindex {}".format(index_name), resp
+            )
 
         return ASINFO_RESPONSE_OK
 
@@ -2589,7 +2597,7 @@ class Node(AsyncObject):
         Returns:
         string -- build version
         """
-        return await self.info("build")
+        return await self._info("build")
 
     @async_return_exceptions
     async def info_version(self):
@@ -2599,7 +2607,7 @@ class Node(AsyncObject):
         Returns:
         string -- build edition and version
         """
-        return await self.info("version")
+        return await self._info("version")
 
     async def _use_new_truncate_command(self):
         """
@@ -2647,10 +2655,10 @@ class Node(AsyncObject):
         if lut is not None:
             req += ";lut={}".format(lut)
 
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError(error_message, resp)
+            raise ASInfoResponseError(error_message, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2678,10 +2686,10 @@ class Node(AsyncObject):
             else:
                 req = "truncate-undo:namespace={}".format(namespace)
 
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError(error_message, resp)
+            raise ASInfoResponseError(error_message, resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2692,10 +2700,10 @@ class Node(AsyncObject):
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = await self.info("recluster:")
+        resp = await self._info("recluster:")
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to recluster", resp)
+            raise ASInfoResponseError("Failed to recluster", resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2708,10 +2716,10 @@ class Node(AsyncObject):
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = await self.info("quiesce:")
+        resp = await self._info("quiesce:")
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to quiesce", resp)
+            raise ASInfoResponseError("Failed to quiesce", resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2722,10 +2730,10 @@ class Node(AsyncObject):
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = await self.info("quiesce-undo:")
+        resp = await self._info("quiesce-undo:")
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to undo quiesce", resp)
+            raise ASInfoResponseError("Failed to undo quiesce", resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2739,7 +2747,7 @@ class Node(AsyncObject):
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}},
         """
-        resp = await self.info("jobs:module={}".format(module))
+        resp = await self._info("jobs:module={}".format(module))
 
         if resp.startswith("ERROR"):
             return {}
@@ -2757,7 +2765,7 @@ class Node(AsyncObject):
         else:
             req = old_req
 
-        return await self.info(req)
+        return await self._info(req)
 
     @async_return_exceptions
     async def info_query_show(self):
@@ -2800,10 +2808,10 @@ class Node(AsyncObject):
         """
         req = "jobs:module={};cmd=kill-job;trid={}".format(module, trid)
 
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to kill job", resp)
+            raise ASInfoResponseError("Failed to kill job", resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2822,7 +2830,7 @@ class Node(AsyncObject):
         resp = await self._jobs_helper(old_req, new_req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to kill job", resp)
+            raise ASInfoResponseError("Failed to kill job", resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2840,7 +2848,7 @@ class Node(AsyncObject):
         resp = await self._jobs_helper(old_req, new_req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to kill job", resp)
+            raise ASInfoResponseError("Failed to kill job", resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2851,12 +2859,12 @@ class Node(AsyncObject):
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = await self.info("scan-abort-all:")
+        resp = await self._info("scan-abort-all:")
 
         if resp.startswith("OK - number of"):
             return resp.lower()
 
-        raise ASInfoError("Failed to abort all scans", resp)
+        raise ASInfoResponseError("Failed to abort all scans", resp)
 
     @async_return_exceptions
     async def info_query_abort_all(self):
@@ -2865,13 +2873,13 @@ class Node(AsyncObject):
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = await self.info("query-abort-all:")
+        resp = await self._info("query-abort-all:")
 
         # TODO: Check actual response
         if resp.startswith("OK - number of"):
             return resp.lower()
 
-        raise ASInfoError("Failed to abort all queries", resp)
+        raise ASInfoResponseError("Failed to abort all queries", resp)
 
     @async_return_exceptions
     async def info_revive(self, namespace):
@@ -2881,10 +2889,10 @@ class Node(AsyncObject):
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
         req = "revive:namespace={}".format(namespace)
-        resp = await self.info(req)
+        resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
-            raise ASInfoError("Failed to revive", resp)
+            raise ASInfoResponseError("Failed to revive", resp)
 
         return ASINFO_RESPONSE_OK
 
@@ -2909,7 +2917,6 @@ class Node(AsyncObject):
 
             # Either restore the socket in the pool or close it if it is full.
             if len(self.socket_pool[port]) < self.socket_pool_max_size:
-                sock.settimeout(None)
                 self.socket_pool[port].add(sock)
             else:
                 await sock.close()

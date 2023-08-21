@@ -74,7 +74,7 @@ class ASSocketTestConnect(asynctest.TestCase):
 
     @patch("socket.socket")
     @patch("socket.getaddrinfo")
-    @patch("lib.live_cluster.client.assocket.SSL.Connection")
+    @patch("lib.live_cluster.client.assocket._AsyncioSSLConnectionAdapter")
     @patch("asyncio.open_connection", new_callable=AsyncMock)
     async def test_can_connect_with_ssl_context(
         self,
@@ -94,7 +94,6 @@ class ASSocketTestConnect(asynctest.TestCase):
 
         socket_module_mock.assert_called_with("family1", socket.SOCK_STREAM)
         socket_mock = socket_module_mock.return_value
-        socket_mock.settimeout.assert_called_with(self.as_socket._timeout)
         ssl_connect_mock.assert_called_with(True, socket_mock)
         socket_mock = ssl_connect_mock.return_value
         socket_mock.connect.assert_called_with("sockaddr1")
@@ -104,7 +103,7 @@ class ASSocketTestConnect(asynctest.TestCase):
 
     @patch("lib.live_cluster.client.assocket.info")
     async def test_is_connected_returns_false(self, info_mock):
-        info_mock.return_value = -1
+        info_mock.return_value = None
 
         self.assertFalse(await self.as_socket.is_connected())
 

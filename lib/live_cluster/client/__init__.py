@@ -14,6 +14,7 @@
 
 from .types import (
     ASInfoError,
+    ASInfoResponseError,
     ASInfoNotAuthenticatedError,
     ASInfoClusterStableError,
     ASInfoConfigError,
