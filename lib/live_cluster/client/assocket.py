@@ -212,7 +212,7 @@ class ASSocket:
                 return False
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e)
             return False
         return True
 
@@ -223,11 +223,11 @@ class ASSocket:
         try:
             result = await self.info("node")
 
-            if result is None or result == -1:
+            if result is None:
                 return False
 
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e)
             return False
 
         return True

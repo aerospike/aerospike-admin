@@ -28,7 +28,7 @@ from parameterized import parameterized
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoClusterStableError,
-    ASInfoError,
+    ASInfoResponseError,
     ASProtocolError,
     ASResponse,
     Cluster,
@@ -1734,11 +1734,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
     async def test_create_fails_with_asinfo_error(self):
         line = "numeric a-index ns test bin a ctx list_value(1)".split()
         self.cluster_mock.info_sindex_create.return_value = {
-            "1.1.1.1": ASInfoError("foo", "ERROR::bar")
+            "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
         }
 
         await self.assertAsyncRaisesRegex(
-            ASInfoError, "bar", self.controller.execute(line)
+            ASInfoResponseError, "bar", self.controller.execute(line)
         )
 
     async def test_ctx_invalid_format(self):
@@ -1816,11 +1816,11 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
     async def test_create_fails_with_asinfo_error(self):
         line = "a-index ns test set testset".split()
         self.cluster_mock.info_sindex_delete.return_value = {
-            "1.1.1.1": ASInfoError("foo", "ERROR::bar")
+            "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
         }
 
         await self.assertAsyncRaisesRegex(
-            ASInfoError, "bar", self.controller.execute(line)
+            ASInfoResponseError, "bar", self.controller.execute(line)
         )
 
 
@@ -2114,7 +2114,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
         )
 
     async def test_logs_error_when_asprotocol_error_returned(self):
-        as_error = ASInfoError("An error message", "test-resp")
+        as_error = ASInfoResponseError("An error message", "test-resp")
         line = "ns test set test-set before 1620690614 unix-epoch --no-warn"
         self.cluster_mock.info_truncate.return_value = {"principal_ip": as_error}
 
@@ -2203,7 +2203,7 @@ class ManageTruncateUndoControllerTest(asynctest.TestCase):
         )
 
     async def test_logs_error_when_asprotocol_error_returned(self):
-        as_error = ASInfoError("An error message", "test-resp")
+        as_error = ASInfoResponseError("An error message", "test-resp")
         line = "ns test set test-set undo"
         self.cluster_mock.info_truncate_undo.return_value = {"principal_ip": as_error}
 
@@ -2261,7 +2261,7 @@ class ManageReclusterControllerTest(asynctest.TestCase):
         )
 
     async def test_logs_error_when_asinfo_error_returned(self):
-        as_error = ASInfoError("An error message", "test-resp")
+        as_error = ASInfoResponseError("An error message", "test-resp")
         line = ""
         self.cluster_mock.info_recluster.return_value = {"principal_ip": as_error}
 
@@ -2699,12 +2699,12 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 )
 
         self.assertRaises(
-            ASInfoError,
+            ASInfoResponseError,
             self.controller._check_and_log_cluster_stable,
             {
                 "1.1.1.1": "ABC",
                 "2.2.2.2": "ABC",
-                "3.3.3.3": ASInfoError("", "foo"),
+                "3.3.3.3": ASInfoResponseError("", "foo"),
             },
         )
 
@@ -2795,7 +2795,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -2805,7 +2805,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_from_roster_set(self):
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
@@ -2931,7 +2931,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -2941,7 +2941,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_from_roster_set(self):
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -3094,7 +3094,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster_set(self):
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -3220,7 +3220,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster(self):
         line = "ns test"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
@@ -3231,7 +3231,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
 
     async def test_logs_error_from_roster_set(self):
         line = "ns test"
-        error = ASInfoError("blah", "error::foo")
+        error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["ABC", "DEF"]}
         }

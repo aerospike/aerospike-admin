@@ -1306,8 +1306,8 @@ async def info(reader, writer, names=None):
 
     rsp_data = await _info_request(reader, writer, buf)
 
-    if rsp_data == -1 or rsp_data is None:
-        return -1
+    if rsp_data is None:
+        return None
 
     rsp_data = util.bytes_to_str(rsp_data)
 

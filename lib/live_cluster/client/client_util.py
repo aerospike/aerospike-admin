@@ -25,7 +25,7 @@ def info_to_dict(value, delimiter=";", ignore_field_without_key_value_delimiter=
         return {}
 
     if isinstance(value, Exception):
-        return value
+        return value  # TODO: Should not need to handle exception after we switch from info to _info
 
     stat_dict = {}
     _tmp_value_list = info_to_list(value, delimiter)

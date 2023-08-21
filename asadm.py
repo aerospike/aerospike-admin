@@ -675,7 +675,7 @@ async def execute_asinfo_commands(
 
         result = await assock.info(command)
 
-        if result == -1 or result is None:
+        if result is None:
             result = IOError("Error: Invalid command '%s'" % command)
 
         view.CliView.asinfo({node_name: result}, line_separator, False, None)

@@ -18,7 +18,7 @@ from mock import MagicMock, call, create_autospec, patch
 from lib.view import templates
 from lib.view.view import CliView
 from lib.view.sheet.const import SheetStyle
-from lib.live_cluster.client.node import ASInfoError
+from lib.live_cluster.client.node import ASInfoResponseError
 
 
 class CliViewTest(unittest.TestCase):
@@ -222,7 +222,7 @@ class CliViewTest(unittest.TestCase):
             "1.1.1.1": {"1": "1 data", "2": "2 data"},
             "2.2.2.2": {"3": "3 data", "4": "4 data"},
             "3.3.3.3": {"5": "5 data", "6": "6 data"},
-            "4.4.4.4": ASInfoError("test", "error"),
+            "4.4.4.4": ASInfoResponseError("test", "error"),
         }
         filtered_data = {
             "1.1.1.1": {"1": "1 data"},

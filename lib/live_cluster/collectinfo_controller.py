@@ -887,7 +887,7 @@ class CollectinfoController(LiveClusterCommandController):
             )
         except Exception as e:
             if not ignore_errors:
-                self.logger.debug(e)
+                self.logger.debug(e, exc_info=True)
                 self.logger.error(ignore_errors_msg)
                 return
 

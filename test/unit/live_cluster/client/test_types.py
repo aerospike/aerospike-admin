@@ -18,7 +18,7 @@ import unittest
 from test.unit import util
 from lib.live_cluster.client.node import (
     ASInfoConfigError,
-    ASInfoError,
+    ASInfoResponseError,
 )
 
 
@@ -28,7 +28,7 @@ class ASInfoErrorTest(unittest.TestCase):
             self,
             ValueError,
             'info() returned value "ok" which is not an error.',
-            ASInfoError,
+            ASInfoResponseError,
             "message",
             "ok",
         )
@@ -37,7 +37,7 @@ class ASInfoErrorTest(unittest.TestCase):
             self,
             ValueError,
             'info() returned value "ok" which is not an error.',
-            ASInfoError,
+            ASInfoResponseError,
             "message",
             "OK",
         )
@@ -46,7 +46,7 @@ class ASInfoErrorTest(unittest.TestCase):
             self,
             ValueError,
             'info() returned value "ok" which is not an error.',
-            ASInfoError,
+            ASInfoResponseError,
             "message",
             "",
         )
@@ -68,7 +68,7 @@ class ASInfoErrorTest(unittest.TestCase):
         exp_string = "test message : a-white-whale."
 
         for response in responses:
-            error = ASInfoError(message, response)
+            error = ASInfoResponseError(message, response)
             self.assertEqual(
                 str(error), exp_string, "Fail caused by {}".format(response)
             )
@@ -84,7 +84,7 @@ class ASInfoErrorTest(unittest.TestCase):
         exp_string = "test message : Unknown error occurred."
 
         for response in responses:
-            error = ASInfoError(message, response)
+            error = ASInfoResponseError(message, response)
             self.assertEqual(
                 str(error), exp_string, "Fail caused by {}".format(response)
             )

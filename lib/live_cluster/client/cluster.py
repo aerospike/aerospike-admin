@@ -256,7 +256,7 @@ class Cluster(AsyncObject):
                         if _key not in cluster_down_nodes:
                             cluster_down_nodes.append(_key)
             except Exception as e:
-                self.logger.debug(e, include_traceback=True)
+                self.logger.debug(e)
 
         return cluster_down_nodes
 
@@ -279,7 +279,7 @@ class Cluster(AsyncObject):
                         if not node.alive:
                             aliases[node_key] = key
             except Exception as e:
-                self.logger.debug(e, include_traceback=True)
+                self.logger.debug(e)
 
     async def find_new_nodes(self):
         added_endpoints = []
@@ -377,7 +377,7 @@ class Cluster(AsyncObject):
 
             self._refresh_node_liveliness()
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e)
 
         finally:
             self.clear_node_list()
@@ -595,7 +595,7 @@ class Cluster(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
             self.logger.error(e)
         except Exception as e:
-            self.logger.debug(e, include_traceback=True)
+            self.logger.debug(e)
         return None
 
     @staticmethod

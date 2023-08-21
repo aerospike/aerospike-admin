@@ -36,7 +36,7 @@ from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoClusterStableError,
     ASInfoConfigError,
-    ASInfoError,
+    ASInfoResponseError,
 )
 
 with warnings.catch_warnings():
@@ -1158,7 +1158,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_set_config_logging("path-DNE", "foo", "bar")
 
-        self.assertIsInstance(actual, ASInfoError)
+        self.assertIsInstance(actual, ASInfoResponseError)
         self.assertEqual(
             actual.message, "Failed to set logging configuration parameter foo to bar"
         )
@@ -1252,7 +1252,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
 
-        self.assertIsInstance(actual, ASInfoError)
+        self.assertIsInstance(actual, ASInfoResponseError)
         self.assertEqual(
             actual.message, "Failed to set namespace configuration parameter foo to bar"
         )
@@ -1978,7 +1978,9 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.return_value = "ERROR::foo"
-        expected = ASInfoError("Failed to check cluster stability", "ERROR::foo")
+        expected = ASInfoResponseError(
+            "Failed to check cluster stability", "ERROR::foo"
+        )
 
         actual = await self.node.info_cluster_stable(namespace="bar")
 
@@ -3729,7 +3731,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_jobs_kill_returns_error(self):
         self.info_mock.return_value = "not Ok"
-        expected = ASInfoError("Failed to kill job", "not Ok")
+        expected = ASInfoResponseError("Failed to kill job", "not Ok")
 
         actual = await self.node.info_jobs_kill("foo", "123")
 
@@ -3753,7 +3755,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_scan_abort_returns_error(self):
         self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "not Ok"
-        expected = ASInfoError("Failed to kill job", "not Ok")
+        expected = ASInfoResponseError("Failed to kill job", "not Ok")
 
         actual = await self.node.info_scan_abort("123")
 
@@ -3777,7 +3779,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_query_abort_returns_error(self):
         self.node._jobs_helper = AsyncMock()
         self.node._jobs_helper.return_value = "not Ok"
-        expected = ASInfoError("Failed to kill job", "not Ok")
+        expected = ASInfoResponseError("Failed to kill job", "not Ok")
 
         actual = await self.node.info_query_abort("123")
 
@@ -3799,7 +3801,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_scan_abort_all_with_feature_present_and_error(self):
         self.node.features = ["query-show"]
         self.info_mock.return_value = "error"
-        expected = ASInfoError("Failed to abort all scans", "error")
+        expected = ASInfoResponseError("Failed to abort all scans", "error")
 
         actual = await self.node.info_scan_abort_all()
 
@@ -3816,7 +3818,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_query_abort_all_with_error(self):
         self.info_mock.return_value = "error"
-        expected = ASInfoError("Failed to abort all queries", "error")
+        expected = ASInfoResponseError("Failed to abort all queries", "error")
 
         actual = await self.node.info_query_abort_all()
 
