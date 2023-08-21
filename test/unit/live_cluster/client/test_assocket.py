@@ -103,7 +103,7 @@ class ASSocketTestConnect(asynctest.TestCase):
 
     @patch("lib.live_cluster.client.assocket.info")
     async def test_is_connected_returns_false(self, info_mock):
-        info_mock.return_value = -1
+        info_mock.return_value = None
 
         self.assertFalse(await self.as_socket.is_connected())
 

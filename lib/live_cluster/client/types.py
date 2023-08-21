@@ -229,7 +229,7 @@ class ASInfoResponseError(ASInfoError):
         return False
 
 
-class ASInfoConfigError(ASInfoError):
+class ASInfoConfigError(ASInfoResponseError):
     def __init__(self, message, resp, node, context, param, value):
         self.message = message
         self.response = GENERIC_ERROR_MSG
