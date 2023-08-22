@@ -27,7 +27,7 @@ import pytest
 
 import lib
 from lib.live_cluster.client.ctx import CDTContext, CTXItem, CTXItems
-from lib.live_cluster.client.types import ASProtocolError, ASResponse
+from lib.live_cluster.client.types import ASProtocolError, ASProtocolExcFactory, ASResponse
 from test.unit import util
 from lib.utils import constants
 from lib.live_cluster.client.assocket import ASSocket
@@ -360,7 +360,9 @@ class NodeTest(asynctest.TestCase):
 
         def side_effect(token):
             if token is None:
-                raise ASProtocolError(ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo")
+                raise ASProtocolExcFactory.create_exc(
+                    ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+                )
             elif token == session_token:
                 return True
 

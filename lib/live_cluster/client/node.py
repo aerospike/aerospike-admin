@@ -40,6 +40,7 @@ from .types import (
     ASINFO_RESPONSE_OK,
     ASInfoNotAuthenticatedError,
     ASInfoClusterStableError,
+    ASProtocolConnectionError,
     ASProtocolError,
     ASResponse,
     Addr_Port_TLSName,
@@ -84,6 +85,9 @@ def async_return_exceptions(func):
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
+        except (ASInfoNotAuthenticatedError, ASProtocolConnectionError) as e:
+            args[0].alive = False
+            return e
         except (ASInfoError, ASProtocolError) as e:
             return e
         except Exception as e:

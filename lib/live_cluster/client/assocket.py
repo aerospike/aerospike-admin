@@ -17,7 +17,7 @@ import socket
 import warnings
 import asyncio
 
-from .types import ASResponse, ASProtocolError
+from .types import ASProtocolExcFactory, ASResponse, ASProtocolError
 from .info import (
     add_privileges,
     authenticate_new,
@@ -170,7 +170,7 @@ class ASSocket:
         )
 
         if resp_code != ASResponse.OK:
-            raise ASProtocolError(resp_code, "Login failed")
+            raise ASProtocolExcFactory.create_exc(resp_code, "Login failed")
 
         return True
 
@@ -198,7 +198,7 @@ class ASSocket:
             )
 
         if resp_code != ASResponse.OK:
-            raise ASProtocolError(resp_code, "Unable to authenticate")
+            raise ASProtocolExcFactory.create_exc(resp_code, "Unable to authenticate")
 
         return True
 
@@ -256,7 +256,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to create user")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to create user")
 
         return ASResponse.OK
 
@@ -266,7 +266,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to delete user")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to delete user")
 
         return ASResponse.OK
 
@@ -276,7 +276,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to set password")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to set password")
 
         return ASResponse.OK
 
@@ -287,7 +287,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to change password")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to change password")
 
         return ASResponse.OK
 
@@ -297,7 +297,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to grant roles")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to grant roles")
 
         return ASResponse.OK
 
@@ -307,7 +307,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to revoke roles")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to revoke roles")
 
         return ASResponse.OK
 
@@ -317,7 +317,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to query users")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to query users")
 
         return users_dict
 
@@ -327,7 +327,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to query user")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to query user")
 
         return users_dict
 
@@ -348,7 +348,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to create role")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to create role")
 
         return ASResponse.OK
 
@@ -358,7 +358,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to delete role")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to delete role")
 
         return ASResponse.OK
 
@@ -368,7 +368,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to grant privilege")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to grant privilege")
 
         return ASResponse.OK
 
@@ -378,7 +378,9 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to revoke privilege")
+            raise ASProtocolExcFactory.create_exc(
+                rsp_code, "Failed to revoke privilege"
+            )
 
         return ASResponse.OK
 
@@ -388,7 +390,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to set allowlist")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to set allowlist")
 
         return ASResponse.OK
 
@@ -398,7 +400,9 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to delete allowlist")
+            raise ASProtocolExcFactory.create_exc(
+                rsp_code, "Failed to delete allowlist"
+            )
 
         return ASResponse.OK
 
@@ -409,7 +413,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(
+            raise ASProtocolExcFactory.create_exc(
                 rsp_code,
                 "Failed to set quota{}".format(
                     "s" if read_quota is not None and write_quota is not None else ""
@@ -428,7 +432,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(
+            raise ASProtocolExcFactory.create_exc(
                 rsp_code,
                 "Failed to delete quota{}".format(
                     "s" if read_quota and write_quota else ""
@@ -443,7 +447,7 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to query roles")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to query roles")
 
         return role_dict
 
@@ -453,6 +457,6 @@ class ASSocket:
         )
 
         if rsp_code != ASResponse.OK:
-            raise ASProtocolError(rsp_code, "Failed to query role")
+            raise ASProtocolExcFactory.create_exc(rsp_code, "Failed to query role")
 
         return role_dict

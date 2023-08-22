@@ -166,6 +166,27 @@ class ASProtocolError(Exception):
         return False
 
 
+class ASProtocolConnectionError(ASProtocolError):
+    pass
+
+
+class ASProtocolExcFactory:
+    @staticmethod
+    def create_exc(as_response, message):
+        if as_response in {
+            ASResponse.NO_USER_OR_UNRECOGNIZED_USER,
+            ASResponse.EXPIRED_PASSWORD,
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,
+            ASResponse.NOT_AUTHENTICATED,
+            ASResponse.ROLE_OR_PRIVILEGE_VIOLATION,
+            ASResponse.NOT_WHITELISTED,
+            ASResponse.EXPIRED_SESSION,
+        }:
+            return ASProtocolConnectionError(as_response, message)
+
+        return ASProtocolError(as_response, message)
+
+
 ASINFO_RESPONSE_OK = "ok"
 GENERIC_ERROR_MSG = "Unknown error occurred"
 
