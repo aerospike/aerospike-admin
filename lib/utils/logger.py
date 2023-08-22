@@ -18,7 +18,6 @@ import logging
 import traceback
 from sys import exit
 from typing import Optional
-from lib.live_cluster.client.types import ASInfoError
 from lib.utils.logger_debug import DebugFormatter
 
 
@@ -138,5 +137,5 @@ from lib.base_controller import (  # noqa: E402 - suppress flake warning
 )
 from lib.live_cluster.client import (  # noqa: E402 - suppress flake warning
     ASProtocolError,
-    ASInfoResponseError,
+    ASInfoError,
 )
