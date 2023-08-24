@@ -868,26 +868,28 @@ class CollectinfoController(LiveClusterCommandController):
 
         # Stores errors that occur after the connection is established
         download_errors = []
+        connect_errors = []
 
         def error_handler(error: Exception, node: Node):
-            download_errors.append(error)
             if isinstance(error, ssh.SSHConnectionError):
-                raise
+                connect_errors.append(error)
+            else:
+                download_errors.append(error)
 
         """
         Returned errors are for connection issues. error_handler handles errors after
         authentication.
         """
-        connect_errors = await LogFileDownloader(
+        await LogFileDownloader(
             self.cluster, enable_ssh, ssh_config, exception_handler=error_handler
         ).download(local_path_generator)
 
-        if all(error is None for error in connect_errors) and not download_errors:
+        if not connect_errors and not download_errors:
             logger.info("Successfully downloaded logs from all nodes.")
-        elif all(error is not None for error in connect_errors):
+        elif len(connect_errors) == self.cluster.get_nodes():
             logger.error("Failed to download logs from all nodes.")
             raise Exception("Failed to download logs from all nodes.")
-        elif any(error is not None for error in connect_errors) or len(download_errors):
+        elif connect_errors or download_errors:
             logger.error("Failed to download logs from some nodes.")
 
     def setup_loggers(self, individual_file_prefix: str):

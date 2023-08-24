@@ -35,6 +35,9 @@ class SSHConnection:
             logger.warning(f"Generic error: {e.reason}")
             raise SSHError(e)
 
+    async def start_sftp_client(self) -> asyncssh.SFTPClient:
+        return await self._conn.start_sftp_client()
+
     async def close(self):
         self._conn.close()
         await self._conn.wait_closed()
@@ -77,6 +80,102 @@ class RemoteDest:
         self.conn = conn
 
 
+class SSHConnectionFactory:
+    """
+    Static dict of ip -> (semaphore, Number of SSHConnectionFactory objects using this ip)
+    This will allow us to limit the number of connections being created to a single host across all SSHConnectionFactory objects
+    """
+
+    class SemaphoreCountValue:
+        def __init__(self, semaphore: asyncio.Semaphore, count: int) -> None:
+            self.semaphore = semaphore
+            self.count = count
+
+    semaphore_host_dict: dict[str, SemaphoreCountValue] = {}
+
+    def __init__(
+        self, ssh_config: SSHConnectionConfig | None = None, max_startups: int = 10
+    ):
+        """
+        max_startups: The maximum number connections that can be in the process of initialising at any time.
+                      Not to be confused with the maximum number of connections that can be active at any time.
+        """
+        # self.ip = ip
+        self.opts = None
+        self.max_startups = max_startups
+
+        if ssh_config is not None:
+            self.opts = asyncssh.SSHClientConnectionOptions(
+                port=ssh_config.port,
+                username=ssh_config.username,
+                password=ssh_config.password,
+                passphrase=ssh_config.private_key_pwd,
+                client_keys=ssh_config.private_key,
+            )
+
+            # if ssh_config.port is not None:
+            #     self.opts.port = ssh_config.port
+            # if ssh_config.username is not None:
+            #     self.opts.username = ssh_config.username
+            # if ssh_config.password is not None:
+            #     self.opts.password = ssh_config.password
+            # if ssh_config.private_key is not None:
+            #     self.opts.client_keys = ssh_config.private_key
+            # if ssh_config.private_key_pwd is not None:
+            #     self.opts.passphrase = ssh_config.private_key_pwd
+
+            # self.opts.port
+            # self.opts.prepare(
+            #     port=ssh_config.port if ssh_config.port is not None else (),
+            #     username=ssh_config.username if ssh_config.username is not None else (),
+            #     password=ssh_config.password,
+            #     passphrase=ssh_config.private_key_pwd,
+            #     client_keys=ssh_config.private_key if ssh_config.private_key else (),
+            # )
+
+    async def create_connection(self, ip) -> SSHConnection:
+        if ip not in SSHConnectionFactory.semaphore_host_dict:
+            SSHConnectionFactory.semaphore_host_dict[
+                ip
+            ] = SSHConnectionFactory.SemaphoreCountValue(
+                asyncio.Semaphore(self.max_startups),
+                1,
+            )
+        else:
+            SSHConnectionFactory.semaphore_host_dict[ip].count += 1
+
+        logger.debug(f"{ip}: Checking semaphore before creating connection")
+        try:
+            async with SSHConnectionFactory.semaphore_host_dict[ip].semaphore:
+                logger.debug(f"{ip}: Creating connection")
+                return SSHConnection(await asyncssh.connect(ip, options=self.opts))
+        except asyncssh.DisconnectError as e:
+            raise SSHConnectionError(e)
+        finally:
+            SSHConnectionFactory.semaphore_host_dict[ip].count -= 1
+
+            if SSHConnectionFactory.semaphore_host_dict[ip].count == 0:
+                logger.debug(
+                    f"{ip}: Host has no other factories. Cleaning up host semaphore"
+                )
+                del SSHConnectionFactory.semaphore_host_dict[ip]
+
+    # def close(self):
+    #     SSHConnectionFactory.semaphore_host_dict[ip].count -= 1
+
+    #     if SSHConnectionFactory.semaphore_host_dict[self.ip].count == 0:
+    #         logger.debug(
+    #             f"{self.ip}: Host has no other factories. Cleaning up host semaphore"
+    #         )
+    #         del SSHConnectionFactory.semaphore_host_dict[self.ip]
+
+    # def __enter__(self):
+    #     return self
+
+    # def __exit__(self, exc_type, exc_value, traceback):
+    #     self.close()
+
+
 class FileTransfer:
     @staticmethod
     def create_error_handler(errors: list[Exception]):
@@ -96,11 +195,11 @@ class FileTransfer:
         logger.debug(
             f"{src_conn._conn.get_extra_info('peername')}: Starting remote to local file transfer"
         )
-        errors = []
+        errors: list[Exception] = []
         tasks = []
 
         # You can have multiple sftp sessions per connection. The default is 10. We are only using 1 per node here.
-        async with src_conn._conn.start_sftp_client() as sftp_session:
+        async with await src_conn.start_sftp_client() as sftp_session:
             for src, dst in paths:
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
 
@@ -129,9 +228,7 @@ class FileTransfer:
             )  # TODO: Should wrap asyncssh errors with out own
             logger.debug("Finished remote to local file transfer")
 
-            return errors
-
-        # TODO: need to handle the case where there are no successful transfers
+        return [err for err in errors if err is not None]
 
     @staticmethod
     async def remote_to_remote(src_paths: RemoteSrc, dest_path: RemoteDest):
@@ -142,77 +239,6 @@ class FileTransfer:
     @staticmethod
     async def local_to_remote(src_paths: LocalSrc, dest_path: RemoteDest):
         raise NotImplementedError("local to remote scp not implemented")
-
-
-class SSHConnectionFactory:
-    """
-    Static dict of ip -> (semaphore, Number of SSHConnectionFactory objects using this ip)
-    This will allow us to limit the number of connections being created to a single host across all SSHConnectionFactory objects
-    """
-
-    class SemaphoreCountValue:
-        def __init__(self, semaphore: asyncio.Semaphore, count: int) -> None:
-            self.semaphore = semaphore
-            self.count = count
-
-    semaphore_host_dict: dict[str, SemaphoreCountValue] = {}
-
-    def __init__(
-        self, ip, ssh_config: SSHConnectionConfig | None = None, max_startups: int = 10
-    ):
-        """
-        max_startups: The maximum number connections that can be in the process of initialising at any time.
-                      Not to be confused with the maximum number of connections that can be active at any time.
-        """
-        self.ip = ip
-        self.opts = None
-
-        if self.ip not in SSHConnectionFactory.semaphore_host_dict:
-            SSHConnectionFactory.semaphore_host_dict[
-                self.ip
-            ] = SSHConnectionFactory.SemaphoreCountValue(
-                asyncio.Semaphore(max_startups),
-                1,
-            )
-        else:
-            SSHConnectionFactory.semaphore_host_dict[self.ip].count += 1
-
-        if ssh_config is not None:
-            self.opts = asyncssh.SSHClientConnectionOptions()
-            if self.ip:
-                self.opts.prepare(host=self.ip)
-            if ssh_config.port:
-                self.opts.prepare(port=ssh_config.port)
-            if ssh_config.username:
-                self.opts.prepare(username=ssh_config.username)
-            if ssh_config.private_key_pwd:
-                self.opts.prepare(passphrase=ssh_config.private_key_pwd)
-            if ssh_config.private_key:
-                self.opts.prepare(client_keys=ssh_config.private_key)
-
-    async def create_connection(self) -> SSHConnection:
-        logger.debug(f"{self.ip}: Checking semaphore before creating connection")
-        try:
-            async with SSHConnectionFactory.semaphore_host_dict[self.ip].semaphore:
-                logger.debug(f"{self.ip}: Creating connection")
-                return SSHConnection(await asyncssh.connect(self.ip, options=self.opts))
-        except asyncssh.DisconnectError as e:
-            raise SSHConnectionError(e)
-
-    def close(self):
-        SSHConnectionFactory.semaphore_host_dict[self.ip].count -= 1
-
-        if SSHConnectionFactory.semaphore_host_dict[self.ip].count == 0:
-            logger.debug(
-                f"{self.ip}: Host has no other factories. Cleaning up host semaphore"
-            )
-            del SSHConnectionFactory.semaphore_host_dict[self.ip]
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
 
 
 class SSHError(Exception):

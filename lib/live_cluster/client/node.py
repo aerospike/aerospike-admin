@@ -3314,8 +3314,8 @@ class Node(AsyncObject):
                 private_key=self.sys_ssh_key,
                 private_key_pwd=self.sys_pwd,
             )
-            with SSHConnectionFactory(self.ip, conn_config) as conn_factory:
-                conn = await conn_factory.create_connection()
+            conn_factory = SSHConnectionFactory(conn_config)
+            conn = await conn_factory.create_connection(self.ip)
             logger.info(
                 f"({self.ip}:{self.port}): Collecting system info for remote host"
             )
