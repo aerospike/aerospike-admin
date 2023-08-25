@@ -178,7 +178,6 @@ class ASProtocolExcFactory:
             ASResponse.EXPIRED_PASSWORD,
             ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,
             ASResponse.NOT_AUTHENTICATED,
-            ASResponse.ROLE_OR_PRIVILEGE_VIOLATION,
             ASResponse.NOT_WHITELISTED,
             ASResponse.EXPIRED_SESSION,
         }:
