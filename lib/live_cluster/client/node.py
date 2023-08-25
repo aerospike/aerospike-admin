@@ -975,7 +975,6 @@ class Node(AsyncObject):
     ###### Service ######
     # post 3.10 services
 
-    # @return_exceptions
     def _info_service_helper(self, service, delimiter=","):
         if not service or isinstance(service, Exception):
             return []
@@ -3271,7 +3270,6 @@ class Node(AsyncObject):
         self.sys_ssh_key = self.sys_default_ssh_key
         self.sys_ssh_port = self.sys_default_ssh_port
 
-    @return_exceptions
     def _get_localhost_system_statistics(self, commands):
         sys_stats = {}
 
@@ -3304,7 +3302,6 @@ class Node(AsyncObject):
 
         return sys_stats
 
-    @return_exceptions
     def _login_remote_system(self, ip, user, pwd, ssh_key=None, port=None):
         s = pxssh.pxssh()
         s.force_password = True
@@ -3312,7 +3309,6 @@ class Node(AsyncObject):
         s.login(ip, user, pwd, ssh_key=ssh_key, port=port)
         return s
 
-    @return_exceptions
     def _create_ssh_connection(self, ip, user, pwd, ssh_key=None, port=None):
         if user is None and pwd is None and ssh_key is None:
             raise Exception("Insufficient credentials to connect.")
@@ -3322,7 +3318,6 @@ class Node(AsyncObject):
 
         return None
 
-    @return_exceptions
     def _execute_remote_system_command(self, conn, cmd):
         if not conn or not cmd or PEXPECT_VERSION == PXSSH_NO_MODULE:
             return None
@@ -3334,7 +3329,6 @@ class Node(AsyncObject):
             return None
         return conn.before
 
-    @return_exceptions
     def _execute_system_command(self, conn, cmd):
         out = self._execute_remote_system_command(conn, cmd)
         status = self._execute_remote_system_command(conn, "echo $?")
@@ -3347,7 +3341,6 @@ class Node(AsyncObject):
 
         return status, out
 
-    @return_exceptions
     def _stop_ssh_connection(self, conn):
         if not conn or PEXPECT_VERSION == PXSSH_NO_MODULE:
             return
@@ -3359,7 +3352,6 @@ class Node(AsyncObject):
 
         self.remote_system_command_prompt = "[#$] "
 
-    @return_exceptions
     def _get_remote_host_system_statistics(self, commands):
         sys_stats = {}
 
@@ -3389,9 +3381,6 @@ class Node(AsyncObject):
                 )
                 if not s:
                     raise Exception("Wrong credentials to connect.")
-
-                if isinstance(s, Exception):
-                    raise s
 
             except Exception as e:
                 if tries >= max_tries:
