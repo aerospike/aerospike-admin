@@ -38,6 +38,15 @@ class CollectLogsControllerTest(asynctest.TestCase):
         patch(
             "lib.live_cluster.collectlogs_controller.os.makedirs", autospec=True
         ).start().return_value = True
+        fh_mock = Mock()
+        patch(
+            "lib.live_cluster.collectlogs_controller.logging.FileHandler", autospec=True
+        ).start().return_value = fh_mock
+
+        def setLevel_side_effect(level):
+            fh_mock.level = level
+
+        fh_mock.setLevel.side_effect = setLevel_side_effect
 
         self.controller = CollectlogsController()
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
