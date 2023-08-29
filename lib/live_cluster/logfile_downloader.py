@@ -21,7 +21,6 @@ from lib.utils.constants import NodeSelection, NodeSelectionType
 
 PathGenerator = Callable[[Node, str], str]
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 
 def format_node_msg(node: Node, msg: str) -> str:
@@ -357,7 +356,6 @@ class LogFileDownloader:
     async def _download_remote_logs(self, node: Node, path_gen_func: PathGenerator):
         time_prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
         tmp_file_prefix = f"/tmp/{time_prefix}/{node.node_id}/"
-        conn = None
 
         if not self.ssh_factory:
             raise LogFileDownloaderException(
@@ -366,61 +364,72 @@ class LogFileDownloader:
 
         try:
             async with (await self.ssh_factory.create_connection(node.ip)) as conn:
-                log_file_info: list[_RemoteLogInfo] = []
-                logs = await node.info_logs()
+                try:
+                    log_file_info: list[_RemoteLogInfo] = []
+                    logs = await node.info_logs()
 
-                for log in logs:
-                    info = _RemoteLogInfo(log)
-                    log_file_info.append(info)
+                    for log in logs:
+                        info = _RemoteLogInfo(log)
+                        log_file_info.append(info)
 
-                self._generate_dst_paths(node, log_file_info, path_gen_func)  # type: ignore
-                log_file_info = await self._generate_remote_tmp_paths(
-                    conn, tmp_file_prefix, log_file_info
-                )
+                    self._generate_dst_paths(node, log_file_info, path_gen_func)  # type: ignore
+                    log_file_info = await self._generate_remote_tmp_paths(
+                        conn, tmp_file_prefix, log_file_info
+                    )
 
-                for log in log_file_info:
-                    if "stderr" in log.tmp_src:
-                        log.original_src = log.tmp_src
-                        try:
-                            await self._create_remote_console_log(
-                                node, conn, log.tmp_src
-                            )
-                        except SSHError as e:
-                            logger.error(
-                                format_node_msg(
-                                    node,
-                                    f"Failed to create log from remote console log: {e}",
+                    for log in log_file_info:
+                        if "stderr" in log.tmp_src:
+                            log.original_src = log.tmp_src
+                            try:
+                                await self._create_remote_console_log(
+                                    node, conn, log.tmp_src
                                 )
+                            except SSHError as e:
+                                logger.error(
+                                    format_node_msg(
+                                        node,
+                                        f"Failed to create log from remote console log: {e}",
+                                    )
+                                )
+                                log.skip = True
+                                if self.exception_handler:
+                                    self.exception_handler(e, node)
+                                    continue
+                                else:
+                                    raise
+
+                    log_file_info = await self._compress_remote_logs(
+                        node, conn, log_file_info
+                    )
+                    file_paths = [
+                        log.to_file_transfer() for log in log_file_info if not log.skip
+                    ]
+
+                    errors = await FileTransfer.remote_to_local(file_paths, conn)
+
+                    for err in errors:
+                        if err is None:
+                            continue
+
+                        if self.exception_handler:
+                            logger.error(
+                                format_node_msg(node, f"Failed to download log: {err}")
                             )
-                            log.skip = True
-                            if self.exception_handler:
-                                self.exception_handler(e, node)
-                                continue
-                            else:
-                                raise
-
-                log_file_info = await self._compress_remote_logs(
-                    node, conn, log_file_info
-                )
-                file_paths = [
-                    log.to_file_transfer() for log in log_file_info if not log.skip
-                ]
-
-                errors = await FileTransfer.remote_to_local(file_paths, conn)
-
-                for err in errors:
-                    if err is None:
-                        continue
-
-                    if self.exception_handler:
-                        logger.error(
-                            format_node_msg(node, f"Failed to download log: {err}")
+                            self.exception_handler(err, node)
+                        else:
+                            # Gets logged by next try/except block
+                            raise err
+                finally:
+                    try:
+                        async with await conn.start_sftp_client() as sftp_session:
+                            await sftp_session.rmtree(tmp_file_prefix)
+                    except Exception as e:
+                        logger.debug(
+                            format_node_msg(
+                                node,
+                                f"Failed to remove tmp dir. Maybe it never existed: {e}",
+                            )
                         )
-                        self.exception_handler(err, node)
-                    else:
-                        # Gets logged by next try/except block
-                        raise err
-
         except SSHConnectionError as e:
             logger.error(
                 format_node_msg(
@@ -440,10 +449,6 @@ class LogFileDownloader:
                 self.exception_handler(e, node)
             else:
                 raise e
-        finally:
-            if conn:
-                async with await conn.start_sftp_client() as sftp_session:
-                    await sftp_session.rmtree(tmp_file_prefix)
 
     async def _download_node_logs(self, node: Node, path_gen_func: PathGenerator):
         if node.is_localhost():

@@ -19,6 +19,7 @@ import sys
 from lib.live_cluster.generate_config_controller import (
     GenerateController,
 )
+from lib.live_cluster.collectlogs_controller import CollectlogsController
 
 from lib.utils import constants, util
 from lib.base_controller import (
@@ -88,6 +89,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
             "features": FeaturesController,
             "pager": PagerController,
             "collectinfo": CollectinfoController,
+            "collectlogs": CollectlogsController,
             "asinfo": create_disabled_controller(ASInfoController, "asinfo"),
             "manage": create_disabled_controller(ManageController, "manage"),
             "show": ShowController,

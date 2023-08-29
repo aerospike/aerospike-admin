@@ -34,7 +34,7 @@ from lib.view.sheet.render import get_style_json, set_style_json
 from lib.view.terminal import terminal
 from lib.utils import common, constants, util, version
 from lib.utils.logger import LogFormatter, stderr_log_handler, logger as g_logger
-from lib.base_controller import CommandHelp, ModifierHelp
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 @CommandHelp(
     "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
-    usage="[-n <num-snapshots>] [-s <sleep>] [--enable-ssh --ssh-user <user> --ssh-pwd <pwd> [--ssh-port <port>] [--ssh-key <key>] [--ssh-cf <credentials-file>]] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
+    usage="[-n <num-snapshots>] [-s <sleep>] [--enable-ssh [--ssh-user <user>] [--ssh-pwd <pwd>] [--ssh-port <port>] [--ssh-key <key>]] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
     modifiers=(
         ModifierHelp("-n", "Number of snapshots.", default="1"),
         ModifierHelp(
@@ -79,10 +79,6 @@ logger = logging.getLogger(__name__)
             "--ssh-port", "Default SSH port for remote servers.", default="22"
         ),
         ModifierHelp("--ssh-key", "Default SSH key (file path) for remote servers."),
-        ModifierHelp(
-            "--ssh-cf",
-            "Remote System Credentials file path. If the server credentials are not in the credentials file, then authentication is attempted with the default credentials. File format: each line must contain <IP[:PORT]>,<USER_ID>,<PASSWORD-or-PASSPHRASE>,<SSH_KEY>",
-        ),
         ModifierHelp(
             "--agent-host",
             "Host IP of the Unique Data Agent to collect license data usage.",
@@ -421,11 +417,12 @@ class CollectinfoController(LiveClusterCommandController):
 
     async def _get_collectinfo_data_json(
         self,
-        default_user,
-        default_pwd_key,
-        default_ssh_port,
-        default_ssh_key,
-        enable_ssh,
+        enable_ssh: bool,
+        ssh_user: str | None = None,
+        ssh_pwd: str | None = None,
+        ssh_key: str | None = None,
+        ssh_key_pwd: str | None = None,
+        ssh_port: int | None = None,
     ):
         logger.debug("Collectinfo data to store in collectinfo_*.json")
 
@@ -447,14 +444,20 @@ class CollectinfoController(LiveClusterCommandController):
             self._get_as_latency(),
             self._get_as_access_control_list(),
             self.cluster.info_system_statistics(
-                default_user=default_user,
-                default_pwd=default_pwd_key,
-                default_ssh_key=default_ssh_key,
-                default_ssh_port=default_ssh_port,
+                enable_ssh=enable_ssh,
+                ssh_user=ssh_user,
+                ssh_pwd=ssh_pwd,
+                ssh_key=ssh_key,
+                ssh_key_pwd=ssh_key_pwd,
+                ssh_port=ssh_port,
                 nodes=self.nodes,
-                collect_remote_data=enable_ssh,
             ),
         )
+
+        for val in sys_map.values():
+            # TODO: remove this when we no longer return all exceptions by default
+            if isinstance(val, Exception):
+                raise val
 
         pmap_map = None
 
@@ -500,11 +503,12 @@ class CollectinfoController(LiveClusterCommandController):
     async def _dump_collectinfo_json(
         self,
         as_logfile_prefix,
-        default_user,
-        default_pwd_key,
-        default_ssh_port,
-        default_ssh_key,
         enable_ssh,
+        ssh_user,
+        ssh_pwd,
+        ssh_key,
+        ssh_key_pwd,
+        ssh_port,
         snp_count,
         wait_time,
     ):
@@ -517,16 +521,17 @@ class CollectinfoController(LiveClusterCommandController):
             )
 
             snpshots[snp_timestamp] = await self._get_collectinfo_data_json(
-                default_user,
-                default_pwd_key,
-                default_ssh_port,
-                default_ssh_key,
                 enable_ssh,
+                ssh_user,
+                ssh_pwd,
+                ssh_key,
+                ssh_key_pwd,
+                ssh_port,
             )
 
             logger.info("Data collection for Snapshot " + str(i + 1) + " finished.")
 
-            time.sleep(wait_time)
+            await asyncio.sleep(wait_time)
 
         self._dump_in_json_file(as_logfile_prefix + "ascinfo.json", snpshots)
 
@@ -840,58 +845,6 @@ class CollectinfoController(LiveClusterCommandController):
             logger.warning(str(e))
             util.write_to_file(complete_filename, str(e))
 
-    async def _gather_logs(
-        self,
-        logfile_prefix: str,
-        enable_ssh: bool,
-        default_user: str | None,
-        default_pwd_key: str | None,
-        default_ssh_port: int | None,
-        default_ssh_key: str | None,
-    ):
-        logger.info("Collecting logs from nodes...")
-        ssh_config = None
-
-        if enable_ssh:
-            ssh_config = ssh.SSHConnectionConfig(
-                username=default_user,
-                port=default_ssh_port,
-                private_key=default_ssh_key,
-                private_key_pwd=default_pwd_key,
-            )
-
-        def local_path_generator(node: Node, filename: str) -> str:
-            if filename == "stderr":
-                filename = "stderr.log"
-
-            return logfile_prefix + node.node_id + "_" + path.basename(filename)
-
-        # Stores errors that occur after the connection is established
-        download_errors = []
-        connect_errors = []
-
-        def error_handler(error: Exception, node: Node):
-            if isinstance(error, ssh.SSHConnectionError):
-                connect_errors.append(error)
-            else:
-                download_errors.append(error)
-
-        """
-        Returned errors are for connection issues. error_handler handles errors after
-        authentication.
-        """
-        await LogFileDownloader(
-            self.cluster, enable_ssh, ssh_config, exception_handler=error_handler
-        ).download(local_path_generator)
-
-        if not connect_errors and not download_errors:
-            logger.info("Successfully downloaded logs from all nodes.")
-        elif len(connect_errors) == self.cluster.get_nodes():
-            logger.error("Failed to download logs from all nodes.")
-            raise Exception("Failed to download logs from all nodes.")
-        elif connect_errors or download_errors:
-            logger.error("Failed to download logs from some nodes.")
-
     def setup_loggers(self, individual_file_prefix: str):
         debug_file = individual_file_prefix + "collectinfo_debug.log"
         self.debug_output_handler = logging.FileHandler(debug_file)
@@ -900,7 +853,7 @@ class CollectinfoController(LiveClusterCommandController):
         self.loggers: list[logging.Logger | logging.Handler] = [
             g_logger,
             stderr_log_handler,
-            logging.getLogger(Node.__name__),
+            logging.getLogger(Node.__module__),
             logging.getLogger(common.__name__),
             logging.getLogger(LogFileDownloader.__module__),
         ]
@@ -927,14 +880,14 @@ class CollectinfoController(LiveClusterCommandController):
 
     async def _run_collectinfo(
         self,
-        default_user: str | None,
-        default_pwd_key: str | None,
-        default_ssh_port: int | None,
-        default_ssh_key: str | None,
+        ssh_user: str | None,
+        ssh_pwd: str | None,
+        ssh_port: int | None,
+        ssh_key: str | None,
+        ssh_key_pwd: str | None,
         snp_count: int,
         wait_time: int,
         ignore_errors: bool,
-        include_logs: bool = False,
         agent_host: str | None = None,
         agent_port: str | None = None,
         agent_store: bool = False,
@@ -982,41 +935,23 @@ class CollectinfoController(LiveClusterCommandController):
             self.failed_cmds = []
 
             try:
-                tasks = [
-                    self._dump_collectinfo_json(
-                        individual_file_prefix,
-                        default_user,
-                        default_pwd_key,
-                        default_ssh_port,
-                        default_ssh_key,
-                        enable_ssh,
-                        snp_count,
-                        wait_time,
-                    )
-                ]
-
-                if include_logs:
-                    logfile_prefix = path.join(
-                        cf_path_info.log_dir,
-                        cf_path_info.files_prefix,
-                    )
-                    tasks.append(
-                        self._gather_logs(
-                            logfile_prefix,
-                            enable_ssh,
-                            default_user,
-                            default_pwd_key,
-                            default_ssh_port,
-                            default_ssh_key,
-                        )
-                    )
-                    cf_json, logs = await asyncio.gather(*tasks, return_exceptions=True)
-                else:
-                    logs = None
-                    cf_json = await asyncio.gather(*tasks, return_exceptions=True)
-
-                if any(isinstance(resp, Exception) for resp in [cf_json, logs]):
-                    raise
+                await self._dump_collectinfo_json(
+                    individual_file_prefix,
+                    enable_ssh,
+                    ssh_user,
+                    ssh_pwd,
+                    ssh_key,
+                    ssh_key_pwd,
+                    ssh_port,
+                    snp_count,
+                    wait_time,
+                )
+            except (ssh.SSHError, FileNotFoundError) as e:
+                logger.error(ShellException(e))
+                logger.error(
+                    "Failed to login to node using ssh. Stopping creation of the collectinfo."
+                )
+                return
             except Exception as e:
                 logger.error(e)
                 if not ignore_errors:
@@ -1049,7 +984,7 @@ class CollectinfoController(LiveClusterCommandController):
                 )
             else:
                 logger.info(
-                    "SSH is enabled. Skipping sysinfo.log and aerospike.conf collection."
+                    "Localhost is not an Aerospike node. Skipping sysinfo.log and aerospike.conf collection."
                 )
 
             for c in coroutines:
@@ -1068,20 +1003,16 @@ class CollectinfoController(LiveClusterCommandController):
             common.print_collectinfo_failed_cmds(self.failed_cmds)
 
             # Archive collectinfo directory
-            cf_archive_path, _ = common.archive_log(cf_path_info.cf_dir)
-            log_archive_path = None
-            log_archive_success = True
+            cf_archive_path, success = common.archive_dir(cf_path_info.cf_dir)
 
-            if include_logs:
-                log_archive_path, log_archive_success = common.archive_log(
-                    cf_path_info.log_dir
+            if success:
+                common.print_collect_summary(
+                    cf_archive_path,
                 )
-
-            common.print_collectinfo_summary(
-                cf_archive_path,
-                log_archive=log_archive_path,
-                log_archive_success=log_archive_success,
-            )
+            else:
+                logger.error(
+                    "Failed to archive collectinfo logs. See earlier errors for more details."
+                )
         finally:
             # printing collectinfo summary
             self.teardown_loggers()
@@ -1140,7 +1071,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_user = util.get_arg_and_delete_from_mods(
+        ssh_user = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-user",
             return_type=str,
@@ -1149,7 +1080,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_pwd_key = util.get_arg_and_delete_from_mods(
+        ssh_pwd = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-pwd",
             return_type=str,
@@ -1158,7 +1089,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(
+        ssh_port = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-port",
             return_type=int,
@@ -1167,7 +1098,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(
+        ssh_key = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-key",
             return_type=str,
@@ -1176,10 +1107,11 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        include_logs = util.check_arg_and_delete_from_mods(
+        ssh_key_pwd = util.get_arg_and_delete_from_mods(
             line=line,
-            arg="--include-logs",
-            default=False,
+            arg="--ssh-key-pwd",
+            return_type=str,
+            default=None,
             modifiers=self.modifiers,
             mods=self.mods,
         )
@@ -1216,14 +1148,14 @@ class CollectinfoController(LiveClusterCommandController):
             logger.error("Unrecognized option(s): {}".format(", ".join(line)))
 
         await self._run_collectinfo(
-            default_user,
-            default_pwd_key,
-            default_ssh_port,
-            default_ssh_key,
+            ssh_user,
+            ssh_pwd,
+            ssh_port,
+            ssh_key,
+            ssh_key_pwd,
             snp_count,
             wait_time,
             ignore_errors,
-            include_logs=include_logs,
             agent_host=agent_host,
             agent_port=agent_port,
             agent_store=agent_store,

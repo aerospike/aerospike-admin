@@ -3030,7 +3030,7 @@ def get_collectinfo_path(timestamp, output_prefix=""):
     return cf_path_info
 
 
-def archive_log(logdir):
+def archive_dir(logdir):
     archive = logdir + ".tgz"
     if not os.path.exists(logdir) or not any(os.listdir(logdir)):
         return archive, False
@@ -3049,26 +3049,11 @@ def print_collectinfo_failed_cmds(failed_cmds):
         logger.warning(list(set(failed_cmds)))
 
 
-def print_collectinfo_summary(
-    cf_archive,
-    log_archive=None,
-    log_archive_success=True,
+def print_collect_summary(
+    archive,
 ):
-    logger.info("END OF ASCOLLECTINFO")
-
     print("\n")
-    if log_archive:
-        if log_archive_success:
-            logger.info(
-                f"Please provide files {cf_archive} and {log_archive} to Aerospike Support."
-            )
-        else:
-            logger.error(
-                f"{log_archive} was not created. No log files were collected from nodes. Check earlier logs for errors."
-            )
-            logger.info(f"Please provide file {cf_archive} to Aerospike Support.")
-    else:
-        logger.info(f"Please provide file {cf_archive} to Aerospike Support.")
+    logger.info(f"Please provide file {archive} to Aerospike Support.")
 
     # If multiple commands are given in execute_only mode then we might need coloring for next commands
     terminal.enable_color(True)
@@ -3164,9 +3149,9 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
 
     if not cluster_online:
         # Cluster is offline so collecting only system info and archiving files
-        archive_log(aslogdir)
+        archive_dir(aslogdir)
         print_collectinfo_failed_cmds(failed_cmds)
-        print_collectinfo_summary(aslogdir)
+        print_collect_summary(aslogdir)
 
     return failed_cmds
 

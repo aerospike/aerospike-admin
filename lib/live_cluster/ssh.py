@@ -105,24 +105,25 @@ class SSHConnectionFactory:
         self.max_startups = max_startups
 
         if ssh_config is not None:
-            self.opts = asyncssh.SSHClientConnectionOptions(
-                port=ssh_config.port,
-                username=ssh_config.username,
-                password=ssh_config.password,
-                passphrase=ssh_config.private_key_pwd,
-                client_keys=ssh_config.private_key,
-            )
+            kwargs = {}
+            if ssh_config.port is not None:
+                kwargs["port"] = ssh_config.port
+            if ssh_config.username is not None:
+                kwargs["username"] = ssh_config.username
+            if ssh_config.password is not None:
+                kwargs["password"] = ssh_config.password
+            if ssh_config.private_key is not None:
+                kwargs["client_keys"] = ssh_config.private_key
+            if ssh_config.private_key_pwd is not None:
+                kwargs["passphrase"] = ssh_config.private_key_pwd
 
-            # if ssh_config.port is not None:
-            #     self.opts.port = ssh_config.port
-            # if ssh_config.username is not None:
-            #     self.opts.username = ssh_config.username
-            # if ssh_config.password is not None:
-            #     self.opts.password = ssh_config.password
-            # if ssh_config.private_key is not None:
-            #     self.opts.client_keys = ssh_config.private_key
-            # if ssh_config.private_key_pwd is not None:
-            #     self.opts.passphrase = ssh_config.private_key_pwd
+            try:
+                self.opts = asyncssh.SSHClientConnectionOptions(
+                    **kwargs,
+                )
+            except FileNotFoundError as e:
+                logger.error(e)
+                raise
 
             # self.opts.port
             # self.opts.prepare(

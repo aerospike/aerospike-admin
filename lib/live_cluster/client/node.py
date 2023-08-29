@@ -55,7 +55,6 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
@@ -3222,44 +3221,7 @@ class Node(AsyncObject):
     #
     ############################################################################
 
-    def _set_default_system_credentials(
-        self,
-        default_user=None,
-        default_pwd=None,
-        default_ssh_key=None,
-        default_ssh_port=None,
-    ):
-        if default_user:
-            self.sys_default_user_id = default_user
-
-        if default_pwd:
-            self.sys_default_pwd = default_pwd
-
-        if default_ssh_key:
-            self.sys_default_ssh_key = default_ssh_key
-
-        if default_ssh_port:
-            try:
-                self.sys_default_ssh_port = int(default_ssh_port)
-            except Exception:
-                pass
-
-    def _clear_sys_credentials(self):
-        self.sys_ssh_port = None
-        self.sys_user_id = None
-        self.sys_pwd = None
-        self.sys_ssh_key = None
-
-    def _set_system_credentials(self):
-        self._clear_sys_credentials()
-        # set = self._set_system_credentials_from_file()
-        # if set:
-        #     return
-        self.sys_user_id = self.sys_default_user_id
-        self.sys_pwd = self.sys_default_pwd
-        self.sys_ssh_key = self.sys_default_ssh_key
-        self.sys_ssh_port = self.sys_default_ssh_port
-
+    @return_exceptions
     def _get_localhost_system_statistics(self, commands):
         logger.info(
             f"({self.ip}:{self.port}): Collecting system information for localhost..."
@@ -3301,18 +3263,25 @@ class Node(AsyncObject):
 
         return sys_stats
 
-    async def _get_remote_host_system_statistics(self, commands):
+    async def _get_remote_host_system_statistics(
+        self,
+        commands,
+        ssh_user: str | None = None,
+        ssh_pwd: str | None = None,
+        ssh_key: str | None = None,
+        ssh_key_pwd: str | None = None,
+        ssh_port: int | None = None,
+    ):
         sys_stats = {}
-        self._set_system_credentials()  # TODO: remove the support of the cf-file
         conn = None
-        port = "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)
 
         try:
             conn_config = SSHConnectionConfig(
-                port=self.sys_ssh_port,
-                username=self.sys_user_id,
-                private_key=self.sys_ssh_key,
-                private_key_pwd=self.sys_pwd,
+                username=ssh_user,
+                password=ssh_pwd,
+                private_key=ssh_key,
+                private_key_pwd=ssh_key_pwd,
+                port=ssh_port,
             )
             conn_factory = SSHConnectionFactory(conn_config)
             conn = await conn_factory.create_connection(self.ip)
@@ -3320,12 +3289,10 @@ class Node(AsyncObject):
                 f"({self.ip}:{self.port}): Collecting system info for remote host"
             )
 
-        except SSHError as e:
+        except (SSHError, FileNotFoundError) as e:
             logger.error(
-                f"({self.ip}:{port}): Ignoring system statistics collection. Couldn't SSH login to remote server: {e}"
+                f"({self.ip}:{self.port}): Ignoring system statistics collection. Couldn't SSH login to remote server: {e}"
             )
-        except Exception as e:
-            logger.exception(e)
             raise
 
         if not conn:
@@ -3373,15 +3340,16 @@ class Node(AsyncObject):
 
         return sys_stats
 
-    @return_exceptions
+    @async_return_exceptions
     async def info_system_statistics(
         self,
-        default_user=None,
-        default_pwd=None,
-        default_ssh_key=None,
-        default_ssh_port=None,
         commands=[],
-        collect_remote_data=False,
+        enable_ssh=False,
+        ssh_user=None,
+        ssh_pwd=None,
+        ssh_key=None,
+        ssh_key_pwd=None,
+        ssh_port=None,
     ):
         """
         Get statistics for a system.
@@ -3390,18 +3358,14 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         logger.debug(
-            (
-                "default_user=%s default_pws=%s"
-                "default_ssh_key=%s default_ssh_port=%s"
-                "commands=%s collect_remote_data=%s"
-            ),
+            "default_user=%s default_pws=%s default_ssh_key=%s default_ssh_port=%s commands=%s collect_remote_data=%s",
             self.ip,
-            default_user,
-            default_pwd,
-            default_ssh_key,
-            default_ssh_port,
+            ssh_user,
+            ssh_pwd,
+            ssh_key,
+            ssh_port,
             commands,
-            collect_remote_data,
+            enable_ssh,
         )
 
         if commands:
@@ -3412,14 +3376,15 @@ class Node(AsyncObject):
         if self.localhost:
             return self._get_localhost_system_statistics(cmd_list)
 
-        if collect_remote_data:
-            self._set_default_system_credentials(
-                default_user,
-                default_pwd,
-                default_ssh_key,
-                default_ssh_port,
+        if enable_ssh:
+            return await self._get_remote_host_system_statistics(
+                cmd_list,
+                ssh_user=ssh_user,
+                ssh_pwd=ssh_pwd,
+                ssh_key=ssh_key,
+                ssh_key_pwd=ssh_key_pwd,
+                ssh_port=ssh_port,
             )
-            return await self._get_remote_host_system_statistics(cmd_list)
 
         return {}
 

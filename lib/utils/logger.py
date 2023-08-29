@@ -52,7 +52,6 @@ class BaseLogger(logging.Logger, object):
 
     def error(self, msg, *args, **kwargs):
         super().error(msg, *args, **kwargs)
-        # global g_exit_code
 
         if self.level <= logging.ERROR:
             self._handle_exception(msg)
@@ -150,7 +149,7 @@ logging.setLoggerClass(BaseLogger)
 logger = logging.getLogger("lib")
 logger.propagate = False
 logger.setLevel(
-    logging.INFO
+    logging.WARNING
 )  # This only allows INFO and above to be logged to handlers
 stderr_log_handler = logging.StreamHandler()
 stderr_log_handler.setLevel(
