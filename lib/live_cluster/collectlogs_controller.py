@@ -17,6 +17,7 @@ from os import path
 import os
 import shutil
 import time
+import traceback
 
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.logfile_downloader import LogFileDownloader
@@ -118,9 +119,13 @@ class CollectlogsController(LiveClusterCommandController):
         Returned errors are for connection issues. error_handler handles errors after
         authentication.
         """
-        await LogFileDownloader(
-            self.cluster, ssh_conn_factory, exception_handler=error_handler
-        ).download(local_path_generator)
+        try:
+            await LogFileDownloader(
+                self.cluster, ssh_conn_factory, exception_handler=error_handler
+            ).download(local_path_generator)
+        except Exception as e:
+            traceback.print_exc()
+            raise
 
         if not connect_errors and not download_errors:
             if count == 0 and not enable_ssh:
@@ -242,17 +247,17 @@ class CollectlogsController(LiveClusterCommandController):
             output_prefix=output_prefix,
         )
 
+        os.makedirs(cf_path_info.log_dir, exist_ok=True)
+        logfile_prefix = path.join(
+            cf_path_info.log_dir,
+            cf_path_info.files_prefix,
+        )
+        self.setup_loggers(logfile_prefix)
+
         try:
             # Coloring might writes extra characters to file, to avoid it we need to
             # disable terminal coloring
             try:
-                os.makedirs(cf_path_info.log_dir, exist_ok=True)
-                logfile_prefix = path.join(
-                    cf_path_info.log_dir,
-                    cf_path_info.files_prefix,
-                )
-                self.setup_loggers(logfile_prefix)
-
                 if not await self._gather_logs(  # TODO: test username password
                     logfile_prefix,
                     enable_ssh,
