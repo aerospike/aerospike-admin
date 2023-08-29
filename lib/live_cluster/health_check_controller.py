@@ -205,7 +205,7 @@ class HealthCheckController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_user = util.get_arg_and_delete_from_mods(
+        ssh_user = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-user",
             return_type=str,
@@ -214,7 +214,7 @@ class HealthCheckController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_pwd = util.get_arg_and_delete_from_mods(
+        ssh_pwd = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-pwd",
             return_type=str,
@@ -223,7 +223,7 @@ class HealthCheckController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(
+        ssh_port = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-port",
             return_type=int,
@@ -232,7 +232,7 @@ class HealthCheckController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(
+        ssh_key = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-key",
             return_type=str,
@@ -754,11 +754,11 @@ class HealthCheckController(LiveClusterCommandController):
                 sys_stats = asyncio.create_task(
                     self.cluster.info_system_statistics(
                         nodes=self.nodes,
-                        default_user=default_user,
-                        default_pwd=default_pwd,
-                        default_ssh_key=default_ssh_key,
-                        default_ssh_port=default_ssh_port,
-                        collect_remote_data=enable_ssh,
+                        ssh_user=ssh_user,
+                        ssh_pwd=ssh_pwd,
+                        ssh_key=ssh_key,
+                        ssh_port=ssh_port,
+                        enable_ssh=enable_ssh,
                     )
                 )
 

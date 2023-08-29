@@ -221,10 +221,10 @@ class Node(AsyncObject):
         self.sys_user_id = None
         self.sys_pwd = None
         self.sys_ssh_key = None
-        self.sys_default_ssh_port = None
-        self.sys_default_user_id = None
-        self.sys_default_pwd = None
-        self.sys_default_ssh_key = None
+        self.sys_ssh_port = None
+        self.sys_ssh_user_id = None
+        self.sys_ssh_pwd = None
+        self.sys_ssh_key = None
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -549,7 +549,7 @@ class Node(AsyncObject):
         )
 
         if not await sock.connect():
-            self.logger.debug(
+            logger.debug(
                 "%s:%s failed to connect to socket %s", self.ip, self.port, sock
             )
             await sock.close()
@@ -3358,7 +3358,7 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         logger.debug(
-            "default_user=%s default_pws=%s default_ssh_key=%s default_ssh_port=%s commands=%s collect_remote_data=%s",
+            "ssh_user=%s default_pws=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
             self.ip,
             ssh_user,
             ssh_pwd,

@@ -77,7 +77,7 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_user = util.get_arg_and_delete_from_mods(
+        ssh_user = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-user",
             return_type=str,
@@ -86,7 +86,7 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_pwd = util.get_arg_and_delete_from_mods(
+        ssh_pwd = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-pwd",
             return_type=str,
@@ -95,7 +95,7 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(
+        ssh_port = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-port",
             return_type=int,
@@ -104,7 +104,7 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(
+        ssh_key = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-key",
             return_type=str,
@@ -151,21 +151,21 @@ class SummaryController(LiveClusterCommandController):
 
         os_version = self.cluster.info_system_statistics(
             nodes=self.nodes,
-            default_user=default_user,
-            default_pwd=default_pwd,
-            default_ssh_key=default_ssh_key,
-            default_ssh_port=default_ssh_port,
+            ssh_user=ssh_user,
+            ssh_pwd=ssh_pwd,
+            ssh_key=ssh_key,
+            ssh_port=ssh_port,
             commands=["lsb"],
-            collect_remote_data=enable_ssh,
+            enable_ssh=enable_ssh,
         )
         kernel_version = self.cluster.info_system_statistics(
             nodes=self.nodes,
-            default_user=default_user,
-            default_pwd=default_pwd,
-            default_ssh_key=default_ssh_key,
-            default_ssh_port=default_ssh_port,
+            ssh_user=ssh_user,
+            ssh_pwd=ssh_pwd,
+            ssh_key=ssh_key,
+            ssh_port=ssh_port,
             commands=["uname"],
-            collect_remote_data=enable_ssh,
+            enable_ssh=enable_ssh,
         )
 
         license_usage_future = None
