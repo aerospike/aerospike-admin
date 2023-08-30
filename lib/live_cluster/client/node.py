@@ -2966,6 +2966,9 @@ class Node(AsyncObject):
         result = None
         sock = await self._get_connection(ip, port)
 
+        if not sock:
+            raise IOError("Could not connect to node %s" % ip)
+
         try:
             result = await admin_func(sock, *args)
 

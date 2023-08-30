@@ -214,6 +214,8 @@ class ASSocket:
             logger.debug(e, exc_info=True)
             raise
 
+        return True
+
     async def is_connected(self):
         if not self.sock:
             return False
