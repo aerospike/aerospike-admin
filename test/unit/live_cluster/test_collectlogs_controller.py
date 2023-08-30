@@ -14,7 +14,6 @@
 
 import time
 from pytest import PytestUnraisableExceptionWarning
-from lib.base_controller import ShellException
 from mock import AsyncMock, Mock, patch, create_autospec
 from mock.mock import call
 from lib.live_cluster import ssh

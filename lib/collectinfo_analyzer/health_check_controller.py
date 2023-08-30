@@ -14,6 +14,8 @@
 
 import copy
 import logging
+import os
+import pprint
 
 from lib.base_controller import CommandHelp, ModifierHelp
 import lib.health as health
@@ -645,6 +647,10 @@ class HealthCheckController(CollectinfoCommandController):
                             forced_all_new_keys=forced_all_new_keys,
                         )
                         sn_ct += 1
+
+            if os.environ.get("FEATKEY"):
+                with open("cf_health_input.txt", "w") as f:
+                    f.write(pprint.pformat(health_input))
 
             health_input = health.util.h_eval(health_input)
             self.health_checker.set_health_input_data(health_input)

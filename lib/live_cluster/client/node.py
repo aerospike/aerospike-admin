@@ -216,16 +216,6 @@ class Node(AsyncObject):
         self.session_expiration = 0
         self.perform_login = True
 
-        # System Details
-        self.sys_ssh_port = None
-        self.sys_user_id = None
-        self.sys_pwd = None
-        self.sys_ssh_key = None
-        self.sys_ssh_port = None
-        self.sys_ssh_user_id = None
-        self.sys_ssh_pwd = None
-        self.sys_ssh_key = None
-
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
         self.sys_cmds: list[_SysCmd] = [
@@ -2976,9 +2966,6 @@ class Node(AsyncObject):
         result = None
         sock = await self._get_connection(ip, port)
 
-        if not sock:
-            raise IOError("Could not connect to node %s" % ip)
-
         try:
             result = await admin_func(sock, *args)
 
@@ -3330,7 +3317,7 @@ class Node(AsyncObject):
 
         except SSHError as e:
             # Catches async.ChannelOpenError
-            port = "22" if self.sys_ssh_port is None else str(self.sys_ssh_port)
+            port = "22" if ssh_port is None else str(ssh_port)
             logger.warning(
                 f"Ignoring system statistics collection. Couldn't get or parse remote system stats for remote server {self.ip}:{port} : {e}"
             )
@@ -3358,7 +3345,7 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         logger.debug(
-            "ssh_user=%s default_pws=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
+            "ssh_user=%s ssh_pwd=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
             self.ip,
             ssh_user,
             ssh_pwd,

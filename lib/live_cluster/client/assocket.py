@@ -153,7 +153,7 @@ class ASSocket:
                     break
             except Exception:
                 logger.debug("Failed to create socket to %s", addrinfo)
-                pass
+                raise
         return sock
 
     async def login(self):
@@ -212,8 +212,7 @@ class ASSocket:
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
         except Exception as e:
             logger.debug(e, exc_info=True)
-            return False
-        return True
+            raise
 
     async def is_connected(self):
         if not self.sock:

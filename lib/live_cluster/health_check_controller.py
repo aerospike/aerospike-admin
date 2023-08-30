@@ -14,9 +14,12 @@
 import asyncio
 import copy
 import logging
+import os
+import pprint
 import time
 
 from lib.health import util as health_util
+from lib.live_cluster.constants import SSH_MODIFIER_HELP, SSH_MODIFIER_USAGE
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -32,7 +35,7 @@ logger = logging.getLogger(__name__)
 @CommandHelp(
     "Displays health summary. If remote server System credentials provided, then it will collect remote system stats and analyse that also. If credentials are not available then it will collect only localhost system statistics. This command is still in beta and its output should not be directly acted upon without further analysis.",
     short_msg="Displays health summary",
-    usage="[-dv] [-f <query_file>] [-o <output_file>] [-n <num_snapshots>] [-s <sleep_seconds>] [-oc <output_filter_category>] [-wl <output_filter_warn_level>] [--enable-ssh --ssh-user <user> --ssh-pwd <user> --ssh-key <key_path> [--ssh-port <port>]  [--ssh-cf <cred_file_path>]]",
+    usage=f"[-dv] [-f <query_file>] [-o <output_file>] [-n <num_snapshots>] [-s <sleep_seconds>] [-oc <output_filter_category>] [-wl <output_filter_warn_level>] [{SSH_MODIFIER_USAGE}]",
     modifiers=(
         ModifierHelp("-f", "Query file path", default="inbuilt health queries."),
         ModifierHelp(
@@ -55,27 +58,7 @@ logger = logging.getLogger(__name__)
             "-wl",
             "Output filter Warning level. Expected value CRITICAL or WARNING or INFO. This parameter works if Query file path provided, otherwise health command will work in interactive mode.",
         ),
-        ModifierHelp(
-            "--enable-ssh",
-            "Enables the collection of system statistics from a remote server.",
-        ),
-        ModifierHelp(
-            "--ssh-user",
-            "Default user ID for remote servers. This is the ID of a user of the system, not the ID of an Aerospike user.",
-        ),
-        ModifierHelp(
-            "--ssh-pwd",
-            "Default password or passphrase for key for remote servers. This is the user's password for logging into the system, not a password for logging into Aerospike.",
-        ),
-        ModifierHelp(
-            "--ssh-port",
-            "Default SSH port for remote servers",
-            default="22",
-        ),
-        ModifierHelp(
-            "--ssh-key",
-            "Default SSH key (file path) for remote servers.",
-        ),
+        *SSH_MODIFIER_HELP,
     ),
     hide=True,
 )
@@ -233,6 +216,15 @@ class HealthCheckController(LiveClusterCommandController):
         )
 
         ssh_key = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-key",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        ssh_key_pwd = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-key",
             return_type=str,
@@ -754,11 +746,12 @@ class HealthCheckController(LiveClusterCommandController):
                 sys_stats = asyncio.create_task(
                     self.cluster.info_system_statistics(
                         nodes=self.nodes,
+                        enable_ssh=enable_ssh,
                         ssh_user=ssh_user,
                         ssh_pwd=ssh_pwd,
                         ssh_key=ssh_key,
+                        ssh_key_pwd=ssh_key_pwd,
                         ssh_port=ssh_port,
-                        enable_ssh=enable_ssh,
                     )
                 )
 
@@ -827,6 +820,10 @@ class HealthCheckController(LiveClusterCommandController):
                 sn_ct += 1
                 logger.info("Snapshot " + str(sn_ct))
                 time.sleep(sleep)
+
+            if os.environ.get("FEATKEY"):
+                with open("live_health_input.txt", "w") as f:
+                    f.write(pprint.pformat(health_input))
 
             health_input = health_util.h_eval(health_input)
 

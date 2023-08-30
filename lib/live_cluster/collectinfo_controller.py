@@ -1,4 +1,4 @@
-# Copyright 2021-2023 Aerospike, Inc.
+# Copyright 2023-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ from lib.utils.types import NodeDict
 from lib.view.sheet.render import get_style_json, set_style_json
 from lib.view.terminal import terminal
 from lib.utils import common, constants, util, version
+from lib.live_cluster.constants import SSH_MODIFIER_HELP, SSH_MODIFIER_USAGE
 from lib.utils.logger import LogFormatter, stderr_log_handler, logger as g_logger
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
@@ -57,28 +58,13 @@ logger = logging.getLogger(__name__)
 
 @CommandHelp(
     "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
-    usage="[-n <num-snapshots>] [-s <sleep>] [--enable-ssh [--ssh-user <user>] [--ssh-pwd <pwd>] [--ssh-port <port>] [--ssh-key <key>]] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
+    usage=f"[-n <num-snapshots>] [-s <sleep>] [{SSH_MODIFIER_USAGE}] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
     modifiers=(
         ModifierHelp("-n", "Number of snapshots.", default="1"),
         ModifierHelp(
             "-s", "Sleep time in seconds between each snapshot.", default="5 sec"
         ),
-        ModifierHelp(
-            "--enable-ssh",
-            "Enables the collection of system statistics from the remote server.",
-        ),
-        ModifierHelp(
-            "--ssh-user",
-            "Default user ID for remote servers. This is the ID of a user of the system, not the ID of an Aerospike user.",
-        ),
-        ModifierHelp(
-            "--ssh-pwd",
-            "Default password or passphrase for key for remote servers. This is the user's password for logging into the system, not a password for logging into Aerospike.",
-        ),
-        ModifierHelp(
-            "--ssh-port", "Default SSH port for remote servers.", default="22"
-        ),
-        ModifierHelp("--ssh-key", "Default SSH key (file path) for remote servers."),
+        *SSH_MODIFIER_HELP,
         ModifierHelp(
             "--agent-host",
             "Host IP of the Unique Data Agent to collect license data usage.",
