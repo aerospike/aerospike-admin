@@ -292,10 +292,22 @@ class GetConfigController:
                 constants.CONFIG_RACK_IDS,
                 asyncio.create_task(self.get_rack_ids(nodes=nodes)),
             ),
+            (
+                constants.CONFIG_LOGGING,
+                asyncio.create_task(self.get_logging(nodes=nodes)),
+            ),
         ]
         config_map = dict([(k, await f) for k, f in futures])
 
         return config_map
+
+    async def get_logging(self, nodes="all"):
+        logging_configs = await self.cluster.info_logging_config(nodes=nodes)
+        for node in logging_configs:
+            if isinstance(logging_configs[node], Exception):
+                logging_configs[node] = {}
+
+        return logging_configs
 
     async def get_security(self, nodes="all"):
         security_configs = await self.cluster.info_get_config(
@@ -819,6 +831,18 @@ class GetFeaturesController:
             ns_configs=ns_configs,
             security_configs=security_configs,
         )
+
+
+class GetClusterMetadataController:
+    # TODO: do we need this? Technically asadm only really ever deals with metadata. I
+    # want this to handle things that arn't configs or stats . . .
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    def get_builds(self, nodes="all"):
+        builds = self.cluster.info_build(nodes=nodes)
+        return util.filter_exceptions(builds)
 
 
 class GetPmapController:

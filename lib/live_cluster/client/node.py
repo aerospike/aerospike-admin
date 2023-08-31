@@ -82,17 +82,25 @@ def get_fully_qualified_domain_name(address, timeout=0.5):
 
 
 def async_return_exceptions(func):
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args, raise_exception=False, **kwargs):
+        raise_exception = False
+        exception = None
+
         try:
             return await func(*args, **kwargs)
         except (ASInfoNotAuthenticatedError, ASProtocolConnectionError) as e:
             args[0].alive = False
-            return e
+            exception = e
         except (ASInfoError, ASProtocolError) as e:
-            return e
+            exception = e
         except Exception as e:
             args[0].alive = False
-            return e
+            exception = e
+
+        if raise_exception:
+            raise
+
+        return exception
 
     return wrapper
 
@@ -1467,7 +1475,7 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_logs(self):
+    async def info_logs_ids(self):
         id_file_dict = {}
         ls = client_util.info_to_list(await self._info("logs"))
 
@@ -1478,8 +1486,24 @@ class Node(AsyncObject):
         return id_file_dict
 
     @async_return_exceptions
+    async def info_logging_config(self):
+        log_ids = await self.info_logs_ids(raise_exception=True)
+
+        async def get_logging_config(log_id):
+            client_util.info_to_dict(
+                await self._info("log/{}".format(log_id)), key_value_delimter=":"
+            )
+
+        log_names = log_ids.keys()
+        configs = await asyncio.gather(
+            *[get_logging_config(id) for id in log_ids.values()]
+        )
+
+        return dict(zip(log_names, configs))
+
+    @async_return_exceptions
     async def info_set_config_logging(self, file, param, value):
-        logs = await self.info_logs()
+        logs = await self.info_logs_ids()
         error_message = "Failed to set logging configuration parameter {} to {}"
 
         if file not in logs:

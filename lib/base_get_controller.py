@@ -4,8 +4,17 @@ from lib.utils import constants
 
 
 class BaseGetConfigController:
+    def get_logging(self):
+        raise NotImplementedError("get_logging not implemented")
+
     def get_service(self):
         raise NotImplementedError("get_service not implemented")
+
+    def get_network(self):
+        raise NotImplementedError("get_network not implemented")
+
+    def get_security(self):
+        raise NotImplementedError("get_security not implemented")
 
     def get_namespace(self, for_mods: list[str] | None = None):
         raise NotImplementedError("get_namespace not implemented")

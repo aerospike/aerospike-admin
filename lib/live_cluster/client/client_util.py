@@ -17,7 +17,12 @@ import itertools
 import asyncio
 
 
-def info_to_dict(value, delimiter=";", ignore_field_without_key_value_delimiter=True):
+def info_to_dict(
+    value,
+    delimiter=";",
+    key_value_delimter="=",
+    ignore_field_without_key_value_delimiter=True,
+):
     """
     Simple function to convert string to dict
     """
@@ -30,7 +35,7 @@ def info_to_dict(value, delimiter=";", ignore_field_without_key_value_delimiter=
     stat_dict = {}
     _tmp_value_list = info_to_list(value, delimiter)
     _value_list = []
-    delimiter2 = "="
+    delimiter2 = key_value_delimter
 
     if ignore_field_without_key_value_delimiter:
         _value_list = _tmp_value_list

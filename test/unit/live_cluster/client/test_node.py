@@ -27,7 +27,11 @@ import pytest
 
 import lib
 from lib.live_cluster.client.ctx import CDTContext, CTXItem, CTXItems
-from lib.live_cluster.client.types import ASProtocolError, ASProtocolExcFactory, ASResponse
+from lib.live_cluster.client.types import (
+    ASProtocolError,
+    ASProtocolExcFactory,
+    ASResponse,
+)
 from test.unit import util
 from lib.utils import constants
 from lib.live_cluster.client.assocket import ASSocket
@@ -1140,11 +1144,11 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.return_value = "0:path0;1:path1;2:path2"
         expected = {"path0": "0", "path1": "1", "path2": "2"}
 
-        actual = await self.node.info_logs()
+        actual = await self.node.info_log_ids()
 
         self.assertDictEqual(actual, expected)
 
-    @patch("lib.live_cluster.client.node.Node.info_logs")
+    @patch("lib.live_cluster.client.node.Node.info_log_ids")
     async def test_info_set_config_logging_success(self, info_logs_mock):
         info_logs_mock.return_value = {"path0": "0", "path1": "1", "path2": "2"}
         self.info_mock.return_value = "ok"
@@ -1154,7 +1158,7 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with("log-set:id=1;foo=bar", self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
-    @patch("lib.live_cluster.client.node.Node.info_logs")
+    @patch("lib.live_cluster.client.node.Node.info_log_ids")
     async def test_info_set_config_logging_fail(self, info_logs_mock):
         info_logs_mock.return_value = {"path0": "0", "path1": "1", "path2": "2"}
 
