@@ -88,7 +88,7 @@ class CollectlogsController(LiveClusterCommandController):
             if filename == "stderr":
                 filename = "stderr.log"
 
-            return logfile_prefix + node.node_id + "_" + path.basename(filename)
+            return logfile_prefix + node.node_id + "_" + path.basename(filename)  # type: ignore
 
         # Stores errors that occur after the connection is established
         download_errors = []
@@ -109,7 +109,6 @@ class CollectlogsController(LiveClusterCommandController):
                 self.cluster, ssh_conn_factory, exception_handler=error_handler
             ).download(local_path_generator)
         except Exception as e:
-            traceback.print_exc()
             raise
 
         if not connect_errors and not download_errors:

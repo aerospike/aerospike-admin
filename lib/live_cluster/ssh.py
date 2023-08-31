@@ -11,7 +11,7 @@ class SSHConnection:
     def __init__(self, conn: asyncssh.SSHClientConnection, max_sessions: int = 10):
         self._conn = conn
         self._max_sessions_sem = asyncio.Semaphore(max_sessions)
-        self._num_sessions = 0  # Could be used to sort a priority queue of connections
+        self._num_sessions = 0  # Could be used to sort a priority queue of connections # review: Maybe remove this for now
 
     async def run(
         self, cmd: str
@@ -65,21 +65,6 @@ class SSHConnectionConfig:
         self.private_key_pwd = private_key_pwd
 
 
-RemoteSrc = list[str] | str
-LocalSrc = list[str] | str
-LocalDst = str
-
-
-class RemoteDest:
-    def __init__(
-        self,
-        conn: SSHConnection,
-        path: str,
-    ):
-        self.path = path
-        self.conn = conn
-
-
 class SSHConnectionFactory:
     """
     Static dict of ip -> (semaphore, Number of SSHConnectionFactory objects using this ip)
@@ -125,15 +110,6 @@ class SSHConnectionFactory:
                 logger.error(e)
                 raise
 
-            # self.opts.port
-            # self.opts.prepare(
-            #     port=ssh_config.port if ssh_config.port is not None else (),
-            #     username=ssh_config.username if ssh_config.username is not None else (),
-            #     password=ssh_config.password,
-            #     passphrase=ssh_config.private_key_pwd,
-            #     client_keys=ssh_config.private_key if ssh_config.private_key else (),
-            # )
-
     async def create_connection(self, ip) -> SSHConnection:
         if ip not in SSHConnectionFactory.semaphore_host_dict:
             SSHConnectionFactory.semaphore_host_dict[
@@ -161,20 +137,20 @@ class SSHConnectionFactory:
                 )
                 del SSHConnectionFactory.semaphore_host_dict[ip]
 
-    # def close(self):
-    #     SSHConnectionFactory.semaphore_host_dict[ip].count -= 1
 
-    #     if SSHConnectionFactory.semaphore_host_dict[self.ip].count == 0:
-    #         logger.debug(
-    #             f"{self.ip}: Host has no other factories. Cleaning up host semaphore"
-    #         )
-    #         del SSHConnectionFactory.semaphore_host_dict[self.ip]
+RemoteSrc = list[str] | str
+LocalSrc = list[str] | str
+LocalDst = str
 
-    # def __enter__(self):
-    #     return self
 
-    # def __exit__(self, exc_type, exc_value, traceback):
-    #     self.close()
+class RemoteDest:  # review: Simplify to just be a string?
+    def __init__(
+        self,
+        conn: SSHConnection,
+        path: str,
+    ):
+        self.path = path
+        self.conn = conn
 
 
 class FileTransfer:

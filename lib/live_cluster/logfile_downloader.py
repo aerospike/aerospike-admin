@@ -8,10 +8,8 @@ from lib.live_cluster.client.node import Node
 from lib.live_cluster.ssh import (
     FileTransfer,
     LocalDst,
-    LocalSrc,
     RemoteSrc,
     SSHConnection,
-    SSHConnectionConfig,
     SSHConnectionError,
     SSHConnectionFactory,
     SSHError,
@@ -86,13 +84,8 @@ class LogFileDownloader:
             cluster {Cluster} -- Aerospike cluster to download logs from
 
         Keyword Arguments:
-            enable_ssh {bool} -- Use ssh to gather the logs from Aerospike nodes. This
-            assumes either the required config is defined in the ssh/ssh*_confg files or
-            all nodes require the same credentials and are defined by ssh_config.
-            (default: {False})
-            ssh_config {SSHConnectionConfig | None} -- The ssh config to use the
-            authenticate on the remote node. This overrides the config found in the
-            ssh_config if found. (default: {None})
+            ssh_factory {SSHConnectionFactory | None} -- An optional factory for
+            creating #TODO: finish this comment
             exception_handler {Callable[[Exception, Node], None] | None} -- An optional
             callback called with every exception and the associated node that occurs
             during the process of downloading/moving/compressing the file. If not set
@@ -111,7 +104,9 @@ class LogFileDownloader:
 
         Arguments:
             path_gen_func {PathGenerator} -- Generator function that takes a node and a
-            log path and returns a local writable path to store the log.
+            log path and returns a local writable path to store the log. The returned
+            path cannot be a directory.
+
 
         Keyword Arguments:
             node_select {NodeSelectionType} -- Specify the nodes to download logs from.
@@ -168,7 +163,7 @@ class LogFileDownloader:
             )
 
             if p.returncode != 0:
-                msg = "Unknown exception occurred while running gzip"
+                msg = "Unknown exception occurred while running journalctl"
 
                 if p.stderr is not None:
                     msg = util.bytes_to_str(p.stderr).split("\n")[0]
@@ -221,7 +216,11 @@ class LogFileDownloader:
             if log.skip:
                 return
 
-            log.local_destination = log.local_destination + ".gz"
+            log.local_destination = (
+                log.local_destination
+                if log.local_destination.endswith(".gz")
+                else log.local_destination + ".gz"
+            )
             log.tmp_src = log.tmp_src + ".gz"
             logger.info(
                 format_node_msg(
@@ -324,7 +323,7 @@ class LogFileDownloader:
 
         for log in log_file_info:
             try:
-                if "stderr" in log.original_src:
+                if "stderr" == log.original_src:
                     log.original_src = log.local_destination
                     await self._create_local_console_log(node, log.local_destination)
             except LogFileDownloaderException as e:
@@ -378,13 +377,13 @@ class LogFileDownloader:
                     )
 
                     for log in log_file_info:
-                        if "stderr" in log.tmp_src:
+                        if "stderr" == log.original_src:
                             log.original_src = log.tmp_src
                             try:
                                 await self._create_remote_console_log(
                                     node, conn, log.tmp_src
                                 )
-                            except SSHError as e:
+                            except (SSHError, LogFileDownloaderException) as e:
                                 logger.error(
                                     format_node_msg(
                                         node,
@@ -394,7 +393,6 @@ class LogFileDownloader:
                                 log.skip = True
                                 if self.exception_handler:
                                     self.exception_handler(e, node)
-                                    continue
                                 else:
                                     raise
 
@@ -405,7 +403,9 @@ class LogFileDownloader:
                         log.to_file_transfer() for log in log_file_info if not log.skip
                     ]
 
-                    errors = await FileTransfer.remote_to_local(file_paths, conn)
+                    errors = await FileTransfer.remote_to_local(
+                        file_paths, conn, return_exceptions=True
+                    )
 
                     for err in errors:
                         if err is None:
