@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import logging
 from typing import Union
 from lib.base_controller import CommandHelp, ModifierHelp
 from lib.live_cluster.constants import SSH_MODIFIER_HELP, SSH_MODIFIER_USAGE
@@ -23,6 +24,8 @@ from lib.utils.constants import (
 )
 
 from .live_cluster_command_controller import LiveClusterCommandController
+
+logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
@@ -99,6 +102,15 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
+        ssh_key_pwd = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--ssh-key-pwd",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
         agent_host = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--agent-host",
@@ -140,6 +152,7 @@ class SummaryController(LiveClusterCommandController):
             ssh_user=ssh_user,
             ssh_pwd=ssh_pwd,
             ssh_key=ssh_key,
+            ssh_key_pwd=ssh_key_pwd,
             ssh_port=ssh_port,
             commands=["lsb"],
             enable_ssh=enable_ssh,
@@ -148,7 +161,7 @@ class SummaryController(LiveClusterCommandController):
             nodes=self.nodes,
             ssh_user=ssh_user,
             ssh_pwd=ssh_pwd,
-            ssh_key=ssh_key,
+            ssh_key_pwd=ssh_key_pwd,
             ssh_port=ssh_port,
             commands=["uname"],
             enable_ssh=enable_ssh,

@@ -648,6 +648,7 @@ class HealthCheckController(CollectinfoCommandController):
                         )
                         sn_ct += 1
 
+            # FEATKEY is defined during tests. This is to help debugging github actions failures.
             if os.environ.get("FEATKEY"):
                 with open("cf_health_input.txt", "w") as f:
                     f.write(pprint.pformat(health_input))

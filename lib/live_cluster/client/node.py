@@ -18,7 +18,7 @@ import logging
 import os
 import re
 import socket
-from ssl import SSLContext
+from OpenSSL import SSL
 import threading
 import time
 import base64
@@ -178,7 +178,7 @@ class Node(AsyncObject):
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
-        ssl_context: SSLContext | None = None,
+        ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
     ) -> None:
@@ -335,14 +335,12 @@ class Node(AsyncObject):
         )  # TODO Init and connect steps should be separate
         self.localhost = False
 
-        # if address.lower() == "localhost":
-        #     self.localhost = True
         if address.lower() == "localhost" or address == "127.0.0.1":
             p = await util.async_shell_command(
                 "docker ps | tail -n +2 | awk '{print $2}' | grep 'aerospike/aerospike-server'"
             )
 
-            if p and not p.returncode:
+            if not p or p.returncode != 0:
                 """
                 Check if any docker containers are running. If they are then lets assume
                 that an aerospike node is not running on localhost since this affects how
@@ -352,35 +350,21 @@ class Node(AsyncObject):
                 self.localhost = True
 
         elif self.alive:
-            tmp_node = None
             try:
                 """
-                Handles edge cases where either:
-                1. The users provided an ip address even though localhost would have sufficed.
-                2. Multiple instances of aerospike are running on the same machine.
-                3. We can't simply use the result of `hostname -I` because it will
-                return something other than the ip address of the node if "access-address"
-                is set in the config file.
+                This could still result in self.localhost being False if the node
+                has access-address or alternate-access-addres (in the case of
+                --use-alternate) configured to something other than what is returned
+                by hostname -I. This could occur in cloud environments where the
+                external IP is different than the internal IP.
                 """
+                p = await util.async_shell_command("hostname -I")
 
-                tmp_node = await Node(
-                    "localhost",
-                    port=self.port,
-                    tls_name=self.tls_name,
-                    timeout=0.1,
-                    user=self.user,
-                    password=self.password,
-                    auth_mode=self.auth_mode,
-                    ssl_context=self.ssl_context,
-                    consider_alumni=self.consider_alumni,
-                    use_services_alt=self.use_services_alt,
-                )
-                self.localhost = tmp_node.alive and self.ip == tmp_node.ip
-            except Exception:
+                if p and p.returncode == 0 and p.stdout:
+                    stdout = (await p.stdout.read()).decode("utf-8").strip()
+                    self.localhost = self._is_any_my_ip(stdout.split())
+            except Exception as e:
                 pass
-            finally:
-                if tmp_node:
-                    await tmp_node.close()
 
         # configurations from conf file
         self.as_conf_data = {}
@@ -665,7 +649,7 @@ class Node(AsyncObject):
 
         return common.is_new_histogram_version(as_version)
 
-    async def _get_connection(self, ip, port) -> ASSocket:
+    async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
 
         try:

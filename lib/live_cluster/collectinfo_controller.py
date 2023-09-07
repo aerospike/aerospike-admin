@@ -22,8 +22,7 @@ import shutil
 import time
 import sys
 import traceback
-from typing import Any, Callable, Coroutine, Optional
-from lib.live_cluster.client import node
+from typing import Any, Callable
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.generate_config_controller import GenerateConfigController
 from lib.live_cluster.logfile_downloader import LogFileDownloader
@@ -539,7 +538,6 @@ class CollectinfoController(LiveClusterCommandController):
     ) -> None:
         logger.info("Data collection license usage in progress...")
         logger.info("Requesting data usage for past 365 days...")
-        error = None
         resp = {}
 
         try:

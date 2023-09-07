@@ -21,7 +21,6 @@ import inspect
 import io
 import pipes
 import re
-import shlex
 import socket
 import subprocess
 import sys
@@ -631,6 +630,7 @@ def filter_exceptions(data: Any):
     """
     Takes a dict or list and removes all values that are exceptions
     """
+    # TODO: Add debug logging. Any exceptions removed by this function are likely unexpected.
     if isinstance(data, dict):
         for _k in list(data.keys()):
             if isinstance(data[_k], Exception):

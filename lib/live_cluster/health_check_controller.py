@@ -226,7 +226,7 @@ class HealthCheckController(LiveClusterCommandController):
 
         ssh_key_pwd = util.get_arg_and_delete_from_mods(
             line=line,
-            arg="--ssh-key",
+            arg="--ssh-key-pwd",
             return_type=str,
             default=None,
             modifiers=self.modifiers,
@@ -821,6 +821,7 @@ class HealthCheckController(LiveClusterCommandController):
                 logger.info("Snapshot " + str(sn_ct))
                 time.sleep(sleep)
 
+            # FEATKEY is defined during tests. This is to help debugging github actions failures.
             if os.environ.get("FEATKEY"):
                 with open("live_health_input.txt", "w") as f:
                     f.write(pprint.pformat(health_input))

@@ -18,7 +18,7 @@ import random
 import re
 import logging
 import inspect
-from ssl import SSLContext
+from OpenSSL import SSL
 from typing import Any, Callable, Coroutine, Literal, Union
 from time import time
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
@@ -51,7 +51,7 @@ class Cluster(AsyncObject):
         auth_mode=constants.AuthMode.INTERNAL,
         use_services_alumni=False,
         use_services_alt=False,
-        ssl_context: SSLContext | None = None,
+        ssl_context: SSL.Context | None = None,
         only_connect_seed=False,
         timeout=1,
     ):

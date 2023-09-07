@@ -14,11 +14,12 @@
 
 import asyncio
 from io import StringIO
-from ssl import SSLContext
 import sys
 from lib.live_cluster.generate_config_controller import (
     GenerateController,
 )
+
+from OpenSSL import SSL
 from lib.live_cluster.collectlogs_controller import CollectlogsController
 
 from lib.utils import constants, util
@@ -59,7 +60,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
         auth_mode=constants.AuthMode.INTERNAL,
         use_services_alumni=False,
         use_services_alt=False,
-        ssl_context: SSLContext | None = None,
+        ssl_context: SSL.Context | None = None,
         only_connect_seed=False,
         timeout=5,
         asadm_version="",

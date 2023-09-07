@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from lib.base_controller import BaseController, CommandHelp, ModifierHelp
 from lib.utils import util
 from lib.view import terminal
@@ -20,6 +21,8 @@ from lib.view.view import CliView
 from .log_analyzer_command_controller import LogAnalyzerCommandController
 from .grep_file_controller import GrepFile
 from .log_handler.log_handler import LogHandler
+
+logger = logging.getLogger(__name__)
 
 
 @CommandHelp("Aerospike Admin")

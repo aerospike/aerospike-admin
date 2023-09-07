@@ -306,6 +306,7 @@ class RemoteLogFileDownloadersTest(asynctest.TestCase):
                 ("/tmp/time_prefix/0/log2.log.gz", "path/0log2.log.gz"),
             ],
             self.conn_mock,
+            return_exceptions=False,
         )
         self.sftp_mock.rmtree.assert_called_once_with("/tmp/time_prefix/0/")
 
@@ -354,9 +355,7 @@ class RemoteLogFileDownloadersTest(asynctest.TestCase):
         self.sftp_mock.rmtree.assert_called_once_with("/tmp/time_prefix/0/")
 
     async def test_remote_node_transfer_raises(self):
-        self.file_transfer_mock.remote_to_local = AsyncMock(
-            return_value=[Exception("0"), None, Exception("1")]
-        )
+        self.file_transfer_mock.remote_to_local = AsyncMock(side_effect=Exception("0"))
 
         self.conn_mock.run.side_effect = self.return_error_for_cmd(None)
 
@@ -384,6 +383,7 @@ class RemoteLogFileDownloadersTest(asynctest.TestCase):
                 ("/tmp/time_prefix/0/log2.log.gz", "path/0log2.log.gz"),
             ],
             self.conn_mock,
+            return_exceptions=False,
         )
         self.sftp_mock.rmtree.assert_called_once_with("/tmp/time_prefix/0/")
         self.assertEqual(str(exc.exception), "0")
@@ -474,6 +474,7 @@ class RemoteLogFileDownloadersTest(asynctest.TestCase):
                 ("/tmp/time_prefix/0/log2.log.gz", "path/0log2.log.gz"),
             ],
             self.conn_mock,
+            return_exceptions=True,
         )
 
         self.assertEqual(error_handler.call_count, 1)
@@ -527,6 +528,7 @@ class RemoteLogFileDownloadersTest(asynctest.TestCase):
                 ("/tmp/time_prefix/0/log2.log.gz", "path/0log2.log.gz"),
             ],
             self.conn_mock,
+            return_exceptions=True,
         )
         self.sftp_mock.rmtree.assert_called_once_with("/tmp/time_prefix/0/")
 
@@ -573,6 +575,7 @@ class RemoteLogFileDownloadersTest(asynctest.TestCase):
                 ("/tmp/time_prefix/0/log2.log.gz", "path/0log2.log.gz"),
             ],
             self.conn_mock,
+            return_exceptions=True,
         )
         self.sftp_mock.rmtree.assert_called_once_with("/tmp/time_prefix/0/")
 

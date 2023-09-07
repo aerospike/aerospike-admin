@@ -404,7 +404,9 @@ class LogFileDownloader:
                     ]
 
                     errors = await FileTransfer.remote_to_local(
-                        file_paths, conn, return_exceptions=True
+                        file_paths,
+                        conn,
+                        return_exceptions=self.exception_handler is not None,
                     )
 
                     for err in errors:
@@ -416,9 +418,8 @@ class LogFileDownloader:
                                 format_node_msg(node, f"Failed to download log: {err}")
                             )
                             self.exception_handler(err, node)
-                        else:
-                            # Gets logged by next try/except block
-                            raise err
+                        # else:
+                        #     remote_to_local already raises the first exception it encounters
                 finally:
                     try:
                         async with await conn.start_sftp_client() as sftp_session:

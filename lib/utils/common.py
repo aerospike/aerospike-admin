@@ -51,7 +51,6 @@ from lib.utils.types import (
 from lib.view import terminal
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 ########## Feature ##########
 
@@ -2782,7 +2781,7 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
     failed_cmds = []
 
     try:
-        o, e = util.shell_command([cmd])
+        o, e = util.shell_command([cmd])  # TODO make async
     except Exception as e:
         return o_line + str(e), failed_cmds
 
@@ -2801,7 +2800,7 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
                 )
                 alt_cmd = [alt_cmd]
                 o_line += str(alt_cmd) + "\n"
-                o_alt, e_alt = util.shell_command(alt_cmd)
+                o_alt, e_alt = util.shell_command(alt_cmd)  # TODO make async
 
                 if e_alt:
                     e = e_alt
@@ -2829,19 +2828,17 @@ def _collectinfo_content(func):
 
     o, e = None, None
 
-    failed_cmds = []
-
     try:
         o, e = func()
     except Exception as e:
-        return o_line + str(e), failed_cmds
+        return o_line + str(e)
 
     if e:
         logger.warning(str(e))
     if o:
         o_line += str(o) + "\n"
 
-    return o_line, failed_cmds
+    return o_line
 
 
 def _zip_files(dir_path, _size=1):
@@ -2859,6 +2856,7 @@ def _zip_files(dir_path, _size=1):
             if size_mb >= _size:
                 os.chdir(root)
                 try:
+                    # TODO: Investigate changing from zip to gzip to match collectlogs.
                     newzip = zipfile.ZipFile(_file + ".zip", "w", zipfile.ZIP_DEFLATED)
                     newzip.write(_file)
                     newzip.close()
@@ -3088,7 +3086,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
 
     try:
         logger.info(f"Collecting output about the cpu and writing to syslog.log")
-        o, f_cmds = _collectinfo_content(func=_collect_cpuinfo)
+        o = _collectinfo_content(func=_collect_cpuinfo)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
@@ -3097,7 +3095,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         logger.info(
             f"Checking if you are running in Cloud: AWS and writing to syslog.log"
         )
-        o, f_cmds = _collectinfo_content(func=_collect_aws_data)
+        o = _collectinfo_content(func=_collect_aws_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
@@ -3106,7 +3104,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         logger.info(
             f"Checking if you are running in Cloud: GCP and writing to syslog.log"
         )
-        o, f_cmds = _collectinfo_content(func=_collect_gce_data)
+        o = _collectinfo_content(func=_collect_gce_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
@@ -3115,7 +3113,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         logger.info(
             f"Checking if you are running in Cloud: Azure and writing to syslog.log"
         )
-        o, f_cmds = _collectinfo_content(func=_collect_azure_data)
+        o = _collectinfo_content(func=_collect_azure_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
@@ -3124,7 +3122,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         logger.info(
             f"Collecting infomation about aerospike open file descriptors using 'lsof' and writing to syslog.log"
         )
-        o, f_cmds = _collectinfo_content(func=_collect_lsof)
+        o = _collectinfo_content(func=_collect_lsof)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
@@ -3133,7 +3131,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         logger.info(
             f"Collecting information about the environment and writing to syslog.log"
         )
-        o, f_cmds = _collectinfo_content(func=_collect_env_variables)
+        o = _collectinfo_content(func=_collect_env_variables)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
@@ -3142,7 +3140,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         logger.info(
             f"Collecting infomation about network interfaces and writing to syslog.log"
         )
-        o, f_cmds = _collectinfo_content(func=_collect_ip_link_details)
+        o = _collectinfo_content(func=_collect_ip_link_details)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))

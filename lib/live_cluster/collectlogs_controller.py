@@ -11,13 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import asyncio
 import logging
 from os import path
 import os
-import shutil
 import time
-import traceback
 
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.logfile_downloader import LogFileDownloader
@@ -34,17 +31,13 @@ logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
-    "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
+    "Collects logs for the local node and remote nodes if ssh is enabled and configured. If ssh is not available then it will collect logs from the local node only.",
     usage=f"[{SSH_MODIFIER_USAGE}] [--output-prefix <prefix>]",
     modifiers=(
         *SSH_MODIFIER_HELP,
-        ModifierHelp(
-            "--agent-host",
-            "Host IP of the Unique Data Agent to collect license data usage.",
-        ),
         ModifierHelp("--output-prefix", "Output directory name prefix."),
     ),
-    short_msg="Collects cluster info, system stats, and aerospike conf file for local node",
+    short_msg="Collects cluster logs",
 )
 class CollectlogsController(LiveClusterCommandController):
     def __init__(self):

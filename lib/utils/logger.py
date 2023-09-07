@@ -55,14 +55,14 @@ class BaseLogger(logging.Logger, object):
 
         if self.level <= logging.ERROR:
             self._handle_exception(msg)
-            set_exit_code(1)
+            set_exit_code(2)
 
     def critical(self, msg, *args, **kwargs):
         super().critical(msg, *args, **kwargs)
 
         if self.level <= logging.CRITICAL:
             self._handle_exception(msg)
-            set_exit_code(2)
+            set_exit_code(1)
 
 
 class _LogColors(Enum):
@@ -150,11 +150,11 @@ logger = logging.getLogger("lib")
 logger.propagate = False
 logger.setLevel(
     logging.WARNING
-)  # This only allows INFO and above to be logged to handlers
+)  # This only allows WARNING and above to be logged to handlers
 stderr_log_handler = logging.StreamHandler()
 stderr_log_handler.setLevel(
-    logging.ERROR
-)  # This only allows ERROR and above to be logged to stderr.
+    logging.WARNING
+)  # This only allows WARNING and above to be logged to stderr.
 stderr_log_handler.setFormatter(LogFormatter())
 logger.addHandler(stderr_log_handler)
 

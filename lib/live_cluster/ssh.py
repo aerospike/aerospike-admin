@@ -11,7 +11,6 @@ class SSHConnection:
     def __init__(self, conn: asyncssh.SSHClientConnection, max_sessions: int = 10):
         self._conn = conn
         self._max_sessions_sem = asyncio.Semaphore(max_sessions)
-        self._num_sessions = 0  # Could be used to sort a priority queue of connections # review: Maybe remove this for now
 
     async def run(
         self, cmd: str
@@ -21,10 +20,7 @@ class SSHConnection:
         )
         try:
             async with self._max_sessions_sem:
-                self._num_sessions += 1
-                proc = await self._conn.run(cmd, check=True, timeout=10)
-                self._num_sessions -= 1
-                return proc
+                return await self._conn.run(cmd, check=True, timeout=10)
         except asyncssh.TimeoutError as e:
             logger.warning(f"Timeout error: {e.reason}")
             raise SSHTimeoutError(e)
@@ -139,18 +135,9 @@ class SSHConnectionFactory:
 
 
 RemoteSrc = list[str] | str
+RemoteDst = str
 LocalSrc = list[str] | str
 LocalDst = str
-
-
-class RemoteDest:  # review: Simplify to just be a string?
-    def __init__(
-        self,
-        conn: SSHConnection,
-        path: str,
-    ):
-        self.path = path
-        self.conn = conn
 
 
 class FileTransfer:
@@ -208,13 +195,13 @@ class FileTransfer:
         return [err for err in errors if err is not None]
 
     @staticmethod
-    async def remote_to_remote(src_paths: RemoteSrc, dest_path: RemoteDest):
+    async def remote_to_remote(src_paths: RemoteSrc, dest_path: RemoteDst):
         # This can try to run sftp on the remote host to copy files directly from one remote host to another
         # and if that fails it can fallback to remote -> local -> remote
         raise NotImplementedError("remote to remote scp not implemented")
 
     @staticmethod
-    async def local_to_remote(src_paths: LocalSrc, dest_path: RemoteDest):
+    async def local_to_remote(src_paths: LocalSrc, dest_path: RemoteDst):
         raise NotImplementedError("local to remote scp not implemented")
 
 
