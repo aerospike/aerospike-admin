@@ -15,6 +15,7 @@
 import asyncio
 import copy
 from typing import Iterable, Optional
+from lib.base_get_controller import BaseGetConfigController
 
 from lib.utils import common, util, constants
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
@@ -247,7 +248,7 @@ async def get_sets(cluster, flip, nodes, for_mods: list[str] | None):
     return set_stats
 
 
-class GetConfigController:
+class GetConfigController(BaseGetConfigController):
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -840,8 +841,8 @@ class GetClusterMetadataController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    def get_builds(self, nodes="all"):
-        builds = self.cluster.info_build(nodes=nodes)
+    async def get_builds(self, nodes="all"):
+        builds = await self.cluster.info_build(nodes=nodes)
         return util.filter_exceptions(builds)
 
 

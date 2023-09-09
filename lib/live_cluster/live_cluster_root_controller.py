@@ -15,6 +15,7 @@
 import asyncio
 from io import StringIO
 import sys
+from lib.live_cluster.generate_config_controller import ConfGenController
 
 from lib.utils import constants, util
 from lib.base_controller import (
@@ -79,6 +80,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
 
         self.controller_map = {
             "health": HealthCheckController,
+            "confgen": ConfGenController,
             "summary": SummaryController,
             "features": FeaturesController,
             "pager": PagerController,

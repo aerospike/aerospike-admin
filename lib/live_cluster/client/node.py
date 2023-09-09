@@ -1490,7 +1490,7 @@ class Node(AsyncObject):
         log_ids = await self.info_logs_ids(raise_exception=True)
 
         async def get_logging_config(log_id):
-            client_util.info_to_dict(
+            return client_util.info_to_dict(
                 await self._info("log/{}".format(log_id)), key_value_delimter=":"
             )
 
