@@ -21,7 +21,6 @@ import re
 from lib.utils import version
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 
 class BaseConfigType:
@@ -205,8 +204,7 @@ def configTypeFactory(value):
 
 
 class BaseConfigHandler:
-    def __init__(self, as_build):
-        self.as_build = as_build
+    def __init__(self):
         self.logger = logging.getLogger("asadm")
 
     def get_subcontext(self, context):
@@ -229,9 +227,9 @@ class BaseConfigHandler:
         # OVERIDE
         raise NotImplementedError
 
-    def get_type(self, context, param):
+    def get_types(self, context, param) -> dict[str, BaseConfigType]:
         """
-        context: list(str) each string is a subcontext of precedeing string.
+        context: list(str) each string is a subcontext of preceding string.
         param: list(str) parameters in the given context.
         Returns: dict{str: BaseConfigType()} of parameters for the given context. If a given
                  parameter does not exist None is returned for that parameter.
@@ -257,9 +255,21 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         "dc": "dcs",
     }
 
-    def __init__(self, dir, as_build):
+    def __init__(self, dir: str, as_build: str, strict=False):
+        """_summary_
+
+        Arguments:
+            dir {str} -- Directory of config schema json files.
+            as_build {str} -- Aerospike build version.
+
+        Keyword Arguments:
+            strict {bool} -- Controls whether an exception should be thrown in the even
+            that a config schema can not be found for this build version. Otherwise,
+            make a best effort by using the first preceding version (default: {False})
+        """
         self.init_successful = False
-        super().__init__(as_build)
+        self.as_build = as_build
+        super().__init__()
 
         try:
             as_build = ".".join(as_build.split(".")[0:3])
@@ -280,7 +290,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
             logger.debug("JsonConfigHandler: Failed to load json: %s", e)
             return
 
-        file_path = self._get_file_path(dir, as_build, file_map)
+        file_path = self._get_file_path(dir, as_build, file_map, strict)
 
         if file_path is None:
             return
@@ -300,9 +310,10 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         self.schema = config_schema
         self.init_successful = True
 
-    def _get_file_path(self, dir, as_build, file_map):
+    def _get_file_path(self, dir, as_build, file_map, strict: bool):
         # If the build provided is before the lowest supported version (LSV) use LSV
         file = list(file_map.values())[0]
+        key = None
 
         # Find the closest version to the one provided.
         for key in file_map:
@@ -310,6 +321,15 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
                 break
 
             file = file_map[key]
+
+        if (
+            key
+            and strict
+            and version.LooseVersion(key) != version.LooseVersion(as_build)
+        ):
+            raise FileNotFoundError(
+                f"No configuration schema found for Aerospike server {as_build}. Consider upgrading asadm."
+            )
 
         logger.debug("JsonConfigHandler: Using server config schema %s", file)
 
@@ -486,7 +506,10 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
                 value = objects[internal_param]
                 try:
                     result[param] = configTypeFactory(value)
-                except ValueError:
+                except (ValueError, KeyError) as e:
+                    logger.debug(
+                        f"Failed to create config type for param {param} in context {context}, {e}"
+                    )
                     result[param] = None
             else:
                 result[param] = None

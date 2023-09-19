@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import argparse
+import sys
 import toml
 import copy
 from jsonschema import validate
@@ -413,15 +414,17 @@ def loadconfig(cli_args):
 
     if not cli_args.asinfo_mode:
         if cli_args.instance:
-            print("Instance:    " + cli_args.instance)
+            sys.stderr.write("Instance:    " + cli_args.instance + "\n")
 
         if not cli_args.collectinfo:
-            print("Seed:        " + str(seeds))
+            sys.stderr.write("Seed:        " + str(seeds) + "\n")
 
         if cli_args.no_config_file or not conffiles:
-            print("Config_file: None")
+            sys.stderr.write("Config_file: None\n")
         else:
-            print("Config_file: " + ", ".join(reversed(conffiles)))
+            sys.stderr.write("Config_file: " + ", ".join(reversed(conffiles)) + "\n")
+
+        sys.stderr.flush()
 
     return args, seeds
 

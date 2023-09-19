@@ -1,15 +1,20 @@
 import asyncio
+import copy
 import logging
-import pprint
-from typing import Any, TypedDict
-from typing_extensions import NotRequired
+from typing import Any
 from lib.base_get_controller import BaseGetConfigController
+from lib.live_cluster.client.config_handler import (
+    BaseConfigHandler,
+    JsonDynamicConfigHandler,
+)
 from lib.live_cluster.get_controller import GetClusterMetadataController
-from lib.utils import version
+from lib.utils import constants, version
 from lib.utils.types import NodeDict
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 MINIMUM_SUPPORTED_VERSION = "5.0.0"
+INTERMEDIATE = "intermediate"
 
 """
 Generating a config is a 2 step process. First generate the intermediate dict and then
@@ -67,41 +72,8 @@ class InterUnnamedSectionKey(IntermediateKey):
         return self.__str__()
 
 
-class InterTupleConfig(IntermediateKey):
-    def __init__(self, name: str):
-        self.name = name
-
-    def __hash__(self) -> int:
-        return hash((self.__class__.__name__, self.name))
-
-    def __eq__(self, __value: object) -> bool:
-        if not isinstance(__value, InterTupleConfig):
-            return False
-
-        return self.name == __value.name
-
-    def __str__(self) -> str:
-        return f"({self.__class__.__name__}, {self.name})"
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class InterLoggingContextKey(InterTupleConfig):
-    def __hash__(self) -> int:
-        return hash((self.__class__.__name__, self.name))
-
-    def __eq__(self, __value: object) -> bool:
-        if not isinstance(__value, InterLoggingContextKey):
-            return False
-
-        return self.name == __value.name and super().__eq__(__value)
-
-    def __str__(self) -> str:
-        return f"({self.__class__.__name__}, {self.name})"
-
-    def __repr__(self) -> str:
-        return self.__str__()
+class InterLoggingContextKey(str):
+    pass
 
 
 class InterListKey(IntermediateKey):
@@ -124,15 +96,28 @@ class InterListKey(IntermediateKey):
         return self.__str__()
 
 
-class ConfigGenerator:
-    async def generate(self) -> str:
-        raise NotImplementedError("ConfigGenerator.generate not implemented")
+class ConfigPipelineStep:
+    def __init__(self, name: str):
+        self.name = name
 
-    def __str__(self):
-        return self.generate()
+    async def __call__(self, intermediate_dict: dict[IntermediateKey | str, Any]):
+        raise NotImplementedError("ConfigPipelineStep.__call__ not implemented")
 
 
-class ASConfigGenerator(ConfigGenerator):
+class ConfigPipeline(ConfigPipelineStep):
+    def __init__(self, name: str, steps: list["ConfigPipelineStep"]):
+        self.name = name
+        self._steps = steps
+
+    def add_step(self, step: "ConfigPipelineStep"):
+        self._steps.append(step)
+
+    async def __call__(self, intermediate_dict: dict[str | IntermediateKey, Any]):
+        for step in self._steps:
+            await step(intermediate_dict)
+
+
+class GetConfigStep(ConfigPipelineStep):
     def __init__(
         self,
         config_getter: BaseGetConfigController,
@@ -140,209 +125,9 @@ class ASConfigGenerator(ConfigGenerator):
     ):
         self.config_getter = config_getter
         self.metadata_getter = metadata_getter
+        super().__init__("GetConfigStep")
 
-    def _split_subcontexts(self, config_dict: dict[str | IntermediateKey, Any]) -> None:
-        """Takes a config dict and splits any subcontexts that are joined with a dot
-        into their own subdicts. E.g. "heartbeat.interval" -> {"heartbeat": {"interval": ...}}
-
-        Arguments:
-            config_dict {dict[str, Any]} -- A dictionary that needs config params split.
-        """
-        contexts_to_delete = []
-
-        for config, value in list(config_dict.items()):
-            if isinstance(value, dict):
-                self._split_subcontexts(value)
-                continue
-
-            if not isinstance(config, str):
-                continue
-
-            contexts = config.split(".")
-
-            if len(contexts) > 1:
-                del config_dict[
-                    config
-                ]  # Delete it so we can reassign it after the loop
-
-                dict_ptr = config_dict
-
-                for c in contexts[:-1]:
-                    """
-                    Handles cases like index-type=pmem index-type.mounts-high-water-pct=99
-                    Should end up with "index-type": {"name": "pmem",
-                    "mounts-high-water-pct":99}. We will need to deal with indexed
-                    params later. e.g. "mount[i]"
-                    """
-
-                    if c in dict_ptr and isinstance(dict_ptr[c], str):
-                        name = dict_ptr[c]
-                        dict_ptr = dict_ptr.setdefault(
-                            InterNamedSectionKey(c, name), {}
-                        )
-
-                        """
-                        Don't delete the config e.g. index-type because we need the name
-                        field in order to continually generate the InterNamedSectionKey
-                        """
-                        contexts_to_delete.append(c)
-                    else:
-                        dict_ptr = dict_ptr.setdefault(InterUnnamedSectionKey(c), {})
-
-                dict_ptr[contexts[-1]] = value
-
-        for c in contexts_to_delete:
-            if c in config_dict:
-                del config_dict[c]
-
-    def _create_lists_indexed_config(
-        self, config_dict: dict[str | IntermediateKey, Any]
-    ):
-        tmp_list_dict: dict[str, list[tuple[int, str]]] = {}
-
-        for config in list(config_dict.keys()):
-            value = config_dict[config]
-
-            if isinstance(value, dict):
-                self._create_lists_indexed_config(config_dict[config])
-                continue
-
-            if not isinstance(config, str):
-                continue
-
-            if config.endswith("]"):
-                config_split = config.split("[")
-                config_name = config_split[0]
-                config_index = int(config_split[1][:-1])
-
-                if config_name not in tmp_list_dict:
-                    tmp_list_dict[config_name] = []
-
-                tmp_list_dict[config_name].append((config_index, value))
-                del config_dict[config]
-
-        for config_name, config_list in tmp_list_dict.items():
-            config_dict[InterListKey(config_name)] = sorted(
-                config_list, key=lambda x: x[0]
-            )
-
-            # Find the rest of the configs
-
-    def _remove_set_stats(
-        self, config_dict: dict[str | IntermediateKey, Any], remove=False
-    ):
-        for key, val in list(config_dict.items()):
-            if isinstance(val, dict):
-                remove = (
-                    isinstance(key, InterNamedSectionKey)
-                    and key.type == "set"
-                    or remove
-                )
-                self._remove_set_stats(val, remove)
-                continue
-
-            if not isinstance(key, str):
-                continue
-
-            if remove and (
-                "_" in key
-                or key
-                in {  # TODO: Should we cross check with the config schemas and not hardcode this?
-                    "objects",
-                    "tombstones",
-                    "truncating",
-                    "sindexes",
-                    "ns",
-                    "set",
-                }
-            ):
-                del config_dict[key]
-
-    def _remove_enable_security_post_5_6(
-        self, config_dict: dict[IntermediateKey | str, Any], build: str
-    ):
-        security_key = InterUnnamedSectionKey("security")
-        security_config = config_dict.get(InterUnnamedSectionKey("security"), {})
-
-        # If security is not enabled, remove the security config for either pre 5.6 or post 5.6
-        if security_config.get("enable-security", False):
-            del config_dict[security_key]
-            return
-
-        # If security is enabled in post 5.6 then remove enable-security because it will
-        # cause aerospike to not start. :(
-        if version.LooseVersion("5.7.0") <= version.LooseVersion(build):
-            if "enable-security" in security_config:
-                del config_dict[security_key]["enable-security"]
-            elif not security_config:
-                # If security config returns empty then security was never enabled.
-                del config_dict[security_key]
-
-    def _remove_xdr_if_no_dcs(self, config_dict: dict[IntermediateKey | str, Any]):
-        xdr_key = InterUnnamedSectionKey("xdr")
-        xdr_config = config_dict.get(xdr_key, {})
-
-        for key in xdr_config:
-            if isinstance(key, InterNamedSectionKey) and key.type == "dc":
-                return
-
-        del config_dict[xdr_key]
-
-    def _split_colon_separated(self, config_dict: dict[IntermediateKey | str, Any]):
-        for key, value in config_dict.items():
-            if isinstance(value, dict):
-                self._split_colon_separated(value)
-                continue
-
-            if not isinstance(value, str):
-                continue
-
-            if ":" in value and not key in {"cipher-suites"}:
-                value_split = value.split(":")
-                config_dict[key] = " ".join(value_split)
-
-    def _remove_redundant_nested_keys(
-        self,
-        parent_keys: list[str | IntermediateKey],
-        config_dict: dict[IntermediateKey | str, Any],
-    ):
-        for key, value in list(config_dict.items()):
-            if isinstance(value, dict):
-                new_parent_keys = list(parent_keys)
-
-                if isinstance(key, InterNamedSectionKey):
-                    new_parent_keys.append(key.name)
-                    new_parent_keys.append(key.type)
-                elif isinstance(key, InterUnnamedSectionKey):
-                    new_parent_keys.append(key.type)
-
-                self._remove_redundant_nested_keys(new_parent_keys, value)
-                continue
-
-            if value in parent_keys:
-                del config_dict[key]
-
-    def _convert_logging_contexts(self, config_dict: dict[IntermediateKey | str, Any]):
-        logging_key = InterUnnamedSectionKey("logging")
-        logging_config = config_dict.get(logging_key, {})
-
-        for key, val in list(logging_config.items()):
-            if isinstance(val, dict):
-                self._convert_logging_contexts(
-                    val
-                )  # TODO finish handling logging contexts
-                continue
-
-            if not isinstance(key, str):
-                continue
-
-            logging_config[InterLoggingContextKey(key)] = val
-            del logging_config[key]
-
-    # TODO: Make the intermediate and config_getter dicts separate
-    async def _generate_intermediate(self) -> NodeDict[Any]:
-        """Generate a YAML config file from the current cluster state."""
-        intermediate_dict: NodeDict[Any] = {}
+    async def __call__(self, context_dict: dict[str, Any]):
         (
             logging_config,
             service_config,
@@ -369,6 +154,26 @@ class ASConfigGenerator(ConfigGenerator):
             self.metadata_getter.get_builds(),
         )
 
+        context_dict["logging"] = logging_config
+        context_dict["service"] = service_config
+        context_dict["network"] = network_config
+        context_dict["security"] = security_config
+        context_dict["namespaces"] = namespaces_config
+        context_dict["sets"] = set_config
+        context_dict["rack-ids"] = rack_id_config
+        context_dict["xdr"] = xdr_config
+        context_dict["xdr-dcs"] = xdr_dc_config
+        context_dict["xdr-namespaces"] = xdr_namespace_config
+        context_dict["builds"] = builds
+
+
+class ServerVersionCheck(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("ServerVersionCheck")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        builds = context_dict["builds"]
+
         for host, build in builds.items():
             if version.LooseVersion(build) < version.LooseVersion(
                 MINIMUM_SUPPORTED_VERSION
@@ -377,118 +182,736 @@ class ASConfigGenerator(ConfigGenerator):
                     f"Config generation is not supported for Aerospike versions less than {MINIMUM_SUPPORTED_VERSION}"
                 )
 
-        for host in namespaces_config:
-            host_namespaces_config = namespaces_config[host]
-            for ns in list(host_namespaces_config.keys()):
-                # Insert set config into namespace config
-                host_set_config = set_config.get(host, {})
 
-                for ns2, set2 in host_set_config:
-                    if ns2 == ns:
-                        host_namespaces_config[ns][
-                            InterNamedSectionKey("set", set2)
-                        ] = host_set_config[(ns2, set2)]
+class CreateIntermediateDict(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CreateIntermediateDict")
 
-                # Insert rack id config into namespace config
-                host_rack_id_config = rack_id_config.get(host, {})
-                if ns in host_rack_id_config:
-                    host_namespaces_config[ns]["rack-id"] = host_rack_id_config[ns]
-
-                host_namespaces_config[
-                    InterNamedSectionKey("namespace", ns)
-                ] = host_namespaces_config[ns]
-                del host_namespaces_config[ns]
-
-        # Combine xdr top level config with xdr dc config and xdr namespace config
-        for host in list(xdr_config.keys()):
-            host_xdr_config = xdr_config[host]
-
-            for config in list(host_xdr_config.keys()):
-                # TODO: Should we cross check with the config schemas and not hardcode this?
-                if config in {
-                    "trace-sample"
-                }:  # No need to include "dcs" because it is overwritten below
-                    del host_xdr_config[config]
-
-            host_xdr_dc_config = xdr_dc_config.get(
-                host, {}
-            )  # TODO: maybe try accept and raise error if not found?
-
-            # The 'dcs' is present in the top level xdr config but as a string of DCS.
-            # Overwrite it with a dict of DCS.
-            if "dcs" in host_xdr_config:
-                del host_xdr_config["dcs"]
-
-            for dc in host_xdr_dc_config:
-                host_xdr_config[InterNamedSectionKey("dc", dc)] = host_xdr_dc_config[dc]
-
-                host_xdr_namespace_config = xdr_namespace_config.get(host, {})
-
-                for ns in host_xdr_namespace_config.get(
-                    dc, {}
-                ):  # TODO: Again, maybe error out if not found?
-                    host_xdr_config[InterNamedSectionKey("dc", dc)][
-                        InterNamedSectionKey("namespace", ns)
-                    ] = host_xdr_namespace_config[dc][ns]
-
-        for host in list(logging_config.keys()):
-            host_logging_config = logging_config[host]
-            self._convert_logging_contexts(host_logging_config)
-            for log in list(host_logging_config.keys()):
-                if log in {"stderr"}:
-                    host_logging_config[
-                        InterUnnamedSectionKey("console")
-                    ] = host_logging_config[log]
-                    del host_logging_config[log]
-                elif log.endswith(".log"):
-                    host_logging_config[
-                        InterNamedSectionKey("file", log)
-                    ] = host_logging_config[log]
-                    del host_logging_config[log]
-                else:
-                    # TODO: It is either a syslog or a file without a .log extension. What
-                    # to do?
-                    syslog_config = host_logging_config[
-                        InterUnnamedSectionKey("syslog")
-                    ] = host_logging_config[log]
-                    syslog_config["path"] = log
-                    del host_logging_config[log]
-
+    async def __call__(self, context_dict: dict[str, Any]):
+        context_dict[INTERMEDIATE] = {}
         hosts = set(
             [
-                *logging_config.keys(),
-                *service_config.keys(),
-                *network_config.keys(),
-                *security_config.keys(),
-                *namespaces_config.keys(),
-                *xdr_config.keys(),
+                *context_dict.get("logging", {}).keys(),
+                *context_dict.get("service", {}).keys(),
+                *context_dict.get("network", {}).keys(),
+                *context_dict.get("security", {}).keys(),
+                *context_dict.get("namespaces", {}).keys(),
+                *context_dict.get("xdr", {}).keys(),
             ]
         )
 
         for host in hosts:
-            # Consolidate all configs under correct host
-            host_dict: dict[IntermediateKey | str, Any] = {
-                InterUnnamedSectionKey("logging"): logging_config.get(host, {}),
-                InterUnnamedSectionKey("service"): service_config.get(host, {}),
-                InterUnnamedSectionKey("network"): network_config.get(host, {}),
-                InterUnnamedSectionKey("security"): security_config.get(host, {}),
-                InterUnnamedSectionKey("xdr"): xdr_config.get(host, {}),
+            context_dict[INTERMEDIATE][host] = {}
+
+
+class CopyNamespaceConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopyNamespaceConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        namespace_config = context_dict["namespaces"]
+
+        for host in namespace_config:
+            host_namespaces_config = namespace_config[host]
+            for ns in list(host_namespaces_config.keys()):
+                context_dict[INTERMEDIATE][host][
+                    InterNamedSectionKey("namespace", ns)
+                ] = copy.deepcopy(host_namespaces_config[ns])
+
+
+class CopySetConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopySetConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        set_config = context_dict["sets"]
+
+        for host in set_config:
+            host_set_config = set_config[host]
+
+            for ns, set_name in host_set_config:
+                context_dict[INTERMEDIATE][host][InterNamedSectionKey("namespace", ns)][
+                    InterNamedSectionKey("set", set_name)
+                ] = {}
+
+                context_dict[INTERMEDIATE][host][InterNamedSectionKey("namespace", ns)][
+                    InterNamedSectionKey("set", set_name)
+                ] = copy.deepcopy(host_set_config[(ns, set_name)])
+
+
+class OverrideNamespaceRackID(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("OverrideNamespaceRackID")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        rack_id_config = context_dict["rack-ids"]
+
+        for host in rack_id_config:
+            host_rack_id_config = rack_id_config[host]
+            for ns in host_rack_id_config:
+                context_dict[INTERMEDIATE][host][InterNamedSectionKey("namespace", ns)][
+                    "rack-id"
+                ] = host_rack_id_config[ns]
+
+
+class CopyXDRConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopyXDRConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        xdr_config = context_dict["xdr"]
+
+        for host in xdr_config:
+            host_xdr_config = xdr_config[host]
+
+            context_dict[INTERMEDIATE][host][
+                InterUnnamedSectionKey("xdr")
+            ] = copy.deepcopy(host_xdr_config)
+
+
+class CopyXDRDCConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopyDCConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        xdr_dc_config = context_dict["xdr-dcs"]
+
+        for host in xdr_dc_config:
+            host_xdr_dc_config = xdr_dc_config[host]
+            for dc in host_xdr_dc_config:
+                context_dict[INTERMEDIATE][host][InterUnnamedSectionKey("xdr")][
+                    InterNamedSectionKey("dc", dc)
+                ] = copy.deepcopy(host_xdr_dc_config[dc])
+
+
+class CopyXDRNamespaceConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopyXDRNamespaceConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        xdr_namespace_config = context_dict["xdr-namespaces"]
+
+        for host in xdr_namespace_config:
+            host_xdr_namespace_config = xdr_namespace_config[host]
+            for dc in host_xdr_namespace_config:
+                for ns in host_xdr_namespace_config[dc]:
+                    context_dict[INTERMEDIATE][host][InterUnnamedSectionKey("xdr")][
+                        InterNamedSectionKey("dc", dc)
+                    ][InterNamedSectionKey("namespace", ns)] = copy.deepcopy(
+                        host_xdr_namespace_config[dc][ns]
+                    )
+
+
+class CopyLoggingConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopyLoggingConfig")
+
+    def _copy_subcontext(self, config_dict: dict[str, Any]):
+        result = {}
+
+        for config, val in config_dict.items():
+            result[InterLoggingContextKey(config)] = val
+
+        return result
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        logging_config = context_dict["logging"]
+
+        for host in list(logging_config.keys()):
+            host_logging_config = logging_config[host]
+            for log in list(host_logging_config.keys()):
+                inter_logging_config = context_dict[INTERMEDIATE][host].setdefault(
+                    InterUnnamedSectionKey("logging"), {}
+                )
+                if log in {"stderr"}:
+                    inter_logging_config[
+                        InterUnnamedSectionKey("console")
+                    ] = self._copy_subcontext(host_logging_config[log])
+                elif log.endswith(".log"):
+                    inter_logging_config[
+                        InterNamedSectionKey("file", log)
+                    ] = self._copy_subcontext(host_logging_config[log])
+                else:
+                    # It is either a syslog or a file without a .log extension.
+                    syslog_config = inter_logging_config[
+                        InterUnnamedSectionKey("syslog")
+                    ] = self._copy_subcontext(host_logging_config[log])
+                    syslog_config["path"] = log
+
+
+class CopyServiceConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopyServiceConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        service_config = context_dict["service"]
+
+        for host in list(service_config.keys()):
+            host_service_config = service_config[host]
+            context_dict[INTERMEDIATE][host][
+                InterUnnamedSectionKey("service")
+            ] = copy.deepcopy(host_service_config)
+
+
+class CopyNetworkConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopyNetworkConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        network_config = context_dict["network"]
+
+        for host in list(network_config.keys()):
+            host_network_config = network_config[host]
+            context_dict[INTERMEDIATE][host][
+                InterUnnamedSectionKey("network")
+            ] = copy.deepcopy(host_network_config)
+
+
+class CopySecurityConfig(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("CopySecurityConfig")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        security_config = context_dict["security"]
+
+        for host in list(security_config.keys()):
+            host_security_config = security_config[host]
+            context_dict[INTERMEDIATE][host][
+                InterUnnamedSectionKey("security")
+            ] = copy.deepcopy(host_security_config)
+
+
+class CopyToIntermediateDict(ConfigPipeline):
+    def __init__(self):
+        super().__init__(
+            "CopyToIntermediateDict",
+            [
+                CreateIntermediateDict(),
+                CopyLoggingConfig(),
+                CopyServiceConfig(),
+                CopyNetworkConfig(),
+                CopySecurityConfig(),
+                CopyNamespaceConfig(),
+                CopySetConfig(),
+                CopyXDRConfig(),
+                CopyXDRDCConfig(),
+                CopyXDRNamespaceConfig(),
+            ],
+        )
+
+
+class SplitSubcontexts(ConfigPipelineStep):
+    """Takes a config dict and splits any subcontexts that are joined with a dot
+    into their own subdicts. E.g. "heartbeat.interval" -> {"heartbeat": {"interval": ...}}
+    """
+
+    def __init__(self):
+        super().__init__("SplitSubcontexts")
+
+    def _helper(self, config_dict: dict[str | IntermediateKey, Any]) -> None:
+        contexts_to_delete = []
+
+        for config, value in list(config_dict.items()):
+            if isinstance(value, dict):
+                self._helper(value)
+                continue
+
+            if not isinstance(config, str):
+                continue
+
+            contexts = config.split(".")
+
+            if len(contexts) > 1:
+                del config_dict[
+                    config
+                ]  # Delete it so we can reassign it after the loop
+
+                dict_ptr = config_dict
+
+                for c in contexts[:-1]:
+                    """
+                    Handles cases like index-type=pmem index-type.mounts-high-water-pct=99
+                    Should end up with "index-type pmem": {
+                    "mounts-high-water-pct":99}. We will need to deal with indexed
+                    params later. e.g. "mount[i]"
+                    """
+
+                    if c in dict_ptr and isinstance(dict_ptr[c], str):
+                        name = dict_ptr[c]
+                        dict_ptr = dict_ptr.setdefault(
+                            InterNamedSectionKey(c, name), {}
+                        )
+
+                        """
+                        Don't delete the config e.g. index-type because we need the name
+                        field in order to continually generate the InterNamedSectionKey
+                        """
+                        contexts_to_delete.append(c)
+                    else:
+                        dict_ptr = dict_ptr.setdefault(InterUnnamedSectionKey(c), {})
+
+                dict_ptr[contexts[-1]] = value
+
+        for c in contexts_to_delete:
+            if c in config_dict:
+                del config_dict[c]
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            config_dict = intermediate_dict[host]
+            self._helper(config_dict)
+
+
+class ConvertIndexedToList(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("ConvertIndexedToList")
+
+    def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
+        tmp_list_dict: dict[str, list[tuple[int, str]]] = {}
+
+        for config in list(config_dict.keys()):
+            value = config_dict[config]
+
+            if isinstance(value, dict):
+                self._helper(config_dict[config])
+                continue
+
+            if not isinstance(config, str):
+                continue
+
+            if config.endswith("]"):
+                config_split = config.split("[")
+                config_name = config_split[0]
+                config_index = int(config_split[1][:-1])
+
+                if config_name not in tmp_list_dict:
+                    tmp_list_dict[config_name] = []
+
+                tmp_list_dict[config_name].append((config_index, value))
+                del config_dict[config]
+
+        for config_name, config_list in tmp_list_dict.items():
+            config_dict[InterListKey(config_name)] = [
+                value for _, value in sorted(config_list, key=lambda x: x[0])
+            ]
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            config_dict = intermediate_dict[host]
+            self._helper(config_dict)
+
+
+class ConvertCommaSeparatedToList(ConfigPipelineStep):
+    """Convert comma separated values to a list. E.g.: TODO"""
+
+    def __init__(self):
+        super().__init__("ConvertCommaSeparatedToList")
+
+    def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
+        for config in list(config_dict.keys()):
+            value = config_dict[config]
+
+            if isinstance(value, dict):
+                self._helper(config_dict[config])
+                continue
+
+            if not isinstance(config, str):
+                continue
+
+            split_value = value.split(",")
+
+            if len(split_value) > 1:
+                config_dict[InterListKey(config)] = split_value
+
+                del config_dict[config]
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            config_dict = intermediate_dict[host]
+            self._helper(config_dict)
+
+
+class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("RemoveSecurityIfNotEnabled")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+        builds = context_dict["builds"]
+
+        for host in intermediate_dict:
+            host_dict = intermediate_dict[host]
+            security_key = InterUnnamedSectionKey("security")
+            security_config = host_dict.get(security_key, {})
+
+            # If security is not enabled, remove the security config for either pre 5.6 or post 5.6
+            if str(security_config.get("enable-security", "false")).lower() == "false":
+                del host_dict[security_key]
+                continue
+
+            build = builds[host]
+            # If security is enabled in post 5.6 then remove enable-security because it will
+            # cause aerospike to not start. :(
+            if version.LooseVersion("5.7.0") <= version.LooseVersion(build):
+                if "enable-security" in security_config:
+                    del host_dict[security_key]["enable-security"]
+                elif not security_config:
+                    # If security config returns empty then security was never enabled.
+                    del host_dict[security_key]
+
+
+class RemoveEmptyGeo2DSpheres(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("RemoveEmptyGeo2DSpheres")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            host_dict = intermediate_dict[host]
+
+            for config in host_dict:
+                if (
+                    isinstance(config, InterNamedSectionKey)
+                    and config.type == "namespace"
+                ):
+                    namespace_config = host_dict[config]
+                    geo2dsphere_config = namespace_config.get(
+                        InterUnnamedSectionKey("geo2dsphere-within"), None
+                    )
+
+                    if geo2dsphere_config is not None and geo2dsphere_config == {}:
+                        del namespace_config[
+                            InterUnnamedSectionKey("geo2dsphere-within")
+                        ]
+
+
+class RemoveXDRIfNoDCs(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("RemoveXDRIfNoDCs")
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            host_dict = intermediate_dict[host]
+            xdr_key = InterUnnamedSectionKey("xdr")
+            xdr_config = host_dict.get(xdr_key, {})
+
+            """ "dcs" is not remove yet because we have not removed values that are not
+            found in the schemas yet
+            """
+            if not xdr_config.get("dcs", ""):
+                del host_dict[xdr_key]
+                continue
+
+
+class SplitColonSeparatedValues(ConfigPipelineStep):
+    """
+    Some values are split by colon when returned by the server but must be space
+    separated in the config. One exception is 'cipher-suites'.
+    """
+
+    def __init__(self):
+        super().__init__("SplitColonSeparatedValues")
+
+    def _helper(self, config_dict: dict[IntermediateKey | str, Any]):
+        for key, value in config_dict.items():
+            if isinstance(value, dict):
+                self._helper(value)
+                continue
+
+            if not isinstance(value, str):
+                continue
+
+            if ":" in value and not key in {"cipher-suites"}:
+                value_split = value.split(":")
+                config_dict[key] = " ".join(value_split)
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            self._helper(intermediate_dict[host])
+
+
+class RemoveRedundantNestedKeys(ConfigPipelineStep):
+    """Remove redundant keys which are used once at some level and then again at a lower
+    level. Ironically, this step would normally seem redundant because removing the values
+    not found in a schema removes redundantly nested keys in most cases. Excepts, that
+    the schemas have some keys that are technically invalid like "xdr.dcs" and happen to
+    also be returned from the server so we must remove them.E.g.:
+
+    "xdr": {
+        "dcs": "dc1,dc2", # Found in the schemas but not allowed in the config
+        "dc DC1": {
+            "namespaces": # Also remove in this step
+            "namespace test": {
+
             }
-            host_dict.update(
-                namespaces_config.get(host, {})
-            )  # namespaces are top level keys
+        }
+    }
 
-            self._split_subcontexts(host_dict)
-            self._create_lists_indexed_config(host_dict)
-            self._remove_set_stats(host_dict)
-            self._remove_enable_security_post_5_6(host_dict, builds.get(host, None))
-            self._remove_xdr_if_no_dcs(host_dict)
-            self._split_colon_separated(host_dict)
-            self._remove_redundant_nested_keys([], host_dict)
+    """
 
-            intermediate_dict[host] = host_dict
+    def __init__(self):
+        super().__init__("RemoveRedundantNestedKeys")
 
-        return intermediate_dict
+    def _helper(
+        self,
+        parent_keys: list[str | IntermediateKey],
+        config_dict: dict[IntermediateKey | str, Any],
+    ):
+        delete_after = []
+
+        for key, value in list(config_dict.items()):
+            if isinstance(value, dict):
+                new_parent_keys = list(parent_keys)
+
+                if isinstance(key, InterNamedSectionKey):
+                    if key.type + "s" in config_dict:
+                        delete_after.append(key.type + "s")
+                    new_parent_keys.append(key.name)
+                    new_parent_keys.append(key.type)
+                elif isinstance(key, InterUnnamedSectionKey):
+                    if key.type + "s" in config_dict:
+                        delete_after.append(key.type + "s")
+                    new_parent_keys.append(key.type)
+
+                self._helper(new_parent_keys, value)
+                continue
+
+            if value in parent_keys:
+                del config_dict[key]
+
+        for key in delete_after:
+            if key in config_dict:
+                del config_dict[key]
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            self._helper([], intermediate_dict[host])
+
+
+class RemoveNullValues(ConfigPipelineStep):
+    def __init__(self):
+        super().__init__("RemoveNullValues")
+
+    def _helper(self, config_dict: dict[IntermediateKey | str, Any]):
+        for key, value in list(config_dict.items()):
+            if isinstance(value, dict):
+                self._helper(value)
+                continue
+
+            if isinstance(value, str) and (value.lower() == "null" or value == ""):
+                del config_dict[key]
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        for host in context_dict[INTERMEDIATE]:
+            self._helper(context_dict[INTERMEDIATE][host])
+
+
+class RemoveDefaultValues(ConfigPipelineStep):
+    def __init__(self, config_handler: type[BaseConfigHandler]):
+        self.config_handler = config_handler
+        super().__init__("RemoveNamespaceDefaultValues")
+
+    def _get_config_name(self, config: str | InterLoggingContextKey) -> str:
+        if isinstance(config, str):
+            return config
+
+        if isinstance(config, InterListKey):
+            return config.name
+
+        return config.type
+
+    def _helper(
+        self,
+        config_handler: BaseConfigHandler,
+        context: list[str],
+        ns_config: dict[str, Any],
+    ):
+        for config, val in list(ns_config.items()):
+            new_context = list(context)
+
+            if isinstance(config, InterNamedSectionKey) or isinstance(
+                config, InterUnnamedSectionKey
+            ):
+                new_context.append(config.type)
+
+            if isinstance(val, dict):
+                self._helper(config_handler, list(new_context), val)
+                continue
+
+            if isinstance(config, str) or isinstance(config, InterListKey):
+                conf_type = config_handler.get_types(
+                    list(new_context), self._get_config_name(config)
+                )[self._get_config_name(config)]
+
+                if conf_type is None:
+                    """
+                    Handles configs like network.heartbeat.multicast-group which is stored
+                    in the config as multicast-groups
+                    """
+                    conf_type = config_handler.get_types(
+                        list(new_context), self._get_config_name(config) + "s"
+                    )[self._get_config_name(config) + "s"]
+
+                    if conf_type is None:
+                        """
+                        Handles configs like network.service.address which is stored
+                        in the config as addresses
+                        """
+                        conf_type = config_handler.get_types(
+                            list(new_context), self._get_config_name(config) + "es"
+                        )[self._get_config_name(config) + "es"]
+
+                    if conf_type is None:
+                        """
+                        Handles cases where the config is also a subcontext like in the
+                        case if storage-engine. It can just be 'storage-engine memory'
+                        or it can have it's own subcontext like 'storage-engine device'.
+                        Regardless, it is stored in the schemas a sub-context.
+                        """
+                        new_context.append(self._get_config_name(config))
+                        params = config_handler.get_params(list(new_context))
+
+                        if params:
+                            logger.debug(
+                                f"The config {config} is also a subcontext. Could not determine default value and not removing it."
+                            )
+                            continue
+
+                if conf_type is None:
+                    logger.warning(f"Could not find config type for {config}")
+                    del ns_config[config]
+                elif str(conf_type.default).lower() == str(ns_config[config]).lower():
+                    logger.debug("Removing default value for %s", config)
+                    del ns_config[config]
+                else:
+                    logger.debug(
+                        f"Not removing default value for {config} value: {ns_config[config]} default: {conf_type.default}"
+                    )
+
+    def _logging_helper(
+        self,
+        config_handler: BaseConfigHandler,
+        context: list[str],
+        config_dict: dict[str | IntermediateKey, Any],
+    ):
+        configs_set_info = []
+        configs_set_critical = []
+        configs_set_other = []
+
+        for config, val in list(config_dict.items()):
+            new_context = list(context)
+
+            if (isinstance(config, InterNamedSectionKey) and config.type != "file") or (
+                isinstance(config, InterUnnamedSectionKey) and config.type != "console"
+            ):
+                new_context.append(config.type)
+
+            if isinstance(val, dict):
+                self._logging_helper(config_handler, list(new_context), val)
+                continue
+
+            if val.lower() == "info":
+                configs_set_info.append(config)
+            elif val.lower() == "critical":
+                configs_set_critical.append(config)
+            else:
+                configs_set_other.append(config)
+
+        # We are only simplifying the two most common logging config cases. Either most
+        # are set to critical or most are set to info.
+        if len(configs_set_info) > len(configs_set_critical) + len(configs_set_other):
+            for config in configs_set_info:
+                del config_dict[config]
+
+            config_dict[InterLoggingContextKey("any")] = "info"
+        elif len(configs_set_critical) > len(configs_set_info) + len(configs_set_other):
+            for config in configs_set_critical:
+                del config_dict[config]
+
+            config_dict[InterLoggingContextKey("any")] = "critical"
+
+    def _remove_default_values(
+        self, build: str, configs: dict[InterUnnamedSectionKey, Any]
+    ):
+        config_handler = self.config_handler(
+            constants.CONFIG_SCHEMAS_HOME, build, strict=True
+        )
+
+        for top_level_config in configs.keys():
+            if top_level_config.type == "logging":
+                self._logging_helper(
+                    config_handler, [top_level_config.type], configs[top_level_config]
+                )
+            else:
+                self._helper(
+                    config_handler, [top_level_config.type], configs[top_level_config]
+                )
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        builds = context_dict["builds"]
+
+        for host in context_dict[INTERMEDIATE]:
+            build = builds[host]
+            host_config = context_dict[INTERMEDIATE][host]
+            self._remove_default_values(build, host_config)
+
+
+class ConfigGenerator:
+    async def generate(self) -> str:
+        raise NotImplementedError("ConfigGenerator.generate not implemented")
+
+    def __str__(self):
+        return self.generate()
+
+
+class ASConfigGenerator(ConfigGenerator):
+    def __init__(
+        self,
+        config_getter: BaseGetConfigController,
+        metadata_getter: GetClusterMetadataController,
+    ):
+        self.config_getter = config_getter
+        self.metadata_getter = metadata_getter
+
+    async def _generate_intermediate(self) -> NodeDict[Any]:
+        """Generate a YAML config file from the current cluster state."""
+
+        pipeline = ConfigPipeline(
+            "root",
+            [
+                GetConfigStep(self.config_getter, self.metadata_getter),
+                ServerVersionCheck(),
+                CopyToIntermediateDict(),
+                OverrideNamespaceRackID(),
+                SplitSubcontexts(),
+                RemoveSecurityIfNotEnabled(),
+                RemoveXDRIfNoDCs(),
+                RemoveRedundantNestedKeys(),
+                RemoveNullValues(),
+                ConvertIndexedToList(),
+                SplitColonSeparatedValues(),
+                RemoveDefaultValues(JsonDynamicConfigHandler),
+                RemoveEmptyGeo2DSpheres(),  # Should be after RemoveDefaultValues
+                ConvertCommaSeparatedToList(),  # Should be after RemoveDefaultValues because xdr.dcs is comma separated but needs to be removed
+            ],
+        )
+
+        context_dict = {}
+        await pipeline(context_dict)
+        return context_dict[INTERMEDIATE]
 
     def _generate_helper(
         self,
@@ -496,20 +919,22 @@ class ASConfigGenerator(ConfigGenerator):
         intermediate_dict: dict[IntermediateKey | str, Any],
         indent=0,
     ):
-        adjusted_indent = indent * 4
-        first = False
+        adjusted_indent = indent * 2
+
         for key, val in intermediate_dict.items():
             if isinstance(key, InterUnnamedSectionKey):
-                result.append(f"{'  ' * adjusted_indent}{key.type} {{")
+                result.append(f"\n{'  ' * adjusted_indent}{key.type} {{")
                 self._generate_helper(result, val, indent + 1)
-                result.append(f"{'  ' * adjusted_indent}}}\n")
+                result.append(f"{'  ' * adjusted_indent}}}")
             elif isinstance(key, InterNamedSectionKey):
-                result.append(f"{'  ' * adjusted_indent}{key.type} {key.name} {{")
+                result.append(f"\n{'  ' * adjusted_indent}{key.type} {key.name} {{")
                 self._generate_helper(result, val, indent + 1)
-                result.append(f"{'  ' * adjusted_indent}}}\n")
+                result.append(f"{'  ' * adjusted_indent}}}")
             elif isinstance(key, InterListKey):
-                for index, value in val:
+                for value in val:
                     result.append(f"{'  ' * adjusted_indent}{key.name} {value}")
+            elif isinstance(key, InterLoggingContextKey):
+                result.append(f"{'  ' * adjusted_indent} context {key} {val}")
             elif isinstance(val, str):
                 result.append(f"{'  ' * adjusted_indent}{key} {val}")
             else:
@@ -523,7 +948,4 @@ class ASConfigGenerator(ConfigGenerator):
         lines = []
 
         self._generate_helper(lines, list(intermediate_dict.values())[0])
-        pass
         return "\n".join(lines)
-
-        return pprint.pformat(intermediate_dict, sort_dicts=True, width=120)
