@@ -12,7 +12,7 @@ from lib.utils.constants import ModifierUsage, Modifiers
 
 
 @CommandHelp(
-    "Generates a static configuration file from a live node.",
+    "BETA: Generates a static configuration file from a live node.",
     usage=f"[-o <output_file>] {ModifierUsage.WITH}",
     modifiers=(
         ModifierHelp(
@@ -53,4 +53,7 @@ class ConfGenController(LiveClusterCommandController):
 
         self.logger.warning(
             "Generated static configuration does not currently take into account logging.syslog and mod-lua contexts."
+        )
+        self.logger.warning(
+            "This feature is currently in beta. Use at your own risk and please report any issue to support."
         )
