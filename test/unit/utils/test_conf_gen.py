@@ -1,6 +1,7 @@
 import asynctest
 from mock import AsyncMock
 from parameterized import parameterized
+from lib.live_cluster.client.config_handler import BaseConfigHandler, IntConfigType
 
 from lib.utils.conf_gen import (
     ConvertCommaSeparatedToList,
@@ -9,9 +10,12 @@ from lib.utils.conf_gen import (
     CreateIntermediateDict,
     GetConfigStep,
     InterListKey,
+    InterLoggingContextKey,
     InterNamedSectionKey,
     InterUnnamedSectionKey,
+    RemoveDefaultValues,
     RemoveEmptyGeo2DSpheres,
+    RemoveNullValues,
     RemoveRedundantNestedKeys,
     RemoveSecurityIfNotEnabled,
     RemoveXDRIfNoDCs,
@@ -406,6 +410,154 @@ class RemoveRedundantNestedKeysTest(asynctest.TestCase):
                             InterNamedSectionKey("namespace", "test"): {"a": 1}
                         },
                     }
+                }
+            },
+        )
+
+
+class RemoveNullValuesTest(asynctest.TestCase):
+    maxDiff = None
+
+    async def test_remove_null_values(self):
+        context_dict = {"intermediate": {"1.1.1.1": {"a": "null", "b": "1", "c": ""}}}
+
+        await RemoveNullValues()(context_dict)
+
+        self.assertDictEqual(context_dict["intermediate"], {"1.1.1.1": {"b": "1"}})
+
+
+class RemoveDefaultValuesTest(asynctest.TestCase):
+    maxDiff = None
+
+    async def test_remove_default_values_for_non_logging_contexts(self):
+        class MockConfigHandler(BaseConfigHandler):
+            def __init__(self, schema_dir: str, version: str, strict: bool):
+                pass
+
+            def get_types(self, context: list[str], key: str):
+                if context == ["others"] and key == "a":
+                    return {"a": IntConfigType(0, 0, False, "1")}
+                if context == ["others"] and key == "b":
+                    return {"b": None}  # Triggers the call with "bs"
+                if context == ["others"] and key == "bs":
+                    return {"bs": None}  # Trigger the call with "bes"
+                if context == ["others"] and key == "bes":
+                    return {"bes": None}  # Triggers the call to get_params
+                if context == ["others"] and key == "c":
+                    return {"c": IntConfigType(0, 0, False, "default")}
+                if context == ["others", "d", "e"] and key == "f":
+                    return {"f": IntConfigType(0, 0, False, "2")}
+                if context == ["others"] and key == "g":
+                    return {"g": None}  # Triggers the call to "gs"
+                if context == ["others"] and key == "gs":
+                    return {"gs": None}  # Triggers the call to "ges"
+                if context == ["others"] and key == "ges":
+                    return {"ges": None}  # Triggers the call to "get_params"
+
+                raise Exception(f"Unexpected call to get_types: {context}, {key}")
+
+            def get_params(self, context: list[str]):
+                if context == ["others", "b"]:
+                    return []
+                if context == ["others", "g"]:
+                    return ["a"]
+
+                raise Exception(f"Unexpected call to get_params: {context}, {key}")
+
+        context_dict = {
+            "intermediate": {
+                "1.1.1.1": {
+                    InterUnnamedSectionKey("logging"): {},
+                    InterUnnamedSectionKey("others"): {
+                        "a": "1",
+                        "b": "2",
+                        "c": "Not default",
+                        "d": {"e": {"f": "2"}},
+                        "g": "3",
+                    },
+                }
+            },
+            "builds": {"1.1.1.1": "6.4.0"},
+        }
+
+        await RemoveDefaultValues(MockConfigHandler)(context_dict)
+
+        self.assertDictEqual(
+            context_dict["intermediate"],
+            {
+                "1.1.1.1": {
+                    InterUnnamedSectionKey("logging"): {},
+                    InterUnnamedSectionKey("others"): {
+                        "c": "Not default",
+                        "d": {"e": {}},
+                        "g": "3",
+                    },
+                }
+            },
+        )
+
+    async def test_remove_non_default_values_from_logging(self):
+        class MockConfigHandler(BaseConfigHandler):
+            def __init__(self, schema_dir: str, version: str, strict: bool):
+                pass
+
+        context_dict = {
+            "intermediate": {
+                "1.1.1.1": {
+                    InterUnnamedSectionKey("logging"): {
+                        InterNamedSectionKey("file", "aerospike.log"): {
+                            InterLoggingContextKey("a"): "info",
+                            InterLoggingContextKey("b"): "info",
+                            InterLoggingContextKey("c"): "info",
+                            InterLoggingContextKey("d"): "info",
+                            InterLoggingContextKey("e"): "info",
+                            InterLoggingContextKey("f"): "info",
+                            InterLoggingContextKey("g"): "debug",
+                            InterLoggingContextKey("h"): "warning",
+                            InterLoggingContextKey("i"): "error",
+                            InterLoggingContextKey("j"): "critical",
+                            InterLoggingContextKey("k"): "critical",
+                        },
+                        InterUnnamedSectionKey("console"): {
+                            InterLoggingContextKey("a"): "info",
+                            InterLoggingContextKey("b"): "debug",
+                            InterLoggingContextKey("c"): "warning",
+                            InterLoggingContextKey("d"): "error",
+                            InterLoggingContextKey("e"): "critical",
+                            InterLoggingContextKey("f"): "critical",
+                            InterLoggingContextKey("g"): "critical",
+                            InterLoggingContextKey("h"): "critical",
+                            InterLoggingContextKey("i"): "critical",
+                        },
+                    },
+                }
+            },
+            "builds": {"1.1.1.1": "6.4.0"},
+        }
+
+        await RemoveDefaultValues(MockConfigHandler)(context_dict)
+
+        self.assertDictEqual(
+            context_dict["intermediate"],
+            {
+                "1.1.1.1": {
+                    InterUnnamedSectionKey("logging"): {
+                        InterNamedSectionKey("file", "aerospike.log"): {
+                            InterLoggingContextKey("any"): "info",
+                            InterLoggingContextKey("g"): "debug",
+                            InterLoggingContextKey("h"): "warning",
+                            InterLoggingContextKey("i"): "error",
+                            InterLoggingContextKey("j"): "critical",
+                            InterLoggingContextKey("k"): "critical",
+                        },
+                        InterUnnamedSectionKey("console"): {
+                            InterLoggingContextKey("a"): "info",
+                            InterLoggingContextKey("b"): "debug",
+                            InterLoggingContextKey("c"): "warning",
+                            InterLoggingContextKey("d"): "error",
+                            InterLoggingContextKey("any"): "critical",
+                        },
+                    },
                 }
             },
         )

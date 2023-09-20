@@ -331,16 +331,13 @@ class GetConfigController(BaseGetConfigController):
         return service_configs
 
     async def get_network(self, nodes="all"):
-        network_configs = {}
         nw_configs = await self.cluster.info_get_config(nodes=nodes, stanza="network")
 
         for node in nw_configs:
             if isinstance(nw_configs[node], Exception):
-                continue
-            else:
-                network_configs[node] = nw_configs[node]
+                nw_configs[node] = {}
 
-        return network_configs
+        return nw_configs
 
     async def get_namespace(
         self, flip=False, nodes="all", for_mods: list[str] | None = None

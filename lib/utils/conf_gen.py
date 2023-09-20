@@ -97,16 +97,12 @@ class InterListKey(IntermediateKey):
 
 
 class ConfigPipelineStep:
-    def __init__(self, name: str):
-        self.name = name
-
     async def __call__(self, intermediate_dict: dict[IntermediateKey | str, Any]):
         raise NotImplementedError("ConfigPipelineStep.__call__ not implemented")
 
 
 class ConfigPipeline(ConfigPipelineStep):
-    def __init__(self, name: str, steps: list["ConfigPipelineStep"]):
-        self.name = name
+    def __init__(self, steps: list["ConfigPipelineStep"]):
         self._steps = steps
 
     def add_step(self, step: "ConfigPipelineStep"):
@@ -125,7 +121,7 @@ class GetConfigStep(ConfigPipelineStep):
     ):
         self.config_getter = config_getter
         self.metadata_getter = metadata_getter
-        super().__init__("GetConfigStep")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         (
@@ -169,7 +165,7 @@ class GetConfigStep(ConfigPipelineStep):
 
 class ServerVersionCheck(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("ServerVersionCheck")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         builds = context_dict["builds"]
@@ -185,7 +181,7 @@ class ServerVersionCheck(ConfigPipelineStep):
 
 class CreateIntermediateDict(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CreateIntermediateDict")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         context_dict[INTERMEDIATE] = {}
@@ -206,7 +202,7 @@ class CreateIntermediateDict(ConfigPipelineStep):
 
 class CopyNamespaceConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopyNamespaceConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         namespace_config = context_dict["namespaces"]
@@ -221,7 +217,7 @@ class CopyNamespaceConfig(ConfigPipelineStep):
 
 class CopySetConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopySetConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         set_config = context_dict["sets"]
@@ -241,7 +237,7 @@ class CopySetConfig(ConfigPipelineStep):
 
 class OverrideNamespaceRackID(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("OverrideNamespaceRackID")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         rack_id_config = context_dict["rack-ids"]
@@ -256,7 +252,7 @@ class OverrideNamespaceRackID(ConfigPipelineStep):
 
 class CopyXDRConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopyXDRConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         xdr_config = context_dict["xdr"]
@@ -271,7 +267,7 @@ class CopyXDRConfig(ConfigPipelineStep):
 
 class CopyXDRDCConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopyDCConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         xdr_dc_config = context_dict["xdr-dcs"]
@@ -286,7 +282,7 @@ class CopyXDRDCConfig(ConfigPipelineStep):
 
 class CopyXDRNamespaceConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopyXDRNamespaceConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         xdr_namespace_config = context_dict["xdr-namespaces"]
@@ -304,7 +300,7 @@ class CopyXDRNamespaceConfig(ConfigPipelineStep):
 
 class CopyLoggingConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopyLoggingConfig")
+        super().__init__()
 
     def _copy_subcontext(self, config_dict: dict[str, Any]):
         result = {}
@@ -341,7 +337,7 @@ class CopyLoggingConfig(ConfigPipelineStep):
 
 class CopyServiceConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopyServiceConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         service_config = context_dict["service"]
@@ -355,7 +351,7 @@ class CopyServiceConfig(ConfigPipelineStep):
 
 class CopyNetworkConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopyNetworkConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         network_config = context_dict["network"]
@@ -369,7 +365,7 @@ class CopyNetworkConfig(ConfigPipelineStep):
 
 class CopySecurityConfig(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("CopySecurityConfig")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         security_config = context_dict["security"]
@@ -384,7 +380,6 @@ class CopySecurityConfig(ConfigPipelineStep):
 class CopyToIntermediateDict(ConfigPipeline):
     def __init__(self):
         super().__init__(
-            "CopyToIntermediateDict",
             [
                 CreateIntermediateDict(),
                 CopyLoggingConfig(),
@@ -406,7 +401,7 @@ class SplitSubcontexts(ConfigPipelineStep):
     """
 
     def __init__(self):
-        super().__init__("SplitSubcontexts")
+        super().__init__()
 
     def _helper(self, config_dict: dict[str | IntermediateKey, Any]) -> None:
         contexts_to_delete = []
@@ -466,7 +461,7 @@ class SplitSubcontexts(ConfigPipelineStep):
 
 class ConvertIndexedToList(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("ConvertIndexedToList")
+        super().__init__()
 
     def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
         tmp_list_dict: dict[str, list[tuple[int, str]]] = {}
@@ -509,7 +504,7 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
     """Convert comma separated values to a list. E.g.: TODO"""
 
     def __init__(self):
-        super().__init__("ConvertCommaSeparatedToList")
+        super().__init__()
 
     def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
         for config in list(config_dict.keys()):
@@ -539,7 +534,7 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
 
 class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("RemoveSecurityIfNotEnabled")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
@@ -568,7 +563,7 @@ class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
 
 class RemoveEmptyGeo2DSpheres(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("RemoveEmptyGeo2DSpheres")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
@@ -594,7 +589,7 @@ class RemoveEmptyGeo2DSpheres(ConfigPipelineStep):
 
 class RemoveXDRIfNoDCs(ConfigPipelineStep):
     def __init__(self):
-        super().__init__("RemoveXDRIfNoDCs")
+        super().__init__()
 
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
@@ -619,7 +614,7 @@ class SplitColonSeparatedValues(ConfigPipelineStep):
     """
 
     def __init__(self):
-        super().__init__("SplitColonSeparatedValues")
+        super().__init__()
 
     def _helper(self, config_dict: dict[IntermediateKey | str, Any]):
         for key, value in config_dict.items():
@@ -661,7 +656,7 @@ class RemoveRedundantNestedKeys(ConfigPipelineStep):
     """
 
     def __init__(self):
-        super().__init__("RemoveRedundantNestedKeys")
+        super().__init__()
 
     def _helper(
         self,
@@ -702,8 +697,13 @@ class RemoveRedundantNestedKeys(ConfigPipelineStep):
 
 
 class RemoveNullValues(ConfigPipelineStep):
+    """Some values return "null" but that is not a valid config value. You would think
+    that the step that removes non-defaults would handle this case but it does not.
+    e.g.: xdr.dc.namespace.remote-namespace
+    """
+
     def __init__(self):
-        super().__init__("RemoveNullValues")
+        super().__init__()
 
     def _helper(self, config_dict: dict[IntermediateKey | str, Any]):
         for key, value in list(config_dict.items()):
@@ -722,7 +722,7 @@ class RemoveNullValues(ConfigPipelineStep):
 class RemoveDefaultValues(ConfigPipelineStep):
     def __init__(self, config_handler: type[BaseConfigHandler]):
         self.config_handler = config_handler
-        super().__init__("RemoveNamespaceDefaultValues")
+        super().__init__()
 
     def _get_config_name(self, config: str | InterLoggingContextKey) -> str:
         if isinstance(config, str):
@@ -742,12 +742,14 @@ class RemoveDefaultValues(ConfigPipelineStep):
         for config, val in list(ns_config.items()):
             new_context = list(context)
 
-            if isinstance(config, InterNamedSectionKey) or isinstance(
-                config, InterUnnamedSectionKey
-            ):
-                new_context.append(config.type)
-
             if isinstance(val, dict):
+                if isinstance(config, InterNamedSectionKey) or isinstance(
+                    config, InterUnnamedSectionKey
+                ):
+                    new_context.append(config.type)
+                elif isinstance(config, str):
+                    new_context.append(config)
+
                 self._helper(config_handler, list(new_context), val)
                 continue
 
@@ -800,11 +802,13 @@ class RemoveDefaultValues(ConfigPipelineStep):
                     logger.debug(
                         f"Not removing default value for {config} value: {ns_config[config]} default: {conf_type.default}"
                     )
+            else:
+                raise NotImplementedError(
+                    f"Unsupported type in {self.__class__.__name__} step {config} {val}"
+                )
 
     def _logging_helper(
         self,
-        config_handler: BaseConfigHandler,
-        context: list[str],
         config_dict: dict[str | IntermediateKey, Any],
     ):
         configs_set_info = []
@@ -812,15 +816,8 @@ class RemoveDefaultValues(ConfigPipelineStep):
         configs_set_other = []
 
         for config, val in list(config_dict.items()):
-            new_context = list(context)
-
-            if (isinstance(config, InterNamedSectionKey) and config.type != "file") or (
-                isinstance(config, InterUnnamedSectionKey) and config.type != "console"
-            ):
-                new_context.append(config.type)
-
             if isinstance(val, dict):
-                self._logging_helper(config_handler, list(new_context), val)
+                self._logging_helper(val)
                 continue
 
             if val.lower() == "info":
@@ -852,9 +849,7 @@ class RemoveDefaultValues(ConfigPipelineStep):
 
         for top_level_config in configs.keys():
             if top_level_config.type == "logging":
-                self._logging_helper(
-                    config_handler, [top_level_config.type], configs[top_level_config]
-                )
+                self._logging_helper(configs[top_level_config])
             else:
                 self._helper(
                     config_handler, [top_level_config.type], configs[top_level_config]
@@ -890,7 +885,6 @@ class ASConfigGenerator(ConfigGenerator):
         """Generate a YAML config file from the current cluster state."""
 
         pipeline = ConfigPipeline(
-            "root",
             [
                 GetConfigStep(self.config_getter, self.metadata_getter),
                 ServerVersionCheck(),

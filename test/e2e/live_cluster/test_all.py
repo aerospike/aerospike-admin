@@ -113,8 +113,14 @@ CMDS = [
     ("show sindex"),
     ("show stop-writes"),
     ("summary"),
+    (f"confgen with {lib.SERVER_IP}:{lib.PORT}"),
 ]
-NOT_IN_CI_MODE = ["show mapping ip", "show mapping node", "show pmap"]
+NOT_IN_CI_MODE = [
+    "show mapping ip",
+    "show mapping node",
+    "show pmap",
+    f"confgen {lib.SERVER_IP}:{lib.PORT}",
+]
 
 
 class TableRenderNoErrorTests(unittest.TestCase):
