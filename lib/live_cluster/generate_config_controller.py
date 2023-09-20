@@ -1,5 +1,3 @@
-import logging
-from build.tmp.lib.utils.constants import ModifierHelpText
 from lib.base_controller import CommandHelp, ModifierHelp
 from lib.live_cluster.get_controller import (
     GetClusterMetadataController,
