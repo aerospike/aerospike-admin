@@ -4,34 +4,62 @@ from lib.utils import constants
 
 
 class BaseGetConfigController:
-    def get_logging(self):
+    def get_logging(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
         raise NotImplementedError("get_logging not implemented")
 
-    def get_service(self):
+    def get_service(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
         raise NotImplementedError("get_service not implemented")
 
-    def get_network(self):
+    def get_network(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
         raise NotImplementedError("get_network not implemented")
 
-    def get_security(self):
+    def get_security(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
         raise NotImplementedError("get_security not implemented")
 
-    def get_namespace(self, for_mods: list[str] | None = None):
+    def get_namespace(
+        self,
+        for_mods: list[str] | None = None,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
         raise NotImplementedError("get_namespace not implemented")
 
-    def get_sets(self, for_mods: list[str] | None = None, flip=False):
+    def get_sets(
+        self,
+        for_mods: list[str] | None = None,
+        flip=False,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
         raise NotImplementedError("get_sets not implemented")
 
-    def get_rack_ids(self):
+    def get_rack_ids(
+        self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ):
         raise NotImplementedError("get_rack_ids not implemented")
 
-    def get_xdr(self):
+    def get_xdr(self, nodes: constants.NodeSelectionType = constants.NodeSelection.ALL):
         raise NotImplementedError("get_xdr not implemented")
 
-    def get_xdr_dcs(self, flip=False, for_mods: list[str] | None = None):
+    def get_xdr_dcs(
+        self,
+        flip=False,
+        for_mods: list[str] | None = None,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
         raise NotImplementedError("get_xdr_dcs not implemented")
 
-    def get_xdr_namespaces(self, for_mods: list[str] | None = None):
+    def get_xdr_namespaces(
+        self,
+        for_mods: list[str] | None = None,
+        nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
+    ):
         raise NotImplementedError("get_xdr_namespaces not implemented")
 
     def get_xdr_filters(

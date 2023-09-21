@@ -118,7 +118,9 @@ class GetConfigStep(ConfigPipelineStep):
         self,
         config_getter: BaseGetConfigController,
         metadata_getter: GetClusterMetadataController,
+        node_selector: constants.NodeSelectionType,
     ):
+        self.node_selector = node_selector
         self.config_getter = config_getter
         self.metadata_getter = metadata_getter
         super().__init__()
@@ -137,17 +139,17 @@ class GetConfigStep(ConfigPipelineStep):
             xdr_namespace_config,
             builds,
         ) = await asyncio.gather(
-            self.config_getter.get_logging(),
-            self.config_getter.get_service(),
-            self.config_getter.get_network(),
-            self.config_getter.get_security(),
-            self.config_getter.get_namespace(),
-            self.config_getter.get_sets(),
-            self.config_getter.get_rack_ids(),
-            self.config_getter.get_xdr(),
-            self.config_getter.get_xdr_dcs(),
-            self.config_getter.get_xdr_namespaces(),
-            self.metadata_getter.get_builds(),
+            self.config_getter.get_logging(nodes=self.node_selector),
+            self.config_getter.get_service(nodes=self.node_selector),
+            self.config_getter.get_network(nodes=self.node_selector),
+            self.config_getter.get_security(nodes=self.node_selector),
+            self.config_getter.get_namespace(nodes=self.node_selector),
+            self.config_getter.get_sets(nodes=self.node_selector),
+            self.config_getter.get_rack_ids(nodes=self.node_selector),
+            self.config_getter.get_xdr(nodes=self.node_selector),
+            self.config_getter.get_xdr_dcs(nodes=self.node_selector),
+            self.config_getter.get_xdr_namespaces(nodes=self.node_selector),
+            self.metadata_getter.get_builds(nodes=self.node_selector),
         )
 
         context_dict["logging"] = logging_config
@@ -226,10 +228,6 @@ class CopySetConfig(ConfigPipelineStep):
             host_set_config = set_config[host]
 
             for ns, set_name in host_set_config:
-                context_dict[INTERMEDIATE][host][InterNamedSectionKey("namespace", ns)][
-                    InterNamedSectionKey("set", set_name)
-                ] = {}
-
                 context_dict[INTERMEDIATE][host][InterNamedSectionKey("namespace", ns)][
                     InterNamedSectionKey("set", set_name)
                 ] = copy.deepcopy(host_set_config[(ns, set_name)])
@@ -501,7 +499,9 @@ class ConvertIndexedToList(ConfigPipelineStep):
 
 
 class ConvertCommaSeparatedToList(ConfigPipelineStep):
-    """Convert comma separated values to a list. E.g.: TODO"""
+    """Convert comma separated values to a list. E.g.: "multicast-group" is returned
+    comma separated but needs to be on separate lines in the config.
+    """
 
     def __init__(self):
         super().__init__()
@@ -545,8 +545,12 @@ class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
             security_key = InterUnnamedSectionKey("security")
             security_config = host_dict.get(security_key, {})
 
-            # If security is not enabled, remove the security config for either pre 5.6 or post 5.6
-            if str(security_config.get("enable-security", "false")).lower() == "false":
+            # If security is not enabled, remove the security config for either pre 5.6
+            # or post 5.6
+            if (
+                "enable-security" in security_config
+                and str(security_config["enable-security"]).lower() == "false"
+            ):
                 del host_dict[security_key]
                 continue
 
@@ -604,7 +608,6 @@ class RemoveXDRIfNoDCs(ConfigPipelineStep):
             """
             if not xdr_config.get("dcs", ""):
                 del host_dict[xdr_key]
-                continue
 
 
 class SplitColonSeparatedValues(ConfigPipelineStep):
@@ -636,12 +639,9 @@ class SplitColonSeparatedValues(ConfigPipelineStep):
             self._helper(intermediate_dict[host])
 
 
-class RemoveRedundantNestedKeys(ConfigPipelineStep):
-    """Remove redundant keys which are used once at some level and then again at a lower
-    level. Ironically, this step would normally seem redundant because removing the values
-    not found in a schema removes redundantly nested keys in most cases. Excepts, that
-    the schemas have some keys that are technically invalid like "xdr.dcs" and happen to
-    also be returned from the server so we must remove them.E.g.:
+class RemoveInvalidKeysFoundInSchemas(ConfigPipelineStep):
+    """Remove keys found in the schemas but are not allowed in the final config. E.g.:
+    "dcs" and "namespaces"
 
     "xdr": {
         "dcs": "dc1,dc2", # Found in the schemas but not allowed in the config
@@ -652,7 +652,6 @@ class RemoveRedundantNestedKeys(ConfigPipelineStep):
             }
         }
     }
-
     """
 
     def __init__(self):
@@ -660,30 +659,21 @@ class RemoveRedundantNestedKeys(ConfigPipelineStep):
 
     def _helper(
         self,
-        parent_keys: list[str | IntermediateKey],
         config_dict: dict[IntermediateKey | str, Any],
     ):
         delete_after = []
 
         for key, value in list(config_dict.items()):
             if isinstance(value, dict):
-                new_parent_keys = list(parent_keys)
-
                 if isinstance(key, InterNamedSectionKey):
                     if key.type + "s" in config_dict:
                         delete_after.append(key.type + "s")
-                    new_parent_keys.append(key.name)
-                    new_parent_keys.append(key.type)
                 elif isinstance(key, InterUnnamedSectionKey):
                     if key.type + "s" in config_dict:
                         delete_after.append(key.type + "s")
-                    new_parent_keys.append(key.type)
 
-                self._helper(new_parent_keys, value)
+                self._helper(value)
                 continue
-
-            if value in parent_keys:
-                del config_dict[key]
 
         for key in delete_after:
             if key in config_dict:
@@ -693,10 +683,10 @@ class RemoveRedundantNestedKeys(ConfigPipelineStep):
         intermediate_dict = context_dict[INTERMEDIATE]
 
         for host in intermediate_dict:
-            self._helper([], intermediate_dict[host])
+            self._helper(intermediate_dict[host])
 
 
-class RemoveNullValues(ConfigPipelineStep):
+class RemoveNullOrEmptyValues(ConfigPipelineStep):
     """Some values return "null" but that is not a valid config value. You would think
     that the step that removes non-defaults would handle this case but it does not.
     e.g.: xdr.dc.namespace.remote-namespace
@@ -719,7 +709,7 @@ class RemoveNullValues(ConfigPipelineStep):
             self._helper(context_dict[INTERMEDIATE][host])
 
 
-class RemoveDefaultValues(ConfigPipelineStep):
+class RemoveDefaultAndNonExistentKeys(ConfigPipelineStep):
     def __init__(self, config_handler: type[BaseConfigHandler]):
         self.config_handler = config_handler
         super().__init__()
@@ -737,9 +727,9 @@ class RemoveDefaultValues(ConfigPipelineStep):
         self,
         config_handler: BaseConfigHandler,
         context: list[str],
-        ns_config: dict[str, Any],
+        config_dict: dict[str, Any],
     ):
-        for config, val in list(ns_config.items()):
+        for config, val in list(config_dict.items()):
             new_context = list(context)
 
             if isinstance(val, dict):
@@ -794,13 +784,13 @@ class RemoveDefaultValues(ConfigPipelineStep):
 
                 if conf_type is None:
                     logger.warning(f"Could not find config type for {config}")
-                    del ns_config[config]
-                elif str(conf_type.default).lower() == str(ns_config[config]).lower():
+                    del config_dict[config]
+                elif str(conf_type.default).lower() == str(config_dict[config]).lower():
                     logger.debug("Removing default value for %s", config)
-                    del ns_config[config]
+                    del config_dict[config]
                 else:
                     logger.debug(
-                        f"Not removing default value for {config} value: {ns_config[config]} default: {conf_type.default}"
+                        f"Not removing default value for {config} value: {config_dict[config]} default: {conf_type.default}"
                     )
             else:
                 raise NotImplementedError(
@@ -881,25 +871,27 @@ class ASConfigGenerator(ConfigGenerator):
         self.config_getter = config_getter
         self.metadata_getter = metadata_getter
 
-    async def _generate_intermediate(self) -> NodeDict[Any]:
+    async def _generate_intermediate(
+        self, node_selector: constants.NodeSelectionType
+    ) -> NodeDict[Any]:
         """Generate a YAML config file from the current cluster state."""
 
         pipeline = ConfigPipeline(
             [
-                GetConfigStep(self.config_getter, self.metadata_getter),
+                GetConfigStep(self.config_getter, self.metadata_getter, node_selector),
                 ServerVersionCheck(),
                 CopyToIntermediateDict(),
                 OverrideNamespaceRackID(),
                 SplitSubcontexts(),
                 RemoveSecurityIfNotEnabled(),
                 RemoveXDRIfNoDCs(),
-                RemoveRedundantNestedKeys(),
-                RemoveNullValues(),
+                RemoveNullOrEmptyValues(),
                 ConvertIndexedToList(),
                 SplitColonSeparatedValues(),
-                RemoveDefaultValues(JsonDynamicConfigHandler),
+                RemoveDefaultAndNonExistentKeys(JsonDynamicConfigHandler),
+                RemoveInvalidKeysFoundInSchemas(),
+                ConvertCommaSeparatedToList(),
                 RemoveEmptyGeo2DSpheres(),  # Should be after RemoveDefaultValues
-                ConvertCommaSeparatedToList(),  # Should be after RemoveDefaultValues because xdr.dcs is comma separated but needs to be removed
             ],
         )
 
@@ -936,9 +928,11 @@ class ASConfigGenerator(ConfigGenerator):
                     f"Unsupported type {type(key)} for {key} and {val}"
                 )
 
-    async def generate(self) -> str:
+    async def generate(
+        self, node_selector: constants.NodeSelectionType = constants.NodeSelection.ALL
+    ) -> str:
         """Generate a YAML config file from the current cluster state."""
-        intermediate_dict = await self._generate_intermediate()
+        intermediate_dict = await self._generate_intermediate(node_selector)
         lines = []
 
         self._generate_helper(lines, list(intermediate_dict.values())[0])

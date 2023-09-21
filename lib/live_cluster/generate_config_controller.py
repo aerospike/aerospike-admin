@@ -1,4 +1,4 @@
-from lib.base_controller import CommandHelp, ModifierHelp
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.live_cluster.get_controller import (
     GetClusterMetadataController,
     GetConfigController,
@@ -43,7 +43,15 @@ class ConfGenController(LiveClusterCommandController):
             GetConfigController(self.cluster),
             GetClusterMetadataController(self.cluster),
         )
-        s = await conf_gen.generate()
+
+        try:
+            s = await conf_gen.generate(
+                self.mods["with"],
+            )
+        except NotImplementedError as e:
+            raise ShellException(e)
+        except Exception as e:
+            raise
 
         if out_file:
             with open(out_file, "w") as f:

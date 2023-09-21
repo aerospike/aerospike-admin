@@ -13,10 +13,10 @@ from lib.utils.conf_gen import (
     InterLoggingContextKey,
     InterNamedSectionKey,
     InterUnnamedSectionKey,
-    RemoveDefaultValues,
+    RemoveDefaultAndNonExistentKeys,
     RemoveEmptyGeo2DSpheres,
-    RemoveNullValues,
-    RemoveRedundantNestedKeys,
+    RemoveNullOrEmptyValues,
+    RemoveInvalidKeysFoundInSchemas,
     RemoveSecurityIfNotEnabled,
     RemoveXDRIfNoDCs,
     ServerVersionCheck,
@@ -272,11 +272,17 @@ class RemoveSecurityIfNotEnabledTest(asynctest.TestCase):
                     InterUnnamedSectionKey("security"): {"enable-security": "true"}
                 },
                 "4.4.4.4": {InterUnnamedSectionKey("security"): {}},
+                "5.5.5.5": {
+                    InterUnnamedSectionKey("security"): {
+                        "other-security-config": 1
+                    }  # In the future if enable-security is removed we don't want to remove the other configs
+                },
             },
             "builds": {
                 "2.2.2.2": "5.7.0",
                 "3.3.3.3": "5.6.0",
                 "4.4.4.4": "5.7.0",
+                "5.5.5.5": "7.0.0",
             },
         }
         await RemoveSecurityIfNotEnabled()(context_dict)
@@ -291,11 +297,15 @@ class RemoveSecurityIfNotEnabledTest(asynctest.TestCase):
                         InterUnnamedSectionKey("security"): {"enable-security": "true"}
                     },
                     "4.4.4.4": {},
+                    "5.5.5.5": {
+                        InterUnnamedSectionKey("security"): {"other-security-config": 1}
+                    },
                 },
                 "builds": {
                     "2.2.2.2": "5.7.0",
                     "3.3.3.3": "5.6.0",
                     "4.4.4.4": "5.7.0",
+                    "5.5.5.5": "7.0.0",
                 },
             },
         )
@@ -381,7 +391,7 @@ class SplitColonSeparatedValuesTest(asynctest.TestCase):
         )
 
 
-class RemoveRedundantNestedKeysTest(asynctest.TestCase):
+class RemoveInvalidKeysFoundInSchemasTest(asynctest.TestCase):
     maxDiff = None
 
     async def test_remove_redundant_nested_keys(self):
@@ -399,7 +409,7 @@ class RemoveRedundantNestedKeysTest(asynctest.TestCase):
             },
         }
 
-        await RemoveRedundantNestedKeys()(context_dict)
+        await RemoveInvalidKeysFoundInSchemas()(context_dict)
 
         self.assertDictEqual(
             context_dict["intermediate"],
@@ -421,7 +431,7 @@ class RemoveNullValuesTest(asynctest.TestCase):
     async def test_remove_null_values(self):
         context_dict = {"intermediate": {"1.1.1.1": {"a": "null", "b": "1", "c": ""}}}
 
-        await RemoveNullValues()(context_dict)
+        await RemoveNullOrEmptyValues()(context_dict)
 
         self.assertDictEqual(context_dict["intermediate"], {"1.1.1.1": {"b": "1"}})
 
@@ -480,7 +490,7 @@ class RemoveDefaultValuesTest(asynctest.TestCase):
             "builds": {"1.1.1.1": "6.4.0"},
         }
 
-        await RemoveDefaultValues(MockConfigHandler)(context_dict)
+        await RemoveDefaultAndNonExistentKeys(MockConfigHandler)(context_dict)
 
         self.assertDictEqual(
             context_dict["intermediate"],
@@ -535,7 +545,7 @@ class RemoveDefaultValuesTest(asynctest.TestCase):
             "builds": {"1.1.1.1": "6.4.0"},
         }
 
-        await RemoveDefaultValues(MockConfigHandler)(context_dict)
+        await RemoveDefaultAndNonExistentKeys(MockConfigHandler)(context_dict)
 
         self.assertDictEqual(
             context_dict["intermediate"],
