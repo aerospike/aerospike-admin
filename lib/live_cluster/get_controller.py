@@ -15,6 +15,7 @@
 import asyncio
 import copy
 from typing import Iterable, Optional
+from lib.base_get_controller import BaseGetConfigController
 
 from lib.utils import common, util, constants
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
@@ -247,7 +248,7 @@ async def get_sets(cluster, flip, nodes, for_mods: list[str] | None):
     return set_stats
 
 
-class GetConfigController:
+class GetConfigController(BaseGetConfigController):
     def __init__(self, cluster):
         self.cluster = cluster
 
@@ -292,10 +293,22 @@ class GetConfigController:
                 constants.CONFIG_RACK_IDS,
                 asyncio.create_task(self.get_rack_ids(nodes=nodes)),
             ),
+            (
+                constants.CONFIG_LOGGING,
+                asyncio.create_task(self.get_logging(nodes=nodes)),
+            ),
         ]
         config_map = dict([(k, await f) for k, f in futures])
 
         return config_map
+
+    async def get_logging(self, nodes="all"):
+        logging_configs = await self.cluster.info_logging_config(nodes=nodes)
+        for node in logging_configs:
+            if isinstance(logging_configs[node], Exception):
+                logging_configs[node] = {}
+
+        return logging_configs
 
     async def get_security(self, nodes="all"):
         security_configs = await self.cluster.info_get_config(
@@ -318,16 +331,13 @@ class GetConfigController:
         return service_configs
 
     async def get_network(self, nodes="all"):
-        network_configs = {}
         nw_configs = await self.cluster.info_get_config(nodes=nodes, stanza="network")
 
         for node in nw_configs:
             if isinstance(nw_configs[node], Exception):
-                continue
-            else:
-                network_configs[node] = nw_configs[node]
+                nw_configs[node] = {}
 
-        return network_configs
+        return nw_configs
 
     async def get_namespace(
         self, flip=False, nodes="all", for_mods: list[str] | None = None
@@ -819,6 +829,18 @@ class GetFeaturesController:
             ns_configs=ns_configs,
             security_configs=security_configs,
         )
+
+
+class GetClusterMetadataController:
+    # TODO: do we need this? Technically asadm only really ever deals with metadata. I
+    # want this to handle things that arn't configs or stats . . .
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    async def get_builds(self, nodes="all"):
+        builds = await self.cluster.info_build(nodes=nodes)
+        return util.filter_exceptions(builds)
 
 
 class GetPmapController:

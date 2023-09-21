@@ -13,3 +13,6 @@ class ErrorsMsgs:
     DC_NODE_REMOVE_FAIL = "Failed to remove node from XDR datacenter"
     INVALID_REWIND = 'Invalid rewind. Must be int or "all"'
     UNABLE_TO_DETERMINE_CLUSTER_STABILITY = "Failed to check cluster stability"
+
+
+DEFAULT_CONFIG_PATH = "/etc/aerospike/aerospike.conf"

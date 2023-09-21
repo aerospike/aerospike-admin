@@ -20,6 +20,7 @@ ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 # For "manage config". Directory is relative to live_cluster/client
 CONFIG_SCHEMAS_HOME = "config-schemas"
 
+CONFIG_LOGGING = "logging"
 CONFIG_SERVICE = "service"
 CONFIG_SECURITY = "security"
 CONFIG_NETWORK = "network"

@@ -24,7 +24,23 @@ from parameterized import parameterized
 from test.e2e import lib, util as test_util
 
 
-class TestManageACLUsers(asynctest.TestCase):
+class TestManage(asynctest.TestCase):
+    def assertStdErrEqual(self, expected, actual):
+        split = actual.split("\n")
+        actual = []
+
+        for line in split:
+            if line.startswith("Seed") or line.startswith("Config"):
+                continue
+
+            actual.append(line)
+
+        actual = "\n".join(actual)
+
+        self.assertEqual(expected, actual)
+
+
+class TestManageACLUsers(TestManage):
     exp_user = "foo"
 
     def get_args(self, cmd):
@@ -50,7 +66,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_create_user_with_roles(self):
         exp_stdout_resp = "Successfully created user {}.".format(self.exp_user)
@@ -65,7 +81,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_create_user_if_one_exists(self):
         exp_stdout_resp = ""
@@ -84,7 +100,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     async def test_can_delete_user(self):
         exp_stdout_resp = "Successfully deleted user {}.".format(self.exp_user)
@@ -102,7 +118,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     async def test_fail_to_delete_user_if_one_does_not_exist(self):
         exp_stdout_resp = ""
@@ -112,7 +128,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_set_user_password_outputs_expected_values(self):
         # Set up expected input values
@@ -137,7 +153,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(expected_stdout, actual.stdout)
-        self.assertEqual(expected_stderr, actual.stderr)
+        self.assertStdErrEqual(expected_stderr, actual.stderr)
 
     # TODO create fail to set-password test
 
@@ -165,7 +181,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_change_user_password_with_wrong_old_password(self):
         # Set up expected input values
@@ -196,7 +212,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(expected_stdout, actual.stdout)
-        self.assertEqual(expected_stderr, actual.stderr)
+        self.assertStdErrEqual(expected_stderr, actual.stderr)
 
     def test_can_grant_user_roles(self):
         exp_stdout_resp = "Successfully granted roles to user {}.".format(self.exp_user)
@@ -215,7 +231,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_grant_user_roles_if_user_does_not_exist(self):
         exp_stdout_resp = ""
@@ -226,7 +242,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_revoke_user_roles(self):
         exp_stdout_resp = "Successfully revoked roles from user {}.".format(
@@ -253,7 +269,7 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_revoke_user_roles_if_user_does_not_exist(self):
         exp_stdout_resp = ""
@@ -266,10 +282,10 @@ class TestManageACLUsers(asynctest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
 
-class TestManageACLRoles(unittest.TestCase):
+class TestManageACLRoles(TestManage):
     exp_role = "avatar"
 
     def get_args(self, cmd):
@@ -295,7 +311,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_create_role_with_allowlist(self):
         exp_stdout_resp = "Successfully created role {}.".format(self.exp_role)
@@ -310,7 +326,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_create_role_with_privilege_and_allowlist(self):
         exp_stdout_resp = "Successfully created role {}.".format(self.exp_role)
@@ -325,7 +341,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_create_role_if_one_exists(self):
         expected_stdout_resp = ""
@@ -344,7 +360,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(expected_stdout_resp, actual.stdout)
-        self.assertEqual(expected_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(expected_stderr_resp, actual.stderr)
 
     def test_fails_to_create_role_if_privilege_is_invalid(self):
         expected_stdout_resp = ""
@@ -359,7 +375,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(expected_stdout_resp, actual.stdout)
-        self.assertEqual(expected_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(expected_stderr_resp, actual.stderr)
 
     def test_can_delete_role(self):
         exp_stdout_resp = "Successfully deleted role {}.".format(self.exp_role)
@@ -374,7 +390,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fail_to_delete_role_if_one_does_not_exist(self):
         exp_stdout_resp = ""
@@ -385,7 +401,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_grant_role_privilege(self):
         exp_stdout_resp = "Successfully granted privilege to role {}.".format(
@@ -406,7 +422,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_grant_role_privilege_if_role_does_not_exist(self):
         exp_stdout_resp = ""
@@ -417,7 +433,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_revoke_role_privileges(self):
         exp_stdout_resp = "Successfully revoked privilege from role {}.".format(
@@ -434,7 +450,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_revoke_role_privilege_if_role_does_not_exist(self):
         exp_stdout_resp = ""
@@ -445,7 +461,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_add_allowlist_to_role(self):
         exp_stdout_resp = "Successfully updated allowlist for role {}.".format(
@@ -468,7 +484,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_clear_allowlist_to_role(self):
         exp_stdout_resp = "Successfully cleared allowlist from role {}.".format(
@@ -489,7 +505,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_clear_allowlist_if_role_does_not_exist(self):
         exp_stdout_resp = ""
@@ -500,7 +516,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr.strip())
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr.strip())
 
     # Setting one vs two quotas gives different success and error messages.
     def test_can_set_quota_to_role(self):
@@ -520,7 +536,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout.strip())
-        self.assertEqual(exp_stderr_resp, actual.stderr.strip())
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr.strip())
 
     def test_can_set_quotas_to_role(self):
         exp_stdout_resp = "Successfully set quotas for role {}.".format(self.exp_role)
@@ -541,7 +557,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_set_quotas_to_role_if_bad_quota(self):
         exp_stdout_resp = ""
@@ -555,7 +571,7 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout.strip())
-        self.assertEqual(exp_stderr_resp, actual.stderr.strip())
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr.strip())
 
     def test_fails_to_set_quota_to_role_if_bad_quota(self):
         exp_stdout_resp = ""
@@ -566,10 +582,10 @@ class TestManageACLRoles(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
 
-class ManageUDFsTest(unittest.TestCase):
+class ManageUDFsTest(TestManage):
     TEST_UDF = """
 function get_digest(rec)
     info("Digest:%s", tostring(record.digest(rec)))
@@ -613,7 +629,7 @@ end
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_add_module_with_absolute_path(self):
         exp_stdout_resp = "Successfully added UDF {}.".format(self.exp_module)
@@ -626,7 +642,7 @@ end
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_add_multiple_modules(self):
         exp_stderr_resp = ""
@@ -640,7 +656,7 @@ end
             )
 
             self.assertEqual(exp_stdout_resp, actual.stdout)
-            self.assertEqual(exp_stderr_resp, actual.stderr)
+            self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fails_to_add_if_path_does_not_exist(self):
         exp_stdout_resp = ""
@@ -654,7 +670,7 @@ end
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_can_remove_module(self):
         exp_stdout_resp = "Successfully removed UDF {}.".format(self.exp_module)
@@ -671,7 +687,7 @@ end
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
     def test_fail_to_remove_module_that_does_not_exist(self):
         exp_module = "other_test.lua"
@@ -685,10 +701,10 @@ end
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
-        self.assertEqual(exp_stderr_resp, actual.stderr)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
 
-class ManageSindexTest(unittest.TestCase):
+class ManageSindexTest(TestManage):
     exp_sindex = "test-sindex"
     exp_ns = "test"
     exp_set = "testset"
@@ -720,7 +736,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_can_create_numeric_sindex(self):
         exp_stdout = self.success_msg
@@ -735,7 +751,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_can_create_geo2dspehere_sindex(self):
         exp_stdout = self.success_msg
@@ -750,7 +766,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_can_create_sindex_in_list(self):
         exp_stdout = self.success_msg
@@ -765,7 +781,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_can_create_sindex_in_mapkeys(self):
         exp_stdout = self.success_msg
@@ -780,7 +796,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_can_create_sindex_in_mapvalues(self):
         exp_stdout = self.success_msg
@@ -795,7 +811,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_fails_to_create_sindex_in_invalid(self):
         exp_stderr = "ERROR: Failed to create sindex {} : bad 'indextype' - must be one of 'default', 'list', 'mapkeys', 'mapvalues'.".format(
@@ -810,7 +826,7 @@ class ManageSindexTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_can_delete_sindex(self):
         exp_stdout = "Successfully deleted sindex {}.".format(self.exp_sindex)
@@ -834,7 +850,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_fails_to_delete_sindex_that_does_not_exist(self):
         exp_stdout = "Successfully deleted sindex {}.".format(self.exp_sindex)
@@ -849,7 +865,7 @@ class ManageSindexTest(unittest.TestCase):
         )
 
         self.assertEqual(exp_stdout, actual.stdout)
-        self.assertEqual(exp_stderr, actual.stderr)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
 
 
 class ManageConfigTests(unittest.TestCase):

@@ -198,8 +198,8 @@ def temporary_path(extension):
     return absolute_path(os.path.join(WORK_DIRECTORY, file_name))
 
 
-def create_conf_file(
-    temp_file,
+def create_conf_file_from_template(
+    template_content,
     port_base,
     peer_addr,
     enable_security: bool,
@@ -209,8 +209,6 @@ def create_conf_file(
     """
     Create an Aerospike configuration file from the given template.
     """
-    with codecs.open(temp_file, "r", "UTF-8") as file_obj:
-        temp_content = file_obj.read()
 
     params = {
         "security_stanza": ""
@@ -231,12 +229,17 @@ def create_conf_file(
         "namespace": NAMESPACE,
     }
 
-    temp = string.Template(temp_content)
+    temp = string.Template(template_content)
     conf_content = temp.substitute(params)
+
+    return create_config_file_from_config(conf_content)
+
+
+def create_config_file_from_config(config_content):
     conf_file = temporary_path("conf")
 
     with codecs.open(conf_file, "w", "UTF-8") as file_obj:
-        file_obj.write(conf_content)
+        file_obj.write(config_content)
 
     return conf_file
 
@@ -272,13 +275,18 @@ def connect_client():
                 raise
 
 
-def start_server(first_base, index, access_address="127.0.0.1"):
+def start_server(
+    first_base,
+    index,
+    access_address="127.0.0.1",
+    template_content=None,
+    config_content=None,
+):
     global CLIENT
     global NODES
     global RUNNING
     global SERVER_IP
 
-    temp_file = absolute_path("aerospike.conf")
     mount_dir = absolute_path(WORK_DIRECTORY)
 
     try:
@@ -289,14 +297,26 @@ def start_server(first_base, index, access_address="127.0.0.1"):
         )
 
     base = first_base + 1000 * (index - 1)
-    conf_file = create_conf_file(
-        temp_file,
-        base,
-        None if index == 1 else (SERVER_IP, first_base),
-        True,
-        index,
-        access_address=access_address,
-    )
+
+    if template_content is None and not config_content:
+        template_file = absolute_path("aerospike.conf")
+        with codecs.open(template_file, "r", "UTF-8") as file_obj:
+            template_content = file_obj.read()
+
+    if template_content:
+        conf_file = create_conf_file_from_template(
+            template_content,
+            base,
+            None if index == 1 else (SERVER_IP, first_base),
+            True,
+            index,
+            access_address=access_address,
+        )
+    elif config_content:
+        conf_file = create_config_file_from_config(config_content)
+    else:
+        raise Exception("Must provide either template_content or config_content")
+
     cmd = "/usr/bin/asd --foreground --config-file %s --instance %s" % (
         CONTAINER_DIR + "/" + get_file(conf_file, base=mount_dir),
         str(index - 1),
@@ -331,12 +351,13 @@ def start_server(first_base, index, access_address="127.0.0.1"):
     return container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
 
 
-def start(do_reset=True):
+def start(
+    do_reset=True, num_nodes=DEFAULT_N_NODES, template_content=None, config_content=None
+):
     global CLIENT
     global NODES
     global RUNNING
     global SERVER_IP
-    global DEFAULT_N_NODES
 
     if not RUNNING:
         RUNNING = True
@@ -348,8 +369,13 @@ def start(do_reset=True):
             init_state_dirs()
 
             first_base = PORT
-            for index in range(1, DEFAULT_N_NODES + 1):
-                ip = start_server(first_base, index)
+            for index in range(1, num_nodes + 1):
+                ip = start_server(
+                    first_base,
+                    index,
+                    template_content=template_content,
+                    config_content=config_content,
+                )
                 if index == 1:
                     SERVER_IP = ip
         else:

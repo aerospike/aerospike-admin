@@ -1,9 +1,7 @@
 name: Tests
 on:
   push:
-    branches: [actionsHub, master, test-ready, "bugfix-*"]
-  pull_request:
-    branches: [test-ready, master]
+    branches: ["*"]
 jobs:
   build:
     runs-on: ubuntu-latest

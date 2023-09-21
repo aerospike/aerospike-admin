@@ -431,15 +431,14 @@ class Cluster(AsyncObject):
         # with same ip prefix. i.e. (1.1.1.1:3000, 1.1.1.1:3001) or (1.1.1.11:3000, 1.1.1.1:3000)
         for n in node_matches:
             match_ip = n.ip.split(":")[0]
+            match_fqdn = n.fqdn.split(":")[0]
             if match_ip == node:
                 if match is None:
                     match = n
                 else:
                     # more than one match
                     return []
-
-            match_fqdn = n.fqdn.split(":")[0]
-            if match_fqdn == node:
+            elif match_fqdn == node:
                 if match is None:
                     match = n
                 else:

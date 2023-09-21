@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from lib.utils import util
+from lib.utils import constants, util
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 
 from .live_cluster_command_controller import LiveClusterCommandController
@@ -19,7 +19,7 @@ from .live_cluster_command_controller import LiveClusterCommandController
 
 @CommandHelp(
     "Provides raw access to the info protocol.",
-    usage="[-v <command>] [-l] [--no_node_name]",
+    usage=f"[-v <command>] [-l] [--no_node_name] [{constants.Modifiers.LIKE} <field-substring>] [{constants.ModifierUsage.WITH}]",
     modifiers=(
         ModifierHelp(
             "-v",
@@ -32,6 +32,10 @@ from .live_cluster_command_controller import LiveClusterCommandController
         ModifierHelp(
             "--no_node_name", "Force to display output without printing node names."
         ),
+        ModifierHelp(
+            constants.Modifiers.LIKE, "Filter returned fields by substring match"
+        ),
+        ModifierHelp(constants.Modifiers.WITH, constants.ModifierHelp.WITH),
     ),
 )
 class ASInfoController(LiveClusterCommandController):

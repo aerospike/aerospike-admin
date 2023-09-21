@@ -112,6 +112,11 @@ def parse_output(
     return title, description, data_names, data_values, num_records
 
 
+def remove_escape_sequence(line):
+    ansi_escape = re.compile(r"(\x9b|\x1b\[)[0-?]*[ -\/]*[@-~]")
+    return ansi_escape.sub("", line)
+
+
 def get_separate_output(in_str="") -> list[dict[str, Any]]:
     _regex = re.compile(r"((?<=^{).*?(?=^}))", re.MULTILINE | re.DOTALL)
     out = re.findall(_regex, in_str)
@@ -190,11 +195,6 @@ def check_for_subset_in_list_of_lists(actual_list, list_of_expected_sub_lists):
         if check_for_subset(actual_list, expected_list):
             return True
     return False
-
-
-def remove_escape_sequence(line):
-    ansi_escape = re.compile(r"(\x9b|\x1b\[)[0-?]*[ -\/]*[@-~]")
-    return ansi_escape.sub("", line)
 
 
 def check_for_types(actual_lists, expected_types):

@@ -592,6 +592,20 @@ class GetConfigControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
+    async def test_get_logging(self):
+        self.cluster_mock.info_logging_config.return_value = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": Exception(),
+        }
+        expected = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_logging()
+
+        self.assertDictEqual(actual, expected)
+
     async def test_get_namespace(self):
         self.cluster_mock.info_namespaces.return_value = {
             "10.71.71.169:3000": ["bar", "test"]
@@ -692,6 +706,48 @@ class GetConfigControllerTest(asynctest.TestCase):
         result = await self.controller.get_sets(for_mods=["ab", "ss"])
 
         self.assertDictEqual(result, expected)
+
+    async def test_get_security(self):
+        self.cluster_mock.info_get_config.return_value = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": Exception(),
+        }
+        expected = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_security()
+
+        self.assertDictEqual(actual, expected)
+
+    async def test_get_service(self):
+        self.cluster_mock.info_get_config.return_value = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": Exception(),
+        }
+        expected = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_service()
+
+        self.assertDictEqual(actual, expected)
+
+    async def test_get_network(self):
+        self.cluster_mock.info_get_config.return_value = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": Exception(),
+        }
+        expected = {
+            "1.1.1.1": "unfiltered",
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_network()
+
+        self.assertDictEqual(actual, expected)
 
     async def test_get_xdr(self):
         self.cluster_mock.info_xdr_config.return_value = {

@@ -10,18 +10,6 @@
     "service": {
       "type": "object",
       "additionalProperties": false,
-      "oneOf": [
-        {
-          "required": [
-            "feature-key-file"
-          ]
-        },
-        {
-          "required": [
-            "feature-key-files"
-          ]
-        }
-      ],
       "properties": {
         "advertise-ipv6": {
           "type": "boolean",
@@ -52,14 +40,6 @@
         "batch-max-buffers-per-queue": {
           "type": "integer",
           "default": 255,
-          "minimum": 0,
-          "maximum": 4294967295,
-          "description": "",
-          "dynamic": true
-        },
-        "batch-max-requests": {
-          "type": "integer",
-          "default": 5000,
           "minimum": 0,
           "maximum": 4294967295,
           "description": "",
@@ -520,7 +500,7 @@
             "dynamic": true,
             "default": "INFO"
           },
-          "rbuffer": {
+          "secrets": {
             "enum": [
               "CRITICAL",
               "critical",
@@ -945,23 +925,6 @@
             "dynamic": true,
             "default": "INFO"
           },
-          "hotkey": {
-            "enum": [
-              "CRITICAL",
-              "critical",
-              "WARNING",
-              "warning",
-              "INFO",
-              "info",
-              "DEBUG",
-              "debug",
-              "DETAIL",
-              "detail"
-            ],
-            "description": "",
-            "dynamic": true,
-            "default": "INFO"
-          },
           "index": {
             "enum": [
               "CRITICAL",
@@ -1013,7 +976,7 @@
             "dynamic": true,
             "default": "INFO"
           },
-          "job": {
+          "key-busy": {
             "enum": [
               "CRITICAL",
               "critical",
@@ -1031,23 +994,6 @@
             "default": "INFO"
           },
           "migrate": {
-            "enum": [
-              "CRITICAL",
-              "critical",
-              "WARNING",
-              "warning",
-              "INFO",
-              "info",
-              "DEBUG",
-              "debug",
-              "DETAIL",
-              "detail"
-            ],
-            "description": "",
-            "dynamic": true,
-            "default": "INFO"
-          },
-          "mon": {
             "enum": [
               "CRITICAL",
               "critical",
@@ -1116,23 +1062,6 @@
             "default": "INFO"
           },
           "partition": {
-            "enum": [
-              "CRITICAL",
-              "critical",
-              "WARNING",
-              "warning",
-              "INFO",
-              "info",
-              "DEBUG",
-              "debug",
-              "DETAIL",
-              "detail"
-            ],
-            "description": "",
-            "dynamic": true,
-            "default": "INFO"
-          },
-          "paxos": {
             "enum": [
               "CRITICAL",
               "critical",
@@ -2184,12 +2113,6 @@
             "description": "",
             "dynamic": true
           },
-          "data-in-index": {
-            "type": "boolean",
-            "default": false,
-            "description": "",
-            "dynamic": false
-          },
           "default-ttl": {
             "type": "integer",
             "default": 0,
@@ -2384,7 +2307,7 @@
             "type": "integer",
             "default": 256,
             "minimum": 16,
-            "maximum": 4096,
+            "maximum": 268453456,
             "description": "",
             "dynamic": false
           },
@@ -2438,12 +2361,6 @@
             "default": 1073741824,
             "minimum": 134217728,
             "maximum": 4294967296,
-            "description": "",
-            "dynamic": false
-          },
-          "single-bin": {
-            "type": "boolean",
-            "default": false,
             "description": "",
             "dynamic": false
           },
@@ -2792,8 +2709,52 @@
                     "dynamic": false,
                     "default": "pmem",
                     "enum": [
-                      "pmem",
-                      "shmem"
+                      "pmem"
+                    ]
+                  },
+                  "mounts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "",
+                    "dynamic": false,
+                    "default": []
+                  },
+                  "mounts-high-water-pct": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "",
+                    "dynamic": true
+                  },
+                  "mounts-size-limit": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 1073741824,
+                    "maximum": 18446744073709551615,
+                    "description": "",
+                    "dynamic": true
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "mounts",
+                  "mounts-size-limit"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "",
+                    "dynamic": false,
+                    "default": "flash",
+                    "enum": [
+                      "flash"
                     ]
                   },
                   "mounts": {
@@ -3075,18 +3036,6 @@
                     "default": false,
                     "description": "",
                     "dynamic": true
-                  },
-                  "scheduler-mode": {
-                    "type": "string",
-                    "enum": [
-                      "anticipatory",
-                      "cfq",
-                      "deadline",
-                      "noop",
-                      "null"
-                    ],
-                    "description": "",
-                    "dynamic": false
                   },
                   "serialize-tomb-raider": {
                     "type": "boolean",
