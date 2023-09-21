@@ -26,7 +26,7 @@ from lib.utils.conf_gen import (
 
 
 class GetConfigStepTest(asynctest.TestCase):
-    async def test_supported_version(self):
+    async def test_get_config(self):
         config_getter_mock = AsyncMock()
         metadata_getter_mock = AsyncMock()
         config_getter_mock.get_logging.return_value = "logging"
@@ -44,7 +44,7 @@ class GetConfigStepTest(asynctest.TestCase):
             "2.2.2.2": "5.0.0.0",
         }
 
-        step = GetConfigStep(config_getter_mock, metadata_getter_mock)
+        step = GetConfigStep(config_getter_mock, metadata_getter_mock, "all")
         context_dict = {}
         await step(context_dict)
 
