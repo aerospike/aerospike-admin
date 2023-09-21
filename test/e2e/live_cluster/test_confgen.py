@@ -110,7 +110,7 @@ class TestConfGen(asynctest.TestCase):
     async def test_confgen(self):
         lib.start(num_nodes=1, template_content=aerospike_conf)
         time.sleep(1)
-        conf_gen_cmd = "confgen with {lib.SERVER_IP}:{lib.PORT}"
+        conf_gen_cmd = f"confgen with 127.0.0.1:{lib.PORT}"
         show_config_cmd = "show config; show config security; show config xdr"
         cp = util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{conf_gen_cmd}' -Uadmin -Padmin"
@@ -169,7 +169,7 @@ class TestConfGen(asynctest.TestCase):
     async def test_confgen_save_to_file(self):
         lib.start(num_nodes=1, template_content=aerospike_conf)
         time.sleep(1)
-        conf_gen_cmd = "confgen with {lib.SERVER_IP}:{lib.PORT}"
+        conf_gen_cmd = f"confgen with all"
         cp = util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{conf_gen_cmd}' -Uadmin -Padmin"
         )
