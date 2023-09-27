@@ -166,9 +166,6 @@ class GetConfigStep(ConfigPipelineStep):
 
 
 class ServerVersionCheck(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         builds = context_dict["builds"]
 
@@ -182,9 +179,6 @@ class ServerVersionCheck(ConfigPipelineStep):
 
 
 class CreateIntermediateDict(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         context_dict[INTERMEDIATE] = {}
         hosts = set(
@@ -203,9 +197,6 @@ class CreateIntermediateDict(ConfigPipelineStep):
 
 
 class CopyNamespaceConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         namespace_config = context_dict["namespaces"]
 
@@ -218,9 +209,6 @@ class CopyNamespaceConfig(ConfigPipelineStep):
 
 
 class CopySetConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         set_config = context_dict["sets"]
 
@@ -234,9 +222,6 @@ class CopySetConfig(ConfigPipelineStep):
 
 
 class OverrideNamespaceRackID(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         rack_id_config = context_dict["rack-ids"]
 
@@ -249,9 +234,6 @@ class OverrideNamespaceRackID(ConfigPipelineStep):
 
 
 class CopyXDRConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         xdr_config = context_dict["xdr"]
 
@@ -264,9 +246,6 @@ class CopyXDRConfig(ConfigPipelineStep):
 
 
 class CopyXDRDCConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         xdr_dc_config = context_dict["xdr-dcs"]
 
@@ -279,9 +258,6 @@ class CopyXDRDCConfig(ConfigPipelineStep):
 
 
 class CopyXDRNamespaceConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         xdr_namespace_config = context_dict["xdr-namespaces"]
 
@@ -297,9 +273,6 @@ class CopyXDRNamespaceConfig(ConfigPipelineStep):
 
 
 class CopyLoggingConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     def _copy_subcontext(self, config_dict: dict[str, Any]):
         result = {}
 
@@ -334,9 +307,6 @@ class CopyLoggingConfig(ConfigPipelineStep):
 
 
 class CopyServiceConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         service_config = context_dict["service"]
 
@@ -348,9 +318,6 @@ class CopyServiceConfig(ConfigPipelineStep):
 
 
 class CopyNetworkConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         network_config = context_dict["network"]
 
@@ -362,9 +329,6 @@ class CopyNetworkConfig(ConfigPipelineStep):
 
 
 class CopySecurityConfig(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         security_config = context_dict["security"]
 
@@ -397,9 +361,6 @@ class SplitSubcontexts(ConfigPipelineStep):
     """Takes a config dict and splits any subcontexts that are joined with a dot
     into their own subdicts. E.g. "heartbeat.interval" -> {"heartbeat": {"interval": ...}}
     """
-
-    def __init__(self):
-        super().__init__()
 
     def _helper(self, config_dict: dict[str | IntermediateKey, Any]) -> None:
         contexts_to_delete = []
@@ -457,10 +418,52 @@ class SplitSubcontexts(ConfigPipelineStep):
             self._helper(config_dict)
 
 
-class ConvertIndexedToList(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
+class ConvertIndexedSubcontextsToNamedSection(ConfigPipelineStep):
+    """Converts subcontext sections that are indexed to named sections. E.g.:
+    "network":
+        {
+            "tls[0]": {
+               "name": "tls-name"
+            }
+        }
+    "network":
+        {
+            NamedSection("tls", "tls-name"): {
+               . . .
+            }
+        }
+    should be
+    """
 
+    def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
+        for config in list(config_dict.keys()):
+            value = config_dict[config]
+
+            if isinstance(value, dict):
+                self._helper(config_dict[config])
+
+                if isinstance(config, InterUnnamedSectionKey):
+                    config_split = config.type.split("[")
+
+                    if len(config_split) > 1:
+                        if "name" in value:
+                            name = value["name"]
+                            del value["name"]
+
+                            del config_dict[config]
+                            config_dict[
+                                InterNamedSectionKey(config_split[0], name)
+                            ] = value
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+
+        for host in intermediate_dict:
+            config_dict = intermediate_dict[host]
+            self._helper(config_dict)
+
+
+class ConvertIndexedToList(ConfigPipelineStep):
     def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
         tmp_list_dict: dict[str, list[tuple[int, str]]] = {}
 
@@ -503,9 +506,6 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
     comma separated but needs to be on separate lines in the config.
     """
 
-    def __init__(self):
-        super().__init__()
-
     def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
         for config in list(config_dict.keys()):
             value = config_dict[config]
@@ -533,9 +533,6 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
 
 
 class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
         builds = context_dict["builds"]
@@ -566,9 +563,6 @@ class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
 
 
 class RemoveEmptyGeo2DSpheres(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
 
@@ -592,9 +586,6 @@ class RemoveEmptyGeo2DSpheres(ConfigPipelineStep):
 
 
 class RemoveXDRIfNoDCs(ConfigPipelineStep):
-    def __init__(self):
-        super().__init__()
-
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
 
@@ -615,9 +606,6 @@ class SplitColonSeparatedValues(ConfigPipelineStep):
     Some values are split by colon when returned by the server but must be space
     separated in the config. One exception is 'cipher-suites'.
     """
-
-    def __init__(self):
-        super().__init__()
 
     def _helper(self, config_dict: dict[IntermediateKey | str, Any]):
         for key, value in config_dict.items():
@@ -654,9 +642,6 @@ class RemoveInvalidKeysFoundInSchemas(ConfigPipelineStep):
     }
     """
 
-    def __init__(self):
-        super().__init__()
-
     def _helper(
         self,
         config_dict: dict[IntermediateKey | str, Any],
@@ -691,9 +676,6 @@ class RemoveNullOrEmptyValues(ConfigPipelineStep):
     that the step that removes non-defaults would handle this case but it does not.
     e.g.: xdr.dc.namespace.remote-namespace
     """
-
-    def __init__(self):
-        super().__init__()
 
     def _helper(self, config_dict: dict[IntermediateKey | str, Any]):
         for key, value in list(config_dict.items()):
@@ -883,6 +865,7 @@ class ASConfigGenerator(ConfigGenerator):
                 CopyToIntermediateDict(),
                 OverrideNamespaceRackID(),
                 SplitSubcontexts(),
+                ConvertIndexedSubcontextsToNamedSection(),
                 RemoveSecurityIfNotEnabled(),
                 RemoveXDRIfNoDCs(),
                 RemoveNullOrEmptyValues(),
