@@ -446,9 +446,9 @@ class ConvertIndexedSubcontextsToNamedSection(ConfigPipelineStep):
                     config_split = config.type.split("[")
 
                     if len(config_split) > 1:
-                        if "name" in config_dict[config]:
-                            name = config_dict[config]["name"]
-                            del config_dict[config]["name"]
+                        if "name" in value:
+                            name = value["name"]
+                            del value["name"]
 
                             del config_dict[config]
                             config_dict[
@@ -865,7 +865,7 @@ class ASConfigGenerator(ConfigGenerator):
                 CopyToIntermediateDict(),
                 OverrideNamespaceRackID(),
                 SplitSubcontexts(),
-                ConvertIndexesSubcontextsToNamedSection(),
+                ConvertIndexedSubcontextsToNamedSection(),
                 RemoveSecurityIfNotEnabled(),
                 RemoveXDRIfNoDCs(),
                 RemoveNullOrEmptyValues(),
