@@ -418,7 +418,7 @@ class SplitSubcontexts(ConfigPipelineStep):
             self._helper(config_dict)
 
 
-class ConvertIndexesSubcontextsToNamedSection(ConfigPipelineStep):
+class ConvertIndexedSubcontextsToNamedSection(ConfigPipelineStep):
     """Converts subcontext sections that are indexed to named sections. E.g.:
     "network":
         {
