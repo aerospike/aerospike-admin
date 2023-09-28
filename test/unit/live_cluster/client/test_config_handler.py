@@ -472,7 +472,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
             EnumConfigType(
                 ["critical", "warning", "info", "debug", "detail"],
                 True,
-                "INFO",
+                "CRITICAL",
             ),
         )
         self.assertEqual(
@@ -480,7 +480,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
             EnumConfigType(
                 ["critical", "warning", "info", "debug", "detail"],
                 True,
-                "INFO",
+                "CRITICAL",
             ),
         )
         self.assertIsNone(values["dne"])
