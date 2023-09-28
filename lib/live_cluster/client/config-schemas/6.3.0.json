@@ -415,7 +415,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "alloc": {
             "enum": [
@@ -432,7 +432,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "arenax": {
             "enum": [
@@ -449,7 +449,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "hardware": {
             "enum": [
@@ -466,7 +466,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "msg": {
             "enum": [
@@ -483,7 +483,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "os": {
             "enum": [
@@ -500,7 +500,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "rbuffer": {
             "enum": [
@@ -517,7 +517,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "socket": {
             "enum": [
@@ -534,7 +534,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "tls": {
             "enum": [
@@ -551,7 +551,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "vault": {
             "enum": [
@@ -568,7 +568,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "vmapx": {
             "enum": [
@@ -585,7 +585,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "xmem": {
             "enum": [
@@ -602,7 +602,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "aggr": {
             "enum": [
@@ -619,7 +619,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "appeal": {
             "enum": [
@@ -636,7 +636,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "as": {
             "enum": [
@@ -653,7 +653,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "audit": {
             "enum": [
@@ -670,7 +670,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "batch": {
             "enum": [
@@ -687,7 +687,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "batch-sub": {
             "enum": [
@@ -704,7 +704,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "bin": {
             "enum": [
@@ -721,7 +721,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "config": {
             "enum": [
@@ -738,7 +738,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "clustering": {
             "enum": [
@@ -755,7 +755,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "drv_pmem": {
             "enum": [
@@ -772,7 +772,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "drv_ssd": {
             "enum": [
@@ -789,7 +789,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "exchange": {
             "enum": [
@@ -806,7 +806,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "exp": {
             "enum": [
@@ -823,7 +823,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "fabric": {
             "enum": [
@@ -840,7 +840,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "flat": {
             "enum": [
@@ -857,7 +857,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "geo": {
             "enum": [
@@ -874,7 +874,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "hb": {
             "enum": [
@@ -891,7 +891,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "health": {
             "enum": [
@@ -908,7 +908,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "hlc": {
             "enum": [
@@ -925,7 +925,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "index": {
             "enum": [
@@ -942,7 +942,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "info": {
             "enum": [
@@ -959,7 +959,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "info-port": {
             "enum": [
@@ -976,7 +976,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "job": {
             "enum": [
@@ -993,7 +993,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "migrate": {
             "enum": [
@@ -1010,7 +1010,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "mon": {
             "enum": [
@@ -1027,7 +1027,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "namespace": {
             "enum": [
@@ -1044,7 +1044,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "nsup": {
             "enum": [
@@ -1061,7 +1061,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "particle": {
             "enum": [
@@ -1078,7 +1078,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "partition": {
             "enum": [
@@ -1095,7 +1095,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "paxos": {
             "enum": [
@@ -1112,7 +1112,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "proto": {
             "enum": [
@@ -1129,7 +1129,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "proxy": {
             "enum": [
@@ -1146,7 +1146,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "proxy-divert": {
             "enum": [
@@ -1163,7 +1163,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "query": {
             "enum": [
@@ -1180,7 +1180,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "record": {
             "enum": [
@@ -1197,7 +1197,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "roster": {
             "enum": [
@@ -1214,7 +1214,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "rw": {
             "enum": [
@@ -1231,7 +1231,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "rw-client": {
             "enum": [
@@ -1248,7 +1248,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "security": {
             "enum": [
@@ -1265,7 +1265,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "service": {
             "enum": [
@@ -1282,7 +1282,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "service-list": {
             "enum": [
@@ -1299,7 +1299,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "sindex": {
             "enum": [
@@ -1316,7 +1316,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "skew": {
             "enum": [
@@ -1333,7 +1333,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "smd": {
             "enum": [
@@ -1350,7 +1350,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "storage": {
             "enum": [
@@ -1367,7 +1367,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "truncate": {
             "enum": [
@@ -1384,7 +1384,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "tsvc": {
             "enum": [
@@ -1401,7 +1401,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "udf": {
             "enum": [
@@ -1418,7 +1418,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "xdr": {
             "enum": [
@@ -1435,7 +1435,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "xdr-client": {
             "enum": [
@@ -1452,7 +1452,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "any": {
             "enum": [
@@ -1469,7 +1469,7 @@
             ],
             "description": "",
             "dynamic": true,
-            "default": "INFO"
+            "default": "CRITICAL"
           },
           "facility": {
             "enum": [
@@ -2331,7 +2331,7 @@
           },
           "nsup-period": {
             "type": "integer",
-            "default": 120,
+            "default": 0,
             "minimum": 0,
             "maximum": 4294967295,
             "description": "",
