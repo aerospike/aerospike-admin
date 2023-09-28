@@ -171,7 +171,21 @@ def configTypeFactory(value):
     """
 
     if "type" not in value and "enum" not in value:
-        raise ValueError("ConfigTypeFactory does not support value: {}".format(value))
+        new_value = None
+        if "oneOf" in value:
+            for one in value["oneOf"]:
+                # TODO: Support oneOf type and array types. Will require changes to
+                # auto-complete and config generator
+                if "type" in one:
+                    new_value = one  # hack, works in the rare case we have seen so far
+                    break
+
+        if not new_value:
+            raise ValueError(
+                "ConfigTypeFactory does not support value: {}".format(value)
+            )
+
+        value = new_value
 
     default = None
     dynamic = value["dynamic"]
@@ -506,7 +520,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
                 value = objects[internal_param]
                 try:
                     result[param] = configTypeFactory(value)
-                except (ValueError, KeyError) as e:
+                except KeyError as e:
                     logger.debug(
                         f"Failed to create config type for param {param} in context {context}, {e}"
                     )
