@@ -84,12 +84,12 @@ class TestConfGen(asynctest.TestCase):
     """
     This test has the following steps:
     1. Start a cluster with a template aerospike.conf file
-    2. Run confgen with the cluster IP and port and save the generated aerospike.conf to
+    2. Run "generate config" with the cluster IP and port and save the generated aerospike.conf to
     run on a new server.
     3. Store all `show config *` command output
     4. Stop the cluster
     5. Start a new cluster with the generated aerospike.conf file
-    6. Run confgen with the cluster IP and port and save the generated aerospike.conf to
+    6. Run "generate config" with the cluster IP and port and save the generated aerospike.conf to
     compare with the first generated aerospike.conf
     7. Store all `show config *` command output
     8. Compare the two aerospike.conf files
@@ -107,10 +107,10 @@ class TestConfGen(asynctest.TestCase):
     def tearDown(self):
         lib.stop()
 
-    async def test_confgen(self):
+    async def test_genconf(self):
         lib.start(num_nodes=1, template_content=aerospike_conf)
         time.sleep(1)
-        conf_gen_cmd = f"confgen with 127.0.0.1:{lib.PORT}"
+        conf_gen_cmd = f"generate config with 127.0.0.1:{lib.PORT}"
         show_config_cmd = "show config; show config security; show config xdr"
         cp = util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{conf_gen_cmd}' -Uadmin -Padmin"
@@ -166,10 +166,10 @@ class TestConfGen(asynctest.TestCase):
             TestConfGen.rm_timestamp_from_output(second_show_config),
         )
 
-    async def test_confgen_save_to_file(self):
+    async def test_genconf_save_to_file(self):
         lib.start(num_nodes=1, template_content=aerospike_conf)
         time.sleep(1)
-        conf_gen_cmd = f"confgen with all"
+        conf_gen_cmd = f"generate config with all"
         cp = util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{conf_gen_cmd}' -Uadmin -Padmin"
         )
@@ -180,7 +180,7 @@ class TestConfGen(asynctest.TestCase):
             self.fail()
 
         first_conf = cp.stdout
-        tmp_file = "/tmp/test_confgen_save_to_file.conf"
+        tmp_file = "/tmp/test_genconf_save_to_file.conf"
 
         cp = util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{conf_gen_cmd} -o {tmp_file}' -Uadmin -Padmin"
