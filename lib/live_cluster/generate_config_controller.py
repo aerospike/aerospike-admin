@@ -12,6 +12,16 @@ from lib.utils.constants import ModifierUsage, Modifiers
 
 
 @CommandHelp(
+    "BETA: Currently only supports generating a static configuration file from a live node via the 'config' subcommand.",
+)
+class GenerateController(LiveClusterCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "config": GenerateConfigController,
+        }
+
+
+@CommandHelp(
     "BETA: Generates a static configuration file from a live node.",
     usage=f"[-o <output_file>] {ModifierUsage.WITH}",
     modifiers=(
@@ -25,7 +35,7 @@ from lib.utils.constants import ModifierUsage, Modifiers
         ),
     ),
 )
-class ConfGenController(LiveClusterCommandController):
+class GenerateConfigController(LiveClusterCommandController):
     def __init__(self):
         self.required_modifiers = set(["with"])
 

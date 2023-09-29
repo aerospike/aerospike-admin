@@ -5,6 +5,7 @@ from lib.live_cluster.client.config_handler import BaseConfigHandler, IntConfigT
 
 from lib.utils.conf_gen import (
     ConvertCommaSeparatedToList,
+    ConvertIndexedSubcontextsToNamedSection,
     ConvertIndexedToList,
     CopyToIntermediateDict,
     CreateIntermediateDict,
@@ -14,11 +15,9 @@ from lib.utils.conf_gen import (
     InterNamedSectionKey,
     InterUnnamedSectionKey,
     RemoveDefaultAndNonExistentKeys,
-    RemoveEmptyGeo2DSpheres,
+    RemoveEmptyContexts,
     RemoveNullOrEmptyValues,
     RemoveInvalidKeysFoundInSchemas,
-    RemoveSecurityIfNotEnabled,
-    RemoveXDRIfNoDCs,
     ServerVersionCheck,
     SplitColonSeparatedValues,
     SplitSubcontexts,
@@ -214,6 +213,41 @@ class SplitSubcontextsTest(asynctest.TestCase):
         )
 
 
+class ConvertIndexedSubcontextsToNamedSectionTest(asynctest.TestCase):
+    maxDiff = None
+
+    async def test_convert_indexed_to_list(self):
+        context_dict = {
+            "intermediate": {
+                "1.1.1.1": {
+                    InterUnnamedSectionKey("network"): {
+                        InterUnnamedSectionKey("tls[0]"): {
+                            "name": "tls-name",
+                            "b": "2",
+                            "c": "3",
+                        }
+                    }
+                },
+            }
+        }
+
+        await ConvertIndexedSubcontextsToNamedSection()(context_dict)
+
+        self.assertDictEqual(
+            context_dict["intermediate"],
+            {
+                "1.1.1.1": {
+                    InterUnnamedSectionKey("network"): {
+                        InterNamedSectionKey("tls", "tls-name"): {
+                            "b": "2",
+                            "c": "3",
+                        }
+                    },
+                }
+            },
+        )
+
+
 class ConvertIndexedToListTest(asynctest.TestCase):
     maxDiff = None
 
@@ -254,7 +288,7 @@ class ConvertCommaSeparatedToListTest(asynctest.TestCase):
         )
 
 
-class RemoveSecurityIfNotEnabledTest(asynctest.TestCase):
+class RemoveEmptyContextsTests(asynctest.TestCase):
     maxDiff = None
 
     async def test_remove_security_if_not_enabled(
@@ -263,10 +297,16 @@ class RemoveSecurityIfNotEnabledTest(asynctest.TestCase):
         context_dict = {
             "intermediate": {
                 "1.1.1.1": {
-                    InterUnnamedSectionKey("security"): {"enable-security": "false"}
+                    InterUnnamedSectionKey("security"): {"enable-security": "false"},
+                    InterNamedSectionKey("namespace", "test"): {
+                        InterUnnamedSectionKey("geo2dsphere-within"): {}
+                    },
                 },
                 "2.2.2.2": {
-                    InterUnnamedSectionKey("security"): {"enable-security": "true"}
+                    InterUnnamedSectionKey("security"): {"enable-security": "true"},
+                    InterNamedSectionKey("namespace", "test"): {
+                        InterUnnamedSectionKey("geo2dsphere-within"): {"a": "1"}
+                    },
                 },
                 "3.3.3.3": {
                     InterUnnamedSectionKey("security"): {"enable-security": "true"}
@@ -277,22 +317,36 @@ class RemoveSecurityIfNotEnabledTest(asynctest.TestCase):
                         "other-security-config": 1
                     }  # In the future if enable-security is removed we don't want to remove the other configs
                 },
+                "6.6.6.6": {InterUnnamedSectionKey("security"): {}},
+                "7.7.7.7": {
+                    InterUnnamedSectionKey("security"): {
+                        InterUnnamedSectionKey("log"): {}
+                    },
+                },
             },
             "builds": {
+                "1.1.1.1": "not-used",
                 "2.2.2.2": "5.7.0",
                 "3.3.3.3": "5.6.0",
                 "4.4.4.4": "5.7.0",
                 "5.5.5.5": "7.0.0",
+                "6.6.6.6": "5.6.0",
+                "7.7.7.7": "5.6.0",
             },
         }
-        await RemoveSecurityIfNotEnabled()(context_dict)
+        await RemoveEmptyContexts()(context_dict)
 
         self.assertDictEqual(
             context_dict,
             {
                 "intermediate": {
                     "1.1.1.1": {},
-                    "2.2.2.2": {InterUnnamedSectionKey("security"): {}},
+                    "2.2.2.2": {
+                        InterUnnamedSectionKey("security"): {},
+                        InterNamedSectionKey("namespace", "test"): {
+                            InterUnnamedSectionKey("geo2dsphere-within"): {"a": "1"}
+                        },
+                    },
                     "3.3.3.3": {
                         InterUnnamedSectionKey("security"): {"enable-security": "true"}
                     },
@@ -300,73 +354,18 @@ class RemoveSecurityIfNotEnabledTest(asynctest.TestCase):
                     "5.5.5.5": {
                         InterUnnamedSectionKey("security"): {"other-security-config": 1}
                     },
+                    "6.6.6.6": {},
+                    "7.7.7.7": {},
                 },
                 "builds": {
+                    "1.1.1.1": "not-used",
                     "2.2.2.2": "5.7.0",
                     "3.3.3.3": "5.6.0",
                     "4.4.4.4": "5.7.0",
                     "5.5.5.5": "7.0.0",
+                    "6.6.6.6": "5.6.0",
+                    "7.7.7.7": "5.6.0",
                 },
-            },
-        )
-
-
-class RemoveEmptyGeo2DSphereTest(asynctest.TestCase):
-    maxDiff = None
-
-    async def test_remove_empty_geo2dsphere(
-        self,
-    ):
-        context_dict = {
-            "intermediate": {
-                "1.1.1.1": {
-                    InterNamedSectionKey("namespace", "test"): {
-                        InterUnnamedSectionKey("geo2dsphere-within"): {}
-                    }
-                },
-                "2.2.2.2": {
-                    InterNamedSectionKey("namespace", "test"): {
-                        InterUnnamedSectionKey("geo2dsphere-within"): {"a": "1"}
-                    }
-                },
-            }
-        }
-
-        await RemoveEmptyGeo2DSpheres()(context_dict)
-
-        self.assertDictEqual(
-            context_dict["intermediate"],
-            {
-                "1.1.1.1": {InterNamedSectionKey("namespace", "test"): {}},
-                "2.2.2.2": {
-                    InterNamedSectionKey("namespace", "test"): {
-                        InterUnnamedSectionKey("geo2dsphere-within"): {"a": "1"}
-                    }
-                },
-            },
-        )
-
-
-class RemoveXDRIfNoDCsTest(asynctest.TestCase):
-    maxDiff = None
-
-    async def test_remove_xdr_if_no_dcs(
-        self,
-    ):
-        context_dict = {
-            "intermediate": {
-                "1.1.1.1": {InterUnnamedSectionKey("xdr"): {"dcs": "dc1,dc2"}},
-                "2.2.2.2": {InterUnnamedSectionKey("xdr"): {}},
-            }
-        }
-
-        await RemoveXDRIfNoDCs()(context_dict)
-
-        self.assertDictEqual(
-            context_dict["intermediate"],
-            {
-                "1.1.1.1": {InterUnnamedSectionKey("xdr"): {"dcs": "dc1,dc2"}},
-                "2.2.2.2": {},
             },
         )
 
@@ -472,7 +471,7 @@ class RemoveDefaultValuesTest(asynctest.TestCase):
                 if context == ["others", "g"]:
                     return ["a"]
 
-                raise Exception(f"Unexpected call to get_params: {context}, {key}")
+                raise Exception(f"Unexpected call to get_params: {context}")
 
         context_dict = {
             "intermediate": {
