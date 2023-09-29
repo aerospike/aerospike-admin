@@ -560,45 +560,84 @@ class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
                 elif not security_config:
                     # If security config returns empty then security was never enabled.
                     del host_dict[security_key]
+            else:
+                # 5.6 and below
+                if not security_config:
+                    del host_dict[security_key]
 
 
-class RemoveEmptyGeo2DSpheres(ConfigPipelineStep):
+class RemoveEmptyContexts(ConfigPipelineStep):
+    async def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
+        for config, value in list(config_dict.items()):
+            if isinstance(value, dict):
+                await self._helper(value)
+
+                if not value:
+                    del config_dict[config]
+
+    async def _securty_helper(
+        self, host_dict: dict[str | IntermediateKey, Any], build: str
+    ):
+        security_key = InterUnnamedSectionKey("security")
+        security_config = host_dict.get(security_key, None)
+
+        if security_config is None:
+            return
+
+        for config, value in list(security_config.items()):
+            if isinstance(value, dict):
+                await self._helper(value)
+
+                if not value:
+                    del security_config[config]
+
+        # If security is not enabled, remove the security config for either pre 5.6
+        # or post 5.6
+        if (
+            "enable-security" in security_config
+            and str(security_config["enable-security"]).lower() == "false"
+        ):
+            del host_dict[security_key]
+            return
+
+        # If security is enabled in post 5.6 then remove enable-security because it will
+        # cause aerospike to not start. :(
+        if version.LooseVersion("5.7.0") <= version.LooseVersion(build):
+            if "enable-security" in security_config:
+                del host_dict[security_key]["enable-security"]
+            elif not security_config:
+                # If security config returns empty then security was never enabled.
+                del host_dict[security_key]
+        else:
+            # 5.6 and below
+            if not security_config:
+                del host_dict[security_key]
+
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
 
         for host in intermediate_dict:
             host_dict = intermediate_dict[host]
 
-            for config in host_dict:
-                if (
-                    isinstance(config, InterNamedSectionKey)
-                    and config.type == "namespace"
-                ):
-                    namespace_config = host_dict[config]
-                    geo2dsphere_config = namespace_config.get(
-                        InterUnnamedSectionKey("geo2dsphere-within"), None
-                    )
+            for top_level_config in list(host_dict.keys()):
+                """
+                We want to handle security and xdr a little differently. The existence
+                of the security key enables security in 5.7 and newer.
 
-                    if geo2dsphere_config is not None and geo2dsphere_config == {}:
-                        del namespace_config[
-                            InterUnnamedSectionKey("geo2dsphere-within")
-                        ]
+                XDR is also a little different because it can be configured entirely via
+                dynamic config and an empty xdr.dc.namespace should not necessarily be removed.
+                """
+                if top_level_config == InterUnnamedSectionKey("security"):
+                    await self._securty_helper(host_dict, context_dict["builds"][host])
+                elif top_level_config == InterUnnamedSectionKey("xdr"):
+                    if not host_dict[top_level_config]:
+                        del host_dict[top_level_config]
+                    continue
+                else:
+                    await self._helper(host_dict[top_level_config])
 
-
-class RemoveXDRIfNoDCs(ConfigPipelineStep):
-    async def __call__(self, context_dict: dict[str, Any]):
-        intermediate_dict = context_dict[INTERMEDIATE]
-
-        for host in intermediate_dict:
-            host_dict = intermediate_dict[host]
-            xdr_key = InterUnnamedSectionKey("xdr")
-            xdr_config = host_dict.get(xdr_key, {})
-
-            """ "dcs" is not remove yet because we have not removed values that are not
-            found in the schemas yet
-            """
-            if not xdr_config.get("dcs", ""):
-                del host_dict[xdr_key]
+                    if not host_dict[top_level_config]:
+                        del host_dict[top_level_config]
 
 
 class SplitColonSeparatedValues(ConfigPipelineStep):
@@ -866,15 +905,14 @@ class ASConfigGenerator(ConfigGenerator):
                 OverrideNamespaceRackID(),
                 SplitSubcontexts(),
                 ConvertIndexedSubcontextsToNamedSection(),
-                RemoveSecurityIfNotEnabled(),
-                RemoveXDRIfNoDCs(),
                 RemoveNullOrEmptyValues(),
                 ConvertIndexedToList(),
                 SplitColonSeparatedValues(),
                 RemoveDefaultAndNonExistentKeys(JsonDynamicConfigHandler),
                 RemoveInvalidKeysFoundInSchemas(),
                 ConvertCommaSeparatedToList(),
-                RemoveEmptyGeo2DSpheres(),  # Should be after RemoveDefaultValues
+                # RemoveSecurityIfNotEnabled(),
+                RemoveEmptyContexts(),  # Should be after RemoveDefaultValues
             ],
         )
 
