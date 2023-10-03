@@ -18,6 +18,7 @@ from lib.utils.conf_gen import (
     RemoveEmptyContexts,
     RemoveNullOrEmptyValues,
     RemoveInvalidKeysFoundInSchemas,
+    RemoveSecurityIfNotEnabled,
     ServerVersionCheck,
     SplitColonSeparatedValues,
     SplitSubcontexts,
@@ -288,10 +289,89 @@ class ConvertCommaSeparatedToListTest(asynctest.TestCase):
         )
 
 
+class RemoveSecurityIfNotEnabledTests(asynctest.TestCase):
+    maxDiff = None
+
+    async def test_remove_security(
+        self,
+    ):
+        context_dict = {
+            "intermediate": {
+                "1.1.1.1": {
+                    InterUnnamedSectionKey("security"): {"enable-security": "false"},
+                },
+                "2.2.2.2": {
+                    InterUnnamedSectionKey("security"): {"enable-security": "true"},
+                },
+                "3.3.3.3": {
+                    InterUnnamedSectionKey("security"): {"enable-security": "true"}
+                },
+                "4.4.4.4": {InterUnnamedSectionKey("security"): {}},
+                "5.5.5.5": {
+                    InterUnnamedSectionKey("security"): {
+                        "other-security-config": 1
+                    }  # In the future if enable-security is removed we don't want to remove the other configs
+                },
+                "6.6.6.6": {InterUnnamedSectionKey("security"): {}},
+                "7.7.7.7": {
+                    InterUnnamedSectionKey("security"): {
+                        "enable-security": "true",
+                        InterUnnamedSectionKey("log"): {},
+                    },
+                },
+            },
+            "builds": {
+                "1.1.1.1": "not-used",
+                "2.2.2.2": "5.7.0",
+                "3.3.3.3": "5.6.0",
+                "4.4.4.4": "5.7.0",
+                "5.5.5.5": "7.0.0",
+                "6.6.6.6": "5.6.0",
+                "7.7.7.7": "5.6.0",
+            },
+        }
+        await RemoveSecurityIfNotEnabled()(context_dict)
+
+        self.assertDictEqual(
+            context_dict,
+            {
+                "intermediate": {
+                    "1.1.1.1": {},
+                    "2.2.2.2": {
+                        InterUnnamedSectionKey("security"): {},
+                    },
+                    "3.3.3.3": {
+                        InterUnnamedSectionKey("security"): {"enable-security": "true"}
+                    },
+                    "4.4.4.4": {},
+                    "5.5.5.5": {
+                        InterUnnamedSectionKey("security"): {"other-security-config": 1}
+                    },
+                    "6.6.6.6": {},
+                    "7.7.7.7": {
+                        InterUnnamedSectionKey("security"): {
+                            "enable-security": "true",
+                            InterUnnamedSectionKey("log"): {},
+                        },
+                    },
+                },
+                "builds": {
+                    "1.1.1.1": "not-used",
+                    "2.2.2.2": "5.7.0",
+                    "3.3.3.3": "5.6.0",
+                    "4.4.4.4": "5.7.0",
+                    "5.5.5.5": "7.0.0",
+                    "6.6.6.6": "5.6.0",
+                    "7.7.7.7": "5.6.0",
+                },
+            },
+        )
+
+
 class RemoveEmptyContextsTests(asynctest.TestCase):
     maxDiff = None
 
-    async def test_remove_security_if_not_enabled(
+    async def test(
         self,
     ):
         context_dict = {
@@ -340,9 +420,11 @@ class RemoveEmptyContextsTests(asynctest.TestCase):
             context_dict,
             {
                 "intermediate": {
-                    "1.1.1.1": {},
+                    "1.1.1.1": {
+                        InterUnnamedSectionKey("security"): {"enable-security": "false"}
+                    },
                     "2.2.2.2": {
-                        InterUnnamedSectionKey("security"): {},
+                        InterUnnamedSectionKey("security"): {"enable-security": "true"},
                         InterNamedSectionKey("namespace", "test"): {
                             InterUnnamedSectionKey("geo2dsphere-within"): {"a": "1"}
                         },
@@ -350,12 +432,12 @@ class RemoveEmptyContextsTests(asynctest.TestCase):
                     "3.3.3.3": {
                         InterUnnamedSectionKey("security"): {"enable-security": "true"}
                     },
-                    "4.4.4.4": {},
+                    "4.4.4.4": {InterUnnamedSectionKey("security"): {}},
                     "5.5.5.5": {
                         InterUnnamedSectionKey("security"): {"other-security-config": 1}
                     },
-                    "6.6.6.6": {},
-                    "7.7.7.7": {},
+                    "6.6.6.6": {InterUnnamedSectionKey("security"): {}},
+                    "7.7.7.7": {InterUnnamedSectionKey("security"): {}},
                 },
                 "builds": {
                     "1.1.1.1": "not-used",

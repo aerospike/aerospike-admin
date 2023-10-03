@@ -70,7 +70,7 @@ class GenerateConfigController(LiveClusterCommandController):
             self.view.print_result(s + "\n")
 
         self.logger.warning(
-            "Generated static configuration does not currently take into account logging.syslog and mod-lua contexts."
+            "Generated static configuration does not take into save logging.syslog, mod-lua, service.user and service.group."
         )
         self.logger.warning(
             "This feature is currently in beta. Use at your own risk and please report any issue to support."
