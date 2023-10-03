@@ -540,7 +540,10 @@ class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
         for host in intermediate_dict:
             host_dict = intermediate_dict[host]
             security_key = InterUnnamedSectionKey("security")
-            security_config = host_dict.get(security_key, {})
+            security_config = host_dict.get(security_key, None)
+
+            if security_config is None:
+                continue
 
             # If security is not enabled, remove the security config for either pre 5.6
             # or post 5.6
@@ -576,11 +579,8 @@ class RemoveEmptyContexts(ConfigPipelineStep):
                     del config_dict[config]
 
     async def _securty_helper(
-        self, host_dict: dict[str | IntermediateKey, Any], build: str
+        self, security_config: dict[str | IntermediateKey, Any], build: str
     ):
-        security_key = InterUnnamedSectionKey("security")
-        security_config = host_dict.get(security_key, None)
-
         if security_config is None:
             return
 
@@ -590,28 +590,6 @@ class RemoveEmptyContexts(ConfigPipelineStep):
 
                 if not value:
                     del security_config[config]
-
-        # If security is not enabled, remove the security config for either pre 5.6
-        # or post 5.6
-        if (
-            "enable-security" in security_config
-            and str(security_config["enable-security"]).lower() == "false"
-        ):
-            del host_dict[security_key]
-            return
-
-        # If security is enabled in post 5.6 then remove enable-security because it will
-        # cause aerospike to not start. :(
-        if version.LooseVersion("5.7.0") <= version.LooseVersion(build):
-            if "enable-security" in security_config:
-                del host_dict[security_key]["enable-security"]
-            elif not security_config:
-                # If security config returns empty then security was never enabled.
-                del host_dict[security_key]
-        else:
-            # 5.6 and below
-            if not security_config:
-                del host_dict[security_key]
 
     async def __call__(self, context_dict: dict[str, Any]):
         intermediate_dict = context_dict[INTERMEDIATE]
@@ -628,7 +606,9 @@ class RemoveEmptyContexts(ConfigPipelineStep):
                 dynamic config and an empty xdr.dc.namespace should not necessarily be removed.
                 """
                 if top_level_config == InterUnnamedSectionKey("security"):
-                    await self._securty_helper(host_dict, context_dict["builds"][host])
+                    await self._securty_helper(
+                        host_dict[top_level_config], context_dict["builds"][host]
+                    )
                 elif top_level_config == InterUnnamedSectionKey("xdr"):
                     if not host_dict[top_level_config]:
                         del host_dict[top_level_config]
@@ -908,10 +888,10 @@ class ASConfigGenerator(ConfigGenerator):
                 RemoveNullOrEmptyValues(),
                 ConvertIndexedToList(),
                 SplitColonSeparatedValues(),
+                RemoveSecurityIfNotEnabled(),
                 RemoveDefaultAndNonExistentKeys(JsonDynamicConfigHandler),
                 RemoveInvalidKeysFoundInSchemas(),
                 ConvertCommaSeparatedToList(),
-                # RemoveSecurityIfNotEnabled(),
                 RemoveEmptyContexts(),  # Should be after RemoveDefaultValues
             ],
         )
