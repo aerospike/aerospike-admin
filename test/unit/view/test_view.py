@@ -686,7 +686,6 @@ class CliViewTest(unittest.TestCase):
         cluster_data: SummaryClusterDict = {
             "active_features": ["Compression"],
             "ns_count": 1,
-            "license_data": {"latest": 0},
             "migrations_in_progress": True,
             "cluster_name": ["test-cluster"],
             "server_version": ["7.0.0.0"],
@@ -745,7 +744,9 @@ class CliViewTest(unittest.TestCase):
                 "avail_pct": 5,
             },
             "license_data": {
-                "latest_time": datetime.datetime.fromtimestamp(1696451742),  # TODO
+                "latest_time": datetime.datetime.fromtimestamp(
+                    1696451742, tz=datetime.timezone.utc
+                ),
                 "latest": 2,
                 "min": 3,
                 "max": 4,
@@ -770,7 +771,7 @@ class CliViewTest(unittest.TestCase):
    10.  Memory             :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    11.  Device             :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    12.  Pmem               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   13.  License Usage      :  Latest (2023-10-04T13:35:42): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   13.  License Usage      :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    14.  Active Namespaces  :  2 of 2
    15.  Active Features    :  Compression, Depression
 
@@ -845,7 +846,9 @@ class CliViewTest(unittest.TestCase):
                     "avail_pct": 5,
                 },
                 "license_data": {
-                    "latest_time": datetime.datetime.fromtimestamp(1696451742),
+                    "latest_time": datetime.datetime.fromtimestamp(
+                        1696451742, tz=datetime.timezone.utc
+                    ),
                     "latest": 2,
                     "min": 3,
                     "max": 4,
@@ -913,7 +916,9 @@ class CliViewTest(unittest.TestCase):
                     "avail_pct": 5,
                 },
                 "license_data": {
-                    "latest_time": datetime.datetime.fromtimestamp(1696451742),
+                    "latest_time": datetime.datetime.fromtimestamp(
+                        1696451742, tz=datetime.timezone.utc
+                    ),
                     "latest": 2,
                     "min": 3,
                     "max": 4,
@@ -938,7 +943,7 @@ class CliViewTest(unittest.TestCase):
    6.   Memory             :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    7.   Device             :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    8.   Pmem               :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage      :  Latest (2023-10-04T13:35:42): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   9.   License Usage      :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    10.  Replication Factor :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
    12.  Rack-aware         :  True
@@ -955,7 +960,7 @@ class CliViewTest(unittest.TestCase):
    6.   Memory             :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    7.   Device             :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    8.   Pmem               :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage      :  Latest (2023-10-04T13:35:42): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   9.   License Usage      :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    10.  Replication Factor :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
    12.  Rack-aware         :  False
