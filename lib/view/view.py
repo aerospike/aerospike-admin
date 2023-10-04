@@ -2087,7 +2087,7 @@ class CliView(object):
             self.info = info
 
         def __str__(self) -> str:
-            s = self.name.ljust(19)
+            s = self.name.ljust(25)
             s += ":" + (" " * 2)
             return s + self.info
 
