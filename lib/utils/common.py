@@ -89,7 +89,7 @@ def _check_value(
 
     for key in keys:
         k = key
-        default_value = 0.0
+        default_value = None
         type_check = float
 
         if isinstance(value, str):
