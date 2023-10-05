@@ -1864,8 +1864,14 @@ def stop_writes_converter_selector(edata: EntryData):
         return None
 
     metric = edata.record["Metric"]
+    val = ""
 
     if "pct" in metric:
+        if "avail" in metric:
+            val = Converters.pct(edata, invert=True)
+            val = "(inverted) " + val
+            return val
+
         return Converters.pct(edata)
     if "bytes" in metric:
         return Converters.byte(edata)
@@ -1873,6 +1879,25 @@ def stop_writes_converter_selector(edata: EntryData):
         return Converters.time_milliseconds(edata)
 
     return Converters.scientific_units(edata)
+
+
+class StopWritesUsagePctProjector(Projectors.Number):
+    def __init__(self, source, *keys, **kwargs):
+        """
+        Keyword Arguments:
+        invert -- False by default, if True will return 100 - value.
+        """
+        super().__init__(source, *keys, **kwargs)
+        self.invert = kwargs.get("invert", False)
+
+    def do_project(self, sheet, sources):
+        data = sources.get("stop_writes", ((), {}))[1]
+        val = super().do_project(sheet, sources)
+
+        if "metric" in data and "avail" in data["metric"]:
+            val = 100 - val
+
+        return _ignore_zero(val)
 
 
 sw_row_yellow_format = (
@@ -1925,12 +1950,8 @@ show_stop_writes_sheet = Sheet(
         Field(
             "Usage%",
             Projectors.Div(
-                Projectors.Number("stop_writes", "metric_usage"),
-                Projectors.Func(
-                    FieldType.number,
-                    _ignore_zero,
-                    Projectors.Number("stop_writes", "metric_threshold"),
-                ),
+                StopWritesUsagePctProjector("stop_writes", "metric_usage"),
+                StopWritesUsagePctProjector("stop_writes", "metric_threshold"),
             ),
             converter=Converters.ratio_to_pct,
             formatters=sw_val_red_format + sw_val_yellow_format + sw_row_yellow_format,

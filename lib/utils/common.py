@@ -1623,11 +1623,21 @@ def _create_stop_writes_entry(
 
 @staticmethod
 def _is_stop_writes_cause(
-    usage: int | float, threshold: int | float, stop_writes: str | None = None
+    usage: int | float,
+    threshold: int | float,
+    stop_writes: str | None = None,
+    invert: bool = False,
 ):
     if threshold == 0:
         return False
 
+    if invert:
+        return (
+            True
+            if usage >= threshold
+            and (stop_writes is None or stop_writes.lower() == "true")
+            else False
+        )
     return (
         True
         if usage >= threshold and (stop_writes is None or stop_writes.lower() == "true")
@@ -1752,7 +1762,10 @@ def _format_ns_stop_writes_metrics(
             )
             config, threshold = _get_first_value_from_dict_with_key(
                 stats,
-                ("stop-writes-avail-pct", "min-avail-pct"),
+                (
+                    "storage-engine.stop-writes-avail-pct",
+                    "storage-engine.min-avail-pct",
+                ),
                 default_value=None,
                 return_type=int,
             )
@@ -1777,7 +1790,7 @@ def _format_ns_stop_writes_metrics(
             )
             config, threshold = _get_first_value_from_dict_with_key(
                 stats,
-                ("stop-writes-used-pct", "max-used-pct"),
+                ("storage-engine.stop-writes-used-pct", "storage-engine.max-used-pct"),
                 default_value=None,
                 return_type=int,
             )
