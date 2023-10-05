@@ -61,7 +61,7 @@ def info_to_dict(
             else:
                 _value_list.append(_v)
 
-    stat_param = [info_to_tuple(sp, delimiter2) for sp in _value_list]
+    stat_param = [info_to_tuple(sp, delimiter2, max_split=1) for sp in _value_list]
 
     for g in itertools.groupby(stat_param, lambda x: x[0]):
         try:
@@ -125,14 +125,14 @@ def info_colon_to_dict(value):
     return info_to_dict(value, ":")
 
 
-def info_to_list(value, delimiter=";"):
+def info_to_list(value, delimiter=";", max_split=0):
     if isinstance(value, Exception):
         return []
-    return re.split(delimiter, value)
+    return re.split(delimiter, value, maxsplit=max_split)
 
 
-def info_to_tuple(value, delimiter=":"):
-    return tuple(info_to_list(value, delimiter))
+def info_to_tuple(value, delimiter=":", max_split=0):
+    return tuple(info_to_list(value, delimiter, max_split=max_split))
 
 
 def info_valid(info_command_output):
