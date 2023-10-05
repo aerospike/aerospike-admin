@@ -16,7 +16,7 @@ from lib.utils.conf_gen import (
     InterUnnamedSectionKey,
     RemoveDefaultAndNonExistentKeys,
     RemoveEmptyContexts,
-    RemoveNullOrEmptyValues,
+    RemoveNullOrEmptyOrUndefinedValues,
     RemoveInvalidKeysFoundInSchemas,
     RemoveSecurityIfNotEnabled,
     ServerVersionCheck,
@@ -275,7 +275,13 @@ class ConvertCommaSeparatedToListTest(asynctest.TestCase):
     async def test_convert_indexed_to_list(self):
         context_dict = {
             "intermediate": {
-                "1.1.1.1": {"a": {"b": "2,1,3"}},
+                "1.1.1.1": {
+                    "a": {"b": "2,1,3"},
+                    "ldap": {
+                        "user-dn-patter": "uid=${un},dc=aerospike,dc=com",
+                        "query-base-dn": "dc=aerospike,dc=com",
+                    },
+                },
             }
         }
 
@@ -284,7 +290,13 @@ class ConvertCommaSeparatedToListTest(asynctest.TestCase):
         self.assertDictEqual(
             context_dict["intermediate"],
             {
-                "1.1.1.1": {"a": {InterListKey("b"): ["2", "1", "3"]}},
+                "1.1.1.1": {
+                    "a": {InterListKey("b"): ["2", "1", "3"]},
+                    "ldap": {
+                        "user-dn-patter": "uid=${un},dc=aerospike,dc=com",
+                        "query-base-dn": "dc=aerospike,dc=com",
+                    },
+                },
             },
         )
 
@@ -453,11 +465,26 @@ class RemoveEmptyContextsTests(asynctest.TestCase):
 
 
 class SplitColonSeparatedValuesTest(asynctest.TestCase):
+    maxDiff = None
+
     async def test_split_colon_separated_values(self):
         context_dict = {
             "intermediate": {
                 "1.1.1.1": {"a": "1.1.1.1:3000", "cipher-suites": "ALL:!aNULL:!eNULL"},
-                "2.2.2.2": {"a": "1.1.1.1:3000", "cipher-suites": "ALL:!aNULL:!eNULL"},
+                "2.2.2.2": {
+                    "a": "1.1.1.1:3000",
+                    "b": "file:/b",
+                    "c": "env:/c",
+                    "d": "env-b64:/d",
+                    "e": "vault:/e",
+                    "f": "secrets:/f",
+                    "g": "https:/g",
+                    "h": "http:/h",
+                    "cipher-suites": "ALL:!aNULL:!eNULL",
+                    "ldap": {
+                        "server": "ldap://aerospike_ldap_0:389",
+                    },
+                },
             }
         }
 
@@ -467,7 +494,20 @@ class SplitColonSeparatedValuesTest(asynctest.TestCase):
             context_dict["intermediate"],
             {
                 "1.1.1.1": {"a": "1.1.1.1 3000", "cipher-suites": "ALL:!aNULL:!eNULL"},
-                "2.2.2.2": {"a": "1.1.1.1 3000", "cipher-suites": "ALL:!aNULL:!eNULL"},
+                "2.2.2.2": {
+                    "a": "1.1.1.1 3000",
+                    "b": "file:/b",
+                    "c": "env:/c",
+                    "d": "env-b64:/d",
+                    "e": "vault:/e",
+                    "f": "secrets:/f",
+                    "g": "https:/g",
+                    "h": "http:/h",
+                    "cipher-suites": "ALL:!aNULL:!eNULL",
+                    "ldap": {
+                        "server": "ldap://aerospike_ldap_0:389",
+                    },
+                },
             },
         )
 
@@ -512,7 +552,7 @@ class RemoveNullValuesTest(asynctest.TestCase):
     async def test_remove_null_values(self):
         context_dict = {"intermediate": {"1.1.1.1": {"a": "null", "b": "1", "c": ""}}}
 
-        await RemoveNullOrEmptyValues()(context_dict)
+        await RemoveNullOrEmptyOrUndefinedValues()(context_dict)
 
         self.assertDictEqual(context_dict["intermediate"], {"1.1.1.1": {"b": "1"}})
 

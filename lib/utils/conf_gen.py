@@ -506,12 +506,21 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
     comma separated but needs to be on separate lines in the config.
     """
 
-    def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
+    def _helper(
+        self, context: list[str], config_dict: dict[str | IntermediateKey, Any]
+    ):
         for config in list(config_dict.keys()):
             value = config_dict[config]
 
             if isinstance(value, dict):
-                self._helper(config_dict[config])
+                if isinstance(config, InterNamedSectionKey) or isinstance(
+                    config, InterUnnamedSectionKey
+                ):
+                    context.append(config.type)
+                elif isinstance(config, str):
+                    context.append(config)
+
+                self._helper(context[:], config_dict[config])
                 continue
 
             if not isinstance(config, str):
@@ -519,7 +528,9 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
 
             split_value = value.split(",")
 
-            if len(split_value) > 1:
+            # Handles ldap scenarios with configs that allow commas in the config and
+            # are returned with commas. e.g. "query-base-dn" and "user-dn-pattern"
+            if len(split_value) > 1 and not ("-dn" in config and "ldap" in context):
                 config_dict[InterListKey(config)] = split_value
 
                 del config_dict[config]
@@ -529,7 +540,7 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
 
         for host in intermediate_dict:
             config_dict = intermediate_dict[host]
-            self._helper(config_dict)
+            self._helper([], config_dict)
 
 
 class RemoveSecurityIfNotEnabled(ConfigPipelineStep):
@@ -635,8 +646,21 @@ class SplitColonSeparatedValues(ConfigPipelineStep):
             if not isinstance(value, str):
                 continue
 
-            if ":" in value and not key in {"cipher-suites"}:
+            if ":" in value and not (key in {"cipher-suites"}):
                 value_split = value.split(":")
+
+                if value_split[0] in {
+                    "file",
+                    "env",
+                    "env-b64",
+                    "vault",
+                    "secrets",
+                    "http",
+                    "https",
+                    "ldap",
+                }:
+                    continue
+
                 config_dict[key] = " ".join(value_split)
 
     async def __call__(self, context_dict: dict[str, Any]):
@@ -690,7 +714,7 @@ class RemoveInvalidKeysFoundInSchemas(ConfigPipelineStep):
             self._helper(intermediate_dict[host])
 
 
-class RemoveNullOrEmptyValues(ConfigPipelineStep):
+class RemoveNullOrEmptyOrUndefinedValues(ConfigPipelineStep):
     """Some values return "null" but that is not a valid config value. You would think
     that the step that removes non-defaults would handle this case but it does not.
     e.g.: xdr.dc.namespace.remote-namespace
@@ -702,7 +726,9 @@ class RemoveNullOrEmptyValues(ConfigPipelineStep):
                 self._helper(value)
                 continue
 
-            if isinstance(value, str) and (value.lower() == "null" or value == ""):
+            # conflict-resolution-policy is a special case where the value is undefined
+            # when not set in the .conf file.
+            if isinstance(value, str) and value.lower() in {"null", "undefined", ""}:
                 del config_dict[key]
 
     async def __call__(self, context_dict: dict[str, Any]):
@@ -885,7 +911,7 @@ class ASConfigGenerator(ConfigGenerator):
                 OverrideNamespaceRackID(),
                 SplitSubcontexts(),
                 ConvertIndexedSubcontextsToNamedSection(),
-                RemoveNullOrEmptyValues(),
+                RemoveNullOrEmptyOrUndefinedValues(),
                 ConvertIndexedToList(),
                 SplitColonSeparatedValues(),
                 RemoveSecurityIfNotEnabled(),
