@@ -35,7 +35,7 @@ from typing_extensions import NotRequired, Required
 import distro
 import socket
 import time
-from urllib import request, error, parse
+from urllib import request
 import aiohttp
 import zipfile
 from collections import OrderedDict
@@ -63,7 +63,7 @@ comp_ops = {
     "!=": operator.ne,
 }
 
-CompareValue = str | int | bool
+CompareValue = str | int | bool | float
 CompareCallable = Callable[[Any, Any], bool]
 CheckCallback = Callable[
     [dict[str, Any], tuple[str, ...], CompareCallable, str | int | bool], bool
@@ -511,6 +511,8 @@ feature_checks = (
                 "data_compression_ratio",
                 "device_compression_ratio",
             ),
+            comp_ops["<"],
+            1.0,
         ),
     ),
 )

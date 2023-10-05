@@ -261,8 +261,8 @@ info_namespace_usage_sheet = Sheet(
             "System Memory",
             (
                 Field(
-                    "Avail%", Projectors.Percent("ns_stats", "system_free_mem_pct")
-                ),  # TODO get global metric
+                    "Avail%", Projectors.Percent("service_stats", "system_free_mem_pct")
+                ),
                 Field(
                     "Evict%",
                     Projectors.Percent("ns_stats", "evict-sys-memory-pct"),
@@ -572,7 +572,7 @@ info_namespace_usage_sheet = Sheet(
             ),
         ),
     ),
-    from_source=("node_ids", "node_names", "ns_stats"),
+    from_source=("node_ids", "node_names", "ns_stats", "service_stats"),
     for_each="ns_stats",
     group_by=("Namespace"),
     order_by=FieldSorter("Node"),
@@ -1304,8 +1304,8 @@ summary_cluster_sheet = Sheet(
             "Migrations",
             Projectors.String("cluster_dict", "migrations_in_progress"),
             formatters=(
-                Formatters.green_alert(lambda edata: edata.value),
-                Formatters.red_alert(lambda edata: not edata.value),
+                Formatters.red_alert(lambda edata: edata.value),
+                Formatters.green_alert(lambda edata: not edata.value),
             ),
         ),
         Field(

@@ -238,6 +238,7 @@ class InfoNamespaceController(LiveClusterCommandController):
     def __init__(self, get_futures=False):
         self.modifiers = set(["with"])
         self.get_futures = get_futures
+        self.stats_getter = GetStatisticsController(self.cluster)
 
     @CommandHelp(
         "Displays usage and objects information for each namespace",
@@ -259,9 +260,16 @@ class InfoNamespaceController(LiveClusterCommandController):
         modifiers=(with_modifier_help,),
     )
     async def do_usage(self, line):
-        stats = await self.cluster.info_all_namespace_statistics(nodes=self.nodes)
+        service_stats = await self.stats_getter.get_service(nodes=self.nodes)
+        ns_stats = await self.stats_getter.get_namespace(
+            nodes=self.nodes
+        )  # Includes stats and configs
         return util.callable(
-            self.view.info_namespace_usage, stats, self.cluster, **self.mods
+            self.view.info_namespace_usage,
+            ns_stats,
+            service_stats,
+            self.cluster,
+            **self.mods,
         )
 
     @CommandHelp(

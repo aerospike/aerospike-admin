@@ -161,7 +161,9 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
-    def info_namespace_usage(stats, cluster, timestamp="", with_=None, **ignore):
+    def info_namespace_usage(
+        ns_stats, service_stats, cluster, timestamp="", with_=None, **ignore
+    ):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
@@ -169,7 +171,8 @@ class CliView(object):
         sources = dict(
             node_ids=node_ids,
             node_names=node_names,
-            ns_stats=stats,
+            ns_stats=ns_stats,
+            service_stats=service_stats,
         )
         common = dict(principal=cluster.get_expected_principal())
 
