@@ -14,6 +14,7 @@ from lib.utils.conf_gen import (
     InterLoggingContextKey,
     InterNamedSectionKey,
     InterUnnamedSectionKey,
+    RemoveConfigsConditionally,
     RemoveDefaultAndNonExistentKeys,
     RemoveEmptyContexts,
     RemoveNullOrEmptyOrUndefinedValues,
@@ -550,7 +551,11 @@ class RemoveNullValuesTest(asynctest.TestCase):
     maxDiff = None
 
     async def test_remove_null_values(self):
-        context_dict = {"intermediate": {"1.1.1.1": {"a": "null", "b": "1", "c": ""}}}
+        context_dict = {
+            "intermediate": {
+                "1.1.1.1": {"a": "null", "b": "1", "c": "", "d": "undefined"}
+            }
+        }
 
         await RemoveNullOrEmptyOrUndefinedValues()(context_dict)
 
@@ -688,6 +693,47 @@ class RemoveDefaultValuesTest(asynctest.TestCase):
                             InterLoggingContextKey("d"): "error",
                             InterLoggingContextKey("any"): "critical",
                         },
+                    },
+                }
+            },
+        )
+
+
+class RemoveConfigsConditionallyTest(asynctest.TestCase):
+    maxDiff = None
+
+    async def test_remove_null_values(self):
+        context_dict = {
+            "intermediate": {
+                "1.1.1.1": {
+                    InterNamedSectionKey("namespace", "test"): {
+                        "read-consistency-level-override": "all",
+                        "write-commit-level-override": "all",
+                    },
+                    InterNamedSectionKey("namespace", "bar"): {
+                        "read-consistency-level-override": "all",
+                        "write-commit-level-override": "all",
+                    },
+                }
+            },
+            "namespaces": {
+                "1.1.1.1": {
+                    "test": {"strong-consistency": "true"},
+                    "bar": {"strong-consistency": "false"},
+                }
+            },
+        }
+
+        await RemoveConfigsConditionally()(context_dict)
+
+        self.assertDictEqual(
+            context_dict["intermediate"],
+            {
+                "1.1.1.1": {
+                    InterNamedSectionKey("namespace", "test"): {},
+                    InterNamedSectionKey("namespace", "bar"): {
+                        "read-consistency-level-override": "all",
+                        "write-commit-level-override": "all",
                     },
                 }
             },
