@@ -2145,9 +2145,9 @@ class CliView(object):
             try:
                 # license_data was computed by uda
                 time_ = license_dict["latest_time"]
-                time_str = time_.isoformat()
+                time_.strftime("%H:%M:%S %m/%d/%Y")
 
-                s += f"Latest ({time_str}): {file_size.size(license_dict['latest'])} Min: {file_size.size(license_dict['min'])} Max: {file_size.size(license_dict['max'])} Avg: {file_size.size(license_dict['avg'])}"
+                s += f"Latest ({time_}): {file_size.size(license_dict['latest'])} Min: {file_size.size(license_dict['min'])} Max: {file_size.size(license_dict['max'])} Avg: {file_size.size(license_dict['avg'])}"
 
             except Exception:
                 # license_data was manually computed by asadm
