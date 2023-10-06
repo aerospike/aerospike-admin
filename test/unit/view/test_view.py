@@ -759,21 +759,21 @@ class CliViewTest(unittest.TestCase):
         expected = f"""Cluster  ({terminal.fg_red()}Migrations in Progress{terminal.fg_clear()})
 =================================
 
-   1.   Cluster Name             :  test-cluster
-   2.   Server Version           :  7.0.0.0
-   3.   OS Version               :  Linux 4.15.0-106-generic
-   4.   Cluster Size             :  1
-   5.   Devices                  :  Total 2, per-node 2
-   6.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   7.   Flash Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   8.   Shmem Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   9.   Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   10.  Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   11.  Device                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   12.  Pmem                     :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   13.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
-   14.  Active Namespaces        :  2 of 2
-   15.  Active Features          :  Compression, Depression
+   1.   Cluster Name       :  test-cluster
+   2.   Server Version     :  7.0.0.0
+   3.   OS Version         :  Linux 4.15.0-106-generic
+   4.   Cluster Size       :  1
+   5.   Devices            :  Total 2, per-node 2
+   6.   Pmem Index         :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   7.   Flash Index        :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   8.   Shmem Index        :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   9.   Memory             :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   10.  Memory             :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   11.  Device             :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   12.  Pmem               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   13.  License Usage      :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   14.  Active Namespaces  :  2 of 2
+   15.  Active Features    :  Compression, Depression
 
 """
 
@@ -935,37 +935,37 @@ class CliViewTest(unittest.TestCase):
 
    {terminal.fg_red()}test{terminal.fg_clear()}
    ====
-   1.   Devices                  :  Total 2, per-node 2
-   2.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
-   10.  Replication Factor       :  1
+   1.   Devices            :  Total 2, per-node 2
+   2.   Pmem Index         :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   3.   Flash Index        :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   4.   Shmem Index        :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   5.   Memory             :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   6.   Memory             :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   7.   Device             :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   8.   Pmem               :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   9.   License Usage      :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   10.  Replication Factor :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
-   12.  Rack-aware               :  True
-   13.  Master Objects           :  2.000  
-   14.  Compression-ratio        :  0.5
+   12.  Rack-aware         :  True
+   13.  Master Objects     :  2.000  
+   14.  Compression-ratio  :  0.5
 
    {terminal.fg_red()}bar{terminal.fg_clear()}
    ===
-   1.   Devices                  :  Total 2, per-node 2 (number differs across nodes)
-   2.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
-   10.  Replication Factor       :  1
+   1.   Devices            :  Total 2, per-node 2 (number differs across nodes)
+   2.   Pmem Index         :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   3.   Flash Index        :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   4.   Shmem Index        :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   5.   Memory             :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   6.   Memory             :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   7.   Device             :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   8.   Pmem               :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   9.   License Usage      :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   10.  Replication Factor :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
-   12.  Rack-aware               :  False
-   13.  Master Objects           :  2.000  
-   14.  Compression-ratio        :  0.5
+   12.  Rack-aware         :  False
+   13.  Master Objects     :  2.000  
+   14.  Compression-ratio  :  0.5
 """
 
         actual = CliView._summary_namespace_list_view(ns_data)
