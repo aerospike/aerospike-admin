@@ -786,13 +786,13 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     }
                 },
             ),
-            # stop_writes not triggered by device_avail_pct
+            # stop_writes not triggered by device_available_pct
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
-                            "device_avail_pct": "50",
+                            "device_available_pct": "50",
                         }
                     },
                 },
@@ -817,7 +817,7 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
-                            "device_avail_pct": "56",
+                            "device_available_pct": "56",
                         }
                     },
                 },
@@ -842,7 +842,7 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
-                            "pmem_avail_pct": "56",
+                            "pmem_available_pct": "56",
                         }
                     },
                 },

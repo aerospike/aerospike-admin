@@ -1672,26 +1672,58 @@ def _is_stop_writes_cause(
 
 
 @staticmethod
+def _get_first_value_from_dict_with_key(
+    dict_: dict[str, Any],
+    key: str | tuple,
+    default_value: Any = None,
+    return_type: type = str,
+) -> Any:
+    if isinstance(key, str):
+        key = (key,)
+
+    for key in key:
+        if key in dict_:
+            return key, util.get_value_from_dict(
+                dict_, key, default_value=default_value, return_type=return_type
+            )
+
+    return None, None
+
+
+@staticmethod
 def _format_ns_stop_writes_metrics(
     stop_writes_metrics: StopWritesDict,
     service_stats,
     ns_stats,
 ):
     for node in service_stats:
-        cluster_clock_skew_ms = service_stats[node].get("cluster_clock_skew_ms", None)
-        cluster_clock_skew_stop_writes_sec = service_stats[node].get(
-            "cluster_clock_skew_stop_writes_sec", None
+        cluster_clock_skew_ms: int | None = util.get_value_from_dict(
+            service_stats[node],
+            "cluster_clock_skew_ms",
+            None,
+            return_type=int,
         )
-        system_free_mem_pct = service_stats[node].get("system_free_mem_pct", None)
+        cluster_clock_skew_stop_writes_sec: int | None = util.get_value_from_dict(
+            service_stats[node],
+            "cluster_clock_skew_stop_writes_sec",
+            None,
+            return_type=int,
+        )
+        system_free_mem_pct: int | None = util.get_value_from_dict(
+            service_stats[node],
+            "system_free_mem_pct",
+            None,
+            return_type=int,
+        )
 
         for ns, stats in ns_stats.get(node, {}).items():
             # There is no config for this trigger
             strong_consistency: str | None = stats.get("strong-consistency", None)
             nsup_period: str | None = stats.get("nsup-period", None)
             stop_writes: str | None = stats.get("clock_skew_stop_writes", None)
-            metric: str = "cluster_clock_skew_ms"
-            usage = cluster_clock_skew_ms
-            threshold = cluster_clock_skew_stop_writes_sec
+            metric = "cluster_clock_skew_ms"
+            usage: int | float | None = cluster_clock_skew_ms
+            threshold: int | float | None = cluster_clock_skew_stop_writes_sec
 
             """
             For Available mode (AP) namespaces running versions 4.5.1 or above and where 
@@ -1704,34 +1736,32 @@ def _format_ns_stop_writes_metrics(
                     and nsup_period is not None  # nsup-period was added in 4.5.1.
                     and nsup_period != "0"
                 ):
-                    thresh = 40000
+                    threshold = 40000
                 else:
-                    thresh = (
-                        int(cluster_clock_skew_stop_writes_sec) * 1000
-                    )  # convert to ms
-                use = int(usage)
-                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                    threshold = int(threshold) * 1000  # convert to ms
+
+                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    use,
+                    usage,
                     sw,
-                    thresh,
+                    threshold,
                     namespace=ns,
                 )
 
             stop_writes: str | None = stats.get("stop_writes", None)
             metric = "system_free_mem_pct"
             config = "stop-writes-sys-memory-pct"
-            threshold: str | None = stats.get(config, None)
+            threshold = util.get_value_from_dict(stats, config, None, return_type=int)
 
             if (
                 threshold is not None
                 and system_free_mem_pct is not None
                 and stop_writes is not None
             ):
-                thresh = int(threshold)
-                use = 100 - int(system_free_mem_pct)
+                thresh = threshold
+                use = 100 - system_free_mem_pct
                 sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
@@ -1750,70 +1780,87 @@ def _format_ns_stop_writes_metrics(
             if stop_writes is None:
                 continue
 
-            metric = "device_avail_pct"
-            config = "min-avail-pct"
-            usage: str | None = stats.get(metric, None)
-            threshold: str | None = stats.get(config, None)
+            metric, usage = _get_first_value_from_dict_with_key(
+                stats,
+                ("data_avail_pct", "device_available_pct", "pmem_available_pct"),
+                default_value=None,
+                return_type=int,
+            )
+            config, threshold = _get_first_value_from_dict_with_key(
+                stats,
+                (
+                    "storage-engine.stop-writes-avail-pct",
+                    "storage-engine.min-avail-pct",
+                ),
+                default_value=None,
+                return_type=int,
+            )
 
-            if usage is None:
-                metric = "pmem_avail_pct"
-                usage = stats.get(metric, None)
-
-            if usage is not None and threshold is not None:
-                use = int(usage)
-                thresh = int(threshold)
-                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+            if metric and usage is not None and threshold is not None:
+                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    use,
+                    usage,
                     sw,
-                    thresh,
+                    threshold,
                     config=config,
                     namespace=ns,
                 )
 
-            metric = "device_used_bytes"
-            config = "max-used-pct"
-            usage: str | None = stats.get(metric, None)
-            bytes_total: str | None = stats.get("device_total_bytes", None)
-            threshold: str | None = stats.get(config, None)
-
-            if usage is None:
-                metric = "pmem_used_bytes"
-                usage = stats.get(metric, None)
-                bytes_total = stats.get("pmem_total_bytes", None)
+            metric, usage = _get_first_value_from_dict_with_key(
+                stats,
+                ("data_used_bytes", "device_used_bytes", "pmem_used_bytes"),
+                default_value=None,
+                return_type=int,
+            )
+            config, threshold = _get_first_value_from_dict_with_key(
+                stats,
+                ("storage-engine.stop-writes-used-pct", "storage-engine.max-used-pct"),
+                default_value=None,
+                return_type=int,
+            )
+            bytes_total: int | float | None = util.get_value_from_dict(
+                stats,
+                ("data_total_bytes", "device_total_bytes", "pmem_total_bytes"),
+                None,
+                return_type=int,
+            )
 
             if usage is not None and threshold is not None and bytes_total is not None:
-                use = int(usage)
-                thresh = int(bytes_total) * (int(threshold) / 100)
-                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                threshold = bytes_total * (threshold / 100)
+                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    use,
+                    usage,
                     sw,
-                    thresh,
+                    threshold,
                     config=config,
                     namespace=ns,
                 )
 
             metric = "memory_used_bytes"
             config = "stop-writes-pct"
-            usage: str | None = stats.get(metric, None)
-            bytes_total: str | None = stats.get("memory-size", None)
-            threshold: str | None = stats.get(config, None)
+            usage = util.get_value_from_dict(
+                stats, metric, default_value=None, return_type=int
+            )
+            bytes_total = util.get_value_from_dict(
+                stats, "memory-size", default_value=None, return_type=int
+            )
+            threshold = util.get_value_from_dict(
+                stats, config, default_value=None, return_type=int
+            )
 
             if usage is not None and threshold is not None and bytes_total is not None:
-                use = int(usage)
-                thresh = int(bytes_total) * (int(threshold) / 100)
-                sw = _is_stop_writes_cause(use, thresh, stop_writes)
+                threshold = int(bytes_total) * (int(threshold) / 100)
+                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    use,
+                    usage,
                     sw,
-                    thresh,
+                    threshold,
                     config=config,
                     namespace=ns,
                 )
