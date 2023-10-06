@@ -31,7 +31,7 @@ from typing import (
     Union,
     Callable,
 )
-from typing_extensions import NotRequired, Required
+from typing_extensions import NotRequired
 import distro
 import socket
 import time
@@ -74,7 +74,7 @@ def _check_value(
     data: dict[str, Any],
     keys: tuple[str],
     op: Callable[[Any, Any], bool],
-    value: int | str | bool | float,
+    value: int | str | bool,
 ):
     """
     Function takes dictionary, and keys to compare.
@@ -89,17 +89,17 @@ def _check_value(
 
     for key in keys:
         k = key
-        default_value = 0.0
-        type_check = float
+        dv = 0
+        type_check = int
 
         if isinstance(value, str):
-            default_value = None
+            dv = None
             type_check = str
         if isinstance(value, bool):
-            default_value = False
+            dv = False
             type_check = bool
 
-        fetched_value = util.get_value_from_dict(data, k, default_value, type_check)
+        fetched_value = util.get_value_from_dict(data, k, dv, type_check)
 
         if fetched_value is None:
             continue
@@ -163,7 +163,6 @@ class FieldCheck:
             compare_op (CompareCallable, optional): A function that tells how we should compare the field value to compare_val. Defaults to operator.gt.
             compare_val (CompareValue, optional): The value to use in the comparison to each field value. Defaults to 0.
         """
-
         self._source = source
         self._fields: tuple[str, ...] = fields
         self._check_func = check_func
@@ -171,8 +170,6 @@ class FieldCheck:
         self._compare_val = compare_val
 
     def check(self, sources: dict[str, Any]) -> bool:
-        if "pmem_compression_ratio" in self._fields:
-            pass
         if self._source not in sources:
             return False
 
@@ -476,13 +473,8 @@ feature_checks = (
         ),
     ),
     FeatureCheck(
-        "Index-on-flash",
-        NamespacesFieldCheck(
-            "namespaces",
-            ("index-type",),
-            comp_ops["=="],
-            "flash",
-        ),
+        "Index-on-device",
+        NamespacesFieldCheck("namespaces", ("index_flash_used_bytes",)),
     ),
     FeatureCheck(
         "Index-on-pmem",
@@ -491,26 +483,6 @@ feature_checks = (
             ("index-type",),
             comp_ops["=="],
             "pmem",
-        ),
-    ),
-    FeatureCheck(
-        "Index-on-shmem",
-        NamespacesFieldCheck(
-            "namespaces",
-            ("index-type",),
-            comp_ops["=="],
-            "shmem",
-        ),
-    ),
-    FeatureCheck(
-        "Compression",
-        NamespacesFieldCheck(
-            "namespaces",
-            (
-                "pmem_compression_ratio",
-                "data_compression_ratio",
-                "device_compression_ratio",
-            ),
         ),
     ),
 )
@@ -762,23 +734,39 @@ def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
             cluster_dict["migrations_in_progress"] = True
 
 
-class SummaryClusterLicenseAggDict(TypedDict, total=False):
+class SummaryClusterLicenseAggOptionalDict(TypedDict, total=False):
     min: int
     max: int
     avg: int
     latest_time: datetime.datetime
-    latest: Required[int]
 
 
-class SummaryStorageUsageDict(TypedDict, total=False):
+class SummaryClusterLicenseAggRequiredDict(TypedDict):
+    latest: int
+
+
+class SummaryClusterLicenseAggDict(
+    SummaryClusterLicenseAggOptionalDict, SummaryClusterLicenseAggRequiredDict
+):
+    pass
+
+
+class SummaryStorageUsageDict(TypedDict):
     total: int
     avail: int
     avail_pct: float
-    used: Required[int]
+    used: int
     used_pct: float
 
 
-class SummaryClusterDict(TypedDict):
+class SummaryClusterOptionalDict(TypedDict, total=False):
+    device: SummaryStorageUsageDict
+    pmem: SummaryStorageUsageDict
+    pmem_index: SummaryStorageUsageDict
+    flash_index: SummaryStorageUsageDict
+
+
+class SummaryClusterRequiredDict(TypedDict):
     server_version: list[str]
     os_version: list[str]
     cluster_size: list[int]
@@ -791,38 +779,37 @@ class SummaryClusterDict(TypedDict):
     active_ns: int
     ns_count: int
     license_data: SummaryClusterLicenseAggDict
-    memory_data_and_indexes: NotRequired[SummaryStorageUsageDict]  # pre 7.0
-    memory: NotRequired[SummaryStorageUsageDict]  # post 7.0
-    device: NotRequired[SummaryStorageUsageDict]
-    pmem: NotRequired[SummaryStorageUsageDict]
-    data: NotRequired[SummaryStorageUsageDict]  # added for compatibility with 7.0
-    pmem_index: NotRequired[SummaryStorageUsageDict]
-    flash_index: NotRequired[SummaryStorageUsageDict]
-    shmem_index: NotRequired[SummaryStorageUsageDict]
-    index: NotRequired[SummaryStorageUsageDict]  # added for compatibility with 7.0
+    memory: SummaryStorageUsageDict
 
 
-class SummaryNamespaceDict(TypedDict):
+class SummaryClusterDict(SummaryClusterOptionalDict, SummaryClusterRequiredDict):
+    pass
+
+
+class SummaryNamespaceOptionalDict(TypedDict, total=False):
+    compression_ratio: float
+    cache_read_pct: int
+    device: SummaryStorageUsageDict
+    pmem: SummaryStorageUsageDict
+    pmem_index: SummaryStorageUsageDict
+    flash_index: SummaryStorageUsageDict
+
+
+class SummaryNamespaceRequiredDict(TypedDict):
     devices_total: int
     devices_per_node: int
     device_count_same_across_nodes: bool
     repl_factor: list[int]
     master_objects: int
     migrations_in_progress: bool
+    index_type: str  # TODO: should be Union[Literal["pmem"], Literal["flash"], Literal["shmem"]]
+    memory: SummaryStorageUsageDict
     rack_aware: bool
     license_data: SummaryClusterLicenseAggDict
-    index_type: NotRequired[
-        str
-    ]  # TODO: should be Union[Literal["pmem"], Literal["flash"], Literal["shmem"]]
-    compression_ratio: NotRequired[float]
-    cache_read_pct: NotRequired[int]
-    memory_data_and_indexes: NotRequired[SummaryStorageUsageDict]  # pre 7.0
-    memory: NotRequired[SummaryStorageUsageDict]  # post 7.0
-    device: NotRequired[SummaryStorageUsageDict]
-    pmem: NotRequired[SummaryStorageUsageDict]
-    pmem_index: NotRequired[SummaryStorageUsageDict]
-    flash_index: NotRequired[SummaryStorageUsageDict]
-    shmem_index: NotRequired[SummaryStorageUsageDict]
+
+
+class SummaryNamespaceDict(SummaryNamespaceOptionalDict, SummaryNamespaceRequiredDict):
+    pass
 
 
 SummaryNamespacesDict = NamespaceDict[SummaryNamespaceDict]
@@ -850,6 +837,13 @@ def _initialize_summary_output(ns_list) -> SummaryDict:
             "device_count": 0,
             "device_count_per_node": 0,
             "device_count_same_across_nodes": True,
+            "memory": {
+                "total": 0,
+                "used": 0,
+                "used_pct": 0.0,
+                "avail": 0,
+                "avail_pct": 0.0,
+            },
             "active_ns": 0,
             "ns_count": 0,
             "license_data": {"latest": 0},
@@ -865,6 +859,15 @@ def _initialize_summary_output(ns_list) -> SummaryDict:
             "repl_factor": [],
             "master_objects": 0,
             "migrations_in_progress": False,
+            # Memory is always used regardless of configuration
+            "memory": {
+                "total": 0,
+                "used": 0,
+                "used_pct": 0.0,
+                "avail": 0,
+                "avail_pct": 0.0,
+            },
+            "index_type": "shmem",
             "rack_aware": False,
             "license_data": {"latest": 0},
         }
@@ -999,7 +1002,8 @@ def _manually_compute_license_data_size(
 
         for host_id, host_stats in ns_stats.items():
             host_memory_bytes = 0.0
-            host_data_bytes = 0.0
+            host_device_bytes = 0.0
+            host_pmem_bytes = 0.0
             host_master_objects = 0
 
             if not host_stats or isinstance(host_stats, Exception):
@@ -1033,27 +1037,39 @@ def _manually_compute_license_data_size(
                 return_type=int,
             )
 
-            host_data_compression_ratio = util.get_value_from_dict(
+            host_device_compression_ratio = util.get_value_from_dict(
                 host_stats,
-                (
-                    "data_compression_ratio",
-                    "pmem_compression_ratio",
-                    "device_compression_ratio",
-                ),
+                "device_compression_ratio",
                 default_value=1.0,
                 return_type=float,
             )
 
-            host_data_bytes = util.get_value_from_dict(
+            host_pmem_compression_ratio = util.get_value_from_dict(
                 host_stats,
-                ("data_used_bytes", "device_used_bytes", "pmem_used_bytes"),
+                "pmem_compression_ratio",
+                default_value=1.0,
+                return_type=float,
+            )
+
+            host_device_bytes = util.get_value_from_dict(
+                host_stats,
+                "device_used_bytes",
                 default_value=0.0,
                 return_type=float,
             )
 
-            host_data_bytes /= host_data_compression_ratio
+            host_device_bytes /= host_device_compression_ratio
 
-            if host_data_bytes == 0.0:
+            host_pmem_bytes = util.get_value_from_dict(
+                host_stats,
+                "pmem_used_bytes",
+                default_value=0.0,
+                return_type=float,
+            )
+
+            host_pmem_bytes /= host_pmem_compression_ratio
+
+            if host_pmem_bytes == 0.0 and host_device_bytes == 0.0:
                 host_memory_bytes += util.get_value_from_dict(
                     host_stats,
                     "memory_used_index_bytes",
@@ -1085,7 +1101,7 @@ def _manually_compute_license_data_size(
             ) <= version.LooseVersion(host_build_version):
                 host_record_overhead = 39
 
-            host_unique_data = host_memory_bytes + host_data_bytes
+            host_unique_data = host_memory_bytes + host_pmem_bytes + host_device_bytes
             ns_unique_data += host_unique_data
             ns_record_overhead += host_master_objects * host_record_overhead
             ns_master_objects += host_master_objects
@@ -1138,7 +1154,7 @@ def create_summary(
     ns_configs={},
     security_configs={},
     license_data_usage: UDAResponsesDict | None = None,
-) -> SummaryDict:
+):
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
     Returns dictionary with summary information.
@@ -1160,30 +1176,22 @@ def create_summary(
 
     total_nodes = len(service_stats.keys())
 
-    # Pre 7.0 memory stats. Data + index + sindex + set index bytes
-    cluster_memory_data_and_indexes_size = 0
-    cluster_memory_data_and_indexes_avail = 0
-
-    cl_shmem_index_size_used = 0  # index-type.shmem does not report
+    cl_memory_size_total = 0
+    cl_memory_size_avail = 0
     cl_pmem_index_size_total = 0
-    cl_pmem_index_size_used = 0
+    cl_pmem_index_size_avail = 0
     cl_flash_index_size_total = 0
-    cl_flash_index_size_used = 0
+    cl_flash_index_size_avail = 0
 
     cl_nodewise_device_counts = {}
 
-    # Post 7.0 memory stats. Data only, no index or sindex bytes
-    cluster_memory_size = 0
-    cluster_memory_used = 0
-    cluster_memory_avail = 0
+    cl_nodewise_device_size = {}
+    cl_nodewise_device_used = {}
+    cl_nodewise_device_avail = {}
 
-    cluster_device_size = 0
-    cluster_device_used = 0
-    cluster_device_avail = 0
-
-    cluster_pmem_size = 0
-    cluster_pmem_used = 0
-    cluster_pmem_avail = 0
+    cl_nodewise_pmem_size = {}
+    cl_nodewise_pmem_used = {}
+    cl_nodewise_pmem_avail = {}
 
     compute_license_data_size(
         namespace_stats,
@@ -1265,7 +1273,7 @@ def create_summary(
             if len(set(device_counts.values())) > 1:
                 summary_dict["NAMESPACES"][ns]["device_count_same_across_nodes"] = False
 
-        # Memory pre 7.0
+        # Memory
         mem_size: int = sum(
             util.get_value_from_second_level_of_dict(
                 ns_stats, ("memory-size",), default_value=0, return_type=int
@@ -1276,89 +1284,96 @@ def create_summary(
                 ns_stats, ("memory_used_bytes",), default_value=0, return_type=int
             ).values()
         )
+        mem_avail = mem_size - mem_used
+        mem_avail_pct = (mem_avail / mem_size) * 100.0
+        mem_used_pct = 100.00 - mem_avail_pct
+        cl_memory_size_total += mem_size
+        cl_memory_size_avail += mem_avail
 
-        if mem_size > 0:
-            mem_avail = mem_size - mem_used
-            mem_avail_pct = (mem_avail / mem_size) * 100.0
-            mem_used_pct = 100.00 - mem_avail_pct
-            cluster_memory_data_and_indexes_size += mem_size
-            cluster_memory_data_and_indexes_avail += mem_avail
+        ns_mem_usage: SummaryStorageUsageDict = {
+            "total": mem_size,
+            "used": mem_used,
+            "used_pct": mem_used_pct,
+            "avail": mem_avail,
+            "avail_pct": mem_avail_pct,
+        }
+        summary_dict["NAMESPACES"][ns]["memory"] = ns_mem_usage
 
-            ns_mem_usage: SummaryStorageUsageDict = {
-                "total": mem_size,
-                "used": mem_used,
-                "used_pct": mem_used_pct,
-                "avail": mem_avail,
-                "avail_pct": mem_avail_pct,
-            }
-            summary_dict["NAMESPACES"][ns]["memory_data_and_indexes"] = ns_mem_usage
-
-        index_type = list(
+        index_type = summary_dict["NAMESPACES"][ns]["index_type"] = list(
             util.get_value_from_second_level_of_dict(
-                ns_stats, ("index-type",), default_value="", return_type=str
+                ns_stats, ("index-type",), default_value="shmem", return_type=str
             ).values()
         )[0]
 
-        # Index
-        index_size = sum(
-            util.get_value_from_second_level_of_dict(
-                ns_configs[ns],
-                (
-                    "index-type.mounts-budget",
-                    "index-type.mounts-size-limit",
-                ),
-                default_value=0,
-                return_type=int,
-            ).values()
-        )
-        index_used = sum(
-            util.get_value_from_second_level_of_dict(
-                ns_stats,
-                (
-                    "index_used_bytes",
-                    "index_pmem_used_bytes",
-                    "index_flash_used_bytes",
-                ),
-                default_value=0,
-                return_type=int,
-            ).values()
-        )
+        # Pmem Index
+        if index_type == "pmem":
+            pmem_index_size = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_configs[ns],
+                    ("index-type.mounts-size-limit",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+            pmem_index_used = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("index_pmem_used_bytes",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
 
-        if index_size > 0 or index_used > 0:
-            ns_index_usage: SummaryStorageUsageDict | None = None
+            if pmem_index_size > 0:
+                pmem_index_avail = pmem_index_size - pmem_index_used
+                pmem_index_avail_pct = (pmem_index_avail / pmem_index_size) * 100.0
+                pmem_index_used_pct = 100.00 - pmem_index_avail_pct
+                cl_pmem_index_size_total += pmem_index_size
+                cl_pmem_index_size_avail += pmem_index_avail
 
-            if index_size > 0:
-                index_avail = index_size - index_used
-                index_avail_pct = (index_avail / index_size) * 100.0
-                index_used_pct = 100.00 - index_avail_pct
-                ns_index_usage = {
-                    "total": index_size,
-                    "avail": index_avail,
-                    "used": index_used,
-                    "avail_pct": index_avail_pct,
-                    "used_pct": index_used_pct,
+                ns_pmem_index_usage: SummaryStorageUsageDict = {
+                    "total": pmem_index_size,
+                    "used": pmem_index_used,
+                    "used_pct": pmem_index_used_pct,
+                    "avail": pmem_index_avail,
+                    "avail_pct": pmem_index_avail_pct,
                 }
-            else:
-                # shmem does not require you to configure mounts-budget
-                ns_index_usage = {
-                    "used": index_used,
-                }
+                summary_dict["NAMESPACES"][ns]["pmem_index"] = ns_pmem_index_usage
 
-            if index_type == "pmem":
-                # TODO handle the cluster level aggregate
-                cl_pmem_index_size_total += index_size
-                cl_pmem_index_size_used += index_used
-                summary_dict["NAMESPACES"][ns]["pmem_index"] = ns_index_usage
-                summary_dict["NAMESPACES"][ns]["index_type"] = index_type
-            elif index_type == "flash":
-                cl_flash_index_size_total += index_size
-                cl_flash_index_size_used += index_used
-                summary_dict["NAMESPACES"][ns]["flash_index"] = ns_index_usage
-                summary_dict["NAMESPACES"][ns]["index_type"] = index_type
-            elif index_type == "shmem":
-                cl_shmem_index_size_used += index_used
-                summary_dict["NAMESPACES"][ns]["shmem_index"] = ns_index_usage
-                summary_dict["NAMESPACES"][ns]["index_type"] = index_type
+        # Flash Index
+        elif index_type == "flash":
+            flash_index_size = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_configs[ns],
+                    ("index-type.mounts-size-limit",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+            flash_index_used = sum(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("index_flash_used_bytes",),
+                    default_value=0,
+                    return_type=int,
+                ).values()
+            )
+
+            if flash_index_size > 0:
+                flash_index_avail = flash_index_size - flash_index_used
+                flash_index_avail_pct = (flash_index_avail / flash_index_size) * 100.0
+                flash_index_used_pct = 100.00 - flash_index_avail_pct
+                cl_flash_index_size_total += flash_index_size
+                cl_flash_index_size_avail += flash_index_avail
+
+                ns_flash_index_usage: SummaryStorageUsageDict = {
+                    "total": flash_index_size,
+                    "used": flash_index_used,
+                    "used_pct": flash_index_used_pct,
+                    "avail": flash_index_avail,
+                    "avail_pct": flash_index_avail_pct,
+                }
+                summary_dict["NAMESPACES"][ns]["flash_index"] = ns_flash_index_usage
 
         storage_engine_type = list(
             util.get_value_from_second_level_of_dict(
@@ -1366,80 +1381,96 @@ def create_summary(
             ).values()
         )[0]
 
-        data_size = util.get_value_from_second_level_of_dict(
-            ns_stats,
-            (
-                "data_total_bytes",
-                "device_total_bytes",
-                "pmem_total_bytes",
-                "total-bytes-disk",
-            ),
-            default_value=0,
-            return_type=int,
-        )
-        data_used = util.get_value_from_second_level_of_dict(
-            ns_stats,
-            (
-                "data_used_bytes",
-                "device_used_bytes",
-                "pmem_used_bytes",
-                "used-bytes-disk",
-            ),
-            default_value=0,
-            return_type=int,
-        )
-        data_avail_pct = util.get_value_from_second_level_of_dict(
-            ns_stats,
-            (
-                "data_avail_pct",
-                "device_available_pct",
-                "pmem_available_pct",
-                "available_pct",
-            ),
-            default_value=0,
-            return_type=int,
-        )
-        data_avail = util.pct_to_value(data_size, data_avail_pct)
-        data_size_total = sum(data_size.values())
+        if storage_engine_type == "device":
+            device_size = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("device_total_bytes", "total-bytes-disk"),
+                default_value=0,
+                return_type=int,
+            )
+            device_used = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("device_used_bytes", "used-bytes-disk"),
+                default_value=0,
+                return_type=int,
+            )
+            device_avail_pct = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("device_available_pct", "available_pct"),
+                default_value=0,
+                return_type=int,
+            )
+            device_avail = util.pct_to_value(device_size, device_avail_pct)
+            cl_nodewise_device_size = util.add_dicts(
+                cl_nodewise_device_size, device_size
+            )
+            cl_nodewise_device_used = util.add_dicts(
+                cl_nodewise_device_used, device_used
+            )
+            cl_nodewise_device_avail = util.add_dicts(
+                cl_nodewise_device_avail, device_avail
+            )
+            device_size_total = sum(device_size.values())
 
-        if data_size_total > 0:
-            data_size_used = sum(data_used.values())
-            data_size_avail = sum(data_avail.values())
-            data_size_avail_pct = (data_size_avail / data_size_total) * 100.0
-            data_size_used_pct = (data_size_used / data_size_total) * 100.0
+            if device_size_total > 0:
+                device_size_used = sum(device_used.values())
+                device_size_avail = sum(device_avail.values())
+                device_size_avail_pct = (device_size_avail / device_size_total) * 100.0
+                device_size_used_pct = (device_size_used / device_size_total) * 100.0
 
-            ns_data_usage: SummaryStorageUsageDict = {
-                "total": data_size_total,
-                "used": data_size_used,
-                "used_pct": data_size_used_pct,
-                "avail": data_size_avail,
-                "avail_pct": data_size_avail_pct,
-            }
+                ns_device_usage: SummaryStorageUsageDict = {
+                    "total": device_size_total,
+                    "used": device_size_used,
+                    "used_pct": device_size_used_pct,
+                    "avail": device_size_avail,
+                    "avail_pct": device_size_avail_pct,
+                }
+                summary_dict["NAMESPACES"][ns]["device"] = ns_device_usage
 
-            if storage_engine_type == "device":
-                cluster_device_size += data_size_total
-                cluster_device_used += data_size_used
-                cluster_device_avail += data_size_avail
-                summary_dict["NAMESPACES"][ns]["device"] = ns_data_usage
-            elif storage_engine_type == "pmem":
-                cluster_pmem_size += data_size_total
-                cluster_pmem_used += data_size_used
-                cluster_pmem_avail += data_size_avail
-                summary_dict["NAMESPACES"][ns]["pmem"] = ns_data_usage
-            elif storage_engine_type == "memory":
-                cluster_memory_size += data_size_total
-                cluster_memory_used += data_size_used
-                cluster_memory_avail += data_size_avail
-                summary_dict["NAMESPACES"][ns]["memory"] = ns_data_usage
+        elif storage_engine_type == "pmem":
+            pmem_size = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("pmem_total_bytes",),
+                default_value=0,
+                return_type=int,
+            )
+            pmem_used = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("pmem_used_bytes"),
+                default_value=0,
+                return_type=int,
+            )
+            pmem_avail_pct = util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("pmem_available_pct"),
+                default_value=0,
+                return_type=int,
+            )
+            pmem_avail = util.pct_to_value(pmem_size, pmem_avail_pct)
+            cl_nodewise_pmem_size = util.add_dicts(cl_nodewise_pmem_size, pmem_size)
+            cl_nodewise_pmem_used = util.add_dicts(cl_nodewise_pmem_used, pmem_used)
+            cl_nodewise_pmem_avail = util.add_dicts(cl_nodewise_pmem_avail, pmem_avail)
+            pmem_size_total = sum(pmem_size.values())
+
+            if pmem_size_total > 0:
+                pmem_size_used = sum(pmem_used.values())
+                pmem_size_avail = sum(pmem_avail.values())
+                pmem_size_avail_pct = (pmem_size_avail / pmem_size_total) * 100.0
+                pmem_size_used_pct = (pmem_size_used / pmem_size_total) * 100.0
+
+                ns_pmem_usage: SummaryStorageUsageDict = {
+                    "total": pmem_size_total,
+                    "used": pmem_size_used,
+                    "used_pct": pmem_size_used_pct,
+                    "avail": pmem_size_avail,
+                    "avail_pct": pmem_size_avail_pct,
+                }
+                summary_dict["NAMESPACES"][ns]["pmem"] = ns_pmem_usage
 
         compression_ratio = max(
             util.get_value_from_second_level_of_dict(
                 ns_stats,
-                (
-                    "data_compression_ratio",
-                    "device_compression_ratio",
-                    "pmem_compression_ratio",
-                ),
+                ("device_compression_ratio", "pmem_compression_ratio"),
                 default_value=0.0,
                 return_type=float,
             ).values()
@@ -1459,21 +1490,31 @@ def create_summary(
             )
         )
 
-        cache_read_pcts = list(
+        data_in_memory = list(
             util.get_value_from_second_level_of_dict(
                 ns_stats,
-                ("cache_read_pct", "cache-read-pct"),
-                default_value=None,
-                return_type=int,
+                ("storage-engine.data-in-memory", "data-in-memory"),
+                default_value=False,
+                return_type=bool,
             ).values()
-        )
-        if cache_read_pcts:
-            try:
-                summary_dict["NAMESPACES"][ns]["cache_read_pct"] = sum(
-                    cache_read_pcts
-                ) // len(cache_read_pcts)
-            except Exception:
-                pass
+        )[0]
+
+        if data_in_memory:
+            cache_read_pcts = list(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats,
+                    ("cache_read_pct", "cache-read-pct"),
+                    default_value=None,
+                    return_type=int,
+                ).values()
+            )
+            if cache_read_pcts:
+                try:
+                    summary_dict["NAMESPACES"][ns]["cache_read_pct"] = sum(
+                        cache_read_pcts
+                    ) // len(cache_read_pcts)
+                except Exception:
+                    pass
         master_objects = sum(
             util.get_value_from_second_level_of_dict(
                 ns_stats,
@@ -1507,81 +1548,66 @@ def create_summary(
         if len(set(cl_nodewise_device_counts.values())) > 1:
             summary_dict["CLUSTER"]["device_count_same_across_nodes"] = False
 
-    # Pre 7.0 memory stats
-    if cluster_memory_data_and_indexes_size > 0:
-        memory_avail_pct = (
-            cluster_memory_data_and_indexes_avail / cluster_memory_data_and_indexes_size
-        ) * 100.0
+    if cl_memory_size_total > 0:
+        memory_avail_pct = (cl_memory_size_avail / cl_memory_size_total) * 100.0
         cluster_memory: SummaryStorageUsageDict = {
-            "total": cluster_memory_data_and_indexes_size,
-            "avail": cluster_memory_data_and_indexes_avail,
+            "total": cl_memory_size_total,
+            "avail": cl_memory_size_avail,
             "avail_pct": memory_avail_pct,
-            "used": cluster_memory_data_and_indexes_size
-            - cluster_memory_data_and_indexes_avail,
+            "used": cl_memory_size_total - cl_memory_size_avail,
             "used_pct": 100.0 - memory_avail_pct,
         }
-        summary_dict["CLUSTER"]["memory_data_and_indexes"] = cluster_memory
+        summary_dict["CLUSTER"]["memory"] = cluster_memory
 
     if cl_pmem_index_size_total > 0:
-        cl_pmem_index_size_used_pct = (
-            cl_pmem_index_size_used / cl_pmem_index_size_total
+        cl_pmem_index_size_avail_pct = (
+            cl_pmem_index_size_avail / cl_pmem_index_size_total
         ) * 100.0
         cluster_pmem_index: SummaryStorageUsageDict = {
             "total": cl_pmem_index_size_total,
-            "avail": cl_pmem_index_size_total - cl_pmem_index_size_used,
-            "avail_pct": 100 - cl_pmem_index_size_used_pct,
-            "used": cl_pmem_index_size_used,
-            "used_pct": cl_pmem_index_size_used_pct,
+            "avail": cl_pmem_index_size_avail,
+            "avail_pct": cl_pmem_index_size_avail_pct,
+            "used": cl_pmem_index_size_total - cl_pmem_index_size_avail,
+            "used_pct": 100.0 - cl_pmem_index_size_avail_pct,
         }
         summary_dict["CLUSTER"]["pmem_index"] = cluster_pmem_index
 
     if cl_flash_index_size_total > 0:
-        cl_flash_index_size_used_pct = (
-            cl_flash_index_size_used / cl_flash_index_size_total
+        cl_flash_index_size_avail_pct = (
+            cl_flash_index_size_avail / cl_flash_index_size_total
         ) * 100.0
         cluster_flash_index: SummaryStorageUsageDict = {
             "total": cl_flash_index_size_total,
-            "avail": cl_flash_index_size_total - cl_flash_index_size_used,
-            "avail_pct": 100 - cl_flash_index_size_used_pct,
-            "used": cl_flash_index_size_used,
-            "used_pct": cl_flash_index_size_used_pct,
+            "avail": cl_flash_index_size_avail,
+            "avail_pct": cl_flash_index_size_avail_pct,
+            "used": cl_flash_index_size_total - cl_flash_index_size_avail,
+            "used_pct": 100.0 - cl_flash_index_size_avail_pct,
         }
         summary_dict["CLUSTER"]["flash_index"] = cluster_flash_index
 
-    if cl_shmem_index_size_used > 0:
-        cluster_shmem_index: SummaryStorageUsageDict = {
-            "used": cl_shmem_index_size_used,
-        }
-        summary_dict["CLUSTER"]["shmem_index"] = cluster_shmem_index
-
-    # Post 7.0 memory stats that only include data not sindex or index bytes
-    if cluster_memory_size > 0:
-        cluster_memory_index: SummaryStorageUsageDict = {
-            "total": cluster_memory_size,
-            "avail": cluster_memory_avail,
-            "avail_pct": (cluster_memory_avail / cluster_memory_size) * 100.0,
-            "used": cluster_memory_used,
-            "used_pct": (cluster_memory_used / cluster_memory_size) * 100.0,
-        }
-        summary_dict["CLUSTER"]["memory"] = cluster_memory_index
-
-    if cluster_device_size > 0:
+    cl_device_size_total = sum(cl_nodewise_device_size.values())
+    if cl_device_size_total > 0:
+        cluster_device_used = sum(cl_nodewise_device_used.values())
+        cluster_device_avail = sum(cl_nodewise_device_avail.values())
         cluster_device_index: SummaryStorageUsageDict = {
-            "total": cluster_device_size,
+            "total": cl_device_size_total,
             "avail": cluster_device_avail,
-            "avail_pct": (cluster_device_avail / cluster_device_size) * 100.0,
+            "avail_pct": (cluster_device_avail / cl_device_size_total) * 100.0,
             "used": cluster_device_used,
-            "used_pct": (cluster_device_used / cluster_device_size) * 100.0,
+            "used_pct": (cluster_device_used / cl_device_size_total) * 100.0,
         }
         summary_dict["CLUSTER"]["device"] = cluster_device_index
 
-    if cluster_pmem_size > 0:
+    cl_pmem_size_total = sum(cl_nodewise_pmem_size.values())
+    if cl_pmem_size_total > 0:
+        cluster_pmem_used = sum(cl_nodewise_pmem_used.values())
+        cluster_pmem_avail = sum(cl_nodewise_pmem_avail.values())
         cluster_pmem_index: SummaryStorageUsageDict = {
-            "total": cluster_pmem_size,
+            "total": cl_pmem_size_total,
             "avail": cluster_pmem_avail,
-            "avail_pct": (cluster_pmem_avail / cluster_pmem_size) * 100.0,
+            "avail_pct": (cluster_pmem_avail / cl_pmem_size_total) * 100.0,
             "used": cluster_pmem_used,
-            "used_pct": (cluster_pmem_used / cluster_pmem_size) * 100.0,
+            "used_pct": (cluster_pmem_used / cl_pmem_size_total) * 100.0,
         }
         summary_dict["CLUSTER"]["pmem"] = cluster_pmem_index
 
@@ -1646,58 +1672,26 @@ def _is_stop_writes_cause(
 
 
 @staticmethod
-def _get_first_value_from_dict_with_key(
-    dict_: dict[str, Any],
-    key: str | tuple,
-    default_value: Any = None,
-    return_type: type = str,
-) -> Any:
-    if isinstance(key, str):
-        key = (key,)
-
-    for key in key:
-        if key in dict_:
-            return key, util.get_value_from_dict(
-                dict_, key, default_value=default_value, return_type=return_type
-            )
-
-    return None, None
-
-
-@staticmethod
 def _format_ns_stop_writes_metrics(
     stop_writes_metrics: StopWritesDict,
     service_stats,
     ns_stats,
 ):
     for node in service_stats:
-        cluster_clock_skew_ms: int | None = util.get_value_from_dict(
-            service_stats[node],
-            "cluster_clock_skew_ms",
-            None,
-            return_type=int,
+        cluster_clock_skew_ms = service_stats[node].get("cluster_clock_skew_ms", None)
+        cluster_clock_skew_stop_writes_sec = service_stats[node].get(
+            "cluster_clock_skew_stop_writes_sec", None
         )
-        cluster_clock_skew_stop_writes_sec: int | None = util.get_value_from_dict(
-            service_stats[node],
-            "cluster_clock_skew_stop_writes_sec",
-            None,
-            return_type=int,
-        )
-        system_free_mem_pct: int | None = util.get_value_from_dict(
-            service_stats[node],
-            "system_free_mem_pct",
-            None,
-            return_type=int,
-        )
+        system_free_mem_pct = service_stats[node].get("system_free_mem_pct", None)
 
         for ns, stats in ns_stats.get(node, {}).items():
             # There is no config for this trigger
             strong_consistency: str | None = stats.get("strong-consistency", None)
             nsup_period: str | None = stats.get("nsup-period", None)
             stop_writes: str | None = stats.get("clock_skew_stop_writes", None)
-            metric = "cluster_clock_skew_ms"
-            usage: int | float | None = cluster_clock_skew_ms
-            threshold: int | float | None = cluster_clock_skew_stop_writes_sec
+            metric: str = "cluster_clock_skew_ms"
+            usage = cluster_clock_skew_ms
+            threshold = cluster_clock_skew_stop_writes_sec
 
             """
             For Available mode (AP) namespaces running versions 4.5.1 or above and where 
@@ -1710,32 +1704,34 @@ def _format_ns_stop_writes_metrics(
                     and nsup_period is not None  # nsup-period was added in 4.5.1.
                     and nsup_period != "0"
                 ):
-                    threshold = 40000
+                    thresh = 40000
                 else:
-                    threshold = int(threshold) * 1000  # convert to ms
-
-                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
+                    thresh = (
+                        int(cluster_clock_skew_stop_writes_sec) * 1000
+                    )  # convert to ms
+                use = int(usage)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    usage,
+                    use,
                     sw,
-                    threshold,
+                    thresh,
                     namespace=ns,
                 )
 
             stop_writes: str | None = stats.get("stop_writes", None)
             metric = "system_free_mem_pct"
             config = "stop-writes-sys-memory-pct"
-            threshold = util.get_value_from_dict(stats, config, None, return_type=int)
+            threshold: str | None = stats.get(config, None)
 
             if (
                 threshold is not None
                 and system_free_mem_pct is not None
                 and stop_writes is not None
             ):
-                thresh = threshold
-                use = 100 - system_free_mem_pct
+                thresh = int(threshold)
+                use = 100 - int(system_free_mem_pct)
                 sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
@@ -1754,87 +1750,70 @@ def _format_ns_stop_writes_metrics(
             if stop_writes is None:
                 continue
 
-            metric, usage = _get_first_value_from_dict_with_key(
-                stats,
-                ("data_avail_pct", "device_available_pct", "pmem_available_pct"),
-                default_value=None,
-                return_type=int,
-            )
-            config, threshold = _get_first_value_from_dict_with_key(
-                stats,
-                (
-                    "storage-engine.stop-writes-avail-pct",
-                    "storage-engine.min-avail-pct",
-                ),
-                default_value=None,
-                return_type=int,
-            )
+            metric = "device_avail_pct"
+            config = "min-avail-pct"
+            usage: str | None = stats.get(metric, None)
+            threshold: str | None = stats.get(config, None)
 
-            if metric and usage is not None and threshold is not None:
-                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
+            if usage is None:
+                metric = "pmem_avail_pct"
+                usage = stats.get(metric, None)
+
+            if usage is not None and threshold is not None:
+                use = int(usage)
+                thresh = int(threshold)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    usage,
+                    use,
                     sw,
-                    threshold,
+                    thresh,
                     config=config,
                     namespace=ns,
                 )
 
-            metric, usage = _get_first_value_from_dict_with_key(
-                stats,
-                ("data_used_bytes", "device_used_bytes", "pmem_used_bytes"),
-                default_value=None,
-                return_type=int,
-            )
-            config, threshold = _get_first_value_from_dict_with_key(
-                stats,
-                ("storage-engine.stop-writes-used-pct", "storage-engine.max-used-pct"),
-                default_value=None,
-                return_type=int,
-            )
-            bytes_total: int | float | None = util.get_value_from_dict(
-                stats,
-                ("data_total_bytes", "device_total_bytes", "pmem_total_bytes"),
-                None,
-                return_type=int,
-            )
+            metric = "device_used_bytes"
+            config = "max-used-pct"
+            usage: str | None = stats.get(metric, None)
+            bytes_total: str | None = stats.get("device_total_bytes", None)
+            threshold: str | None = stats.get(config, None)
+
+            if usage is None:
+                metric = "pmem_used_bytes"
+                usage = stats.get(metric, None)
+                bytes_total = stats.get("pmem_total_bytes", None)
 
             if usage is not None and threshold is not None and bytes_total is not None:
-                threshold = bytes_total * (threshold / 100)
-                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
+                use = int(usage)
+                thresh = int(bytes_total) * (int(threshold) / 100)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    usage,
+                    use,
                     sw,
-                    threshold,
+                    thresh,
                     config=config,
                     namespace=ns,
                 )
 
             metric = "memory_used_bytes"
             config = "stop-writes-pct"
-            usage = util.get_value_from_dict(
-                stats, metric, default_value=None, return_type=int
-            )
-            bytes_total = util.get_value_from_dict(
-                stats, "memory-size", default_value=None, return_type=int
-            )
-            threshold = util.get_value_from_dict(
-                stats, config, default_value=None, return_type=int
-            )
+            usage: str | None = stats.get(metric, None)
+            bytes_total: str | None = stats.get("memory-size", None)
+            threshold: str | None = stats.get(config, None)
 
             if usage is not None and threshold is not None and bytes_total is not None:
-                threshold = int(bytes_total) * (int(threshold) / 100)
-                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
+                use = int(usage)
+                thresh = int(bytes_total) * (int(threshold) / 100)
+                sw = _is_stop_writes_cause(use, thresh, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    usage,
+                    use,
                     sw,
-                    threshold,
+                    thresh,
                     config=config,
                     namespace=ns,
                 )

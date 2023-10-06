@@ -407,13 +407,13 @@ ASSERT(r, True, "Number of Sets equal to or above 750", "LIMITS", INFO,
 stop_writes = select "stop_writes" from NAMESPACE.STATISTICS;
 stop_writes = group by CLUSTER, NAMESPACE stop_writes;
 ASSERT(stop_writes, False, "Namespace has hit stop-writes (stop_writes = true)", "OPERATIONS" , CRITICAL,
-				"Listed namespace(s) have hit stop-write. Please run 'show statistics namespace like stop_writes' for details.",
+				"Listed namespace(s) have hit stop-write. Please run 'show stop-writes' for details.",
 				"Namespace stop-writes flag check.");
 
 clock_skew_stop_writes = select "clock_skew_stop_writes" from NAMESPACE.STATISTICS;
 clock_skew_stop_writes = group by CLUSTER, NAMESPACE clock_skew_stop_writes;
 ASSERT(clock_skew_stop_writes, False, "Namespace has hit clock-skew-stop-writes (clock_skew_stop_writes = true)", "OPERATIONS" , CRITICAL,
-				"Listed namespace(s) have hit clock-skew-stop-writes. Please run 'show statistics namespace like clock_skew_stop_writes' for details.",
+				"Listed namespace(s) have hit clock-skew-stop-writes. Please run 'show stop-writes' for details.",
 				"Namespace clock-skew-stop-writes flag check.");
 
 SET CONSTRAINT VERSION < 4.3;

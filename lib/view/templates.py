@@ -258,82 +258,6 @@ info_namespace_usage_sheet = Sheet(
             formatters=(Formatters.red_alert(lambda edata: edata.value),),
         ),
         Subgroup(
-            "System Memory",
-            (
-                Field(
-                    "Avail%", Projectors.Percent("ns_stats", "system_free_mem_pct")
-                ),  # TODO get global metric
-                Field(
-                    "Evict%",
-                    Projectors.Percent("ns_stats", "evict-sys-memory-pct"),
-                ),
-            ),
-        ),
-        Subgroup(
-            "Storage Engine",
-            (
-                Field("Type", Projectors.String("ns_stats", "storage-engine")),
-                Field(
-                    "Total",
-                    Projectors.Number(
-                        "ns_stats",
-                        "data_total_bytes",
-                    ),
-                    hidden=True,
-                ),
-                Field(
-                    "Used",
-                    Projectors.Number(
-                        "ns_stats",
-                        "data_used_bytes",
-                    ),
-                    converter=Converters.byte,
-                    aggregator=Aggregators.sum(),
-                ),
-                Field(
-                    "Used%",
-                    Projectors.Div(
-                        Projectors.Number(
-                            "ns_stats",
-                            "data_used_bytes",
-                        ),
-                        Projectors.Number(
-                            "ns_stats",
-                            "data_total_bytes",
-                        ),
-                    ),
-                    converter=Converters.ratio_to_pct,
-                    aggregator=ComplexAggregator(
-                        create_usage_weighted_avg("Storage Engine"),
-                        converter=Converters.ratio_to_pct,
-                    ),
-                    formatters=(
-                        Formatters.yellow_alert(
-                            lambda edata: edata.value * 100
-                            >= edata.record["Storage Engine"]["Evict%"]
-                            and edata.record["Storage Engine"]["Evict%"] != 0
-                        ),
-                    ),
-                ),
-                Field(
-                    "Evict%",
-                    Projectors.Number("ns_stats", "evict-used-pct"),
-                    converter=Converters.pct,
-                ),
-                Field(
-                    "Avail%",
-                    Projectors.Number(
-                        "ns_stats",
-                        "data_avail_pct",
-                    ),
-                    converter=Converters.pct,
-                    formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
-                ),
-            ),
-        ),
-        # Replaced by "Storage Engine" in 7.0. This will
-        # only be displayed if the cluster is running 6.4 or earlier.
-        Subgroup(
             "Device",
             (
                 Field(
@@ -389,8 +313,6 @@ info_namespace_usage_sheet = Sheet(
                 ),
             ),
         ),
-        # Memory was unified in pindex, sindex, and storage-engine in 7.0. This will
-        # only be displayed if the cluster is running 6.4 or earlier.
         Subgroup(
             "Memory",
             (
@@ -450,7 +372,6 @@ info_namespace_usage_sheet = Sheet(
                     "Total",
                     Projectors.Number(
                         "ns_stats",
-                        "index-type.mounts-budget",  # Added in 7.0
                         "index-type.mounts-size-limit",
                     ),
                     hidden=True,
@@ -459,7 +380,6 @@ info_namespace_usage_sheet = Sheet(
                     "Used",
                     Projectors.Number(
                         "ns_stats",
-                        "index_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
                         "index_flash_used_bytes",
                         "index_pmem_used_bytes",
                         "memory_used_index_bytes",
@@ -472,16 +392,11 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Div(
                         Projectors.Number(
                             "ns_stats",
-                            "index_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
                             "index_flash_used_bytes",
                             "index_pmem_used_bytes",
                             "memory_used_index_bytes",
                         ),
-                        Projectors.Number(
-                            "ns_stats",
-                            "index-type.mounts-budget",  # Meant to be used with index_used_bytes. Both added in 7.0
-                            "index-type.mounts-size-limit",
-                        ),
+                        Projectors.Number("ns_stats", "index-type.mounts-size-limit"),
                     ),
                     converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
@@ -498,11 +413,7 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "HWM%",
-                    Projectors.Number(
-                        "ns_stats",
-                        "index-type.evict-mounts-pct",  # Added in 7.0
-                        "index-type.mounts-high-water-pct",
-                    ),
+                    Projectors.Number("ns_stats", "index-type.mounts-high-water-pct"),
                     converter=Converters.pct,
                 ),
             ),
@@ -515,7 +426,6 @@ info_namespace_usage_sheet = Sheet(
                     "Total",
                     Projectors.Number(
                         "ns_stats",
-                        "sindex-type.mounts-budget",  # Added in 7.0
                         "sindex-type.mounts-size-limit",
                     ),
                     hidden=True,
@@ -524,7 +434,6 @@ info_namespace_usage_sheet = Sheet(
                     "Used",
                     Projectors.Number(
                         "ns_stats",
-                        "sindex_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
                         "sindex_flash_used_bytes",
                         "sindex_pmem_used_bytes",
                         "memory_used_sindex_bytes",
@@ -537,16 +446,11 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Div(
                         Projectors.Number(
                             "ns_stats",
-                            "sindex_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
                             "sindex_flash_used_bytes",
                             "sindex_pmem_used_bytes",
                             "memory_used_sindex_bytes",
                         ),
-                        Projectors.Number(
-                            "ns_stats",
-                            "sindex-type.mounts-budget",  # Meant to be used with index_used_bytes. Both added in 7.0
-                            "sindex-type.mounts-size-limit",
-                        ),
+                        Projectors.Number("ns_stats", "sindex-type.mounts-size-limit"),
                     ),
                     converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
@@ -563,11 +467,7 @@ info_namespace_usage_sheet = Sheet(
                 ),
                 Field(
                     "HWM%",
-                    Projectors.Number(
-                        "ns_stats",
-                        "sindex-type.evict-mounts-pct",  # Added in 7.0
-                        "sindex-type.mounts-high-water-pct",
-                    ),
+                    Projectors.Number("ns_stats", "sindex-type.mounts-high-water-pct"),
                 ),
             ),
         ),
@@ -1179,7 +1079,7 @@ def _storage_type_display_name(storage_type: str, field_title: str, subgroup: bo
 
     if not subgroup:
         title = (
-            " ".join(val[0].upper() + val[1:] for val in storage_type.split("_"))
+            " ".join(val[0].upper() + val[1:] for val in storage_type.split(" "))
             + " "
             + field_title
         )
@@ -1189,13 +1089,8 @@ def _storage_type_display_name(storage_type: str, field_title: str, subgroup: bo
     return title
 
 
-def create_summary_total(
-    source: str, storage_type: str, subgroup=False, display_name: str | None = None
-):
-    if display_name is None:
-        title = _storage_type_display_name(storage_type, "Total", subgroup)
-    else:
-        title = _storage_type_display_name(display_name, "Total", subgroup)
+def create_summary_total(source: str, storage_type: str, subgroup=False):
+    title = _storage_type_display_name(storage_type, "Total", subgroup)
 
     return Field(
         title,
@@ -1208,13 +1103,8 @@ def create_summary_total(
     )
 
 
-def create_summary_used(
-    source: str, storage_type: str, subgroup=False, display_name: str | None = None
-):
-    if display_name is None:
-        title = _storage_type_display_name(storage_type, "Used", subgroup)
-    else:
-        title = _storage_type_display_name(display_name, "Used", subgroup)
+def create_summary_used(source: str, storage_type: str, subgroup=False):
+    title = _storage_type_display_name(storage_type, "Used", subgroup)
 
     return Field(
         title,
@@ -1227,13 +1117,8 @@ def create_summary_used(
     )
 
 
-def create_summary_used_pct(
-    source: str, storage_type: str, subgroup=False, display_name: str | None = None
-):
-    if display_name is None:
-        title = _storage_type_display_name(storage_type, "Used%", subgroup)
-    else:
-        title = _storage_type_display_name(display_name, "Used%", subgroup)
+def create_summary_used_pct(source: str, storage_type: str, subgroup=False):
+    title = _storage_type_display_name(storage_type, "Used%", subgroup)
 
     return Field(
         title,
@@ -1246,13 +1131,8 @@ def create_summary_used_pct(
     )
 
 
-def create_summary_avail(
-    source: str, storage_type: str, subgroup=False, display_name: str | None = None
-):
-    if display_name is None:
-        title = _storage_type_display_name(storage_type, "Avail", subgroup)
-    else:
-        title = _storage_type_display_name(display_name, "Avail", subgroup)
+def create_summary_avail(source: str, storage_type: str, subgroup=False):
+    title = _storage_type_display_name(storage_type, "Avail", subgroup)
 
     return Field(
         title,
@@ -1265,13 +1145,8 @@ def create_summary_avail(
     )
 
 
-def create_summary_avail_pct(
-    source: str, storage_type: str, subgroup=False, display_name: str | None = None
-):
-    if display_name is None:
-        title = _storage_type_display_name(storage_type, "Avail%", subgroup)
-    else:
-        title = _storage_type_display_name(display_name, "Avail%", subgroup)
+def create_summary_avail_pct(source: str, storage_type: str, subgroup=False):
+    title = _storage_type_display_name(storage_type, "Avail%", subgroup)
 
     return Field(
         title,
@@ -1346,44 +1221,12 @@ summary_cluster_sheet = Sheet(
         # Subgroup(
         #     "Memory",
         #     (
-        create_summary_total(
-            "cluster_dict",
-            "memory_data_and_indexes",
-            display_name="Memory (Data + Indexes)",
-        ),
-        create_summary_used(
-            "cluster_dict",
-            "memory_data_and_indexes",
-            display_name="Memory (Data + Indexes)",
-        ),
-        create_summary_used_pct(
-            "cluster_dict",
-            "memory_data_and_indexes",
-            display_name="Memory (Data + Indexes)",
-        ),
-        create_summary_avail(
-            "cluster_dict",
-            "memory_data_and_indexes",
-            display_name="Memory (Data + Indexes)",
-        ),
-        create_summary_avail_pct(
-            "cluster_dict",
-            "memory_data_and_indexes",
-            display_name="Memory (Data + Indexes)",
-        ),
-        #      ),
+        create_summary_total("cluster_dict", "memory"),
+        create_summary_used("cluster_dict", "memory"),
+        create_summary_used_pct("cluster_dict", "memory"),
+        create_summary_avail("cluster_dict", "memory"),
+        create_summary_avail_pct("cluster_dict", "memory"),
         # ),
-        # Subgroup(
-        #     "Shmem Index", # Sindex added to shmem in EE by default in 6.1. However,
-        #     this will only be displayed in 7.0. Pre 7.0 includes shmem index metrics
-        #     as apart of memory metrics.
-        #     (
-        create_summary_total("cluster_dict", "shmem_index"),
-        create_summary_used("cluster_dict", "shmem_index"),
-        create_summary_used_pct("cluster_dict", "shmem_index"),
-        create_summary_avail("cluster_dict", "shmem_index"),
-        create_summary_avail_pct("cluster_dict", "shmem_index"),
-        #     ),
         # ),
         # Subgroup(
         #     "Pmem Index",
@@ -1404,16 +1247,6 @@ summary_cluster_sheet = Sheet(
         create_summary_avail("cluster_dict", "flash_index"),
         create_summary_avail_pct("cluster_dict", "flash_index"),
         #     ),
-        # ),
-        # Subgroup(
-        #     "Memory",
-        #     (
-        create_summary_total("cluster_dict", "memory"),
-        create_summary_used("cluster_dict", "memory"),
-        create_summary_used_pct("cluster_dict", "memory"),
-        create_summary_avail("cluster_dict", "memory"),
-        create_summary_avail_pct("cluster_dict", "memory"),
-        #      ),
         # ),
         # Subgroup(
         #     "Device",
@@ -1541,23 +1374,11 @@ summary_namespace_sheet = Sheet(
             ),
         ),
         Subgroup(
-            "Memory (Data + Indexes)",
+            "Memory",
             (
-                create_summary_total(
-                    "ns_stats", "memory_data_and_indexes", subgroup=True
-                ),
-                create_summary_used(
-                    "ns_stats", "memory_data_and_indexes", subgroup=True
-                ),
-                create_summary_used_pct(
-                    "ns_stats", "memory_data_and_indexes", subgroup=True
-                ),
-                create_summary_avail(
-                    "ns_stats", "memory_data_and_indexes", subgroup=True
-                ),
-                create_summary_avail_pct(
-                    "ns_stats", "memory_data_and_indexes", subgroup=True
-                ),
+                create_summary_total("ns_stats", "memory", subgroup=True),
+                create_summary_used_pct("ns_stats", "memory", subgroup=True),
+                create_summary_avail_pct("ns_stats", "memory", subgroup=True),
             ),
         ),
         Subgroup(
@@ -1574,14 +1395,6 @@ summary_namespace_sheet = Sheet(
                 create_summary_total("ns_stats", "flash_index", subgroup=True),
                 create_summary_used_pct("ns_stats", "flash_index", subgroup=True),
                 create_summary_avail_pct("ns_stats", "flash_index", subgroup=True),
-            ),
-        ),
-        Subgroup(
-            "Memory",
-            (
-                create_summary_total("ns_stats", "memory", subgroup=True),
-                create_summary_used_pct("ns_stats", "memory", subgroup=True),
-                create_summary_avail_pct("ns_stats", "memory", subgroup=True),
             ),
         ),
         Subgroup(
