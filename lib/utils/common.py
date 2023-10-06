@@ -1647,7 +1647,6 @@ def _create_stop_writes_entry(
     node_sw_metrics[(namespace, set_, metric)] = entry
 
 
-@staticmethod
 def _is_stop_writes_cause(
     usage: int | float,
     threshold: int | float,
@@ -1671,13 +1670,12 @@ def _is_stop_writes_cause(
     )
 
 
-@staticmethod
 def _get_first_value_from_dict_with_key(
     dict_: dict[str, Any],
     key: str | tuple,
     default_value: Any = None,
     return_type: type = str,
-) -> Any:
+) -> tuple[Any, Any]:
     if isinstance(key, str):
         key = (key,)
 
@@ -1690,7 +1688,6 @@ def _get_first_value_from_dict_with_key(
     return None, None
 
 
-@staticmethod
 def _format_ns_stop_writes_metrics(
     stop_writes_metrics: StopWritesDict,
     service_stats,
@@ -1796,7 +1793,7 @@ def _format_ns_stop_writes_metrics(
                 return_type=int,
             )
 
-            if metric and usage is not None and threshold is not None:
+            if usage is not None and threshold is not None:
                 sw = _is_stop_writes_cause(usage, threshold, stop_writes, invert=True)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
@@ -1853,7 +1850,7 @@ def _format_ns_stop_writes_metrics(
             )
 
             if usage is not None and threshold is not None and bytes_total is not None:
-                threshold = int(bytes_total) * (int(threshold) / 100)
+                threshold = bytes_total * (threshold / 100)
                 sw = _is_stop_writes_cause(usage, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
