@@ -881,6 +881,38 @@ class RemoveDefaultAndNonExistentKeys(ConfigPipelineStep):
             self._remove_default_values(build, host_config)
 
 
+class RemoveConfigsConditionally(ConfigPipelineStep):
+    """Some values return "null" but that is not a valid config value. You would think
+    that the step that removes non-defaults would handle this case but it does not.
+    e.g.: xdr.dc.namespace.remote-namespace
+    """
+
+    async def __call__(self, context_dict: dict[str, Any]):
+        for host in context_dict[INTERMEDIATE]:
+            for top_level_config in context_dict[INTERMEDIATE][host]:
+                if (
+                    isinstance(top_level_config, InterNamedSectionKey)
+                    and top_level_config.type == "namespace"
+                ):
+                    # Determine if we are in SC mode.
+                    ns_config = context_dict["namespaces"][host][top_level_config.name]
+
+                    if (
+                        "strong-consistency" in ns_config
+                        and ns_config["strong-consistency"] == "true"
+                    ):
+                        for config in list(
+                            context_dict[INTERMEDIATE][host][top_level_config].keys()
+                        ):
+                            if config in {
+                                "read-consistency-level-override",
+                                "write-commit-level-override",
+                            }:
+                                del context_dict[INTERMEDIATE][host][top_level_config][
+                                    config
+                                ]
+
+
 class ConfigGenerator:
     async def generate(self) -> str:
         raise NotImplementedError("ConfigGenerator.generate not implemented")
@@ -919,6 +951,7 @@ class ASConfigGenerator(ConfigGenerator):
                 RemoveInvalidKeysFoundInSchemas(),
                 ConvertCommaSeparatedToList(),
                 RemoveEmptyContexts(),  # Should be after RemoveDefaultValues
+                RemoveConfigsConditionally(),
             ],
         )
 
