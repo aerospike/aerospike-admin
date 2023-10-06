@@ -147,16 +147,19 @@ class Converters:
         return fun
 
     @staticmethod
-    def _fmt_pct_type(val: float):
+    def _fmt_pct_type(val: float, invert: bool = False):
+        if invert:
+            val = 100 - val
+
         return str(round(float(val), 2)) + " %"
 
     @staticmethod
-    def ratio_to_pct(edata: EntryValue):
-        return Converters._fmt_pct_type(edata.value * 100)
+    def ratio_to_pct(edata: EntryValue, invert: bool = False):
+        return Converters._fmt_pct_type(edata.value * 100, invert)
 
     @staticmethod
-    def pct(edata: EntryValue):
-        return Converters._fmt_pct_type(edata.value)
+    def pct(edata: EntryValue, invert: bool = False):
+        return Converters._fmt_pct_type(edata.value, invert)
 
 
 FormatterPredicateFnType = Callable[[EntryData], bool]

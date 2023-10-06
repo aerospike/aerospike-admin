@@ -786,25 +786,25 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     }
                 },
             ),
-            # stop_writes not triggered by device_avail_pct
+            # stop_writes not triggered by device_available_pct
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
-                            "device_avail_pct": "50",
+                            "device_available_pct": "50",
                         }
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.min-avail-pct": "55"}},
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "device_avail_pct"): {
-                            "metric": "device_avail_pct",
-                            "config": "min-avail-pct",
-                            "stop_writes": False,
+                        ("ns1", None, "device_available_pct"): {
+                            "metric": "device_available_pct",
+                            "config": "storage-engine.min-avail-pct",
+                            "stop_writes": True,
                             "metric_usage": 50,
                             "metric_threshold": 55,
                             "namespace": "ns1",
@@ -817,19 +817,19 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
-                            "device_avail_pct": "56",
+                            "device_available_pct": "56",
                         }
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.min-avail-pct": "55"}},
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "device_avail_pct"): {
-                            "metric": "device_avail_pct",
-                            "config": "min-avail-pct",
-                            "stop_writes": True,
+                        ("ns1", None, "device_available_pct"): {
+                            "metric": "device_available_pct",
+                            "config": "storage-engine.min-avail-pct",
+                            "stop_writes": False,
                             "metric_usage": 56,
                             "metric_threshold": 55,
                             "namespace": "ns1",
@@ -842,19 +842,19 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
-                            "pmem_avail_pct": "56",
+                            "pmem_available_pct": "56",
                         }
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.min-avail-pct": "55"}},
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "pmem_avail_pct"): {
-                            "metric": "pmem_avail_pct",
-                            "config": "min-avail-pct",
-                            "stop_writes": True,
+                        ("ns1", None, "pmem_available_pct"): {
+                            "metric": "pmem_available_pct",
+                            "config": "storage-engine.min-avail-pct",
+                            "stop_writes": False,
                             "metric_usage": 56,
                             "metric_threshold": 55,
                             "namespace": "ns1",
@@ -862,24 +862,51 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     }
                 },
             ),
+            # stop_writes triggered by data_avail_pct
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
                         "ns1": {
                             "stop_writes": "true",
-                            "pmem_avail_pct": "56",
+                            "data_avail_pct": "55",
                         }
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"min-avail-pct": "55"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.stop-writes-avail-pct": "56"}},
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "pmem_avail_pct"): {
-                            "metric": "pmem_avail_pct",
-                            "config": "min-avail-pct",
+                        ("ns1", None, "data_avail_pct"): {
+                            "metric": "data_avail_pct",
+                            "config": "storage-engine.stop-writes-avail-pct",
                             "stop_writes": True,
+                            "metric_usage": 55,
+                            "metric_threshold": 56,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes not triggered by data_avail_pct
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "data_avail_pct": "56",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"storage-engine.min-avail-pct": "55"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "data_avail_pct"): {
+                            "metric": "data_avail_pct",
+                            "config": "storage-engine.min-avail-pct",
+                            "stop_writes": False,
                             "metric_usage": 56,
                             "metric_threshold": 55,
                             "namespace": "ns1",
@@ -899,13 +926,13 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.max-used-pct": "90"}},
                 },
                 expected={
                     "1.1.1.1": {
                         ("ns1", None, "device_used_bytes"): {
                             "metric": "device_used_bytes",
-                            "config": "max-used-pct",
+                            "config": "storage-engine.max-used-pct",
                             "stop_writes": False,
                             "metric_usage": 10,
                             "metric_threshold": 90,
@@ -926,13 +953,13 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.max-used-pct": "90"}},
                 },
                 expected={
                     "1.1.1.1": {
                         ("ns1", None, "device_used_bytes"): {
                             "metric": "device_used_bytes",
-                            "config": "max-used-pct",
+                            "config": "storage-engine.max-used-pct",
                             "stop_writes": True,
                             "metric_usage": 90,
                             "metric_threshold": 90,
@@ -953,13 +980,13 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.max-used-pct": "90"}},
                 },
                 expected={
                     "1.1.1.1": {
                         ("ns1", None, "pmem_used_bytes"): {
                             "metric": "pmem_used_bytes",
-                            "config": "max-used-pct",
+                            "config": "storage-engine.max-used-pct",
                             "stop_writes": False,
                             "metric_usage": 10,
                             "metric_threshold": 90,
@@ -980,13 +1007,67 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"max-used-pct": "90"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.max-used-pct": "90"}},
                 },
                 expected={
                     "1.1.1.1": {
                         ("ns1", None, "pmem_used_bytes"): {
                             "metric": "pmem_used_bytes",
-                            "config": "max-used-pct",
+                            "config": "storage-engine.max-used-pct",
+                            "stop_writes": True,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes not triggered by data_used_bytes
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "data_used_bytes": "10",
+                            "data_total_bytes": "100",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"storage-engine.stop-writes-used-pct": "90"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "data_used_bytes"): {
+                            "metric": "data_used_bytes",
+                            "config": "storage-engine.stop-writes-used-pct",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by data_used_bytes
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "data_used_bytes": "90",
+                            "data_total_bytes": "100",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"storage-engine.stop-writes-used-pct": "90"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "data_used_bytes"): {
+                            "metric": "data_used_bytes",
+                            "config": "storage-engine.stop-writes-used-pct",
                             "stop_writes": True,
                             "metric_usage": 90,
                             "metric_threshold": 90,
