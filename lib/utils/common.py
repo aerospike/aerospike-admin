@@ -1660,7 +1660,7 @@ def _is_stop_writes_cause(
     if invert:
         return (
             True
-            if usage >= threshold
+            if usage <= threshold
             and (stop_writes is None or stop_writes.lower() == "true")
             else False
         )
@@ -1797,7 +1797,7 @@ def _format_ns_stop_writes_metrics(
             )
 
             if metric and usage is not None and threshold is not None:
-                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
+                sw = _is_stop_writes_cause(usage, threshold, stop_writes, invert=True)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
