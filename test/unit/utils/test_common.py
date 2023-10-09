@@ -1183,13 +1183,13 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"stop-writes-used-pct": "90"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.stop-writes-used-pct": "90"}},
                 },
                 expected={
                     "1.1.1.1": {
                         ("ns1", None, "data_used_bytes"): {
                             "metric": "data_used_bytes",
-                            "config": "stop-writes-used-pct",
+                            "config": "storage-engine.stop-writes-used-pct",
                             "stop_writes": False,
                             "metric_usage": 10,
                             "metric_threshold": 90,
@@ -1210,13 +1210,13 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     },
                 },
                 ns_config={
-                    "1.1.1.1": {"ns1": {"stop-writes-used-pct": "90"}},
+                    "1.1.1.1": {"ns1": {"storage-engine.stop-writes-used-pct": "90"}},
                 },
                 expected={
                     "1.1.1.1": {
                         ("ns1", None, "data_used_bytes"): {
                             "metric": "data_used_bytes",
-                            "config": "stop-writes-used-pct",
+                            "config": "storage-engine.stop-writes-used-pct",
                             "stop_writes": True,
                             "metric_usage": 90,
                             "metric_threshold": 90,
