@@ -22,7 +22,7 @@ class GenerateController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "BETA: Generates a static configuration file from a live node.",
+    "BETA: Generates a static configuration file from a live node,",
     usage=f"[-o <output_file>] {ModifierUsage.WITH}",
     modifiers=(
         ModifierHelp(
@@ -70,7 +70,7 @@ class GenerateConfigController(LiveClusterCommandController):
             self.view.print_result(s + "\n")
 
         self.logger.warning(
-            "Generated static configuration does not take into save logging.syslog, mod-lua, service.user and service.group."
+            "Community Edition is not supported. Generated static configuration does not save logging.syslog, mod-lua, service.user and service.group."
         )
         self.logger.warning(
             "This feature is currently in beta. Use at your own risk and please report any issue to support."
