@@ -327,7 +327,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
     def _get_file_path(self, dir, as_build, file_map, strict: bool):
         # If the build provided is before the lowest supported version (LSV) use LSV
         file = list(file_map.values())[0]
-        key = None
+        used_key = list(file_map.keys())[0]
 
         # Find the closest version to the one provided.
         for key in file_map:
@@ -335,11 +335,12 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
                 break
 
             file = file_map[key]
+            used_key = key
 
         if (
-            key
+            used_key
             and strict
-            and version.LooseVersion(key) != version.LooseVersion(as_build)
+            and version.LooseVersion(used_key) != version.LooseVersion(as_build)
         ):
             raise FileNotFoundError(
                 f"No configuration schema found for Aerospike server {as_build}. Consider upgrading asadm."
