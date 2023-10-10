@@ -332,6 +332,24 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
 
         patch.stopall()
 
+    def test_fails_on_strict(self):
+        isfile_mock = patch("os.path.isfile").start()
+        isfile_mock.side_effect = lambda *arg: True
+        pkgutil_mock = patch("pkgutil.get_data").start()
+        pkgutil_mock.side_effect = self.pkgutil_side_effect
+
+        self.assertRaises(
+            FileNotFoundError, JsonDynamicConfigHandler, "dir", "0.0.0", strict=True
+        )
+        self.assertRaises(
+            FileNotFoundError, JsonDynamicConfigHandler, "dir", "4.2.1", strict=True
+        )
+        JsonDynamicConfigHandler("dir", "4.2.0", strict=True)
+        JsonDynamicConfigHandler("dir", "4.2.0.1", strict=True)
+        self.assertRaises(
+            FileNotFoundError, JsonDynamicConfigHandler, "dir", "10.2.1", strict=True
+        )
+
     def test_get_service_params(self):
         expected = [
             "advertise-ipv6",
