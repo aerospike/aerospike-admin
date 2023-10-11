@@ -253,6 +253,7 @@ class InfoNamespaceController(CollectinfoCommandController):
     @CommandHelp("Displays usage information for each namespace")
     def do_usage(self, line):
         ns_stats = self.stat_getter.get_namespace()
+        service_stats = self.stat_getter.get_service()
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
@@ -260,6 +261,7 @@ class InfoNamespaceController(CollectinfoCommandController):
 
             self.view.info_namespace_usage(
                 ns_stats[timestamp],
+                service_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods,
