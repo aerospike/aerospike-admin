@@ -270,179 +270,6 @@ info_namespace_usage_sheet = Sheet(
             ),
         ),
         Subgroup(
-            "Storage Engine",
-            (
-                Field("Type", Projectors.String("ns_stats", "storage-engine")),
-                Field(
-                    "Total",
-                    Projectors.Number(
-                        "ns_stats",
-                        "data_total_bytes",
-                    ),
-                    hidden=True,
-                ),
-                Field(
-                    "Used",
-                    Projectors.Number(
-                        "ns_stats",
-                        "data_used_bytes",
-                    ),
-                    converter=Converters.byte,
-                    aggregator=Aggregators.sum(),
-                ),
-                Field(
-                    "Used%",
-                    Projectors.Div(
-                        Projectors.Number(
-                            "ns_stats",
-                            "data_used_bytes",
-                        ),
-                        Projectors.Number(
-                            "ns_stats",
-                            "data_total_bytes",
-                        ),
-                    ),
-                    converter=Converters.ratio_to_pct,
-                    aggregator=ComplexAggregator(
-                        create_usage_weighted_avg("Storage Engine"),
-                        converter=Converters.ratio_to_pct,
-                    ),
-                    formatters=(
-                        Formatters.yellow_alert(
-                            lambda edata: edata.value * 100
-                            >= edata.record["Storage Engine"]["Evict%"]
-                            and edata.record["Storage Engine"]["Evict%"] != 0
-                        ),
-                    ),
-                ),
-                Field(
-                    "Evict%",
-                    Projectors.Number("ns_stats", "evict-used-pct"),
-                    converter=Converters.pct,
-                ),
-                Field(
-                    "Avail%",
-                    Projectors.Number(
-                        "ns_stats",
-                        "data_avail_pct",
-                    ),
-                    converter=Converters.pct,
-                    formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
-                ),
-            ),
-        ),
-        # Replaced by "Storage Engine" in 7.0. This will
-        # only be displayed if the cluster is running 6.4 or earlier.
-        Subgroup(
-            "Device",
-            (
-                Field(
-                    "Total",
-                    Projectors.Number(
-                        "ns_stats", "device_total_bytes", "total-bytes-disk"
-                    ),
-                    hidden=True,
-                ),
-                Field(
-                    "Used",
-                    Projectors.Number(
-                        "ns_stats", "device_used_bytes", "used-bytes-disk"
-                    ),
-                    converter=Converters.byte,
-                    aggregator=Aggregators.sum(),
-                ),
-                Field(
-                    "Used%",
-                    Projectors.Div(
-                        Projectors.Number(
-                            "ns_stats", "device_used_bytes", "used-bytes-disk"
-                        ),
-                        Projectors.Number(
-                            "ns_stats", "device_total_bytes", "total-bytes-disk"
-                        ),
-                    ),
-                    converter=Converters.ratio_to_pct,
-                    aggregator=ComplexAggregator(
-                        create_usage_weighted_avg("Device"),
-                        converter=Converters.ratio_to_pct,
-                    ),
-                    formatters=(
-                        Formatters.yellow_alert(
-                            lambda edata: edata.value * 100
-                            >= edata.record["Device"]["HWM%"]
-                            and edata.record["Device"]["HWM%"] != 0
-                        ),
-                    ),
-                ),
-                Field(
-                    "HWM%",
-                    Projectors.Number("ns_stats", "high-water-disk-pct"),
-                    converter=Converters.pct,
-                ),
-                Field(
-                    "Avail%",
-                    Projectors.Number(
-                        "ns_stats", "device_available_pct", "available_pct"
-                    ),
-                    converter=Converters.pct,
-                    formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
-                ),
-            ),
-        ),
-        # Memory was unified in pindex, sindex, and storage-engine in 7.0. This will
-        # only be displayed if the cluster is running 6.4 or earlier.
-        Subgroup(
-            "Memory",
-            (
-                Field(
-                    "Total",
-                    Projectors.Number("ns_stats", "memory-size", "total-bytes-memory"),
-                    hidden=True,
-                ),
-                Field(
-                    "Used",
-                    Projectors.Number(
-                        "ns_stats", "memory_used_bytes", "used-bytes-memory"
-                    ),
-                    converter=Converters.byte,
-                    aggregator=Aggregators.sum(),
-                ),
-                Field(
-                    "Used%",
-                    Projectors.Div(
-                        Projectors.Number(
-                            "ns_stats", "memory_used_bytes", "used-bytes-memory"
-                        ),
-                        Projectors.Number(
-                            "ns_stats", "memory-size", "total-bytes-memory"
-                        ),
-                    ),
-                    converter=Converters.ratio_to_pct,
-                    aggregator=ComplexAggregator(
-                        create_usage_weighted_avg("Memory"),
-                        converter=Converters.ratio_to_pct,
-                    ),
-                    formatters=(
-                        Formatters.yellow_alert(
-                            lambda edata: edata.value * 100
-                            > edata.record["Memory"]["HWM%"]
-                            and edata.record["Memory"]["HWM%"] != 0
-                        ),
-                    ),
-                ),
-                Field(
-                    "HWM%",
-                    Projectors.Number("ns_stats", "high-water-memory-pct"),
-                    converter=Converters.pct,
-                ),
-                Field(
-                    "Stop%",
-                    Projectors.Number("ns_stats", "stop-writes-pct"),
-                    converter=Converters.pct,
-                ),
-            ),
-        ),
-        Subgroup(
             "Primary Index",
             (
                 Field("Type", Projectors.String("ns_stats", "index-type")),
@@ -568,6 +395,179 @@ info_namespace_usage_sheet = Sheet(
                         "sindex-type.evict-mounts-pct",  # Added in 7.0
                         "sindex-type.mounts-high-water-pct",
                     ),
+                ),
+            ),
+        ),
+        Subgroup(
+            "Storage Engine",
+            (
+                Field("Type", Projectors.String("ns_stats", "storage-engine")),
+                Field(
+                    "Total",
+                    Projectors.Number(
+                        "ns_stats",
+                        "data_total_bytes",
+                    ),
+                    hidden=True,
+                ),
+                Field(
+                    "Used",
+                    Projectors.Number(
+                        "ns_stats",
+                        "data_used_bytes",
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Div(
+                        Projectors.Number(
+                            "ns_stats",
+                            "data_used_bytes",
+                        ),
+                        Projectors.Number(
+                            "ns_stats",
+                            "data_total_bytes",
+                        ),
+                    ),
+                    converter=Converters.ratio_to_pct,
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Storage Engine"),
+                        converter=Converters.ratio_to_pct,
+                    ),
+                    formatters=(
+                        Formatters.yellow_alert(
+                            lambda edata: edata.value * 100
+                            >= edata.record["Storage Engine"]["Evict%"]
+                            and edata.record["Storage Engine"]["Evict%"] != 0
+                        ),
+                    ),
+                ),
+                Field(
+                    "Evict%",
+                    Projectors.Number("ns_stats", "evict-used-pct"),
+                    converter=Converters.pct,
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Number(
+                        "ns_stats",
+                        "data_avail_pct",
+                    ),
+                    converter=Converters.pct,
+                    formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
+                ),
+            ),
+        ),
+        # Memory was unified in pindex, sindex, and storage-engine in 7.0. This will
+        # only be displayed if the cluster is running 6.4 or earlier.
+        Subgroup(
+            "Memory",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("ns_stats", "memory-size", "total-bytes-memory"),
+                    hidden=True,
+                ),
+                Field(
+                    "Used",
+                    Projectors.Number(
+                        "ns_stats", "memory_used_bytes", "used-bytes-memory"
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Div(
+                        Projectors.Number(
+                            "ns_stats", "memory_used_bytes", "used-bytes-memory"
+                        ),
+                        Projectors.Number(
+                            "ns_stats", "memory-size", "total-bytes-memory"
+                        ),
+                    ),
+                    converter=Converters.ratio_to_pct,
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Memory"),
+                        converter=Converters.ratio_to_pct,
+                    ),
+                    formatters=(
+                        Formatters.yellow_alert(
+                            lambda edata: edata.value * 100
+                            > edata.record["Memory"]["HWM%"]
+                            and edata.record["Memory"]["HWM%"] != 0
+                        ),
+                    ),
+                ),
+                Field(
+                    "HWM%",
+                    Projectors.Number("ns_stats", "high-water-memory-pct"),
+                    converter=Converters.pct,
+                ),
+                Field(
+                    "Stop%",
+                    Projectors.Number("ns_stats", "stop-writes-pct"),
+                    converter=Converters.pct,
+                ),
+            ),
+        ),
+        # Replaced by "Storage Engine" in 7.0. This will
+        # only be displayed if the cluster is running 6.4 or earlier.
+        Subgroup(
+            "Device",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number(
+                        "ns_stats", "device_total_bytes", "total-bytes-disk"
+                    ),
+                    hidden=True,
+                ),
+                Field(
+                    "Used",
+                    Projectors.Number(
+                        "ns_stats", "device_used_bytes", "used-bytes-disk"
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Div(
+                        Projectors.Number(
+                            "ns_stats", "device_used_bytes", "used-bytes-disk"
+                        ),
+                        Projectors.Number(
+                            "ns_stats", "device_total_bytes", "total-bytes-disk"
+                        ),
+                    ),
+                    converter=Converters.ratio_to_pct,
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Device"),
+                        converter=Converters.ratio_to_pct,
+                    ),
+                    formatters=(
+                        Formatters.yellow_alert(
+                            lambda edata: edata.value * 100
+                            >= edata.record["Device"]["HWM%"]
+                            and edata.record["Device"]["HWM%"] != 0
+                        ),
+                    ),
+                ),
+                Field(
+                    "HWM%",
+                    Projectors.Number("ns_stats", "high-water-disk-pct"),
+                    converter=Converters.pct,
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Number(
+                        "ns_stats", "device_available_pct", "available_pct"
+                    ),
+                    converter=Converters.pct,
+                    formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
                 ),
             ),
         ),

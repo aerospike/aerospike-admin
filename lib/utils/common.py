@@ -1259,7 +1259,7 @@ def create_summary(
         ns_total_devices = sum(device_counts.values())
         ns_total_nodes = len(ns_stats.keys())
 
-        if ns_total_devices:
+        if ns_total_devices and ns_total_nodes > 0:
             summary_dict["NAMESPACES"][ns]["devices_total"] = ns_total_devices
             summary_dict["NAMESPACES"][ns]["devices_per_node"] = round(
                 ns_total_devices / ns_total_nodes
