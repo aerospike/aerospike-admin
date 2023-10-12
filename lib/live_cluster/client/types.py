@@ -113,6 +113,8 @@ class ASPrivilege(IntEnum):
 
 @unique
 class ASResponse(IntEnum):
+    _return_code_value: int | None
+    ERROR_RESPONSE_CODE = -1
     OK = 0
     UNKNOWN_SERVER_ERROR = 1
     QUERY_END = 50  # Signal end of a query response. Is OK
@@ -138,11 +140,28 @@ class ASResponse(IntEnum):
     ROLE_OR_PRIVILEGE_VIOLATION = 81
     NOT_WHITELISTED = 82
     RATE_QUOTA_EXCEEDED = 83
+    ERROR_IN_LDAP_SETUP = 91  # 	Error in LDAP setup.	EE 4.1.0.1
+    ERROR_IN_LDAP_TLS_SETUP = 92  # 	Error in LDAP TLS setup.	EE 4.1.0.1
+    UNABLE_TO_AUTHENTICATE_LDAP_USER = 93  # 	Error authenticating LDAP user.	EE 4.1.0.1
+    ERROR_QUERYING_LDAP_SERVER = 94  # 	Error querying LDAP server.
+
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, int):
+            asr = cls.ERROR_RESPONSE_CODE
+            asr._return_code_value = value
+            return asr
+
+        return super()._missing_(value)
 
     def __str__(self):
         lower = self.name.lower().split("_")
         lower = " ".join(lower)
         lower = lower[0].upper() + lower[1:]
+
+        if self.value == ASResponse.ERROR_RESPONSE_CODE:
+            lower += " ({})".format(self._return_code_value)
+
         return lower
 
 

@@ -15,10 +15,13 @@ from lib.live_cluster.client.config_handler import BoolConfigType, IntConfigType
 from mock import MagicMock
 import unittest
 
+from parameterized import parameterized
+
 from test.unit import util
 from lib.live_cluster.client.node import (
     ASInfoConfigError,
     ASInfoResponseError,
+    ASResponse,
 )
 
 
@@ -233,3 +236,19 @@ class ASInfoConfigErrorTest(unittest.TestCase):
         )
 
         self.assertEqual(str(actual), expected)
+
+
+class ASResponseTest(unittest.TestCase):
+    @parameterized.expand(
+        [
+            (0, "Ok"),
+            (94, "Error querying ldap server"),
+            (99999, "Error response code (99999)"),
+            ("Error response code (99999)"),
+        ]
+    )
+    def test_success(self, code, expected):
+        self.assertEqual(str(ASResponse(code)), expected)
+
+    def test_fail(self):
+        self.assertRaises(ValueError, ASResponse, "wrong")
