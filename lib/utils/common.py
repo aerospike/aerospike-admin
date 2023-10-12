@@ -1845,45 +1845,43 @@ def _format_set_stop_writes_metrics(
 ):
     for node in set_stats:
         for (ns, set_), stats in set_stats[node].items():
-            metric1 = "memory_data_bytes"
-            metric2 = "device_data_bytes"
             config = "stop-writes-size"
-            usage = None
             metric = None
-            usage1: str | None = stats.get(metric1, None)
-            usage2: str | None = stats.get(metric2, None)
-            threshold: str | None = stats.get(config, None)
+            threshold: int | None = util.get_value_from_dict(stats, config, None, int)
 
-            if usage1 is None or usage1 == "0":
-                metric = metric2
-                usage = usage2
-            else:
-                metric = metric1
-                usage = usage1
+            metric = "data_used_bytes"
+            usage = util.get_value_from_dict(stats, metric, None, int)
+
+            if usage is None:
+                """
+                Memory has to be checked before device_data_bytes per the docs.
+                The limit is checked against one or the other not both.
+                """
+                metric = "memory_data_bytes"
+                usage = util.get_value_from_dict(stats, metric, None, int)
+
+                if usage is None or usage == 0:
+                    metric = "device_data_bytes"
+                    usage = util.get_value_from_dict(stats, metric, None, int)
 
             if usage is not None and threshold is not None:
-                use = int(usage)
-                thresh = int(threshold)
-                sw = _is_stop_writes_cause(use, thresh)
+                sw = _is_stop_writes_cause(usage, threshold)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    use,
+                    usage,
                     sw,
-                    thresh,
+                    threshold,
                     config=config,
                     namespace=ns,
                     set_=set_,
                 )
 
             metric = "objects"
-            config = "stop-writes-count"
-            usage: str | None = stats.get(metric, None)
-            threshold: str | None = stats.get(config, None)
-
-            if threshold is None:
-                config = "set-stop-writes-count"
-                threshold = stats.get(config, None)
+            usage = util.get_value_from_dict(stats, metric, None, int)
+            config, threshold = _get_first_value_from_dict_with_key(
+                stats, ("stop-writes-count", "set-stop-writes-count"), None, int
+            )
 
             if usage is not None and threshold is not None:
                 use = int(usage)

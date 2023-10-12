@@ -710,14 +710,24 @@ info_set_sheet = Sheet(
         hidden_node_id_field,
         Field("Set Delete", Projectors.Boolean("set_stats", "deleting", "set-delete")),
         Field(
+            "Storage Engine Used",
+            Projectors.Number("set_stats", "data_used_bytes"),  # New in server 7.0
+            converter=Converters.byte,
+            aggregator=Aggregators.sum(),
+        ),
+        Field(
             "Memory Used",
-            Projectors.Number("set_stats", "memory_data_bytes", "n-bytes-memory"),
+            Projectors.Number(
+                "set_stats", "memory_data_bytes", "n-bytes-memory"
+            ),  # Unified into data_used_bytes in 7.0
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
         ),
         Field(
             "Disk Used",
-            Projectors.Number("set_stats", "device_data_bytes", "n-bytes-device"),
+            Projectors.Number(
+                "set_stats", "device_data_bytes", "n-bytes-device"
+            ),  # Unified into data_used_bytes in 7.0
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
         ),
@@ -736,12 +746,20 @@ info_set_sheet = Sheet(
                 Field(
                     "Used%",
                     Projectors.Div(
-                        Projectors.Sum(
-                            Projectors.Number(
-                                "set_stats", "memory_data_bytes", "n-bytes-memory"
-                            ),
-                            Projectors.Number(
-                                "set_stats", "device_data_bytes", "n-bytes-device"
+                        Projectors.Any(
+                            FieldType.number,
+                            Projectors.Number("set_stats", "data_used_bytes"),
+                            Projectors.Sum(
+                                Projectors.Number(
+                                    "set_stats",
+                                    "memory_data_bytes",
+                                    "n-bytes-memory",  # Unified into data_used_bytes in 7.0
+                                ),
+                                Projectors.Number(
+                                    "set_stats",
+                                    "device_data_bytes",
+                                    "n-bytes-device",  # Unified into data_used_bytes in 7.0
+                                ),
                             ),
                         ),
                         Projectors.Number("set_stats", "stop-writes-size"),

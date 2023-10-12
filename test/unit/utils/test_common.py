@@ -1283,7 +1283,7 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "memory_data_bytes": "10",
-                            "device_data_bytes": "0",
+                            "device_data_bytes": "100000",
                         }
                     }
                 },
@@ -1308,6 +1308,7 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     "1.1.1.1": {
                         ("ns1", "set1"): {
                             "memory_data_bytes": "100",
+                            "device_data_bytes": "100000",
                         }
                     }
                 },
@@ -1365,6 +1366,55 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     "1.1.1.1": {
                         ("ns1", "set1", "device_data_bytes"): {
                             "metric": "device_data_bytes",
+                            "config": "stop-writes-size",
+                            "stop_writes": True,
+                            "metric_usage": 100,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is not triggered by set.data_used_bytes
+            create_tc(
+                set_stats={
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "data_used_bytes": "10",
+                            "device_data_bytes": "0",
+                        }
+                    }
+                },
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", "set1", "data_used_bytes"): {
+                            "metric": "data_used_bytes",
+                            "config": "stop-writes-size",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 100,
+                            "namespace": "ns1",
+                            "set": "set1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by set.data_used_bytes
+            create_tc(
+                set_stats={
+                    "1.1.1.1": {
+                        ("ns1", "set1"): {
+                            "data_used_bytes": "100",
+                        }
+                    }
+                },
+                set_config={"1.1.1.1": {("ns1", "set1"): {"stop-writes-size": "100"}}},
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", "set1", "data_used_bytes"): {
+                            "metric": "data_used_bytes",
                             "config": "stop-writes-size",
                             "stop_writes": True,
                             "metric_usage": 100,
