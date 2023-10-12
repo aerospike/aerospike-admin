@@ -695,7 +695,7 @@ class GetStatisticsController:
         bin_stats = await self.cluster.info_bin_statistics(nodes=nodes)
         new_bin_stats = {}
 
-        for node_id, bin_stat in bin_stats.items():
+        for node, bin_stat in bin_stats.items():
             if not bin_stat or isinstance(bin_stat, Exception):
                 continue
 
@@ -708,9 +708,9 @@ class GetStatisticsController:
                     new_bin_stats[namespace] = {}
                 ns_stats = new_bin_stats[namespace]
 
-                if node_id not in ns_stats:
-                    ns_stats[node_id] = {}
-                node_stats = ns_stats[node_id]
+                if node not in ns_stats:
+                    ns_stats[node] = {}
+                node_stats = ns_stats[node]
 
                 node_stats.update(stats)
 
@@ -838,7 +838,7 @@ class GetClusterMetadataController:
     def __init__(self, cluster):
         self.cluster = cluster
 
-    async def get_builds(self, nodes="all"):
+    async def get_builds(self, nodes="all") -> NodeDict[str]:
         builds = await self.cluster.info_build(nodes=nodes)
         return util.filter_exceptions(builds)
 

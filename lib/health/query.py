@@ -198,6 +198,7 @@ ASSERT(r, True, "Low namespace memory available pct (stop-write enabled).", "OPE
 
 /* NB : ADD CHECKS IF NODES ARE NOT HOMOGENOUS MEM / NUM CPU etc */
 
+SET CONSTRAINT VERSION < 7.0
 
 s = select "available_bin_names", "available-bin-names" from NAMESPACE save;
 r = group by NAMESPACE do s > 3200;

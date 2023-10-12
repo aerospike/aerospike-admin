@@ -18,6 +18,7 @@ from mock import MagicMock, patch, AsyncMock, create_autospec
 from mock.mock import call
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.get_controller import (
+    GetClusterMetadataController,
     GetConfigController,
     GetJobsController,
     GetStatisticsController,
@@ -288,9 +289,13 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowStatisticsController()
         self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
-        self.getter_mock = self.controller.getter = create_autospec(
+        self.getter_mock = self.controller.stat_getter = create_autospec(
             GetStatisticsController
         )
+        self.meta_mock = self.controller.meta_getter = create_autospec(
+            GetClusterMetadataController
+        )
+        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
         self.view_mock = self.controller.view = create_autospec(CliView)
         self.controller.mods = (
             {}
@@ -462,6 +467,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
             "ns3": "stats3",
         }
         self.getter_mock.get_bins.return_value = stats
+        self.meta_mock.get_builds.return_value = {"1.2.3.4": "6.4.0.0"}
 
         await self.controller.execute(line)
 
@@ -480,6 +486,28 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
                 flip_output=True,
                 **mods,
             )
+
+    async def test_do_bins_logs_error(self):
+        line = [
+            "bins",
+        ]
+        mods = {"like": [], "with": [], "for": [], "line": []}
+        stats = {
+            "ns1": "stats1",
+            "ns2": "stats2",
+            "ns3": "stats3",
+        }
+        self.getter_mock.get_bins.return_value = stats
+        self.meta_mock.get_builds.return_value = {
+            "1.1.1.1": "6.4.0.0",
+            "2.2.2.2": "7.0.0.0",
+        }
+
+        await self.controller.execute(line)
+
+        self.logger_mock.error.assert_called_once_with(
+            "Server version 7.0 removed namespace bin-name limits and statistics."
+        )
 
 
 class ShowStatisticsXDRControllerTest(asynctest.TestCase):

@@ -153,6 +153,7 @@ class JobType:
 
 # server versions with critical changes
 # TODO: Change to functions on the node
+SERVER_INFO_BINS_REMOVAL_VERSION = "7.0"
 SERVER_SINDEX_ON_CDT_FIRST_VERSION = "6.1"
 SERVER_QUERIES_ABORT_ALL_FIRST_VERSION = "6.0"
 SERVER_39_BYTE_OVERHEAD_FIRST_VERSION = "6.0"
@@ -164,7 +165,7 @@ SERVER_NEW_LATENCIES_CMD_FIRST_VERSION = "5.1"
 SERVER_NEW_XDR5_VERSION = "5.0"
 SERVER_NEW_HISTOGRAM_FIRST_VERSION = "4.2"
 
-# (inclusive, exclusive)
+# [inclusive, exclusive)
 SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS = [
     ("4.3.1.11", "4.3.2.0"),
     ("4.4.0.11", "4.4.1.0"),
