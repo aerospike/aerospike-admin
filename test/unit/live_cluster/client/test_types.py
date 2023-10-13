@@ -244,7 +244,6 @@ class ASResponseTest(unittest.TestCase):
             (0, "Ok"),
             (94, "Error querying ldap server"),
             (99999, "Error response code (99999)"),
-            ("Error response code (99999)"),
         ]
     )
     def test_success(self, code, expected):
