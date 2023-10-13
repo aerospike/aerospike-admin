@@ -437,16 +437,25 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
-                        Formatters.yellow_alert(
+                        Formatters.red_alert(
                             lambda edata: edata.value * 100
                             >= edata.record["Storage Engine"]["Evict%"]
                             and edata.record["Storage Engine"]["Evict%"] != 0
+                            or edata.value * 100
+                            >= edata.record["Storage Engine"]["Used Stop%"]
                         ),
                     ),
                 ),
                 Field(
                     "Evict%",
-                    Projectors.Number("ns_stats", "evict-used-pct"),
+                    Projectors.Number("ns_stats", "storage-engine.evict-used-pct"),
+                    converter=Converters.pct,
+                ),
+                Field(
+                    "Used Stop%",
+                    Projectors.Number(
+                        "ns_stats", "storage-engine.stop-writes-used-pct"
+                    ),
                     converter=Converters.pct,
                 ),
                 Field(
@@ -456,7 +465,19 @@ info_namespace_usage_sheet = Sheet(
                         "data_avail_pct",
                     ),
                     converter=Converters.pct,
-                    formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
+                    formatters=(
+                        Formatters.red_alert(
+                            lambda edata: edata.value
+                            <= edata.record["Storage Engine"]["Avail Stop%"]
+                        ),
+                    ),
+                ),
+                Field(
+                    "Avail Stop%",
+                    Projectors.Number(
+                        "ns_stats", "storage-engine.stop-writes-avail-pct"
+                    ),
+                    converter=Converters.pct,
                 ),
             ),
         ),
