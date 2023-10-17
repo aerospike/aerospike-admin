@@ -1503,8 +1503,7 @@ ASSERT(r, True, "Non-zero sindex basic short query errors", "OPERATIONS", INFO,
 // Secondary Index Aggregation Query Statistics, fromally Query Agg statistics
 s = select "si_query_aggr_complete" as "val" from NAMESPACE.STATISTICS save;
 e = select "si_query_aggr_error" as "val" from NAMESPACE.STATISTICS save;
-total_transactions = do s + e; 
-total_transaction = do total_transactions + a save as "total sindex query aggregations";
+total_transactions = do s + e save as "total sindex query aggregations";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
@@ -1620,7 +1619,7 @@ ASSERT(r, True, "Non-zero scan aggregation errors", "OPERATIONS", INFO,
     
 // Scan Basic statistics
 s = select "scan_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
-e = select "scan_basic_error", as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_basic_error" as "cnt" from NAMESPACE.STATISTICS;
 total_transactions = do s + e save as "total basic scans";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
