@@ -16,6 +16,7 @@ from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 from lib.utils import common, util, version, constants
 from lib.utils.constants import ModifierUsage, Modifiers
 from lib.live_cluster.get_controller import (
+    GetClusterMetadataController,
     GetConfigController,
     GetDistributionController,
     GetJobsController,
@@ -892,7 +893,8 @@ flip_stats_modifier_help.msg = (
 class ShowStatisticsController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set([Modifiers.WITH, Modifiers.LIKE, Modifiers.FOR])
-        self.getter = GetStatisticsController(self.cluster)
+        self.stat_getter = GetStatisticsController(self.cluster)
+        self.meta_getter = GetClusterMetadataController(self.cluster)
         self.controller_map = {"xdr": ShowStatisticsXDRController}
 
     @CommandHelp(
@@ -945,7 +947,7 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        service_stats = await self.getter.get_service(nodes=self.nodes)
+        service_stats = await self.stat_getter.get_service(nodes=self.nodes)
 
         return util.callable(
             self.view.show_stats,
@@ -998,7 +1000,7 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        ns_stats = await self.getter.get_namespace(
+        ns_stats = await self.stat_getter.get_namespace(
             flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
@@ -1059,7 +1061,7 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        sindex_stats = await self.getter.get_sindex(
+        sindex_stats = await self.stat_getter.get_sindex(
             flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
@@ -1120,7 +1122,7 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        set_stats = await self.getter.get_sets(
+        set_stats = await self.stat_getter.get_sets(
             flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
         )
 
@@ -1178,9 +1180,23 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        new_bin_stats = await self.getter.get_bins(
-            flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
+        new_bin_stats, builds = await asyncio.gather(
+            self.stat_getter.get_bins(
+                flip=True, nodes=self.nodes, for_mods=self.mods[Modifiers.FOR]
+            ),
+            self.meta_getter.get_builds(nodes=self.nodes),
         )
+
+        if any(
+            [
+                version.LooseVersion(build)
+                >= version.LooseVersion(constants.SERVER_INFO_BINS_REMOVAL_VERSION)
+                for build in builds.values()
+            ]
+        ):
+            self.logger.error(
+                f"Server version {constants.SERVER_INFO_BINS_REMOVAL_VERSION} removed namespace bin-name limits and statistics."
+            )
 
         return [
             util.callable(
@@ -1237,7 +1253,7 @@ class ShowStatisticsController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        dc_stats = await self.getter.get_xdr_dcs(nodes=self.nodes)
+        dc_stats = await self.stat_getter.get_xdr_dcs(nodes=self.nodes)
 
         futures = [
             util.callable(
