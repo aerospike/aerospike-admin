@@ -56,14 +56,14 @@ default: one-dir
 .PHONY: one-file
 one-file: init
 	$(call make_build)
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo.spec --distpath $(BUILD_ROOT)bin)"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller pyinstaller-build.spec --distpath $(BUILD_ROOT)bin -- --one-file)"
 	@echo Check $(BUILD_ROOT)bin for asadm and asinfo executables
 
 # For macOS but can be used for any OS.
 .PHONY: one-dir
 one-dir: init
 	$(call make_build)
-	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller asadm-asinfo-one-dir.spec --distpath $(BUILD_ROOT)bin)"
+	pipenv run bash -c "(cd $(BUILD_ROOT)tmp && pyinstaller pyinstaller-build.spec --distpath $(BUILD_ROOT)bin)"
 	mv $(BUILD_ROOT)bin/asinfo/asinfo $(BUILD_ROOT)bin/asadm/asinfo 
 	rm -r $(BUILD_ROOT)bin/asinfo
 	@echo Check $(BUILD_ROOT)bin for bundle
