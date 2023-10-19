@@ -310,7 +310,7 @@ ASSERT(r, False, "High system client connections.", "OPERATIONS", WARNING,
 SET CONSTRAINT VERSION < 7.0.0;
 free = select "device_free_pct" as "stats", "pmem_free_pct" as "stats" from NAMESPACE.STATISTICS save;
 used = do 100 - free save as "storage-engine used pct";
-stop_used_pct = select "storage-engine.stop-writes-used-pct" as "stats", "storage-engine.max-used-pct" as "stats" from NAMESPACE.CONFIG save;
+stop_used_pct = select "storage-engine.max-used-pct" as "stats" from NAMESPACE.CONFIG save;
 critical = do used <= stop_used_pct;
 ASSERT(critical, True, "High namespace storage-engine used pct (stop-write enabled).", "OPERATIONS", CRITICAL,
 				"Listed namespace[s] have higher than normal used storage-engine space. Probable cause - namespace size misconfiguration.",
@@ -2025,7 +2025,7 @@ total_pts = do pts_per_node * 4096 save as "Minimum space required";
 result = do total_pts > size_limit;
 
 ASSERT(result, False, "ALL FLASH - Too many sprigs per partition for current available index mounted space. Some records are likely failing to be created.", "OPERATIONS", CRITICAL,
-				"Minimum space required for sprig overhead at current cluster size exceeds mounts-budget/mounts-size-limit.
+				"Minimum space required for sprig overhead at current cluster size exceeds index-mount size.
 				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
 				"Check for too many sprigs for current cluster size.",
 				dont_skip);
