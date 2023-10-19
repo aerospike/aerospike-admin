@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import unittest
-from mock import MagicMock, call, create_autospec, patch
+from mock import MagicMock, call, patch
+from lib.utils.common import SummaryClusterDict, SummaryNamespacesDict
 
-from lib.view import templates
+from lib.view import templates, terminal
 from lib.view.view import CliView
 from lib.view.sheet.const import SheetStyle
 from lib.live_cluster.client.node import ASInfoResponseError
@@ -174,7 +176,7 @@ class CliViewTest(unittest.TestCase):
             self.cluster_mock,
             flip=True,
             timestamp="test-stamp",
-            **{"for": "ba", "with": ["foo"]}
+            **{"for": "ba", "with": ["foo"]},
         )
 
         self.cluster_mock.get_node_names.assert_called_with(["foo"])
@@ -205,7 +207,7 @@ class CliViewTest(unittest.TestCase):
             self.cluster_mock,
             failed_practices,
             timestamp=timestamp,
-            **{"with": ["bar"]}
+            **{"with": ["bar"]},
         )
 
         self.cluster_mock.get_node_names.assert_called_with(["bar"])
@@ -245,7 +247,7 @@ class CliViewTest(unittest.TestCase):
             self.cluster_mock,
             jobs_data,
             timestamp=timestamp,
-            **{"trid": ["1", "3", "5"], "like": ["foo"], "with": ["bar"]}
+            **{"trid": ["1", "3", "5"], "like": ["foo"], "with": ["bar"]},
         )
 
         self.cluster_mock.get_node_names.assert_called_with(["bar"])
@@ -679,3 +681,298 @@ class CliViewTest(unittest.TestCase):
             sources,
             common=common,
         )
+
+    def test_summary_cluster_list_view(self):
+        cluster_data: SummaryClusterDict = {
+            "active_features": ["Compression"],
+            "ns_count": 1,
+            "migrations_in_progress": True,
+            "cluster_name": ["test-cluster"],
+            "server_version": ["7.0.0.0"],
+            "os_version": ["Linux 4.15.0-106-generic"],
+            "cluster_size": [1],
+            "device_count": 2,
+            "device_count_per_node": 2,
+            "device_count_same_across_nodes": True,
+            "pmem_index": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "flash_index": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "shmem_index": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "memory_data_and_indexes": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "memory": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "device": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "pmem": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "license_data": {
+                "latest_time": datetime.datetime.fromtimestamp(
+                    1696451742, tz=datetime.timezone.utc
+                ),
+                "latest": 2,
+                "min": 3,
+                "max": 4,
+                "avg": 5,
+            },
+            "active_ns": 2,
+            "ns_count": 2,
+            "active_features": ["Compression", "Depression"],
+        }
+        expected = f"""Cluster  ({terminal.fg_red()}Migrations in Progress{terminal.fg_clear()})
+=================================
+
+   1.   Cluster Name             :  test-cluster
+   2.   Server Version           :  7.0.0.0
+   3.   OS Version               :  Linux 4.15.0-106-generic
+   4.   Cluster Size             :  1
+   5.   Devices                  :  Total 2, per-node 2
+   6.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   7.   Flash Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   8.   Shmem Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   9.   Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   10.  Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   11.  Device                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   12.  Pmem                     :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   13.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   14.  Active Namespaces        :  2 of 2
+   15.  Active Features          :  Compression, Depression
+
+"""
+
+        actual = CliView._summary_cluster_list_view(cluster_data)
+        actual_str = []
+
+        for line in actual:
+            lines = str(line).split("\n")
+            actual_str.extend(lines)
+
+        self.assertListEqual(actual_str, expected.split("\n"))
+
+    def test_summary_namespace_list_view(self):
+        ns_data: SummaryNamespacesDict = {
+            "test": {
+                "devices_total": 2,
+                "devices_per_node": 2,
+                "device_count_same_across_nodes": True,
+                "repl_factor": [1],
+                "master_objects": 2,
+                "migrations_in_progress": True,
+                "rack_aware": True,
+                "pmem_index": {
+                    "total": 1,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "flash_index": {
+                    "total": 2,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "shmem_index": {
+                    "total": 3,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "memory_data_and_indexes": {
+                    "total": 4,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "memory": {
+                    "total": 5,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "device": {
+                    "total": 6,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "pmem": {
+                    "total": 7,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "license_data": {
+                    "latest_time": datetime.datetime.fromtimestamp(
+                        1696451742, tz=datetime.timezone.utc
+                    ),
+                    "latest": 2,
+                    "min": 3,
+                    "max": 4,
+                    "avg": 5,
+                },
+                "cache_read_pct": 1,
+                "rack_aware": True,
+                "master_objects": 2,
+                "compression_ratio": 0.5,
+            },
+            "bar": {
+                "devices_total": 2,
+                "devices_per_node": 2,
+                "device_count_same_across_nodes": False,
+                "repl_factor": [1],
+                "master_objects": 2,
+                "migrations_in_progress": False,
+                "pmem_index": {
+                    "total": 1,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "flash_index": {
+                    "total": 2,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "shmem_index": {
+                    "total": 3,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "memory_data_and_indexes": {
+                    "total": 4,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "memory": {
+                    "total": 5,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "device": {
+                    "total": 6,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "pmem": {
+                    "total": 7,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "license_data": {
+                    "latest_time": datetime.datetime.fromtimestamp(
+                        1696451742, tz=datetime.timezone.utc
+                    ),
+                    "latest": 2,
+                    "min": 3,
+                    "max": 4,
+                    "avg": 5,
+                },
+                "cache_read_pct": 1,
+                "rack_aware": False,
+                "master_objects": 2,
+                "compression_ratio": 0.5,
+            },
+        }
+        expected = f"""Namespaces
+==========
+
+   {terminal.fg_red()}test{terminal.fg_clear()}
+   ====
+   1.   Devices                  :  Total 2, per-node 2
+   2.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   10.  Replication Factor       :  1
+   11.  Post-Write-Queue Hit-Rate:  1.000  
+   12.  Rack-aware               :  True
+   13.  Master Objects           :  2.000  
+   14.  Compression-ratio        :  0.5
+
+   {terminal.fg_red()}bar{terminal.fg_clear()}
+   ===
+   1.   Devices                  :  Total 2, per-node 2 (number differs across nodes)
+   2.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   10.  Replication Factor       :  1
+   11.  Post-Write-Queue Hit-Rate:  1.000  
+   12.  Rack-aware               :  False
+   13.  Master Objects           :  2.000  
+   14.  Compression-ratio        :  0.5
+"""
+
+        actual = CliView._summary_namespace_list_view(ns_data)
+        actual_str = []
+
+        for line in actual:
+            lines = str(line).split("\n")
+            actual_str.extend(lines)
+
+        self.assertListEqual(actual_str, expected.split("\n"))

@@ -113,16 +113,31 @@ ASSERT(r1, False, "Skewed cluster disk utilization.", "ANOMALY", WARNING,
 				 "Disk utilization Anomaly.");
 
 
-avail=select like(".*available_pct") as "free_disk" from NAMESPACE.STATISTICS save;
-disk_free = select "device_free_pct" as "free_disk", "free-pct-disk" as "free_disk" from NAMESPACE.STATISTICS save;
-r = do disk_free - avail save as "fragmented blocks pct";
+SET CONSTRAINT VERSION < 7.0;
+avail = select "device_available_pct" as "free_disk", "pmem_available_pct" as "free_disk", "available_pct" as "free_disk"  from NAMESPACE.STATISTICS save;
+data_free = select "device_free_pct" as "free_disk", "pmem_free_pct" as "free_disk", "free-pct-disk" as "free_disk" from NAMESPACE.STATISTICS save;
+r = do data_free - avail save as "fragmented blocks pct";
 r = do r <= 30;
 r = group by CLUSTER, NAMESPACE r;
 ASSERT(r, True, "High (> 30%) fragmented blocks.", "PERFORMANCE", WARNING,
 				"Listed namespace[s] have higher than normal (>30%) fragmented blocks at the time of sampling. Please run 'show config namespace like defrag' to check defrag configurations. Possible cause can be Aerospike disk defragmentation not keeping up with write rate and/or large record sizes causing fragmentation. Refer to knowledge base article discuss.aerospike.com/t/defragmentation for more details.",
 				"Fragmented Blocks check.");
 
+/*
+Same as above but beginning in 7.0 we must flip data_used to get data_free
+*/
+SET CONSTRAINT VERSION >= 7.0;
+data_avail = select "data_avail_pct" as "free_disk" from NAMESPACE.STATISTICS save;
+data_used = select "data_used_pct" as "free_disk" from NAMESPACE.STATISTICS save;
+data_free = do 100 - data_used;
+r = do data_free - data_avail save as "fragmented blocks pct";
+r = do r <= 30;
+r = group by CLUSTER, NAMESPACE r;
+ASSERT(r, True, "High (> 30%) fragmented blocks.", "PERFORMANCE", WARNING,
+				"Listed namespace[s] have higher than normal (>30%) fragmented blocks at the time of sampling. Please run 'show config namespace like defrag' to check defrag configurations. Possible cause can be Aerospike disk defragmentation not keeping up with write rate and/or large record sizes causing fragmentation. Refer to knowledge base article discuss.aerospike.com/t/defragmentation for more details.",
+				"Fragmented Blocks check.");
 
+SET CONSTRAINT VERSION ALL;
 s = select "%iowait" from SYSTEM.IOSTAT save;
 r = do s > 10;
 ASSERT(r, False, "High (> 10%) CPU IO wait time.", "PERFORMANCE", WARNING,
@@ -188,6 +203,8 @@ ASSERT(r, False, "Low system memory percentage.", "LIMITS", CRITICAL,
 				"Listed node[s] have lower than normal (< 20%) system free memory percentage. Please run 'show statistics service like system_free_mem_pct' to get actual values. Possible misconfiguration.",
 				"System memory percentage check.");
 
+SET CONSTRAINT VERSION < 7.0;
+
 f = select "memory_free_pct" as "stats", "free-pct-memory" as "stats" from NAMESPACE.STATISTICS save;
 s = select "stop-writes-pct" as "stats" from NAMESPACE.CONFIG save;
 u = do 100 - f save as "memory_used_pct";
@@ -215,8 +232,8 @@ e = do r <= 274877906944;
 ASSERT(e, True, "Namespace configured to use more than 256G.", "LIMITS", WARNING,
 				"On listed nodes namespace as mentioned have configured more than 256G of memory. Namespace with data not in memory can have max upto 4 billion keys and can utilize only up to 256G. Please run 'show statistics namespace like memory-size' to check configured memory.",
 				"Namespace per node memory limit check.");
-SET CONSTRAINT VERSION ALL;
 
+SET CONSTRAINT VERSION < 7.0;
 /*
 Following query selects assigned memory-size from namespace config and total ram size from system statistics.
 group by for namespace stats sums all memory size and gives node level memory size.
@@ -237,7 +254,7 @@ ASSERT(r, True, "Aerospike runtime memory configured < 5G.", "LIMITS", INFO,
 				"Listed node[s] have less than 5G free memory available for Aerospike runtime. Please run 'show statistics namespace like memory-size' to check configured memory and check output of 'free' for system memory. Possible misconfiguration.",
 				"Runtime memory configuration check.");
 
-
+SET CONSTRAINT VERSION ALL;
 /*
 Current configurations and config file values difference check
 */
@@ -290,19 +307,52 @@ ASSERT(r, False, "High system client connections.", "OPERATIONS", WARNING,
 				"Listed node[s] show higher than normal client-connections (> 80% of the max configured proto-fd-max). Please run 'show config like proto-fd-max' and 'show statistics like client_connections' for actual values. Possible can be network issue / improper client behavior / FD leak.",
 				"Client connections check.");
 
-s = select like(".*available_pct") as "stats" from NAMESPACE.STATISTICS save;
-m = select like(".*min-avail-pct") as "stats" from NAMESPACE.CONFIG save;
-critical_check = do s >= m;
-ASSERT(critical_check, True, "Low namespace disk available pct (stop-write enabled).", "OPERATIONS", CRITICAL,
-				"Listed namespace[s] have lower than normal (< min-avail-pct) available disk space. Probable cause - namespace size misconfiguration.",
-				"Critical Namespace disk available pct check.");
+SET CONSTRAINT VERSION < 7.0.0;
+free = select "device_free_pct" as "stats", "pmem_free_pct" as "stats" from NAMESPACE.STATISTICS save;
+used = do 100 - free save as "storage-engine used pct";
+stop_used_pct = select "storage-engine.max-used-pct" as "stats" from NAMESPACE.CONFIG save;
+critical = do used <= stop_used_pct;
+ASSERT(critical, True, "High namespace storage-engine used pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have higher than normal used storage-engine space. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace storage-engine used pct check.");
 
-critical_check = do s < m;
-r = do s >= 20;
-r = do r || critical_check;
-ASSERT(r, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
+avail = select "device_available_pct" as "stats", "pmem_available_pct" as "stats" from NAMESPACE.STATISTICS save;
+stop_min_avail = select "storage-engine.min-avail-pct" as "stats" from NAMESPACE.CONFIG save;
+critical = do avail >= stop_min_avail;
+ASSERT(critical, True, "Low namespace storage-engine available pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have lower than normal available storage-engine space. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace storage-engine available pct check.");
+				
+skip = do critical == False;
+warn = do avail >= 20;
+warn = do warn || skip;
+ASSERT(warn, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
+
+SET CONSTRAINT VERSION >= 7.0.0;
+used = select "data_used_pct" as "stats" from NAMESPACE.STATISTICS save;
+stop_used_pct = select "storage-engine.stop-writes-used-pct" as "stats" from NAMESPACE.CONFIG save;
+critical = do used <= stop_used_pct;
+ASSERT(critical, True, "High namespace storage-engine used pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have higher than normal used storage-engine space. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace storage-engine used pct check.");
+
+avail = select "data_avail_pct" as "stats" from NAMESPACE.STATISTICS save;
+stop_avail_pct = select "storage-engine.stop-writes-avail-pct" as "stats" from NAMESPACE.CONFIG save;
+critical = do avail >= stop_avail_pct;
+ASSERT(critical, True, "Low namespace storage-engine available pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have lower than normal available storage-engine space. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace storage-engine available pct check.");
+				
+skip = do critical == False;
+warn = do avail >= 20;
+warn = do warn || skip;
+ASSERT(warn, True, "Low namespace storage-engine available pct.", "OPERATIONS", WARNING,
+				"Listed namespace[s] have lower than normal (< 20 %) available storage-engine space. Probable cause - namespace size misconfiguration.",
+				"Namespace storage-engine available pct check.");
+
+SET CONSTRAINT VERSION ALL;
 
 s = select * from SERVICE.CONFIG ignore "heartbeat.mtu", "node-id-interface", "node-id", "pidfile", like(".*address"), like(".*port")  save;
 r = group by CLUSTER, KEY do NO_MATCH(s, ==, MAJORITY) save;
@@ -357,19 +407,30 @@ r = do APPLY_TO_ANY(d, IN, f);
 ASSERT(r, False, "Device name misconfigured.", "OPERATIONS", WARNING,
 				"Listed device[s] have partitions on same node. This might create situation like data corruption where data written to main drive gets overwritten/corrupted from data written to or deleted from the partition with the same name.",
 				"Device name misconfiguration check.");
-
-s = select "device_total_bytes", "device-total-bytes", "total-bytes-disk" from NAMESPACE.STATISTICS save;
+    
+s = select  "data_total_bytes", "device_total_bytes", "pmem_total_bytes", "device-total-bytes", "total-bytes-disk"  from NAMESPACE.STATISTICS save;
 r = group by CLUSTER, NAMESPACE do NO_MATCH(s, ==, MAJORITY) save;
 ASSERT(r, False, "Different namespace device size configuration.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have difference in configured disk size. Please run 'show statistics namespace like bytes' to check total device size. Probable cause - config file misconfiguration.",
 				"Namespace device size configuration difference check.");
 
+SET CONSTRAINT VERSION < 4.9;
 hwm = select "high-water-disk-pct" from NAMESPACE.CONFIG save;
 hwm = group by CLUSTER, NAMESPACE hwm;
 r = do hwm == 50;
-ASSERT(r, True, "Non-default namespace device high water mark configuration.", "OPERATIONS", INFO,
-				"Listed namespace[s] have non-default high water mark configuration. Please run 'show config namespace like high-water-disk-pct' to check value. Probable cause - config file misconfiguration.",
-				"Non-default namespace device high water mark check.");
+ASSERT(r, True, "Non-default namespace storage-engine eviction threshold configuration.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-default eviction threshold configuration. Please run 'show config namespace like high-water evict-used' to check value. Probable cause - config file misconfiguration.",
+				"Non-default namespace storage-engine eviction threshold check.");
+    
+SET CONSTRAINT VERSION >= 4.9;
+hwm = select "high-water-disk-pct", "storage-engine.evict-used-pct" from NAMESPACE.CONFIG save;
+hwm = group by CLUSTER, NAMESPACE hwm;
+r = do hwm == 0;
+ASSERT(r, True, "Non-default namespace storage-engine eviction threshold configuration.", "OPERATIONS", INFO,
+				"Listed namespace[s] have non-default eviction threshold configuration. Please run 'show config namespace like high-water evict-used' to check value. Probable cause - config file misconfiguration.",
+				"Non-default namespace storage-engine eviction threshold check.");
+
+SET CONSTRAINT VERSION ALL;
 
 lwm = select like(".*defrag-lwm-pct") from NAMESPACE.CONFIG save;
 lwm = group by CLUSTER, NAMESPACE lwm;
@@ -378,12 +439,12 @@ ASSERT(r, True, "Non-default namespace device low water mark configuration.", "O
 				"Listed namespace[s] have non-default low water mark configuration. Probable cause - config file misconfiguration.",
 				"Non-default namespace device low water mark check.");
 
-hwm = select "high-water-disk-pct" as "defrag-lwm-pct" from NAMESPACE.CONFIG save;
+hwm = select "high-water-disk-pct" as "defrag-lwm-pct", "storage-engine.evict-used-pct" as "defrag-lwm-pct" from NAMESPACE.CONFIG save;
 lwm = select like(".*defrag-lwm-pct") as "defrag-lwm-pct" from NAMESPACE.CONFIG save;
 r = do lwm < hwm on common;
 r = group by CLUSTER, NAMESPACE r;
 ASSERT(r, False, "Defrag low water mark misconfigured.", "OPERATIONS", WARNING,
-				"Listed namespace[s] have defrag-lwm-pct lower than high-water-disk-pct. This might create situation like no block to write, no eviction and no defragmentation. Please run 'show config namespace like high-water-disk-pct defrag-lwm-pct' to check configured values. Probable cause - namespace watermark misconfiguration.",
+				"Listed namespace[s] have defrag-lwm-pct lower than eviction threshold. This might create situation like no block to write, no eviction and no defragmentation. Please run 'show config namespace like high-water evict-used defrag-lwm-pct' to check configured values. Probable cause - namespace watermark misconfiguration.",
 				"Defrag low water mark misconfiguration check.");
 
 commit_to_device = select "storage-engine.commit-to-device" from NAMESPACE.CONFIG;
@@ -434,21 +495,23 @@ It collects cluster-size and uses it to find out expected data distribution for 
 with available space per node per namespace.
 */
 
-t = select "device_total_bytes" as "disk_space", "device-total-bytes" as "disk_space", "total-bytes-disk" as "disk_space" from NAMESPACE.STATISTICS;
-u = select "used-bytes-disk" as "disk_space", "device_used_bytes" as "disk_space" from NAMESPACE.STATISTICS;
+t = select "data_total_bytes" as "disk_space", "pmem_total_bytes" as "disk_space", "device_total_bytes" as "disk_space", "device-total-bytes" as "disk_space", "total-bytes-disk" as "disk_space" from NAMESPACE.STATISTICS;
+u = select "data_used_bytes" as "disk_space", "pmem_used_bytes" as "disk_space", "device_used_bytes" as "disk_space", "used-bytes-disk" as "disk_space" from NAMESPACE.STATISTICS;
 /* Available extra space */
 e = do t - u;
-e = group by CLUSTER, NAMESPACE, NODE do SUM(e) save as "available device space";
+e = group by CLUSTER, NAMESPACE, NODE do SUM(e) save as "available storage space";
 s = select "cluster_size" as "size" from SERVICE;
 n = do MAX(s);
 n = do n - 1;
 /* Extra space need if 1 node goes down */
 e1 = do u / n;
-e1 = group by CLUSTER, NAMESPACE do MAX(e1) save as "distribution share of used device space per node";
+e1 = group by CLUSTER, NAMESPACE do MAX(e1) save as "distribution share of used storage space per node";
 r = do e > e1;
-ASSERT(r, True, "Namespace under configured (disk) for single node failure.", "OPERATIONS", WARNING,
-				"Listed namespace[s] does not have enough disk space configured to deal with increase in data per node in case of 1 node failure. Please run 'show statistics namespace like bytes' to check device space. It is non-issue if single replica limit is set to larger values, i.e if number of replica copies are reduced in case of node loss.",
-				"Namespace single node failure disk config check.");
+ASSERT(r, False, "Namespace storage under configured for single node failure.", "OPERATIONS", WARNING,
+				"Listed namespace[s] does not have enough storage space configured to deal with increase in data per node in case of 1 node failure. Please run 'show statistics namespace like bytes' to check storage space. It is non-issue if single replica limit is set to larger values, i.e if number of replica copies are reduced in case of node loss.",
+				"Namespace single node failure storage space config check.");
+
+SET CONSTRAINT VERSION < 7.0.0;
 
 /*
 Same as above query but for memory
@@ -1440,8 +1503,7 @@ ASSERT(r, True, "Non-zero sindex basic short query errors", "OPERATIONS", INFO,
 // Secondary Index Aggregation Query Statistics, fromally Query Agg statistics
 s = select "si_query_aggr_complete" as "val" from NAMESPACE.STATISTICS save;
 e = select "si_query_aggr_error" as "val" from NAMESPACE.STATISTICS save;
-total_transactions = do s + e; 
-total_transaction = do total_transactions + a save as "total sindex query aggregations";
+total_transactions = do s + e save as "total sindex query aggregations";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
 
@@ -1557,7 +1619,7 @@ ASSERT(r, True, "Non-zero scan aggregation errors", "OPERATIONS", INFO,
     
 // Scan Basic statistics
 s = select "scan_basic_complete" as "cnt" from NAMESPACE.STATISTICS;
-e = select "scan_basic_error", as "cnt" from NAMESPACE.STATISTICS;
+e = select "scan_basic_error" as "cnt" from NAMESPACE.STATISTICS;
 total_transactions = do s + e save as "total basic scans";
 total_transactions_per_sec = do total_transactions/u;
 total_transactions_per_sec = group by CLUSTER, NAMESPACE, NODE do MAX(total_transactions_per_sec);
@@ -1937,7 +1999,7 @@ cluster_size = select "cluster_size" as "sprig_limit_critical" from SERVICE.STAT
 cluster_size = group by CLUSTER do MAX(cluster_size) save as "cluster-size";
 repl = select "effective_replication_factor" as "sprig_limit_critical" from NAMESPACE.STATISTICS save as "effective_repl_factor";
 pts = select "partition-tree-sprigs" as "sprig_limit_critical" from NAMESPACE.CONFIG save as "partition-tree-sprigs";
-size_limit = select "index-type.mounts-size-limit" as "sprig_limit_critical" from NAMESPACE.CONFIG;
+size_limit = select "index-type.mounts-size-limit" as "sprig_limit_critical", "index-type.mounts-budget" as "sprig_limit_critical" from NAMESPACE.CONFIG;
 // below statement adds thousand delimiter to mounts-size-limiter when it prints
 size_limit = do size_limit * 1 save as "mounts-size-limit";
 
@@ -1958,11 +2020,12 @@ dont_skip = group by CLUSTER, NODE, NAMESPACE do OR(dont_skip);
 num_partitions = do 4096 * repl;
 partitions_per_node = do num_partitions/cluster_size;
 pts_per_node = do partitions_per_node * pts;
+// 4K partition-tree-sprig overhead
 total_pts = do pts_per_node * 4096 save as "Minimum space required";
 result = do total_pts > size_limit;
 
 ASSERT(result, False, "ALL FLASH - Too many sprigs per partition for current available index mounted space. Some records are likely failing to be created.", "OPERATIONS", CRITICAL,
-				"Minimum space required for sprig overhead at current cluster size exceeds mounts-size-limit.
+				"Minimum space required for sprig overhead at current cluster size exceeds index-mount size.
 				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
 				"Check for too many sprigs for current cluster size.",
 				dont_skip);
@@ -1973,9 +2036,9 @@ mcs = select "min-cluster-size" as "sprig_limit_warning" from SERVICE;
 mcs = group by CLUSTER do MAX(mcs) save as "min-cluster-size";
 repl = select "replication-factor" as "sprig_limit_warning" from NAMESPACE.STATISTICS;
 pts = select "partition-tree-sprigs" as "sprig_limit_warning" from NAMESPACE.CONFIG;
-msl = select "index-type.mounts-size-limit" as "sprig_limit_warning" from NAMESPACE.CONFIG;
+msl = select "index-type.mounts-size-limit" as "sprig_limit_warning", "index-type.mounts-budget" as "sprig_limit_warning" from NAMESPACE.CONFIG;
 // below statement adds thousand delimiter to mounts-size-limiter when it prints
-msl = do msl * 1 save as "mounts-size-limit";
+msl = do msl * 1 save;
 
 // calculate sprig overhead
 // The replication factor should be min(repl, mcs)
@@ -1989,7 +2052,7 @@ repl_smaller = do repl < mcs;
 e1 = do repl_smaller && dont_skip;
 
 ASSERT(r1, False, "ALL FLASH - Too many sprigs per partition for configured min-cluster-size.", "OPERATIONS", WARNING,
-				"Minimum space required for sprig overhead at min-cluster-size exceeds mounts-size-limit. 
+				"Minimum space required for sprig overhead at min-cluster-size exceeds index-mount size. 
 				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
 				"Check for too many sprigs for minimum cluster size.",
 				e1);
@@ -1998,6 +2061,7 @@ ASSERT(r1, False, "ALL FLASH - Too many sprigs per partition for configured min-
 // Only is asserted if min-cluster-size is smaller than replication-factor.
 // r2 = do 4096 * mcs;
 // r2 = do r2/mcs;
+// 4096 * mcs / mcs = 4096
 r2 = 4096;
 r2 = do r2 * pts;
 r2 = do r2 * 4096 save as "Minimum space required";
@@ -2007,7 +2071,7 @@ mcs_smaller = do mcs <= repl;
 e2 = do mcs_smaller && dont_skip;
 
 ASSERT(r2, False, "ALL FLASH - Too many sprigs per partition for configured min-cluster-size.", "OPERATIONS", WARNING,
-				"Minimum space required for sprig overhead at min-cluster-size exceeds mounts-size-limit. 
+				"Minimum space required for sprig overhead at min-cluster-size exceeds index-mount size. 
 				 See: https://www.aerospike.com/docs/operations/configure/namespace/index/#flash-index and https://www.aerospike.com/docs/operations/plan/capacity/#aerospike-all-flash",
 				"Check for too many sprigs for minimum cluster size.",
 				e2);
