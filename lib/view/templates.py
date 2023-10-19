@@ -770,7 +770,11 @@ info_set_sheet = Sheet(
                         Projectors.Any(
                             FieldType.number,
                             Projectors.Number("set_stats", "data_used_bytes"),
-                            Projectors.Sum(
+                            Projectors.Func(
+                                FieldType.number,
+                                lambda m_data, d_data: d_data
+                                if m_data == 0
+                                else m_data,
                                 Projectors.Number(
                                     "set_stats",
                                     "memory_data_bytes",
