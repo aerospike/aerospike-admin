@@ -753,7 +753,7 @@ info_set_sheet = Sheet(
             aggregator=Aggregators.sum(),
         ),
         Subgroup(
-            "Quota",
+            "Size Quota",
             (
                 Field(
                     "Total",
@@ -791,7 +791,7 @@ info_set_sheet = Sheet(
                     ),
                     converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
-                        create_usage_weighted_avg("Quota"),
+                        create_usage_weighted_avg("Size Quota"),
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
@@ -804,12 +804,41 @@ info_set_sheet = Sheet(
             ),
         ),
         Field(
-            "Objects",
+            "Total Records",
             Projectors.Number("set_stats", "objects", "n_objects"),
             converter=Converters.scientific_units,
             aggregator=Aggregators.sum(),
         ),
-        Field("Stop Writes Count", Projectors.Number("set_stats", "stop-writes-count")),
+        Subgroup(
+            "Records Quota",
+            (
+                Field(
+                    "Total",
+                    Projectors.Number("set_stats", "stop-writes-count"),
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Div(
+                        Projectors.Number(
+                            "set_stats",
+                            "objects",
+                        ),
+                        Projectors.Number("set_stats", "stop-writes-count"),
+                    ),
+                    converter=Converters.ratio_to_pct,
+                    aggregator=ComplexAggregator(
+                        create_usage_weighted_avg("Records Quota"),
+                        converter=Converters.ratio_to_pct,
+                    ),
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90.0),
+                        Formatters.yellow_alert(
+                            lambda edata: edata.value * 100 >= 75.0
+                        ),
+                    ),
+                ),
+            ),
+        ),
         Field("Disable Eviction", Projectors.Boolean("set_stats", "disable-eviction")),
         Field("Set Enable XDR", Projectors.String("set_stats", "set-enable-xdr")),
         Field(
