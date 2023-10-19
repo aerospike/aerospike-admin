@@ -260,9 +260,9 @@ class InfoNamespaceController(LiveClusterCommandController):
         modifiers=(with_modifier_help,),
     )
     async def do_usage(self, line):
-        service_stats = await self.stats_getter.get_service(nodes=self.nodes)
-        ns_stats = await self.stats_getter.get_namespace(
-            nodes=self.nodes
+        service_stats, ns_stats = await asyncio.gather(
+            self.stats_getter.get_service(nodes=self.nodes),
+            self.stats_getter.get_namespace(nodes=self.nodes),
         )  # Includes stats and configs
         return util.callable(
             self.view.info_namespace_usage,

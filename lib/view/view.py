@@ -2327,8 +2327,8 @@ class CliView(object):
     @staticmethod
     def _summary_namespace_list_view(
         stats: SummaryNamespacesDict, **ignore
-    ) -> list[str | list[str | SummaryLine]]:
-        lines: list[str | list[str | CliView.SummaryLine]] = []
+    ) -> list[str | NumberedList]:
+        lines: list[str | CliView.NumberedList] = []
         lines.append("Namespaces")
         lines.append("==========")
         lines.append("")

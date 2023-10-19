@@ -902,7 +902,6 @@ class ShowStatisticsController(LiveClusterCommandController):
     )
     async def _do_default(self, line):
         return await asyncio.gather(
-            self.do_bins(line[:]),
             self.do_sets(line[:]),
             self.do_service(line[:]),
             self.do_namespace(line[:]),

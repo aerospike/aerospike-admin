@@ -171,8 +171,6 @@ class FieldCheck:
         self._compare_val = compare_val
 
     def check(self, sources: dict[str, Any]) -> bool:
-        if "pmem_compression_ratio" in self._fields:
-            pass
         if self._source not in sources:
             return False
 
@@ -507,8 +505,8 @@ feature_checks = (
         NamespacesFieldCheck(
             "namespaces",
             (
+                "data_compression_ratio",  # Added in 7.0
                 "pmem_compression_ratio",
-                "data_compression_ratio",
                 "device_compression_ratio",
             ),
             comp_ops["<"],
@@ -813,9 +811,7 @@ class SummaryNamespaceDict(TypedDict):
     migrations_in_progress: bool
     rack_aware: bool
     license_data: SummaryClusterLicenseAggDict
-    index_type: NotRequired[
-        str
-    ]  # TODO: should be Union[Literal["pmem"], Literal["flash"], Literal["shmem"]]
+    index_type: NotRequired[str]
     compression_ratio: NotRequired[float]
     cache_read_pct: NotRequired[int]
     memory_data_and_indexes: NotRequired[SummaryStorageUsageDict]  # pre 7.0
@@ -1163,27 +1159,31 @@ def create_summary(
     total_nodes = len(service_stats.keys())
 
     # Pre 7.0 memory stats. Data + index + sindex + set index bytes
-    cluster_memory_data_and_indexes_size = 0
-    cluster_memory_data_and_indexes_avail = 0
+    cluster_memory_data_and_indexes_total = 0
+    cluster_memory_data_and_indexes_used = 0
 
-    cl_shmem_index_size_used = 0  # index-type.shmem does not report
-    cl_pmem_index_size_total = 0
-    cl_pmem_index_size_used = 0
-    cl_flash_index_size_total = 0
-    cl_flash_index_size_used = 0
+    cluster_shmem_index_used = 0  # index-type.shmem does not report total
 
-    cl_nodewise_device_counts = {}
+    cluster_pmem_index_total = 0
+    cluster_pmem_index_used = 0
+
+    cluster_flash_index_total = 0
+    cluster_flash_index_used = 0
+
+    cl_nodewise_device_counts = (
+        {}
+    )  # need nodewise to determine if device count is same across nodes
 
     # Post 7.0 memory stats. Data only, no index or sindex bytes
-    cluster_memory_size = 0
+    cluster_memory_total = 0
     cluster_memory_used = 0
     cluster_memory_avail = 0
 
-    cluster_device_size = 0
+    cluster_device_total = 0
     cluster_device_used = 0
     cluster_device_avail = 0
 
-    cluster_pmem_size = 0
+    cluster_pmem_total = 0
     cluster_pmem_used = 0
     cluster_pmem_avail = 0
 
@@ -1281,10 +1281,10 @@ def create_summary(
 
         if mem_size > 0:
             mem_avail = mem_size - mem_used
-            mem_avail_pct = (mem_avail / mem_size) * 100.0
-            mem_used_pct = 100.00 - mem_avail_pct
-            cluster_memory_data_and_indexes_size += mem_size
-            cluster_memory_data_and_indexes_avail += mem_avail
+            mem_used_pct = (mem_used / mem_size) * 100.0
+            mem_avail_pct = 100.00 - mem_used_pct
+            cluster_memory_data_and_indexes_total += mem_size
+            cluster_memory_data_and_indexes_used += mem_used
 
             ns_mem_usage: SummaryStorageUsageDict = {
                 "total": mem_size,
@@ -1348,17 +1348,17 @@ def create_summary(
 
             if index_type == "pmem":
                 # TODO handle the cluster level aggregate
-                cl_pmem_index_size_total += index_size
-                cl_pmem_index_size_used += index_used
+                cluster_pmem_index_total += index_size
+                cluster_pmem_index_used += index_used
                 summary_dict["NAMESPACES"][ns]["pmem_index"] = ns_index_usage
                 summary_dict["NAMESPACES"][ns]["index_type"] = index_type
             elif index_type == "flash":
-                cl_flash_index_size_total += index_size
-                cl_flash_index_size_used += index_used
+                cluster_flash_index_total += index_size
+                cluster_flash_index_used += index_used
                 summary_dict["NAMESPACES"][ns]["flash_index"] = ns_index_usage
                 summary_dict["NAMESPACES"][ns]["index_type"] = index_type
             elif index_type == "shmem":
-                cl_shmem_index_size_used += index_used
+                cluster_shmem_index_used += index_used
                 summary_dict["NAMESPACES"][ns]["shmem_index"] = ns_index_usage
                 summary_dict["NAMESPACES"][ns]["index_type"] = index_type
 
@@ -1419,17 +1419,17 @@ def create_summary(
             }
 
             if storage_engine_type == "device":
-                cluster_device_size += data_size_total
+                cluster_device_total += data_size_total
                 cluster_device_used += data_size_used
                 cluster_device_avail += data_size_avail
                 summary_dict["NAMESPACES"][ns]["device"] = ns_data_usage
             elif storage_engine_type == "pmem":
-                cluster_pmem_size += data_size_total
+                cluster_pmem_total += data_size_total
                 cluster_pmem_used += data_size_used
                 cluster_pmem_avail += data_size_avail
                 summary_dict["NAMESPACES"][ns]["pmem"] = ns_data_usage
             elif storage_engine_type == "memory":
-                cluster_memory_size += data_size_total
+                cluster_memory_total += data_size_total
                 cluster_memory_used += data_size_used
                 cluster_memory_avail += data_size_avail
                 summary_dict["NAMESPACES"][ns]["memory"] = ns_data_usage
@@ -1476,6 +1476,7 @@ def create_summary(
                 ) // len(cache_read_pcts)
             except Exception:
                 pass
+
         master_objects = sum(
             util.get_value_from_second_level_of_dict(
                 ns_stats,
@@ -1510,80 +1511,80 @@ def create_summary(
             summary_dict["CLUSTER"]["device_count_same_across_nodes"] = False
 
     # Pre 7.0 memory stats
-    if cluster_memory_data_and_indexes_size > 0:
-        memory_avail_pct = (
-            cluster_memory_data_and_indexes_avail / cluster_memory_data_and_indexes_size
+    if cluster_memory_data_and_indexes_total > 0:
+        cluster_memory_data_and_indexes_used_pct = (
+            cluster_memory_data_and_indexes_used / cluster_memory_data_and_indexes_total
         ) * 100.0
         cluster_memory: SummaryStorageUsageDict = {
-            "total": cluster_memory_data_and_indexes_size,
-            "avail": cluster_memory_data_and_indexes_avail,
-            "avail_pct": memory_avail_pct,
-            "used": cluster_memory_data_and_indexes_size
-            - cluster_memory_data_and_indexes_avail,
-            "used_pct": 100.0 - memory_avail_pct,
+            "total": cluster_memory_data_and_indexes_total,
+            "avail": cluster_memory_data_and_indexes_total
+            - cluster_memory_data_and_indexes_used,
+            "avail_pct": 100 - cluster_memory_data_and_indexes_used_pct,
+            "used": cluster_memory_data_and_indexes_used,
+            "used_pct": cluster_memory_data_and_indexes_used_pct,
         }
         summary_dict["CLUSTER"]["memory_data_and_indexes"] = cluster_memory
 
-    if cl_pmem_index_size_total > 0:
-        cl_pmem_index_size_used_pct = (
-            cl_pmem_index_size_used / cl_pmem_index_size_total
+    if cluster_pmem_index_total > 0:
+        cluster_pmem_index_size_used_pct = (
+            cluster_pmem_index_used / cluster_pmem_index_total
         ) * 100.0
         cluster_pmem_index: SummaryStorageUsageDict = {
-            "total": cl_pmem_index_size_total,
-            "avail": cl_pmem_index_size_total - cl_pmem_index_size_used,
-            "avail_pct": 100 - cl_pmem_index_size_used_pct,
-            "used": cl_pmem_index_size_used,
-            "used_pct": cl_pmem_index_size_used_pct,
+            "total": cluster_pmem_index_total,
+            "avail": cluster_pmem_index_total - cluster_pmem_index_used,
+            "avail_pct": 100 - cluster_pmem_index_size_used_pct,
+            "used": cluster_pmem_index_used,
+            "used_pct": cluster_pmem_index_size_used_pct,
         }
         summary_dict["CLUSTER"]["pmem_index"] = cluster_pmem_index
 
-    if cl_flash_index_size_total > 0:
-        cl_flash_index_size_used_pct = (
-            cl_flash_index_size_used / cl_flash_index_size_total
+    if cluster_flash_index_total > 0:
+        cluster_flash_index_used_pct = (
+            cluster_flash_index_used / cluster_flash_index_total
         ) * 100.0
         cluster_flash_index: SummaryStorageUsageDict = {
-            "total": cl_flash_index_size_total,
-            "avail": cl_flash_index_size_total - cl_flash_index_size_used,
-            "avail_pct": 100 - cl_flash_index_size_used_pct,
-            "used": cl_flash_index_size_used,
-            "used_pct": cl_flash_index_size_used_pct,
+            "total": cluster_flash_index_total,
+            "avail": cluster_flash_index_total - cluster_flash_index_used,
+            "avail_pct": 100 - cluster_flash_index_used_pct,
+            "used": cluster_flash_index_used,
+            "used_pct": cluster_flash_index_used_pct,
         }
         summary_dict["CLUSTER"]["flash_index"] = cluster_flash_index
 
-    if cl_shmem_index_size_used > 0:
+    if cluster_shmem_index_used > 0:
         cluster_shmem_index: SummaryStorageUsageDict = {
-            "used": cl_shmem_index_size_used,
+            "used": cluster_shmem_index_used,
         }
         summary_dict["CLUSTER"]["shmem_index"] = cluster_shmem_index
 
     # Post 7.0 memory stats that only include data not sindex or index bytes
-    if cluster_memory_size > 0:
+    if cluster_memory_total > 0:
         cluster_memory_index: SummaryStorageUsageDict = {
-            "total": cluster_memory_size,
+            "total": cluster_memory_total,
             "avail": cluster_memory_avail,
-            "avail_pct": (cluster_memory_avail / cluster_memory_size) * 100.0,
+            "avail_pct": (cluster_memory_avail / cluster_memory_total) * 100.0,
             "used": cluster_memory_used,
-            "used_pct": (cluster_memory_used / cluster_memory_size) * 100.0,
+            "used_pct": (cluster_memory_used / cluster_memory_total) * 100.0,
         }
         summary_dict["CLUSTER"]["memory"] = cluster_memory_index
 
-    if cluster_device_size > 0:
+    if cluster_device_total > 0:
         cluster_device_index: SummaryStorageUsageDict = {
-            "total": cluster_device_size,
+            "total": cluster_device_total,
             "avail": cluster_device_avail,
-            "avail_pct": (cluster_device_avail / cluster_device_size) * 100.0,
+            "avail_pct": (cluster_device_avail / cluster_device_total) * 100.0,
             "used": cluster_device_used,
-            "used_pct": (cluster_device_used / cluster_device_size) * 100.0,
+            "used_pct": (cluster_device_used / cluster_device_total) * 100.0,
         }
         summary_dict["CLUSTER"]["device"] = cluster_device_index
 
-    if cluster_pmem_size > 0:
+    if cluster_pmem_total > 0:
         cluster_pmem_index: SummaryStorageUsageDict = {
-            "total": cluster_pmem_size,
+            "total": cluster_pmem_total,
             "avail": cluster_pmem_avail,
-            "avail_pct": (cluster_pmem_avail / cluster_pmem_size) * 100.0,
+            "avail_pct": (cluster_pmem_avail / cluster_pmem_total) * 100.0,
             "used": cluster_pmem_used,
-            "used_pct": (cluster_pmem_used / cluster_pmem_size) * 100.0,
+            "used_pct": (cluster_pmem_used / cluster_pmem_total) * 100.0,
         }
         summary_dict["CLUSTER"]["pmem"] = cluster_pmem_index
 
@@ -1849,7 +1850,7 @@ def _format_set_stop_writes_metrics(
             metric = None
             threshold: int | None = util.get_value_from_dict(stats, config, None, int)
 
-            metric = "data_used_bytes"
+            metric = "data_used_bytes"  # Added in 7.0
             usage = util.get_value_from_dict(stats, metric, None, int)
 
             if usage is None:
@@ -1884,15 +1885,13 @@ def _format_set_stop_writes_metrics(
             )
 
             if usage is not None and threshold is not None:
-                use = int(usage)
-                thresh = int(threshold)
-                sw = _is_stop_writes_cause(use, thresh)
+                sw = _is_stop_writes_cause(usage, threshold)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    use,
+                    usage,
                     sw,
-                    thresh,
+                    threshold,
                     config=config,
                     namespace=ns,
                     set_=set_,

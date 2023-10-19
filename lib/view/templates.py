@@ -318,13 +318,13 @@ info_namespace_usage_sheet = Sheet(
                     formatters=(
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
-                            >= edata.record["Primary Index"]["HWM%"]
-                            and edata.record["Primary Index"]["HWM%"] != 0
+                            >= edata.record["Primary Index"]["Evict%"]
+                            and edata.record["Primary Index"]["Evict%"] != 0
                         ),
                     ),
                 ),
                 Field(
-                    "HWM%",
+                    "Evict%",
                     Projectors.Number(
                         "ns_stats",
                         "index-type.evict-mounts-pct",  # Added in 7.0
@@ -382,14 +382,14 @@ info_namespace_usage_sheet = Sheet(
                     ),
                     formatters=(
                         Formatters.yellow_alert(
-                            lambda edata: edata.value
-                            >= edata.record["Secondary Index"]["HWM%"]
-                            and edata.record["Secondary Index"]["HWM%"] != 0
+                            lambda edata: edata.value * 100
+                            >= edata.record["Secondary Index"]["Evict%"]
+                            and edata.record["Secondary Index"]["Evict%"] != 0
                         ),
                     ),
                 ),
                 Field(
-                    "HWM%",
+                    "Evict%",
                     Projectors.Number(
                         "ns_stats",
                         "sindex-type.evict-mounts-pct",  # Added in 7.0
@@ -1450,11 +1450,7 @@ summary_cluster_sheet = Sheet(
         #     this will only be displayed in 7.0. Pre 7.0 includes shmem index metrics
         #     as apart of memory metrics.
         #     (
-        create_summary_total("cluster_dict", "shmem_index"),
         create_summary_used("cluster_dict", "shmem_index"),
-        create_summary_used_pct("cluster_dict", "shmem_index"),
-        create_summary_avail("cluster_dict", "shmem_index"),
-        create_summary_avail_pct("cluster_dict", "shmem_index"),
         #     ),
         # ),
         # Subgroup(
