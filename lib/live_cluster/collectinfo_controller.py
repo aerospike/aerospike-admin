@@ -800,6 +800,9 @@ class CollectinfoController(LiveClusterCommandController):
     async def _dump_collectinfo_aerospike_conf(
         self, as_logfile_prefix: str, conf_path: Optional[str] = None
     ):
+        """
+        Gets the static aerospike.conf if available.
+        """
         complete_filename = as_logfile_prefix + "aerospike.conf"
 
         if not conf_path:
@@ -813,7 +816,12 @@ class CollectinfoController(LiveClusterCommandController):
             self.logger.warning(str(e))
             util.write_to_file(complete_filename, str(e))
 
-    async def _dump_collectinfo_get_aerospike_conf(self, as_logfile_prefix):
+    async def _dump_collectinfo_dynamic_aerospike_conf(self, as_logfile_prefix):
+        """
+        Used the GenerateConfigController to get the active runtime config of the
+        cluster. This will include changes that have not yet been save to the static
+        aerospike.conf file.
+        """
         ip_id_map = self.cluster.get_node_ids()
 
         async def _get_aerospike_conf(self, ip, id):
@@ -922,7 +930,7 @@ class CollectinfoController(LiveClusterCommandController):
             self._dump_collectinfo_health(as_logfile_prefix, file_header),
             self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header),
             self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path),
-            self._dump_collectinfo_get_aerospike_conf(as_logfile_prefix),
+            self._dump_collectinfo_dynamic_aerospike_conf(as_logfile_prefix),
         ]
 
         for c in coroutines:
