@@ -2485,7 +2485,7 @@ class ManageTruncateController(ManageLeafCommandController):
             line=line,
             arg="--no-warn",
             default=False,
-            modifiers=self.modifiers,
+            modifiers=self.modifiers | self.required_modifiers,
             mods=self.mods,
         )
 
