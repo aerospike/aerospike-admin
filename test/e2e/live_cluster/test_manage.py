@@ -1097,3 +1097,33 @@ class ManageConfigXDRTests(unittest.TestCase):
         for row in actual_values:
             entry = row[1]
             self.assertEqual(entry, ASINFO_RESPONSE_OK)
+
+
+class ManageTruncateTest(TestManage):
+    def get_args(self, cmd):
+        return self._args.format(cmd)
+
+    def setUp(self):
+        lib.start()
+        self._args = f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' -Uadmin -Padmin"
+
+    def tearDown(self) -> None:
+        lib.stop()
+
+    @parameterized.expand(
+        [
+            (
+                f"manage truncate ns test --no-warn",
+                "Successfully started truncation for namespace test",
+            ),
+            (
+                f"manage truncate ns test set testset --no-warn",
+                "Successfully started truncation for set testset of namespace test",
+            ),
+        ]
+    )
+    def test_check_for_OK_response(self, cmd, exp_stdout):
+        cp = test_util.run_asadm(self.get_args(cmd))
+        stdout = cp.stdout
+
+        self.assertEqual(exp_stdout, stdout.strip())
