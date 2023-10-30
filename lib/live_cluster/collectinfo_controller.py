@@ -21,6 +21,7 @@ import time
 import sys
 import traceback
 from typing import Any, Callable, Optional
+from lib.live_cluster.client.node import Node
 from lib.live_cluster.generate_config_controller import GenerateConfigController
 from lib.utils.types import NodeDict
 
@@ -822,15 +823,15 @@ class CollectinfoController(LiveClusterCommandController):
         cluster. This will include changes that have not yet been save to the static
         aerospike.conf file.
         """
-        ip_id_map = self.cluster.get_node_ids()
+        nodes: list[Node] = self.cluster.get_nodes()
 
-        async def _get_aerospike_conf(self, ip, id):
+        async def _get_aerospike_conf(self, key, id):
             complete_filename = as_logfile_prefix + id + "_aerospike.conf"
-            line = f"-o {complete_filename} with {ip}"
+            line = f"-o {complete_filename} with {key}"
             await GenerateConfigController().execute(line.split())
 
         results = await asyncio.gather(
-            *[_get_aerospike_conf(self, ip, id) for ip, id in ip_id_map.items()],
+            *[_get_aerospike_conf(self, node.key, node.node_id) for node in nodes],
             return_exceptions=True,
         )
 

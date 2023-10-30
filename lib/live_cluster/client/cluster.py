@@ -469,7 +469,7 @@ class Cluster(AsyncObject):
             constants.NodeSelection.PRINCIPAL,
             constants.NodeSelection.RANDOM,
         ]
-        | list[str],
+        | list[str] = constants.NodeSelection.ALL,
     ) -> list[Node]:
         use_nodes = []
 
