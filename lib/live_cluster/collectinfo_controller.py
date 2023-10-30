@@ -829,11 +829,14 @@ class CollectinfoController(LiveClusterCommandController):
             complete_filename = as_logfile_prefix + id + "_aerospike.conf"
             line = f"-o {complete_filename} with {key}"
             await GenerateConfigController().execute(line.split())
-
+            
+        level = self.logger.getEffectiveLevel()
+        self.logger.setLevel(logging.ERROR)
         results = await asyncio.gather(
             *[_get_aerospike_conf(self, node.key, node.node_id) for node in nodes],
             return_exceptions=True,
         )
+        self.logger.setLevel(level)
 
         for result in results:
             if isinstance(result, Exception):
