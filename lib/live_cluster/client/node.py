@@ -91,10 +91,10 @@ def async_return_exceptions(func):
         except (ASInfoNotAuthenticatedError, ASProtocolConnectionError) as e:
             args[0].alive = False
             exception = e
-        except (ASInfoError, ASProtocolError) as e:
-            exception = e
-        except Exception as e:
+        except OSError as e:
             args[0].alive = False
+            exception = e
+        except (ASInfoError, ASProtocolError, Exception) as e:
             exception = e
 
         if raise_exception:
@@ -2454,6 +2454,10 @@ class Node(AsyncObject):
         dict -- {ns1: rack_id, ns2: rack_id, ...}
         """
         resp = await self._info("rack-ids")
+
+        if "ERROR" in resp:
+            raise ASInfoResponseError("Failed to get rack ids for this node", resp)
+
         rack_data = {}
 
         if not resp:
