@@ -138,13 +138,12 @@ async def capture_separate_and_parse_output(rc, commands):
 
 
 def get_collectinfo_path(cp: CompletedProcess, collectinfo_prefix: str):
-    collectinfo_path = None
     for line in reversed(cp.stderr.splitlines()):
         if collectinfo_prefix in line and line.startswith("INFO:"):
             words = line.split()
             for word in words:
-                if collectinfo_prefix in word:
-                    print("Found collectinfo_prefix", collectinfo_path)
+                if collectinfo_prefix in word and ".tgz" in word:
+                    print("Found collectinfo_prefix", word)
                     return word
     raise Exception("Unable to find collectinfo path in output")
 

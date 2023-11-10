@@ -21,6 +21,8 @@ import time
 import sys
 import traceback
 from typing import Any, Callable, Optional
+from lib.live_cluster.client.node import Node
+from lib.live_cluster.generate_config_controller import GenerateConfigController
 from lib.utils.types import NodeDict
 
 from lib.view.sheet.render import get_style_json, set_style_json
@@ -799,6 +801,9 @@ class CollectinfoController(LiveClusterCommandController):
     async def _dump_collectinfo_aerospike_conf(
         self, as_logfile_prefix: str, conf_path: Optional[str] = None
     ):
+        """
+        Gets the static aerospike.conf if available.
+        """
         complete_filename = as_logfile_prefix + "aerospike.conf"
 
         if not conf_path:
@@ -811,6 +816,32 @@ class CollectinfoController(LiveClusterCommandController):
             self.logger.warning("Failed to generate %s file.", complete_filename)
             self.logger.warning(str(e))
             util.write_to_file(complete_filename, str(e))
+
+    async def _dump_collectinfo_dynamic_aerospike_conf(self, as_logfile_prefix):
+        """
+        Used the GenerateConfigController to get the active runtime config of the
+        cluster. This will include changes that have not yet been save to the static
+        aerospike.conf file.
+        """
+        nodes: list[Node] = self.cluster.get_nodes()
+
+        async def _get_aerospike_conf(self, key, id):
+            complete_filename = as_logfile_prefix + id + "_aerospike.conf"
+            line = f"-o {complete_filename} with {key}"
+            await GenerateConfigController().execute(line.split())
+            
+        level = self.logger.getEffectiveLevel()
+        self.logger.setLevel(logging.ERROR)
+        results = await asyncio.gather(
+            *[_get_aerospike_conf(self, node.key, node.node_id) for node in nodes],
+            return_exceptions=True,
+        )
+        self.logger.setLevel(level)
+
+        for result in results:
+            if isinstance(result, Exception):
+                self.logger.error(str(result))
+                continue
 
     ###########################################################################
     # Collectinfo caller functions
@@ -903,6 +934,7 @@ class CollectinfoController(LiveClusterCommandController):
             self._dump_collectinfo_health(as_logfile_prefix, file_header),
             self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header),
             self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path),
+            self._dump_collectinfo_dynamic_aerospike_conf(as_logfile_prefix),
         ]
 
         for c in coroutines:

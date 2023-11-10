@@ -26,6 +26,7 @@ from lib.utils.async_object import AsyncObject
 
 from lib.utils.lookup_dict import LookupDict
 from lib.utils import util, constants
+from lib.utils.types import NodeDict
 
 from . import client_util
 from .node import Node
@@ -179,7 +180,16 @@ class Cluster(AsyncObject):
 
         return node_names
 
-    def get_node_ids(self, nodes=None):
+    def get_node_ids(self, nodes: list[str] | None = None) -> NodeDict[str]:
+        """Gets node key to node id mapping
+
+        Keyword Arguments:
+            nodes {list[str] | None} -- A subset of all nodes that should be returned.
+            If None all nodes are returned (default: {None})
+
+        Returns:
+            NodeDict[str] -- A dictionary mapping node keys (ip:port) to node ids.
+        """
         selected_nodes = set()
         node_ids = {}
 
@@ -459,7 +469,7 @@ class Cluster(AsyncObject):
             constants.NodeSelection.PRINCIPAL,
             constants.NodeSelection.RANDOM,
         ]
-        | list[str],
+        | list[str] = constants.NodeSelection.ALL,
     ) -> list[Node]:
         use_nodes = []
 
