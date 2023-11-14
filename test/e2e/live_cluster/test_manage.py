@@ -768,6 +768,21 @@ class ManageSindexTest(TestManage):
         self.assertEqual(exp_stdout, actual.stdout)
         self.assertStdErrEqual(exp_stderr, actual.stderr)
 
+    def test_can_create_blob_sindex(self):
+        exp_stdout = self.success_msg
+        exp_stderr = ""
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage sindex create blob {} ns {} set {} bin {}".format(
+                    self.exp_sindex, self.exp_ns, self.exp_set, self.exp_bin
+                )
+            )
+        )
+
+        self.assertEqual(exp_stdout, actual.stdout)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
+
     def test_can_create_sindex_in_list(self):
         exp_stdout = self.success_msg
         exp_stderr = ""
