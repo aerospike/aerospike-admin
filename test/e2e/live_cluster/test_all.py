@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-import shlex
 import time
-from typing import Any
+from typing import Any, Callable
 import unittest
-from parameterized import parameterized
+from parameterized import parameterized, parameterized_class
+from lib.utils import version
 
 from test.e2e import util
 from .. import lib
@@ -71,62 +70,121 @@ function rem_key(rec)
 end
 """
 
+
+class Cmd:
+    def __init__(self, cmd: str, server_filter: Callable[[str], bool] | None = None):
+        self.cmd = cmd
+        self.server_filter = server_filter
+
+    def check_skip(self, tc: unittest.TestCase, server_version: str):
+        if self.server_filter and not self.server_filter(server_version):
+            tc.skipTest(f"Skipping test for server version {server_version}")
+
+    def __hash__(self) -> int:
+        return hash(self.cmd)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Cmd):
+            return self.cmd == other.cmd
+        return False
+
+
 CMDS = [
-    ("info network"),
-    ("info namespace object"),
-    ("info namespace usage"),
-    ("info set"),
-    ("info xdr"),
-    ("info sindex"),
-    ("show config namespace"),
-    ("show config network"),
-    ("show config security"),
-    ("show config service"),
-    ("show config dc"),
-    ("show config xdr dc"),
-    ("show config xdr filter"),
-    ("show config xdr namespace"),
-    ("show statistics namespace"),
-    ("show statistics service"),
-    ("show statistics sindex"),
-    ("show statistics sets"),
-    ("show statistics bins"),
-    ("show statistics dc"),
-    ("show statistics xdr dc"),
-    ("show statistics xdr namespace"),
-    ("show latencies -v"),
-    ("show distribution time_to_live"),  # TODO: Causing issues on github actions
-    ("show distribution object_size"),
-    ("show mapping ip"),
-    ("show mapping node"),
-    ("show pmap"),
-    ("show best-practices"),
-    ("show jobs queries"),
-    ("show racks"),
-    ("show roster"),
-    ("show roles"),
-    ("show users"),
-    ("show users admin"),
-    ("show users statistics"),
-    ("show users statistics admin"),
-    ("show udfs"),
-    ("show sindex"),
-    ("show stop-writes"),
-    ("summary"),
-    (f"generate config with all"),
+    Cmd("info network"),
+    Cmd("info namespace object"),
+    Cmd("info namespace usage"),
+    Cmd("info set"),
+    Cmd("info xdr"),
+    Cmd("info sindex"),
+    Cmd("show config namespace"),
+    Cmd("show config network"),
+    Cmd("show config security"),
+    Cmd("show config service"),
+    Cmd("show config dc"),
+    Cmd("show config xdr dc"),
+    Cmd("show config xdr filter"),
+    Cmd("show config xdr namespace"),
+    Cmd("show statistics namespace"),
+    Cmd("show statistics service"),
+    Cmd("show statistics sindex"),
+    Cmd("show statistics sets"),
+    Cmd(
+        "show statistics bins",
+        lambda v: v != "latest"
+        and version.LooseVersion(v) < version.LooseVersion("7.0.0"),
+    ),
+    Cmd("show statistics dc"),
+    Cmd("show statistics xdr dc"),
+    Cmd("show statistics xdr namespace"),
+    Cmd("show latencies -v"),
+    Cmd("show distribution time_to_live"),  # TODO: Causing issues on github actions
+    Cmd("show distribution object_size"),
+    Cmd("show mapping ip"),
+    Cmd("show mapping node"),
+    Cmd("show pmap"),
+    Cmd("show best-practices"),
+    Cmd("show jobs queries"),
+    Cmd("show racks"),
+    Cmd("show roster"),
+    Cmd("show roles"),
+    Cmd("show users"),
+    Cmd("show users admin"),
+    Cmd("show users statistics"),
+    Cmd("show users statistics admin"),
+    Cmd("show udfs"),
+    Cmd("show sindex"),
+    Cmd("show stop-writes"),
+    Cmd("summary"),
+    Cmd(f"generate config with all"),
 ]
 NOT_IN_CI_MODE = [
-    "show mapping ip",
-    "show mapping node",
-    "show pmap",
-    f"generate config with all",
+    Cmd("show mapping ip"),
+    Cmd("show mapping node"),
+    Cmd("show pmap"),
+    Cmd(f"generate config with all"),
 ]
 
 
-class TableRenderNoErrorTests(unittest.TestCase):
+class TableRenderTestCase(unittest.TestCase):
+    def assertEntryNotError(self, entry: dict[str, Any]):
+        raw_data = entry["raw"]
+        conv_data = entry["converted"]
+        self.assertNotEqual(raw_data, "error")
+        self.assertNotEqual(conv_data, "~~")
+
+    def assertRecordNotError(self, record: dict[str, Any]):
+        for col_name, data in record.items():
+            if isinstance(list(data.values())[0], dict):
+                for col_name, data2 in data.items():
+                    print(data2)
+                    self.assertEntryNotError(data2)
+            else:
+                print(data)
+                self.assertEntryNotError(data)
+
+    def check_cmd_for_errors(self, cp: util.CompletedProcess):
+        self.assertEqual(cp.returncode, 0, "Incorrect return code")
+
+        if "traceback" in cp.stderr:
+            self.fail("Traceback found in stderr")
+
+
+@parameterized_class(
+    [
+        {"template_file": "aerospike_latest.conf", "docker_tag": "latest"},
+        # {"template_file": "aerospike_6.x.conf", "docker_tag": "6.4.0.7"}, # Add this
+        # to all tests once we create multiple test workflows. I am thinking one for
+        # unittest, one for e2e against latest, and another that is e2e against all
+        # notable versions i.e. 4.9, 5.6, 6.4
+    ]
+)
+class TableRenderNoErrorTests(TableRenderTestCase):
+    template_file = ""
+    docker_tag = ""
+
     @classmethod
     def setUpClass(cls):
-        lib.start()
+        lib.start(template_file=cls.template_file, docker_tag=cls.docker_tag)
         lib.populate_db("no-error-test")
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
         lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
@@ -145,50 +203,20 @@ class TableRenderNoErrorTests(unittest.TestCase):
     def tearDownClass(cls):
         lib.stop()
 
-    def assertEntryNotError(self, tc: unittest.TestCase, entry: dict[str, Any]):
-        raw_data = entry["raw"]
-        conv_data = entry["converted"]
-        tc.assertNotEqual(raw_data, "error")
-        tc.assertNotEqual(conv_data, "~~")
-
-    def assertRecordNotError(self, tc: unittest.TestCase, record: dict[str, Any]):
-        for col_name, data in record.items():
-            if isinstance(list(data.values())[0], dict):
-                for col_name, data2 in data.items():
-                    print(data2)
-                    self.assertEntryNotError(tc, data2)
-            else:
-                print(data)
-                self.assertEntryNotError(tc, data)
-
-    def check_cmd_for_errors(self, cp: util.CompletedProcess):
-        self.assertEqual(cp.returncode, 0, "Incorrect return code")
-
-        try:
-            stdout_dicts = util.get_separate_output(cp.stdout)
-        except Exception as e:
-            self.fail("Unable to unmarshal json: {}".format(e))
-
-        if "traceback" in cp.stderr:
-            self.fail("Traceback found in stderr")
-
-        for dict in stdout_dicts:
-            for group in dict["groups"]:
-                for record in group["records"]:
-                    self.assertRecordNotError(self, record)
-
     @parameterized.expand(CMDS)
-    def test_live_cmds_for_errors(self, cmd):
-        args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd}' --json -Uadmin -Padmin"
+    def test_live_cmds_for_errors(self, cmd: Cmd):
+        cmd.check_skip(self, self.docker_tag)
+        args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd.cmd}' --json -Uadmin -Padmin"
         o = util.run_asadm(args)
         self.check_cmd_for_errors(o)
 
     @parameterized.expand(list(set(CMDS).difference(NOT_IN_CI_MODE)))
-    def test_collectinfo_cmds_for_errors(self, cmd):
+    def test_collectinfo_cmds_for_errors(self, cmd: Cmd):
+        cmd.check_skip(self, self.docker_tag)
         collectinfo_path = util.get_collectinfo_path(
             self.collectinfo_cp, "/tmp/asadm_test_"
         )
-        args = "-cf {} -e '{}' --json".format(collectinfo_path, cmd)
+        args = "-cf {} -e '{}' --json".format(collectinfo_path, cmd.cmd)
         o = util.run_asadm(args)
         print(o.stdout)
         print(o.stderr)
@@ -196,7 +224,7 @@ class TableRenderNoErrorTests(unittest.TestCase):
         self.check_cmd_for_errors(o)
 
 
-class TableRenderNodeUnreachableTests(unittest.TestCase):
+class TableRenderNodeUnreachableTests(TableRenderTestCase):
     @classmethod
     def setUpClass(cls):
         lib.start()
@@ -218,28 +246,6 @@ class TableRenderNodeUnreachableTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         lib.stop()
-
-    def assertEntryNotError(self, tc: unittest.TestCase, entry: dict[str, Any]):
-        raw_data = entry["raw"]
-        conv_data = entry["converted"]
-        tc.assertNotEqual(raw_data, "error")
-        tc.assertNotEqual(conv_data, "~~")
-
-    def assertRecordNotError(self, tc: unittest.TestCase, record: dict[str, Any]):
-        for col_name, data in record.items():
-            if isinstance(list(data.values())[0], dict):
-                for col_name, data2 in data.items():
-                    print(data2)
-                    self.assertEntryNotError(tc, data2)
-            else:
-                print(data)
-                self.assertEntryNotError(tc, data)
-
-    def check_cmd_for_errors(self, cp: util.CompletedProcess):
-        self.assertEqual(cp.returncode, 0, "Incorrect return code")
-
-        if "traceback" in cp.stderr:
-            self.fail("Traceback found in stderr")
 
     @parameterized.expand(CMDS)
     def test_live_cmds_for_errors(self, cmd):

@@ -357,3 +357,15 @@ class GetAclController:
         ] = self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES, nodes=nodes)
 
         return GetAclController.new_dict_with_key(data, role_name)
+
+
+class GetClusterMetadataController:
+    # TODO: do we need this? Technically asadm only really ever deals with metadata. I
+    # want this to handle things that arn't configs or stats . . .
+
+    def __init__(self, log_analyzer: CollectinfoLogHandler):
+        self.log_handler = log_analyzer
+
+    async def get_builds(self) -> TimestampDict[NodeDict[str]]:
+        builds = self.log_handler.info_meta_data(stanza="asd_build")
+        return util.filter_exceptions(builds)
