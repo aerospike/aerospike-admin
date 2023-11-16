@@ -224,10 +224,22 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         self.check_cmd_for_errors(o)
 
 
+@parameterized_class(
+    [
+        {"template_file": "aerospike_latest.conf", "docker_tag": "latest"},
+        # {"template_file": "aerospike_6.x.conf", "docker_tag": "6.4.0.7"}, # Add this
+        # to all tests once we create multiple test workflows. I am thinking one for
+        # unittest, one for e2e against latest, and another that is e2e against all
+        # notable versions i.e. 4.9, 5.6, 6.4
+    ]
+)
 class TableRenderNodeUnreachableTests(TableRenderTestCase):
+    template_file = ""
+    docker_tag = ""
+
     @classmethod
     def setUpClass(cls):
-        lib.start()
+        lib.start(template_file=cls.template_file, docker_tag=cls.docker_tag)
         lib.populate_db("no-error-test")
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
         lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
@@ -248,17 +260,19 @@ class TableRenderNodeUnreachableTests(TableRenderTestCase):
         lib.stop()
 
     @parameterized.expand(CMDS)
-    def test_live_cmds_for_errors(self, cmd):
-        args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd}' --json -Uadmin -Padmin"
+    def test_live_cmds_for_errors(self, cmd: Cmd):
+        cmd.check_skip(self, self.docker_tag)
+        args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd.cmd}' --json -Uadmin -Padmin"
         o = util.run_asadm(args)
         self.check_cmd_for_errors(o)
 
     @parameterized.expand(list(set(CMDS).difference(NOT_IN_CI_MODE)))
-    def test_collectinfo_cmds_for_errors(self, cmd):
+    def test_collectinfo_cmds_for_errors(self, cmd: Cmd):
+        cmd.check_skip(self, self.docker_tag)
         collectinfo_path = util.get_collectinfo_path(
             self.collectinfo_cp, "/tmp/asadm_test_"
         )
-        args = "-cf {} -e '{}' --json".format(collectinfo_path, cmd)
+        args = "-cf {} -e '{}' --json".format(collectinfo_path, cmd.cmd)
         o = util.run_asadm(args)
         print(o.stdout)
         print(o.stderr)
