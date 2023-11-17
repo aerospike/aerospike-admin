@@ -941,8 +941,8 @@ class ManageConfigTests(unittest.TestCase):
                 ["Node", "Response"],
             ),
             (
-                "manage config namespace test storage-engine param cache-replica-writes to false",
-                "Set Namespace Param cache-replica-writes to false",
+                "manage config namespace test storage-engine param enable-benchmarks-storage to false",
+                "Set Namespace Param enable-benchmarks-storage to false",
                 ["Node", "Response"],
             ),
             (
