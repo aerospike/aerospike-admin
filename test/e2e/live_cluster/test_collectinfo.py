@@ -35,7 +35,7 @@ class TestCollectinfo(asynctest.TestCase):
     CMDS = [
         ("info network", ["Uptime", "Client Conns"], None),
         ("info namespace object", [], None),
-        ("info namespace usage", [], None),
+        ("info namespace usage", ["System Memory"], None),
         ("info set", [], None),
         ("info xdr", ["Lag (hh:mm:ss)"], None),
         ("info sindex", [], None),

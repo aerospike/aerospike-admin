@@ -768,6 +768,21 @@ class ManageSindexTest(TestManage):
         self.assertEqual(exp_stdout, actual.stdout)
         self.assertStdErrEqual(exp_stderr, actual.stderr)
 
+    def test_can_create_blob_sindex(self):
+        exp_stdout = self.success_msg
+        exp_stderr = ""
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage sindex create blob {} ns {} set {} bin {}".format(
+                    self.exp_sindex, self.exp_ns, self.exp_set, self.exp_bin
+                )
+            )
+        )
+
+        self.assertEqual(exp_stdout, actual.stdout)
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
+
     def test_can_create_sindex_in_list(self):
         exp_stdout = self.success_msg
         exp_stderr = ""
@@ -926,8 +941,8 @@ class ManageConfigTests(unittest.TestCase):
                 ["Node", "Response"],
             ),
             (
-                "manage config namespace test storage-engine param cache-replica-writes to false",
-                "Set Namespace Param cache-replica-writes to false",
+                "manage config namespace test storage-engine param enable-benchmarks-storage to false",
+                "Set Namespace Param enable-benchmarks-storage to false",
                 ["Node", "Response"],
             ),
             (

@@ -94,7 +94,7 @@ def async_return_exceptions(func):
         except OSError as e:
             args[0].alive = False
             exception = e
-        except (ASInfoError, ASProtocolError, Exception) as e:
+        except Exception as e:
             exception = e
 
         if raise_exception:

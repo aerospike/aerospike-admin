@@ -21,7 +21,7 @@ from lib.base_controller import (
     ModifierHelp,
     ShellException,
 )
-from mock import MagicMock, patch
+from mock import MagicMock, create_autospec, patch
 from mock.mock import AsyncMock, call
 from parameterized import parameterized
 
@@ -36,6 +36,7 @@ from lib.live_cluster.client import (
 from lib.live_cluster.client.config_handler import JsonDynamicConfigHandler
 from lib.live_cluster.client.ctx import ASValues, CDTContext, CTXItems
 from lib.live_cluster.client.node import Node
+from lib.live_cluster.get_controller import GetClusterMetadataController
 from lib.live_cluster.live_cluster_command_controller import (
     LiveClusterCommandController,
 )
@@ -57,7 +58,6 @@ from lib.live_cluster.manage_controller import (
     ManageRosterRemoveController,
     ManageRosterStageNodesController,
     ManageRosterStageObservedController,
-    ManageSIndexController,
     ManageSIndexCreateController,
     ManageSIndexDeleteController,
     ManageTruncateController,
@@ -1693,8 +1693,9 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageSIndexCreateController.prompt_challenge"
         ).start()
-
-        self.cluster_mock.info_build.return_value = {"principal": "6.1.0.0"}
+        self.meta_mock = self.controller.meta_getter = create_autospec(
+            GetClusterMetadataController
+        )
 
         self.addCleanup(patch.stopall)
 
@@ -1702,6 +1703,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         line = "numeric a-index ns test bin a ctx list_value(1)".split()
         self.controller.warn = True
         self.prompt_mock.return_value = False
+        self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
 
         await self.controller.execute(line)
 
@@ -1709,11 +1711,13 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             "Adding a secondary index will cause longer restart times."
         )
 
-    async def test_create_successful(self):
-        line = "numeric a-index ns test set testset bin a in mapkeys ctx list_value(int(1))".split()
+    @parameterized.expand([("numeric",), ("string",), ("geo2dsphere",), ("blob",)])
+    async def test_create_successful(self, bin_type):
+        line = f"{bin_type} a-index ns test set testset bin a in mapkeys ctx list_value(int(1))".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
+        self.meta_mock.get_builds.return_value = {"principal": "7.0.0.0"}
 
         await self.controller.execute(line)
 
@@ -1721,7 +1725,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             "a-index",
             "test",
             "a",
-            "numeric",
+            bin_type,
             "mapkeys",
             "testset",
             CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
@@ -1733,6 +1737,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
 
     async def test_create_fails_with_asinfo_error(self):
         line = "numeric a-index ns test bin a ctx list_value(1)".split()
+        self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
         }
@@ -1743,7 +1748,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
 
     async def test_ctx_invalid_format(self):
         line = "numeric a-index ns test bin a ctx foo".split()
-        self.cluster_mock.info_build.return_value = {"principal": "6.1.0.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
 
         await self.assertAsyncRaisesRegex(
             ShellException,
@@ -1753,11 +1758,21 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
 
     async def test_ctx_not_supported(self):
         line = "numeric a-index ns test bin a ctx [foo]".split()
-        self.cluster_mock.info_build.return_value = {"principal": "6.0.0.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "6.0.0.0"}
 
         await self.assertAsyncRaisesRegex(
             ShellException,
             "One or more servers does not support 'ctx'.",
+            self.controller.execute(line),
+        )
+
+    async def test_blob_not_supported(self):
+        line = "blob a-index ns test bin a ctx [foo]".split()
+        self.meta_mock.get_builds.return_value = {"principal": "6.4.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Blob type secondary index is not supported on server version < 7.0",
             self.controller.execute(line),
         )
 

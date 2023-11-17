@@ -279,6 +279,8 @@ def start_server(
     first_base,
     index,
     access_address="127.0.0.1",
+    docker_tag="latest",
+    template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
 ):
@@ -299,7 +301,7 @@ def start_server(
     base = first_base + 1000 * (index - 1)
 
     if template_content is None and not config_content:
-        template_file = absolute_path("aerospike.conf")
+        template_file = absolute_path(template_file)
         with codecs.open(template_file, "r", "UTF-8") as file_obj:
             template_content = file_obj.read()
 
@@ -329,7 +331,7 @@ def start_server(
         pass
 
     container = DOCKER_CLIENT.containers.run(
-        "aerospike/aerospike-server-enterprise:latest",
+        f"aerospike/aerospike-server-enterprise:{docker_tag}",
         command=cmd,
         ports={
             str(base) + "/tcp": str(base),
@@ -352,7 +354,12 @@ def start_server(
 
 
 def start(
-    do_reset=True, num_nodes=DEFAULT_N_NODES, template_content=None, config_content=None
+    do_reset=True,
+    num_nodes=DEFAULT_N_NODES,
+    docker_tag="latest",
+    template_file="aerospike_latest.conf",
+    template_content=None,
+    config_content=None,
 ):
     global CLIENT
     global NODES
@@ -373,6 +380,8 @@ def start(
                 ip = start_server(
                     first_base,
                     index,
+                    docker_tag=docker_tag,
+                    template_file=template_file,
                     template_content=template_content,
                     config_content=config_content,
                 )

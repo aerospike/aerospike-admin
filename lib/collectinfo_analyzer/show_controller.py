@@ -14,10 +14,11 @@
 
 from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
+    GetClusterMetadataController,
     GetConfigController,
     GetStatisticsController,
 )
-from lib.utils import common, constants, util
+from lib.utils import common, constants, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -785,6 +786,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         self.getter = GetStatisticsController(
             self.log_handler
         )  # TODO: Use this getter for more than just xdr
+        self.meta_getter = GetClusterMetadataController(self.log_handler)
 
     @CommandHelp(
         "Displays bin, set, service, and namespace statistics",
@@ -976,7 +978,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             like_stat_modifier_help,
         ),
     )
-    def do_bins(self, line):
+    async def do_bins(self, line):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -1003,6 +1005,21 @@ class ShowStatisticsController(CollectinfoCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
+
+        builds = await self.meta_getter.get_builds()
+
+        for timestamp in sorted(builds.keys()):
+            nodes_builds = builds[timestamp]
+            if any(
+                [
+                    version.LooseVersion(build)
+                    >= version.LooseVersion(constants.SERVER_INFO_BINS_REMOVAL_VERSION)
+                    for build in nodes_builds.values()
+                ]
+            ):
+                self.logger.error(
+                    f"Server version {constants.SERVER_INFO_BINS_REMOVAL_VERSION} removed namespace bin-name limits and statistics."
+                )
 
         new_bin_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_BINS, flip=True
