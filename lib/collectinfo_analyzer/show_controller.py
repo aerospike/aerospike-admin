@@ -978,7 +978,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             like_stat_modifier_help,
         ),
     )
-    async def do_bins(self, line):
+    def do_bins(self, line):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -1006,7 +1006,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             mods=self.mods,
         )
 
-        builds = await self.meta_getter.get_builds()
+        builds = self.meta_getter.get_builds()
 
         for timestamp in sorted(builds.keys()):
             nodes_builds = builds[timestamp]

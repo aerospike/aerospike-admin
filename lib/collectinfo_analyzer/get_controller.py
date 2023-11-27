@@ -366,6 +366,6 @@ class GetClusterMetadataController:
     def __init__(self, log_analyzer: CollectinfoLogHandler):
         self.log_handler = log_analyzer
 
-    async def get_builds(self) -> TimestampDict[NodeDict[str]]:
+    def get_builds(self) -> TimestampDict[NodeDict[str]]:
         builds = self.log_handler.info_meta_data(stanza="asd_build")
         return util.filter_exceptions(builds)
