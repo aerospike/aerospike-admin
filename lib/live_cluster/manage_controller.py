@@ -41,7 +41,10 @@ from .client import (
     CDTContext,
 )
 from .live_cluster_command_controller import LiveClusterCommandController
-from lib.live_cluster.get_controller import GetJobsController
+from lib.live_cluster.get_controller import (
+    GetClusterMetadataController,
+    GetJobsController,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
@@ -1082,6 +1085,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line", "ns", "bin"])
         self.modifiers = set(["set", "in", "ctx"])
+        self.meta_getter = GetClusterMetadataController(self.cluster)
 
     @staticmethod
     def _split_ctx_list(ctx_str: str) -> list[str]:
@@ -1267,7 +1271,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         cdt_ctx = None
 
         if ctx_list:
-            builds = await self.cluster.info_build(nodes=self.nodes)
+            builds = await self.meta_getter.get_builds(nodes=self.nodes)
 
             if not all(
                 [
@@ -1322,6 +1326,22 @@ class ManageSIndexCreateController(ManageLeafCommandController):
     # Hack for auto-complete
     async def do_geo2dsphere(self, line):
         await self._do_create(line, "geo2dsphere")
+
+    # Hack for auto-complete
+    async def do_blob(self, line):
+        builds = await self.meta_getter.get_builds()
+        if any(
+            [
+                version.LooseVersion(build)
+                < version.LooseVersion(constants.SERVER_SINDEX_BLOB_TYPE_FIRST_VERSION)
+                for build in builds.values()
+            ]
+        ):
+            raise ShellException(
+                f"Blob type secondary index is not supported on server version < {constants.SERVER_SINDEX_BLOB_TYPE_FIRST_VERSION}."
+            )
+
+        await self._do_create(line, "blob")
 
 
 @CommandHelp(

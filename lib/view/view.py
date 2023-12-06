@@ -2052,15 +2052,6 @@ class CliView(object):
     ###########################
 
     @staticmethod
-    def get_summary_line_prefix(index, key):
-        s = " " * 3
-        s += (str(index) + ".").ljust(3)
-        s += " " * 2
-        s += key.ljust(19)
-        s += ":" + (" " * 2)
-        return s
-
-    @staticmethod
     def _summary_cluster_table_view(stats: SummaryClusterDict, **ignore):
         title = "Cluster Summary"
         new_stats = dict(node_hack=stats)  # XXX - hack
