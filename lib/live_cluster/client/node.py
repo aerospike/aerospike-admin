@@ -1549,7 +1549,7 @@ class Node(AsyncObject):
         self, param, value, namespace, set_=None, subcontext=None
     ):
         new_param = param
-        if subcontext and subcontext != "storage-engine":
+        if subcontext and subcontext not in {"storage-engine", "index-type"}:
             delimiter = "."
 
             if subcontext == "geo2dsphere-within":
