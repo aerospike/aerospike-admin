@@ -149,6 +149,12 @@ class LookupDict(Generic[ValueType]):
         keys = self.get_key(k)
         return [self._kv[key] for key in keys]
 
+    def get_exact(self, k) -> ValueType:
+        if k in self._kv:
+            return self._kv[k]
+
+        raise KeyError("Unable to find key '%s'" % (k))
+
     def remove(self, k):
         keys = self.get_key(k)
 

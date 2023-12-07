@@ -198,6 +198,11 @@ class ClusterTest(asynctest.TestCase):
             n = await self.get_info_mock("A0000000000000" + str(i), ip=ip, port=port)
             cl.update_node(n)
 
+        n = await self.get_info_mock("A", ip="1.1.1.1", port=3000)
+        cl.update_node(n)
+        n = await self.get_info_mock("AB", ip="2.2.2.2", port=3000)
+        cl.update_node(n)
+
         expected = [
             "192.168.0.1:3000",
             "192.168.0.1:3001",
@@ -273,6 +278,15 @@ class ClusterTest(asynctest.TestCase):
         ]
 
         actual = cl.get_node("183.168.0.1")
+        actual = map(lambda x: x.key, actual)
+
+        self.assertCountEqual(expected, actual)
+
+        expected = [
+            "1.1.1.1:3000",
+        ]
+
+        actual = cl.get_node("A")
         actual = map(lambda x: x.key, actual)
 
         self.assertCountEqual(expected, actual)
