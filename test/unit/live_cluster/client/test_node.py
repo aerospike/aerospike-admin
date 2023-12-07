@@ -1278,11 +1278,11 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
         actual = await self.node.info_set_config_namespace(
-            "foo", "bar", "buff", subcontext="index-type"
+            "mounts-size-limit", "50", "buff", subcontext="index-type"
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;index-type.foo=bar", self.ip
+            "set-config:context=namespace;id=buff;mounts-size-limit=50", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
