@@ -430,9 +430,12 @@ class Cluster(AsyncObject):
         # Me must now look for exact matches.
 
         # Can't use "if not in self.node_lookup" here because we need to check for
-        # exact matches. Unless using node id than this condition requires they provide ip:port.
-        if node in self.node_lookup.keys():
-            return self.node_lookup[node]
+        # exact matches. Unless using node id than this condition requires they provide
+        # ip:port.
+        try:
+            return [self.node_lookup.get_exact(node)]
+        except KeyError:
+            pass
 
         node_matches = self.node_lookup[node]
         match = None
