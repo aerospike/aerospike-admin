@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import copy
 import logging
 from typing import Any
@@ -25,7 +26,8 @@ information it need should be in the intermediate dict.
 
 
 class IntermediateKey:
-    pass
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 class InterNamedSectionKey(IntermediateKey):
@@ -44,9 +46,6 @@ class InterNamedSectionKey(IntermediateKey):
 
     def __str__(self) -> str:
         return f"({self.__class__.__name__}, {self.type}, {self.name})"
-
-    def __repr__(self) -> str:
-        return self.__str__()
 
 
 class InterUnnamedSectionKey(IntermediateKey):
@@ -68,9 +67,6 @@ class InterUnnamedSectionKey(IntermediateKey):
     def __str__(self) -> str:
         return f"({self.__class__.__name__}, {self.type})"
 
-    def __repr__(self) -> str:
-        return self.__str__()
-
 
 class InterLoggingContextKey(str):
     pass
@@ -91,9 +87,6 @@ class InterListKey(IntermediateKey):
 
     def __str__(self) -> str:
         return f"({self.__class__.__name__}, {self.name})"
-
-    def __repr__(self) -> str:
-        return self.__str__()
 
 
 class ConfigPipelineStep:
@@ -366,6 +359,25 @@ class CopyToIntermediateDict(ConfigPipeline):
         )
 
 
+class AppendShadowDevice(ConfigPipelineStep):
+    async def __call__(self, context_dict: dict[str, Any]):
+        intermediate_dict = context_dict[INTERMEDIATE]
+        namespace_config = context_dict["namespaces"]
+
+        for host in namespace_config:
+            host_namespaces_config = namespace_config[host]
+            for ns in host_namespaces_config.keys():
+                for config, value in host_namespaces_config[ns].items():
+                    if config.endswith(".shadow"):
+                        device_config = config.replace(".shadow", "")
+                        intermediate_dict[host][InterNamedSectionKey("namespace", ns)][
+                            device_config
+                        ] += (" " + value)
+                        del intermediate_dict[host][
+                            InterNamedSectionKey("namespace", ns)
+                        ][config]
+
+
 class SplitSubcontexts(ConfigPipelineStep):
     """Takes a config dict and splits any subcontexts that are joined with a dot
     into their own subdicts. E.g. "heartbeat.interval" -> {"heartbeat": {"interval": ...}}
@@ -474,7 +486,7 @@ class ConvertIndexedSubcontextsToNamedSection(ConfigPipelineStep):
 
 class ConvertIndexedToList(ConfigPipelineStep):
     def _helper(self, config_dict: dict[str | IntermediateKey, Any]):
-        tmp_list_dict: dict[str, list[tuple[int, str]]] = {}
+        tmp_list_dict: dict[str, list[tuple[int, str]]] = collections.defaultdict(list)
 
         for config in list(config_dict.keys()):
             value = config_dict[config]
@@ -539,7 +551,10 @@ class ConvertCommaSeparatedToList(ConfigPipelineStep):
 
             # Handles ldap scenarios with configs that allow commas in the config and
             # are returned with commas. e.g. "query-base-dn" and "user-dn-pattern"
-            if len(split_value) > 1 and not ("-dn" in config and "ldap" in context):
+            if len(split_value) > 1 and not (
+                ("-dn" in config and "ldap" in context)
+                or config in {"dcs", "namespaces"}
+            ):
                 config_dict[InterListKey(config)] = split_value
 
                 del config_dict[config]
@@ -950,15 +965,16 @@ class ASConfigGenerator(ConfigGenerator):
                 ServerVersionCheck(),
                 CopyToIntermediateDict(),
                 OverrideNamespaceRackID(),
+                AppendShadowDevice(),
                 SplitSubcontexts(),
                 ConvertIndexedSubcontextsToNamedSection(),
                 RemoveNullOrEmptyOrUndefinedValues(),
                 ConvertIndexedToList(),
                 SplitColonSeparatedValues(),
+                ConvertCommaSeparatedToList(),
                 RemoveSecurityIfNotEnabled(),
                 RemoveDefaultAndNonExistentKeys(JsonDynamicConfigHandler),
                 RemoveInvalidKeysFoundInSchemas(),
-                ConvertCommaSeparatedToList(),
                 RemoveEmptyContexts(),  # Should be after RemoveDefaultValues
                 RemoveConfigsConditionally(),
             ],
@@ -968,6 +984,28 @@ class ASConfigGenerator(ConfigGenerator):
         await pipeline(context_dict)
         return context_dict[INTERMEDIATE]
 
+    def _sort_keys(self, intermediate_dict: dict[IntermediateKey | str, Any]):
+        str_keys = []
+        list_keys = []
+        unnamed_keys = []
+        named_keys = []
+
+        for key in intermediate_dict:
+            if isinstance(key, str):
+                str_keys.append(key)
+            elif isinstance(key, InterListKey):
+                list_keys.append(key)
+            elif isinstance(key, InterUnnamedSectionKey):
+                unnamed_keys.append(key)
+            elif isinstance(key, InterNamedSectionKey):
+                named_keys.append(key)
+
+        str_keys.sort()
+        list_keys.sort(key=lambda x: x.name)
+        named_keys.sort(key=lambda x: x.type + x.name)
+
+        return str_keys + list_keys + unnamed_keys + named_keys
+
     def _generate_helper(
         self,
         result: list[str],
@@ -976,7 +1014,8 @@ class ASConfigGenerator(ConfigGenerator):
     ):
         adjusted_indent = indent * 2
 
-        for key, val in intermediate_dict.items():
+        for key in self._sort_keys(intermediate_dict):
+            val = intermediate_dict[key]
             if isinstance(key, InterUnnamedSectionKey):
                 result.append(f"\n{'  ' * adjusted_indent}{key.type} {{")
                 self._generate_helper(result, val, indent + 1)

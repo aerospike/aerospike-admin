@@ -129,7 +129,12 @@ class CopyToIntermediateDictTest(asynctest.TestCase):
             "sets": {"1.1.1.1": {("test", "testset"): 1, ("bar", "barset"): 1}},
             "xdr": {"1.1.1.1": {"a": 1}},
             "xdr-dcs": {"1.1.1.1": {"dc1": {"a": 1}, "dc2": {"b": 1}}},
-            "xdr-namespaces": {"1.1.1.1": {"dc1": {"test": 1}, "dc2": {"bar": 2}}},
+            "xdr-namespaces": {
+                "1.1.1.1": {
+                    "dc1": {"test": {"shipped-bins": "a,b,c", "shipped-sets": "1,2,3"}},
+                    "dc2": {"bar": {"ignored-bins": "a,b,c", "ignored-sets": "1,2,3"}},
+                }
+            },
         }
 
         await CopyToIntermediateDict()(context_dict)
@@ -158,11 +163,17 @@ class CopyToIntermediateDictTest(asynctest.TestCase):
                         "a": 1,
                         InterNamedSectionKey("dc", "dc1"): {
                             "a": 1,
-                            InterNamedSectionKey("namespace", "test"): 1,
+                            InterNamedSectionKey("namespace", "test"): {
+                                "ship-bin": "a,b,c",
+                                "ship-set": "1,2,3",
+                            },
                         },
                         InterNamedSectionKey("dc", "dc2"): {
                             "b": 1,
-                            InterNamedSectionKey("namespace", "bar"): 2,
+                            InterNamedSectionKey("namespace", "bar"): {
+                                "ignore-bin": "a,b,c",
+                                "ignore-set": "1,2,3",
+                            },
                         },
                     },
                 }
@@ -224,7 +235,7 @@ class ConvertIndexedSubcontextsToNamedSectionTest(asynctest.TestCase):
                 "1.1.1.1": {
                     InterUnnamedSectionKey("network"): {
                         InterUnnamedSectionKey("tls[0]"): {
-                            "name": "tls-name",
+                            "name": "tls-foo",
                             "b": "2",
                             "c": "3",
                         }
@@ -240,7 +251,7 @@ class ConvertIndexedSubcontextsToNamedSectionTest(asynctest.TestCase):
             {
                 "1.1.1.1": {
                     InterUnnamedSectionKey("network"): {
-                        InterNamedSectionKey("tls", "tls-name"): {
+                        InterNamedSectionKey("tls", "tls-foo"): {
                             "b": "2",
                             "c": "3",
                         }
@@ -256,7 +267,7 @@ class ConvertIndexedToListTest(asynctest.TestCase):
     async def test_convert_indexed_to_list(self):
         context_dict = {
             "intermediate": {
-                "1.1.1.1": {"a": {"b[1]": "1", "b[0]": "2", "b[2]": "3"}},
+                "1.1.1.1": {"a": {"b[1]": "1 4", "b[0]": "2", "b[2]": "3"}},
             }
         }
 
@@ -265,7 +276,7 @@ class ConvertIndexedToListTest(asynctest.TestCase):
         self.assertDictEqual(
             context_dict["intermediate"],
             {
-                "1.1.1.1": {"a": {InterListKey("b"): ["2", "1", "3"]}},
+                "1.1.1.1": {"a": {InterListKey("b"): ["2", "1 4", "3"]}},
             },
         )
 

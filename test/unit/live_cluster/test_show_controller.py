@@ -133,16 +133,16 @@ class ShowConfigControllerTest(asynctest.TestCase):
         self.view_mock.show_config.assert_has_calls(
             [
                 call(
-                    "foo Namespace Configuration",
-                    "foo-configs",
+                    "bar Namespace Configuration",
+                    "bar-configs",
                     self.cluster_mock,
                     title_every_nth=0,
                     flip_output=False,
                     **self.controller.mods,
                 ),
                 call(
-                    "bar Namespace Configuration",
-                    "bar-configs",
+                    "foo Namespace Configuration",
+                    "foo-configs",
                     self.cluster_mock,
                     title_every_nth=0,
                     flip_output=False,

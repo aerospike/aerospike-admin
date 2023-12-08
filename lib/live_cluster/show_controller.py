@@ -524,13 +524,13 @@ class ShowConfigController(LiveClusterCommandController):
             util.callable(
                 self.view.show_config,
                 "%s Namespace Configuration" % (ns),
-                configs,
+                ns_configs[ns],
                 self.cluster,
                 title_every_nth=title_every_nth,
                 flip_output=flip_output,
                 **self.mods,
             )
-            for ns, configs in list(ns_configs.items())
+            for ns in sorted(ns_configs.keys())
         ]
 
     # pre 5.0 but will still work

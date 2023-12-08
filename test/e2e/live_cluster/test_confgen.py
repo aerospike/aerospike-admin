@@ -8,6 +8,7 @@ aerospike_conf = """
 ${security_stanza}
 
 service {
+    cluster-name asadm-test
     feature-key-file ${feature_path}
 	run-as-daemon false
 	pidfile ${state_directory}/asd.pid
@@ -58,23 +59,50 @@ network {
 	}
 }
 
+namespace bar {
+	replication-factor 2
+	default-ttl 0
+	storage-engine memory {
+		data-size 1G
+	}
+	nsup-period 60
+}
+
 namespace ${namespace} {
 	replication-factor 2
-	memory-size 512M
 	default-ttl 0
 	storage-engine device {
-		file /opt/aerospike/data/test.dat
+        file /opt/aerospike/data/test.dat /opt/aerospike/data/test-shadow.dat
 		filesize 1G
-		data-in-memory false # Store data in memory in addition to file.
 	}
 	nsup-period 60
 }
 
 xdr {
-        dc DC1 {
-                namespace ${namespace} {
-                }
+    dc DC1 {
+        namespace ${namespace} {
+            bin-policy changed-or-specified
+            ignore-set testset
+            ignore-set barset
+            ship-bin bar
+            ship-bin foo
         }
+        
+        namespace bar {
+        }
+    }
+    dc DC2 {
+        namespace ${namespace} {
+            bin-policy changed-or-specified
+            ignore-set testset
+            ignore-set barset
+            ship-bin bar
+            ship-bin foo
+        }
+    
+        namespace bar {
+        }
+    }
 }
 """
 
@@ -97,18 +125,23 @@ class TestConfGen(asynctest.TestCase):
     """
 
     @classmethod
-    def rm_timestamp_from_output(cls, output):
+    def clean_output(cls, output):
         lines = output.split("\n")
         for i, l in enumerate(lines):
             l = re.sub(r"([0-9]{2}:){2}[0-9]{2}", "", l)
+
+            if ".stripe" in l:
+                l = ""
+
             lines[i] = l
+
         return "\n".join(lines)
 
     def tearDown(self):
         lib.stop()
 
     async def test_genconf(self):
-        lib.start(num_nodes=1)
+        lib.start(num_nodes=1, template_content=aerospike_conf)
         time.sleep(1)
         conf_gen_cmd = f"generate config with 127.0.0.1:{lib.PORT}"
         show_config_cmd = "show config; show config security; show config xdr"
@@ -161,9 +194,11 @@ class TestConfGen(asynctest.TestCase):
         second_show_config = cp.stdout
 
         self.assertEqual(first_conf, second_conf)
+        first_show_config = TestConfGen.clean_output(first_show_config)
+        second_show_config = TestConfGen.clean_output(second_show_config)
         self.assertEqual(
-            TestConfGen.rm_timestamp_from_output(first_show_config),
-            TestConfGen.rm_timestamp_from_output(second_show_config),
+            first_show_config,
+            second_show_config,
         )
 
     async def test_genconf_save_to_file(self):
@@ -175,8 +210,8 @@ class TestConfGen(asynctest.TestCase):
         )
 
         if cp.returncode != 0:
-            print(cp.stdout)
-            print(cp.stderr)
+            # print(cp.stdout)
+            # print(cp.stderr)
             self.fail()
 
         first_conf = cp.stdout
