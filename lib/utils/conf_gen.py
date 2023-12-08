@@ -1013,15 +1013,20 @@ class ASConfigGenerator(ConfigGenerator):
         indent=0,
     ):
         adjusted_indent = indent * 2
+        keys = self._sort_keys(intermediate_dict)
 
-        for key in self._sort_keys(intermediate_dict):
+        for i, key in enumerate(keys):
             val = intermediate_dict[key]
             if isinstance(key, InterUnnamedSectionKey):
-                result.append(f"\n{'  ' * adjusted_indent}{key.type} {{")
+                if i != 0:
+                    result.append("")
+                result.append(f"{'  ' * adjusted_indent}{key.type} {{")
                 self._generate_helper(result, val, indent + 1)
                 result.append(f"{'  ' * adjusted_indent}}}")
             elif isinstance(key, InterNamedSectionKey):
-                result.append(f"\n{'  ' * adjusted_indent}{key.type} {key.name} {{")
+                if i != 0:
+                    result.append("")
+                result.append(f"{'  ' * adjusted_indent}{key.type} {key.name} {{")
                 self._generate_helper(result, val, indent + 1)
                 result.append(f"{'  ' * adjusted_indent}}}")
             elif isinstance(key, InterListKey):
@@ -1044,7 +1049,7 @@ class ASConfigGenerator(ConfigGenerator):
         lines = []
 
         self._generate_helper(lines, list(intermediate_dict.values())[0])
-        return "\n".join(lines).replace("{\n\n", "{\n")
+        return "\n".join(lines)
 
 
 # Helpers
