@@ -2264,7 +2264,7 @@
                   },
                   "data-in-memory": {
                     "type": "boolean",
-                    "default": true,
+                    "default": false,
                     "description": "",
                     "dynamic": false
                   },
@@ -2406,7 +2406,7 @@
                   },
                   "post-write-queue": {
                     "type": "integer",
-                    "default": 0,
+                    "default": 256,
                     "minimum": 0,
                     "maximum": 4096,
                     "description": "",
