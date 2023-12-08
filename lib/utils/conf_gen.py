@@ -1062,7 +1062,4 @@ server_to_config_key_map = {
 
 
 def convert_response_to_config_key(key: str) -> str:
-    if key in server_to_config_key_map:
-        return server_to_config_key_map[key]
-
-    return key
+    return server_to_config_key_map.get(key, key)
