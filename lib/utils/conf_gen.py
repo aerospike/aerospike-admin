@@ -265,11 +265,20 @@ class CopyXDRNamespaceConfig(ConfigPipelineStep):
             host_xdr_namespace_config = xdr_namespace_config[host]
             for dc in host_xdr_namespace_config:
                 for ns in host_xdr_namespace_config[dc]:
-                    context_dict[INTERMEDIATE][host][InterUnnamedSectionKey("xdr")][
-                        InterNamedSectionKey("dc", dc)
-                    ][InterNamedSectionKey("namespace", ns)] = copy.deepcopy(
+                    ns_config = context_dict[INTERMEDIATE][host][
+                        InterUnnamedSectionKey("xdr")
+                    ][InterNamedSectionKey("dc", dc)][
+                        InterNamedSectionKey("namespace", ns)
+                    ] = copy.deepcopy(
                         host_xdr_namespace_config[dc][ns]
                     )
+
+                    for key, val in host_xdr_namespace_config[dc][ns].items():
+                        newKey = convert_response_to_config_key(key)
+
+                        if newKey != key:
+                            ns_config[newKey] = val
+                            del ns_config[key]
 
 
 class CopyLoggingConfig(ConfigPipelineStep):
@@ -996,4 +1005,20 @@ class ASConfigGenerator(ConfigGenerator):
         lines = []
 
         self._generate_helper(lines, list(intermediate_dict.values())[0])
-        return "\n".join(lines)
+        return "\n".join(lines).replace("{\n\n", "{\n")
+
+
+# Helpers
+server_to_config_key_map = {
+    "shipped-bins": "ship-bin",
+    "shipped-sets": "ship-set",
+    "ignored-bins": "ignore-bin",
+    "ignored-sets": "ignore-set",
+}
+
+
+def convert_response_to_config_key(key: str) -> str:
+    if key in server_to_config_key_map:
+        return server_to_config_key_map[key]
+
+    return key
