@@ -9,10 +9,10 @@
     "properties": {
         "service": {
             "type": "object",
+            "additionalProperties": false,
             "required": [
                 "cluster-name"
             ],
-            "additionalProperties": false,
             "properties": {
                 "advertise-ipv6": {
                     "type": "boolean",
@@ -64,9 +64,9 @@
                 },
                 "debug-allocations": {
                     "type": "boolean",
+                    "default": false,
                     "description": "",
-                    "dynamic": false,
-                    "default": false
+                    "dynamic": false
                 },
                 "disable-udf-execution": {
                     "type": "boolean",
@@ -223,6 +223,12 @@
                     "description": "",
                     "dynamic": false
                 },
+                "poison-allocations": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "",
+                    "dynamic": false
+                },
                 "proto-fd-idle-ms": {
                     "type": "integer",
                     "default": 0,
@@ -238,6 +244,14 @@
                     "maximum": 2147483647,
                     "description": "",
                     "dynamic": true
+                },
+                "quarantine-allocations": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "maximum": 100000000,
+                    "description": "",
+                    "dynamic": false
                 },
                 "query-max-done": {
                     "type": "integer",
@@ -258,20 +272,6 @@
                 "run-as-daemon": {
                     "type": "boolean",
                     "default": true,
-                    "description": "",
-                    "dynamic": false
-                },
-                "poison-allocations": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "",
-                    "dynamic": false
-                },
-                "quarantine-allocations": {
-                    "type": "integer",
-                    "default": 0,
-                    "minimum": 0,
-                    "maximum": 100000000,
                     "description": "",
                     "dynamic": false
                 },
@@ -418,7 +418,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "alloc": {
                         "enum": [
@@ -435,7 +435,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "arenax": {
                         "enum": [
@@ -452,7 +452,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "hardware": {
                         "enum": [
@@ -469,7 +469,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "msg": {
                         "enum": [
@@ -486,7 +486,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "os": {
                         "enum": [
@@ -503,7 +503,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "secrets": {
                         "enum": [
@@ -520,7 +520,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "socket": {
                         "enum": [
@@ -537,7 +537,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "tls": {
                         "enum": [
@@ -554,7 +554,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "vault": {
                         "enum": [
@@ -571,7 +571,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "vmapx": {
                         "enum": [
@@ -588,7 +588,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "xmem": {
                         "enum": [
@@ -605,7 +605,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "aggr": {
                         "enum": [
@@ -622,7 +622,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "appeal": {
                         "enum": [
@@ -639,7 +639,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "as": {
                         "enum": [
@@ -656,7 +656,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "audit": {
                         "enum": [
@@ -673,7 +673,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "batch": {
                         "enum": [
@@ -690,7 +690,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "batch-sub": {
                         "enum": [
@@ -707,7 +707,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "bin": {
                         "enum": [
@@ -724,7 +724,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "config": {
                         "enum": [
@@ -741,7 +741,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "clustering": {
                         "enum": [
@@ -758,7 +758,24 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
+                    },
+                    "drv-mem": {
+                        "enum": [
+                            "CRITICAL",
+                            "critical",
+                            "WARNING",
+                            "warning",
+                            "INFO",
+                            "info",
+                            "DEBUG",
+                            "debug",
+                            "DETAIL",
+                            "detail"
+                        ],
+                        "description": "",
+                        "dynamic": true,
+                        "default": "CRITICAL"
                     },
                     "drv_pmem": {
                         "enum": [
@@ -775,7 +792,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "drv_ssd": {
                         "enum": [
@@ -792,7 +809,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "exchange": {
                         "enum": [
@@ -809,7 +826,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "exp": {
                         "enum": [
@@ -826,7 +843,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "fabric": {
                         "enum": [
@@ -843,7 +860,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "flat": {
                         "enum": [
@@ -860,7 +877,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "geo": {
                         "enum": [
@@ -877,7 +894,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "hb": {
                         "enum": [
@@ -894,7 +911,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "health": {
                         "enum": [
@@ -911,7 +928,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "hlc": {
                         "enum": [
@@ -928,7 +945,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "index": {
                         "enum": [
@@ -945,7 +962,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "info": {
                         "enum": [
@@ -962,7 +979,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "info-port": {
                         "enum": [
@@ -979,7 +996,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "key-busy": {
                         "enum": [
@@ -996,7 +1013,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "migrate": {
                         "enum": [
@@ -1013,7 +1030,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "namespace": {
                         "enum": [
@@ -1030,7 +1047,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "nsup": {
                         "enum": [
@@ -1047,7 +1064,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "particle": {
                         "enum": [
@@ -1064,7 +1081,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "partition": {
                         "enum": [
@@ -1081,7 +1098,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "proto": {
                         "enum": [
@@ -1098,7 +1115,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "proxy": {
                         "enum": [
@@ -1115,7 +1132,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "proxy-divert": {
                         "enum": [
@@ -1132,7 +1149,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "query": {
                         "enum": [
@@ -1149,7 +1166,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "record": {
                         "enum": [
@@ -1166,7 +1183,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "roster": {
                         "enum": [
@@ -1183,7 +1200,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "rw": {
                         "enum": [
@@ -1200,7 +1217,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "rw-client": {
                         "enum": [
@@ -1217,7 +1234,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "security": {
                         "enum": [
@@ -1234,7 +1251,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "service": {
                         "enum": [
@@ -1251,7 +1268,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "service-list": {
                         "enum": [
@@ -1268,7 +1285,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "sindex": {
                         "enum": [
@@ -1285,7 +1302,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "skew": {
                         "enum": [
@@ -1302,7 +1319,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "smd": {
                         "enum": [
@@ -1319,7 +1336,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "storage": {
                         "enum": [
@@ -1336,7 +1353,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "truncate": {
                         "enum": [
@@ -1353,7 +1370,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "tsvc": {
                         "enum": [
@@ -1370,7 +1387,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "udf": {
                         "enum": [
@@ -1387,7 +1404,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "xdr": {
                         "enum": [
@@ -1404,7 +1421,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "xdr-client": {
                         "enum": [
@@ -1421,7 +1438,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "any": {
                         "enum": [
@@ -1438,7 +1455,7 @@
                         ],
                         "description": "",
                         "dynamic": true,
-                        "default": "INFO"
+                        "default": "CRITICAL"
                     },
                     "facility": {
                         "enum": [
@@ -2535,6 +2552,14 @@
                                             "pmem"
                                         ]
                                     },
+                                    "evict-mounts-pct": {
+                                        "type": "integer",
+                                        "default": 0,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
                                     "mounts": {
                                         "type": "array",
                                         "items": {
@@ -2543,14 +2568,6 @@
                                         "description": "",
                                         "dynamic": false,
                                         "default": []
-                                    },
-                                    "evict-mounts-pct": {
-                                        "type": "integer",
-                                        "default": 0,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
                                     },
                                     "mounts-budget": {
                                         "type": "integer",
@@ -2580,6 +2597,14 @@
                                             "flash"
                                         ]
                                     },
+                                    "evict-mounts-pct": {
+                                        "type": "integer",
+                                        "default": 0,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
                                     "mounts": {
                                         "type": "array",
                                         "items": {
@@ -2588,14 +2613,6 @@
                                         "description": "",
                                         "dynamic": false,
                                         "default": []
-                                    },
-                                    "evict-mounts-pct": {
-                                        "type": "integer",
-                                        "default": 0,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
                                     },
                                     "mounts-budget": {
                                         "type": "integer",
@@ -2698,6 +2715,14 @@
                                             "pmem"
                                         ]
                                     },
+                                    "evict-mounts-pct": {
+                                        "type": "integer",
+                                        "default": 0,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
                                     "mounts": {
                                         "type": "array",
                                         "items": {
@@ -2706,14 +2731,6 @@
                                         "description": "",
                                         "dynamic": false,
                                         "default": []
-                                    },
-                                    "evict-mounts-pct": {
-                                        "type": "integer",
-                                        "default": 0,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
                                     },
                                     "mounts-budget": {
                                         "type": "integer",
@@ -2743,6 +2760,14 @@
                                             "flash"
                                         ]
                                     },
+                                    "evict-mounts-pct": {
+                                        "type": "integer",
+                                        "default": 0,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
                                     "mounts": {
                                         "type": "array",
                                         "items": {
@@ -2751,14 +2776,6 @@
                                         "description": "",
                                         "dynamic": false,
                                         "default": []
-                                    },
-                                    "evict-mounts-pct": {
-                                        "type": "integer",
-                                        "default": 0,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
                                     },
                                     "mounts-budget": {
                                         "type": "integer",
@@ -2781,12 +2798,6 @@
                                     {
                                         "required": [
                                             "type",
-                                            "data-size"
-                                        ]
-                                    },
-                                    {
-                                        "required": [
-                                            "type",
                                             "devices"
                                         ]
                                     },
@@ -2794,6 +2805,12 @@
                                         "required": [
                                             "type",
                                             "files"
+                                        ]
+                                    },
+                                    {
+                                        "required": [
+                                            "type",
+                                            "data-size"
                                         ]
                                     }
                                 ],
@@ -2963,14 +2980,6 @@
                                         "description": "",
                                         "dynamic": true
                                     },
-                                    "stop-writes-used-pct": {
-                                        "type": "integer",
-                                        "default": 70,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
-                                    },
                                     "max-write-cache": {
                                         "type": "integer",
                                         "default": 67108864,
@@ -2982,6 +2991,14 @@
                                     "stop-writes-avail-pct": {
                                         "type": "integer",
                                         "default": 5,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
+                                    "stop-writes-used-pct": {
+                                        "type": "integer",
+                                        "default": 70,
                                         "minimum": 0,
                                         "maximum": 100,
                                         "description": "",
@@ -3184,14 +3201,6 @@
                                         "description": "",
                                         "dynamic": true
                                     },
-                                    "stop-writes-used-pct": {
-                                        "type": "integer",
-                                        "default": 70,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
-                                    },
                                     "max-write-cache": {
                                         "type": "integer",
                                         "default": 67108864,
@@ -3200,17 +3209,9 @@
                                         "description": "",
                                         "dynamic": true
                                     },
-                                    "stop-writes-avail-pct": {
-                                        "type": "integer",
-                                        "default": 5,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
-                                    },
                                     "post-write-queue": {
                                         "type": "integer",
-                                        "default": 0,
+                                        "default": 256,
                                         "minimum": 0,
                                         "maximum": 4096,
                                         "description": "",
@@ -3233,6 +3234,22 @@
                                         "default": false,
                                         "description": "",
                                         "dynamic": false
+                                    },
+                                    "stop-writes-avail-pct": {
+                                        "type": "integer",
+                                        "default": 5,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
+                                    "stop-writes-used-pct": {
+                                        "type": "integer",
+                                        "default": 70,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
                                     },
                                     "tomb-raider-sleep": {
                                         "type": "integer",
@@ -3375,6 +3392,14 @@
                                         "description": "",
                                         "dynamic": false
                                     },
+                                    "evict-used-pct": {
+                                        "type": "integer",
+                                        "default": 0,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
                                     "files": {
                                         "type": "array",
                                         "items": {
@@ -3400,22 +3425,6 @@
                                         "description": "",
                                         "dynamic": true
                                     },
-                                    "evict-used-pct": {
-                                        "type": "integer",
-                                        "default": 0,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
-                                    },
-                                    "stop-writes-used-pct": {
-                                        "type": "integer",
-                                        "default": 70,
-                                        "minimum": 0,
-                                        "maximum": 100,
-                                        "description": "",
-                                        "dynamic": true
-                                    },
                                     "max-write-cache": {
                                         "type": "integer",
                                         "default": 67108864,
@@ -3427,6 +3436,14 @@
                                     "stop-writes-avail-pct": {
                                         "type": "integer",
                                         "default": 5,
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "",
+                                        "dynamic": true
+                                    },
+                                    "stop-writes-used-pct": {
+                                        "type": "integer",
+                                        "default": 70,
                                         "minimum": 0,
                                         "maximum": 100,
                                         "description": "",
