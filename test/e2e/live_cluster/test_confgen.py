@@ -225,4 +225,4 @@ class TestConfGen(asynctest.TestCase):
             second_conf = f.read()
 
         # Remove empty line of stdout
-        self.assertListEqual(first_conf.split("\n"), second_conf.split("\n")[1:])
+        self.assertListEqual(first_conf.split("\n"), second_conf.split("\n"))
