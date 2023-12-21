@@ -283,7 +283,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         """
         self.init_successful = False
         self.as_build = as_build
-        super().__init__()
+        super().__init__(as_build)
 
         try:
             as_build = ".".join(as_build.split(".")[0:3])

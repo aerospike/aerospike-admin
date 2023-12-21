@@ -1196,7 +1196,7 @@ class ShowStatisticsController(LiveClusterCommandController):
                 for build in builds.values()
             ]
         ):
-            self.logger.error(
+            logger.error(
                 f"Server version {constants.SERVER_INFO_BINS_REMOVAL_VERSION} removed namespace bin-name limits and statistics."
             )
 

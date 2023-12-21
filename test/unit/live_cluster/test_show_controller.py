@@ -295,7 +295,7 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         self.meta_mock = self.controller.meta_getter = create_autospec(
             GetClusterMetadataController
         )
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.show_controller.logger").start()
         self.view_mock = self.controller.view = create_autospec(CliView)
         self.controller.mods = (
             {}

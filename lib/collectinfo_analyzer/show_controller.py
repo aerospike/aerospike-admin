@@ -1018,7 +1018,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                     for build in nodes_builds.values()
                 ]
             ):
-                self.logger.error(
+                logger.error(
                     f"Server version {constants.SERVER_INFO_BINS_REMOVAL_VERSION} removed namespace bin-name limits and statistics."
                 )
 

@@ -1,3 +1,4 @@
+import logging
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.live_cluster.get_controller import (
     GetClusterMetadataController,
@@ -9,6 +10,8 @@ from lib.live_cluster.live_cluster_command_controller import (
 from lib.utils import util
 from lib.utils.conf_gen import ASConfigGenerator
 from lib.utils.constants import ModifierUsage, Modifiers
+
+logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
@@ -69,9 +72,9 @@ class GenerateConfigController(LiveClusterCommandController):
         else:
             self.view.print_result(s + "\n")
 
-        self.logger.warning(
+        logger.warning(
             "Community Edition is not supported. Generated static configuration does not save logging.syslog, mod-lua, service.user and service.group."
         )
-        self.logger.warning(
+        logger.warning(
             "This feature is currently in beta. Use at your own risk and please report any issue to support."
         )

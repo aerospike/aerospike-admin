@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
         ModifierHelp(
             constants.Modifiers.LIKE, "Filter returned fields by substring match"
         ),
-        ModifierHelp(constants.Modifiers.WITH, constants.ModifierHelp.WITH),
+        ModifierHelp(constants.Modifiers.WITH, constants.ModifierHelpText.WITH),
     ),
 )
 class ASInfoController(LiveClusterCommandController):
