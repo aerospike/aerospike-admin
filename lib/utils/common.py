@@ -2883,7 +2883,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
     if "darwin" in platform.system().lower():
         netstat_cmds = ["netstat -rn"]
     else:
-        netstat_cmds = ["netstat"]
+        netstat_cmds = ["netstat -n"]
 
     # cmd and alternative cmds are stored in list of list instead of dic to
     # maintain proper order for output
