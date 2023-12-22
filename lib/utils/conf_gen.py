@@ -937,12 +937,15 @@ class RemoveConfigsConditionally(ConfigPipelineStep):
                                 ]
 
 
-class ConfigGenerator:
-    async def generate(self) -> str:
-        raise NotImplementedError("ConfigGenerator.generate not implemented")
+class GeneratedConfig:
+    def __init__(self, config: str, version: str):
+        self.config = config
+        self.version = version
 
-    def __str__(self):
-        return self.generate()
+
+class ConfigGenerator:
+    async def generate(self) -> GeneratedConfig:
+        raise NotImplementedError("ConfigGenerator.generate not implemented")
 
 
 class ASConfigGenerator(ConfigGenerator):
@@ -956,7 +959,7 @@ class ASConfigGenerator(ConfigGenerator):
 
     async def _generate_intermediate(
         self, node_selector: constants.NodeSelectionType
-    ) -> NodeDict[Any]:
+    ) -> tuple[NodeDict[Any], str]:
         """Generate a YAML config file from the current cluster state."""
 
         pipeline = ConfigPipeline(
@@ -982,7 +985,13 @@ class ASConfigGenerator(ConfigGenerator):
 
         context_dict = {}
         await pipeline(context_dict)
-        return context_dict[INTERMEDIATE]
+
+        try:
+            version = str(list(context_dict["builds"].values())[0])
+        except (KeyError, IndexError):
+            version = ""
+
+        return context_dict[INTERMEDIATE], version
 
     def _sort_keys(self, intermediate_dict: dict[IntermediateKey | str, Any]):
         str_keys = []
@@ -1043,13 +1052,14 @@ class ASConfigGenerator(ConfigGenerator):
 
     async def generate(
         self, node_selector: constants.NodeSelectionType = constants.NodeSelection.ALL
-    ) -> str:
+    ) -> GeneratedConfig:
         """Generate a YAML config file from the current cluster state."""
-        intermediate_dict = await self._generate_intermediate(node_selector)
+        intermediate_dict, version = await self._generate_intermediate(node_selector)
         lines = []
 
         self._generate_helper(lines, list(intermediate_dict.values())[0])
-        return "\n".join(lines)
+
+        return GeneratedConfig("\n".join(lines), version)
 
 
 # Helpers
