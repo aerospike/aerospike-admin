@@ -24,7 +24,7 @@ asyncssh = "*"
 
 [dev-packages]
 parameterized = "*"
-pyinstaller = "==6.2.0"
+pyinstaller = "==6.3.0"
 black = "*"
 flake8 = "*"
 pytest = "*"
