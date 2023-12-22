@@ -47,7 +47,7 @@ class MockNode:
     def is_localhost(self):
         return self.localhost
 
-    async def info_logs(self):
+    async def info_logs_ids(self):
         return self.logs
 
 

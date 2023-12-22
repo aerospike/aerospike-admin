@@ -85,7 +85,7 @@ class LogFileDownloader:
 
         Keyword Arguments:
             ssh_factory {SSHConnectionFactory | None} -- An optional factory for
-            creating #TODO: finish this comment
+            downloading remote logs. If not set, only local log files can be downloaded.
             exception_handler {Callable[[Exception, Node], None] | None} -- An optional
             callback called with every exception and the associated node that occurs
             during the process of downloading/moving/compressing the file. If not set
@@ -308,7 +308,7 @@ class LogFileDownloader:
         return logs
 
     async def _move_local_logs(self, node: Node, path_gen_func: PathGenerator):
-        logs = await node.info_logs()
+        logs = await node.info_logs_ids()
         log_file_info: list[_LocalLogInfo] = []
 
         for log in logs:
@@ -365,7 +365,7 @@ class LogFileDownloader:
             async with (await self.ssh_factory.create_connection(node.ip)) as conn:
                 try:
                     log_file_info: list[_RemoteLogInfo] = []
-                    logs = await node.info_logs()
+                    logs = await node.info_logs_ids()
 
                     for log in logs:
                         info = _RemoteLogInfo(log)
