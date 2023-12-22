@@ -141,7 +141,7 @@ class ModifierUsage:
     LIKE = "like <substring>"
 
 
-class ModifierHelp:
+class ModifierHelpText:
     WITH = "Show results from specified nodes. Acceptable values are ip:port, node-id, or FQDN"
 
 

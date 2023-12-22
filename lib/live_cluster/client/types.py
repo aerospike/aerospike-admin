@@ -16,6 +16,8 @@ from enum import IntEnum, unique
 import logging
 from typing import Literal, Union
 
+logger = logging.getLogger(__name__)
+
 Addr_Port_TLSName = tuple[str, int, str | None]
 
 
@@ -272,7 +274,6 @@ class ASInfoConfigError(ASInfoResponseError):
     def __init__(self, message, resp, node, context, param, value):
         self.message = message
         self.response = GENERIC_ERROR_MSG
-        self.logger = logging.getLogger("asadm")
 
         is_valid_context, invalid_context = self._check_context(node, context[:])
 
@@ -282,7 +283,7 @@ class ASInfoConfigError(ASInfoResponseError):
 
         config_type = node.config_type(context[:], param)
 
-        self.logger.debug("Found config type %s for param %s", str(config_type), param)
+        logger.debug("Found config type %s for param %s", str(config_type), param)
 
         if config_type is None:
             self.response = "Invalid parameter"

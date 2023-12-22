@@ -28,6 +28,20 @@ jobs:
         run: |
           pipenv run bash -c "make coverage"
           pipenv run bash -c "coverage xml"
+      - name: Upload Collectinfo for Debugging
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test_collectinfo
+          path: /tmp/asadm_test*
+          if-no-files-found: error
+      - name: Upload Health Struct for Debugging
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: health_files
+          path: "*_health_input.txt"
+          if-no-files-found: error
       - name: Upload coverage report to Codecov
         uses: codecov/codecov-action@v3
         with:

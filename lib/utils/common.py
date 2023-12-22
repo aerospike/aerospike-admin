@@ -50,7 +50,7 @@ from lib.utils.types import (
 )
 from lib.view import terminal
 
-logger = logging.getLogger("asadm")
+logger = logging.getLogger(__name__)
 
 ########## Feature ##########
 
@@ -2767,24 +2767,12 @@ def _collect_ip_link_details(cmd=""):
     return out, None
 
 
-def _collectinfo_content(func, cmd=None, alt_cmds=[]):
-    if cmd is None:
-        cmd = []
-
-    fname = ""
-    try:
-        fname = func.__name__
-    except Exception:
-        pass
-
-    info_line = constants.COLLECTINFO_PROGRESS_MSG % (
-        fname,
-        (" %s" % (str(cmd)) if cmd else ""),
+def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
+    logger.info(
+        f"Collecting output from shell command '{cmd}' and writing to syslog.log"
     )
-    logger.info(info_line)
 
     o_line = constants.COLLECTINFO_SEPERATOR
-
     o, e = None, None
 
     if cmd:
@@ -2793,14 +2781,13 @@ def _collectinfo_content(func, cmd=None, alt_cmds=[]):
     failed_cmds = []
 
     try:
-        o, e = func(cmd)
+        o, e = util.shell_command([cmd])  # TODO make async
     except Exception as e:
         return o_line + str(e), failed_cmds
 
     if e:
-        logger.warning(str(e))
-        if func == util.shell_command:
-            failed_cmds += cmd
+        logger.warning(str(e.split("\n")[0]))
+        failed_cmds.append(cmd)
 
         if alt_cmds:
             success = False
@@ -2808,14 +2795,12 @@ def _collectinfo_content(func, cmd=None, alt_cmds=[]):
                 if not alt_cmd:
                     continue
 
-                alt_cmd = [alt_cmd]
-                info_line = (
-                    "Data collection for alternative command %s %s  in progress..."
-                    % (fname, str(alt_cmd))
+                logger.info(
+                    f"Collecting output from alternative shell command '{alt_cmd}' and writing to syslog.log"
                 )
-                logger.info(info_line)
+                alt_cmd = [alt_cmd]
                 o_line += str(alt_cmd) + "\n"
-                o_alt, e_alt = util.shell_command(alt_cmd)
+                o_alt, e_alt = util.shell_command(alt_cmd)  # TODO make async
 
                 if e_alt:
                     e = e_alt
@@ -2830,12 +2815,30 @@ def _collectinfo_content(func, cmd=None, alt_cmds=[]):
 
             if not success:
                 if alt_cmds:
-                    failed_cmds += alt_cmds
+                    failed_cmds.extend(alt_cmds)
 
     if o:
         o_line += str(o) + "\n"
 
     return o_line, failed_cmds
+
+
+def _collectinfo_content(func):
+    o_line = constants.COLLECTINFO_SEPERATOR
+
+    o, e = None, None
+
+    try:
+        o, e = func()
+    except Exception as e:
+        return o_line + str(e)
+
+    if e:
+        logger.warning(str(e))
+    if o:
+        o_line += str(o) + "\n"
+
+    return o_line
 
 
 def _zip_files(dir_path, _size=1):
@@ -2845,11 +2848,15 @@ def _zip_files(dir_path, _size=1):
     """
     for root, dirs, files in os.walk(dir_path):
         for _file in files:
+            if _file.endswith(".gz") or _file.endswith(".zip"):
+                continue
+
             file_path = os.path.join(root, _file)
             size_mb = os.path.getsize(file_path) // (1024 * 1024)
             if size_mb >= _size:
                 os.chdir(root)
                 try:
+                    # TODO: Investigate changing from zip to gzip to match collectlogs.
                     newzip = zipfile.ZipFile(_file + ".zip", "w", zipfile.ZIP_DEFLATED)
                     newzip.write(_file)
                     newzip.close()
@@ -2985,7 +2992,14 @@ def get_asd_pids():
     return pids
 
 
-def set_collectinfo_path(timestamp, output_prefix=""):
+class CollectinfoPathInfo:
+    log_dir = ""
+    cf_dir = ""
+    files_prefix = ""
+    output_time = ""
+
+
+def get_collectinfo_path(timestamp, output_prefix=""):
     output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
 
     if output_prefix:
@@ -3002,56 +3016,66 @@ def set_collectinfo_path(timestamp, output_prefix=""):
             else "",
         )
 
-    aslogdir = "/tmp/%scollect_info_" % (aslogdir_prefix) + output_time
-    as_logfile_prefix = aslogdir + "/" + output_time + "_"
+    cf_path_info = CollectinfoPathInfo()
 
-    os.makedirs(aslogdir)
+    cf_path_info.cf_dir = f"/tmp/{aslogdir_prefix}collect_info_{output_time}"
+    cf_path_info.log_dir = f"/tmp/{aslogdir_prefix}collect_logs_{output_time}"
+    cf_path_info.files_prefix = output_time + "_"
+    cf_path_info.output_time = output_time
 
-    return aslogdir, as_logfile_prefix
+    os.makedirs(cf_path_info.cf_dir)
+
+    return cf_path_info
 
 
-def archive_log(logdir):
+def archive_dir(logdir):
+    archive = logdir + ".tgz"
+    if not os.path.exists(logdir) or not any(os.listdir(logdir)):
+        return archive, False
+
     _zip_files(logdir)
-    util.shell_command(["tar -czvf " + logdir + ".tgz " + logdir])
-    print("\n\n\n")
-    logger.info("Files in " + logdir + " and " + logdir + ".tgz saved.")
+    util.shell_command(["tar -czvf " + archive + " " + logdir])
+    logger.info("Files in " + logdir + " are now archived in " + archive + ".")
+    return archive, True
 
 
-def print_collectinfo_summary(logdir, failed_cmds):
+def print_collectinfo_failed_cmds(failed_cmds):
     if failed_cmds:
         logger.warning(
-            "Following commands are either unavailable or giving runtime error..."
+            "Following commands are either unavailable or giving a runtime error..."
         )
         logger.warning(list(set(failed_cmds)))
 
+
+def print_collect_summary(
+    archive,
+):
     print("\n")
-    logger.info("Please provide file " + logdir + ".tgz to Aerospike Support.")
-    logger.info("END OF ASCOLLECTINFO")
+    logger.info(f"Please provide file {archive} to Aerospike Support.")
 
     # If multiple commands are given in execute_only mode then we might need coloring for next commands
     terminal.enable_color(True)
 
 
-def collect_sys_info(port=3000, timestamp="", outfile=""):
+def collect_sys_info(port=3000, file_header="", outfile=""):
     failed_cmds = []
 
     cluster_online = True
     aslogdir = ""
 
-    if not timestamp:
+    if not file_header:
         cluster_online = False
         ts = time.gmtime()
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", ts)
-        aslogdir, as_logfile_prefix = set_collectinfo_path(ts)
+        file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", ts)
+        aslogdir, as_logfile_prefix = get_collectinfo_path(ts)
         outfile = as_logfile_prefix + "sysinfo.log"
 
-    util.write_to_file(outfile, timestamp)
+    util.write_to_file(outfile, file_header)
 
     try:
         for cmds in get_system_commands(port=port):
-            o, f_cmds = _collectinfo_content(
-                func=util.shell_command,
-                cmd=cmds[0:1],
+            o, f_cmds = _collectinfo_shell_cmds(
+                cmd=cmds[0],
                 alt_cmds=cmds[1:] if len(cmds) > 1 else [],
             )
             failed_cmds += f_cmds
@@ -3061,51 +3085,71 @@ def collect_sys_info(port=3000, timestamp="", outfile=""):
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_cpuinfo)
+        logger.info(f"Collecting output about the cpu and writing to syslog.log")
+        o = _collectinfo_content(func=_collect_cpuinfo)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_aws_data)
+        logger.info(
+            f"Checking if you are running in Cloud: AWS and writing to syslog.log"
+        )
+        o = _collectinfo_content(func=_collect_aws_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_gce_data)
+        logger.info(
+            f"Checking if you are running in Cloud: GCP and writing to syslog.log"
+        )
+        o = _collectinfo_content(func=_collect_gce_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_azure_data)
+        logger.info(
+            f"Checking if you are running in Cloud: Azure and writing to syslog.log"
+        )
+        o = _collectinfo_content(func=_collect_azure_data)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_lsof)
+        logger.info(
+            f"Collecting infomation about aerospike open file descriptors using 'lsof' and writing to syslog.log"
+        )
+        o = _collectinfo_content(func=_collect_lsof)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_env_variables)
+        logger.info(
+            f"Collecting information about the environment and writing to syslog.log"
+        )
+        o = _collectinfo_content(func=_collect_env_variables)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     try:
-        o, f_cmds = _collectinfo_content(func=_collect_ip_link_details)
+        logger.info(
+            f"Collecting infomation about network interfaces and writing to syslog.log"
+        )
+        o = _collectinfo_content(func=_collect_ip_link_details)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
 
     if not cluster_online:
         # Cluster is offline so collecting only system info and archiving files
-        archive_log(aslogdir)
-        print_collectinfo_summary(aslogdir, failed_cmds=failed_cmds)
+        archive_dir(aslogdir)
+        print_collectinfo_failed_cmds(failed_cmds)
+        print_collect_summary(aslogdir)
 
     return failed_cmds
 

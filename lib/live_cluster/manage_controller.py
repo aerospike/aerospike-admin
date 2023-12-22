@@ -47,7 +47,6 @@ from lib.live_cluster.get_controller import (
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 WithModifierHelp = ModifierHelp(
     constants.Modifiers.WITH,
@@ -277,7 +276,7 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -305,7 +304,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -355,7 +354,7 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -417,7 +416,7 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -453,7 +452,7 @@ class ManageACLGrantUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -489,7 +488,7 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -572,7 +571,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
 
         if read_quota is not None or write_quota is not None:
             if not await self._supports_quotas("principal"):
-                self.logger.warning(
+                logger.warning(
                     "'read' and 'write' quotas are only supported on server v. {} and later.".format(
                         constants.SERVER_QUOTAS_FIRST_VERSION
                     )
@@ -584,14 +583,14 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
             if write_quota is not None:
                 write_quota = int(write_quota)
         except ValueError:
-            self.logger.error("Quotas must be integers.")
+            logger.error("Quotas must be integers.")
             return
 
         if len(self.mods["priv"]):
             privilege = self.mods["priv"][0]
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
-            self.logger.error("A set must be accompanied by a namespace.")
+            logger.error("A set must be accompanied by a namespace.")
             return
 
         if len(self.mods["ns"]):
@@ -617,7 +616,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -645,7 +644,7 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -678,7 +677,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
         privilege = self.mods["priv"][0]
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
-            self.logger.error("A set must be accompanied by a namespace.")
+            logger.error("A set must be accompanied by a namespace.")
             return
 
         if len(self.mods["ns"]):
@@ -696,7 +695,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -731,7 +730,7 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         privilege = self.mods["priv"][0]
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
-            self.logger.error("A set must be accompanied by a namespace")
+            logger.error("A set must be accompanied by a namespace")
             return
 
         if len(self.mods["ns"]):
@@ -749,7 +748,7 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -800,7 +799,7 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
         allowlist = self.mods["allow"]
 
         if not clear and not len(allowlist):
-            self.logger.error("Allowlist or clear is required.")
+            logger.error("Allowlist or clear is required.")
             return
 
         if self.warn and not self.prompt_challenge():
@@ -820,7 +819,7 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -874,7 +873,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
 
     async def _do_default(self, line):
         if not await self._supports_quotas("principal"):
-            self.logger.error(
+            logger.error(
                 "'manage quotas' is not supported on aerospike versions <= 5.5"
             )
             return
@@ -907,7 +906,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
         )
 
         if read_quota is None and write_quota is None:
-            self.logger.error("'read' or 'write' is required.")
+            logger.error("'read' or 'write' is required.")
             return
 
         try:
@@ -916,7 +915,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
             if write_quota is not None:
                 write_quota = int(write_quota)
         except ValueError:
-            self.logger.error("Quotas must be integers.")
+            logger.error("Quotas must be integers.")
             return
 
         if self.warn and not self.prompt_challenge():
@@ -929,7 +928,7 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
         result = list(result.values())[0]
 
         if isinstance(result, ASProtocolError):
-            self.logger.error(result)
+            logger.error(result)
             return
         elif isinstance(result, Exception):
             raise result
@@ -980,7 +979,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
             udf_path = os.path.join(os.getcwd(), udf_path)
 
         if not os.path.isfile(udf_path):
-            self.logger.error(
+            logger.error(
                 f"{ErrorsMsgs.UDF_UPLOAD_FAIL} {udf_name}: Path does not exist."
             )
             return
@@ -1002,7 +1001,7 @@ class ManageUdfsAddController(ManageLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -1035,7 +1034,7 @@ class ManageUdfsRemoveController(ManageLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -1806,7 +1805,7 @@ class ManageConfigNetworkController(ManageConfigLeafController):
         param, value = self.extract_param_value(line)
 
         if len(line) == 0 or line[0] in self.required_modifiers | self.modifiers:
-            self.logger.error("Subcontext required.")
+            logger.error("Subcontext required.")
             return
 
         subcontext = line.pop(0)
@@ -2521,7 +2520,7 @@ class ManageTruncateController(ManageLeafCommandController):
             unrecognized = self.mods["before"]
 
         if unrecognized is not None:
-            self.logger.error("Unrecognized input: {}".format(" ".join(unrecognized)))
+            logger.error("Unrecognized input: {}".format(" ".join(unrecognized)))
             return
 
         namespace = self.mods["ns"][0]
@@ -2542,7 +2541,7 @@ class ManageTruncateController(ManageLeafCommandController):
         )
 
         if self.mods["before"] and undo:
-            self.logger.error('"undo" and "before" are mutually exclusive.')
+            logger.error('"undo" and "before" are mutually exclusive.')
             return
 
         lut_datetime, lut_epoch_time = self._parse_lut()
@@ -2584,7 +2583,7 @@ class ManageTruncateController(ManageLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -2628,7 +2627,7 @@ class ManageReclusterController(ManageLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -2723,14 +2722,14 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
 
         for resp in stable_data.values():
             if isinstance(resp, ASInfoClusterStableError):
-                self.logger.warning(warning_str)
+                logger.warning(warning_str)
                 return False
 
             if isinstance(resp, ASInfoError):
                 raise resp
 
             if cluster_key is not None and cluster_key != resp:
-                self.logger.warning(warning_str)
+                logger.warning(warning_str)
                 return False
 
             cluster_key = resp
@@ -2741,7 +2740,7 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
         diff = set(nodes) - set(observed)
 
         if len(diff):
-            self.logger.warning(
+            logger.warning(
                 "The following node(s) are not found in the observed list or have a\n"
                 + "different configured rack-id: {}",
                 ", ".join(list(diff)),
@@ -2800,7 +2799,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
-            self.logger.error(current_roster)
+            logger.error(current_roster)
             return
         elif isinstance(current_roster, Exception):
             raise current_roster
@@ -2828,7 +2827,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -2874,7 +2873,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
         current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
-            self.logger.error(current_roster)
+            logger.error(current_roster)
             return
         elif isinstance(current_roster, Exception):
             raise current_roster
@@ -2890,7 +2889,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
 
         if warn:
             if len(missing_nodes):
-                self.logger.warning(
+                logger.warning(
                     "The following nodes are not in the pending-roster: {}",
                     ", ".join(missing_nodes),
                 )
@@ -2909,7 +2908,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -2968,7 +2967,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
             current_roster = list((await current_roster).values())[0]
 
             if isinstance(current_roster, ASInfoError):
-                self.logger.error(current_roster)
+                logger.error(current_roster)
                 return
             elif isinstance(current_roster, Exception):
                 raise current_roster
@@ -2990,7 +2989,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -3024,7 +3023,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
         current_roster = list((await current_roster).values())[0]
 
         if isinstance(current_roster, ASInfoError):
-            self.logger.error(current_roster)
+            logger.error(current_roster)
             return
         elif isinstance(current_roster, Exception):
             raise current_roster
@@ -3044,7 +3043,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
         resp = list(resp.values())[0]
 
         if isinstance(resp, ASInfoError):
-            self.logger.error(resp)
+            logger.error(resp)
             return
         elif isinstance(resp, Exception):
             raise resp
@@ -3133,7 +3132,7 @@ class ManageJobsKillTridController(ManageLeafCommandController):
                     )
 
         if not requests_:
-            self.logger.error("The provided trid(s) could not be found.")
+            logger.error("The provided trid(s) could not be found.")
 
         for request in requests_:
             host, trid, job_data, resp = request
@@ -3188,7 +3187,7 @@ class ManageJobsKillAllScansController(ManageJobsKillAllLeafCommandController):
 
     async def _do_default(self, line):
         if not await self._scans_supported():
-            self.logger.error(
+            logger.error(
                 "Killing scans is not supported on server v. {} and later.".format(
                     str(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION)
                 )
@@ -3224,7 +3223,7 @@ class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController)
 
     async def _do_default(self, line):
         if not await self._queries_supported():
-            self.logger.error(
+            logger.error(
                 "Killing all queries is only supported on server v. {} and later.".format(
                     str(constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION)
                 )

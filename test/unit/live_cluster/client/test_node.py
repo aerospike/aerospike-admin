@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from asyncio import StreamReader
+from asyncio.subprocess import Process
 from ctypes import ArgumentError
 import time
 from typing import Any
@@ -55,6 +57,9 @@ class NodeInitTest(asynctest.TestCase):
         self.get_fully_qualified_domain_name = patch(
             "lib.live_cluster.client.node.get_fully_qualified_domain_name"
         ).start()
+        self.async_shell_cmd_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command"
+        ).start()
 
         getaddrinfo = patch("socket.getaddrinfo")
 
@@ -83,7 +88,7 @@ class NodeInitTest(asynctest.TestCase):
         correct information
         """
 
-        def side_effect(*args, **kwargs):
+        def info_side_effect(*args, **kwargs):
             cmd = args[0]
             if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
                 return {
@@ -100,7 +105,15 @@ class NodeInitTest(asynctest.TestCase):
                 # Info call was made that was not defined here
                 self.fail()
 
-        self.info_mock.side_effect = side_effect
+        def shell_side_effect(*args, **kwargs):
+            p = AsyncMock(spec=Process)
+            p.returncode = 0
+            p.stdout = MagicMock(spec=StreamReader)
+            p.stdout.read.return_value = b"192.3.3.3"
+            return p
+
+        self.async_shell_cmd_mock.side_effect = shell_side_effect
+        self.info_mock.side_effect = info_side_effect
         socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.3.3.3", 4567))]
 
         n = await Node("192.1.1.1")
@@ -109,6 +122,55 @@ class NodeInitTest(asynctest.TestCase):
         self.assertEqual(n.fqdn, "host.domain.local", "FQDN is not correct")
         self.assertEqual(n.port, 4567, "Port is not correct")
         self.assertEqual(n.node_id, "A00000000000000", "Node Id is not correct")
+        self.async_shell_cmd_mock.assert_awaited_once_with("hostname -I")
+        self.assertTrue(n.is_localhost())
+
+    async def test_init_node_is_localhost_not_running_in_docker(self):
+        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
+            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
+        ).start()
+        """
+        Similar to the init test but we want to make sure that we determine we are
+        running on localhost if aerospike docker container is not running when passing
+        in 127.0.0.1
+        """
+
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A00000000000000",
+                    "service-clear-std": "192.3.3.3:4567",
+                    "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
+                    "features": "features",
+                }
+            elif cmd == "node":
+                return "A00000000000000"
+            elif cmd == "peers-clear-std":
+                return "peers"
+            else:
+                # Info call was made that was not defined here
+                self.fail()
+
+        def shell_side_effect(*args, **kwargs):
+            p = AsyncMock(spec=Process)
+            p.returncode = 1
+            return p
+
+        self.async_shell_cmd_mock.side_effect = shell_side_effect
+        self.info_mock.side_effect = info_side_effect
+        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.3.3.3", 4567))]
+
+        n = await Node("127.0.0.1")
+
+        self.assertEqual(n.ip, "192.3.3.3", "IP address is not correct")
+        self.assertEqual(n.fqdn, "host.domain.local", "FQDN is not correct")
+        self.assertEqual(n.port, 4567, "Port is not correct")
+        self.assertEqual(n.node_id, "A00000000000000", "Node Id is not correct")
+        self.async_shell_cmd_mock.assert_awaited_once_with(
+            "docker ps | tail -n +2 | awk '{print $2}' | grep 'aerospike/aerospike-server'"
+        )
+        self.assertTrue(n.is_localhost())
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_node_connection_uses_same_socket_as_login(self, as_socket_mock_init):
@@ -194,7 +256,9 @@ class NodeTest(asynctest.TestCase):
         self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
             "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
         ).start()
+        self.logger_mock = patch("lib.live_cluster.client.node.logger").start()
         self.node.conf_schema_handler = MagicMock()
+        self.addCleanup(patch.stopall)
 
     async def test_login_returns_true_if_user_is_none(self):
         self.node.user = None
@@ -255,7 +319,7 @@ class NodeTest(asynctest.TestCase):
     async def test_login_logs_warning_when_socket_raises_security_not_enabled(
         self, as_socket_mock
     ):
-        self.node.logger.warning = MagicMock()
+        self.logger_mock.warning = MagicMock()
         as_socket_mock = as_socket_mock.return_value
         self.node.user = True
         as_socket_mock.connect.return_value = True
@@ -265,7 +329,7 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
 
         self.assertTrue(await self.node.login())
-        self.node.logger.warning.assert_called_with(
+        self.logger_mock.warning.assert_called_with(
             ASProtocolError(ASResponse.SECURITY_NOT_ENABLED, "")
         )
         as_socket_mock.close.assert_not_called()
@@ -275,7 +339,7 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(self.node.session_expiration, "session-ttl")
 
         # call again to make sure it is not logged twice.
-        self.node.logger.warning.reset_mock()
+        self.logger_mock.warning.reset_mock()
         self.node.session_expiration = 0
         as_socket_mock.connect.return_value = True
         as_socket_mock.login.side_effect = Mock(
@@ -284,7 +348,7 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock.get_session_info.return_value = ("token", "session-ttl")
 
         self.assertTrue(await self.node.login())
-        self.node.logger.warning.assert_not_called()
+        self.logger_mock.warning.assert_not_called()
 
     # TODO: Make unit tests for socket pool
     async def test_get_connection_uses_socket_pool(self):
@@ -3892,7 +3956,7 @@ class NodeTest(asynctest.TestCase):
         await util.assert_exception_async(
             self,
             OSError,
-            "Error: Could not connect to node 192.1.1.1",
+            "Could not connect to node 192.1.1.1",
             self.node._admin_cadmin,
             ASSocket.create_user,
             (1, 2, 3),

@@ -13,12 +13,17 @@
 # limitations under the License.
 
 import copy
+import logging
+import os
+import pprint
 
 from lib.base_controller import CommandHelp, ModifierHelp
 import lib.health as health
 from lib.utils import util
 
 from .collectinfo_command_controller import CollectinfoCommandController
+
+logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
@@ -643,6 +648,11 @@ class HealthCheckController(CollectinfoCommandController):
                         )
                         sn_ct += 1
 
+            # FEATKEY is defined during tests. This is to help debugging github actions failures.
+            if os.environ.get("FEATKEY"):
+                with open("cf_health_input.txt", "w") as f:
+                    f.write(pprint.pformat(health_input))
+
             health_input = health.util.h_eval(health_input)
             self.health_checker.set_health_input_data(health_input)
             HealthCheckController.health_check_input_created = True
@@ -659,4 +669,4 @@ class HealthCheckController(CollectinfoCommandController):
                 output_filter_warning_level=output_filter_warning_level,
             )
             if not verbose:
-                self.logger.info("Please use -v option for more details on failure. \n")
+                logger.info("Please use -v option for more details on failure. \n")

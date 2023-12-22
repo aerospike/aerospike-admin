@@ -18,17 +18,25 @@ import logging
 import os
 import re
 import socket
+from OpenSSL import SSL
 import threading
 import time
 import base64
 from typing import Any, Callable, Optional, Union
-from lib.live_cluster.client.constants import ErrorsMsgs
-from lib.live_cluster.client.ctx import CDTContext
-from lib.live_cluster.client.msgpack import ASPacker
+from lib.live_cluster.ssh import (
+    SSHConnectionConfig,
+    SSHConnectionFactory,
+    SSHError,
+    SSHNonZeroExitCodeError,
+    SSHTimeoutError,
+)
 
-from lib.utils import common, constants, util, version, logger_debug, conf_parser
+from lib.utils import common, constants, util, version, conf_parser
 from lib.utils.async_object import AsyncObject
 
+from .constants import ErrorsMsgs
+from .ctx import CDTContext
+from .msgpack import ASPacker
 from .assocket import ASSocket
 from .config_handler import JsonDynamicConfigHandler
 from . import client_util
@@ -46,19 +54,7 @@ from .types import (
     Addr_Port_TLSName,
 )
 
-logger = logger_debug.get_debug_logger(__name__, logging.CRITICAL)
-
-#### Remote Server connection module
-
-PXSSH_NO_MODULE = 0  # Non-linux
-PXSSH_NEW_MODULE = 1
-
-try:
-    from pexpect import pxssh
-
-    PEXPECT_VERSION = PXSSH_NEW_MODULE
-except ImportError:
-    PEXPECT_VERSION = PXSSH_NO_MODULE
+logger = logging.getLogger(__name__)
 
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
@@ -140,7 +136,7 @@ class _SysCmd:
         self._idx = 0
         self._parse_func = parse_func
 
-    def parse(self, command_raw_output):
+    def parse(self, command_raw_output: str):
         result = self._parse_func(command_raw_output)
         sys_cmd_parser.type_check_basic_values(
             result
@@ -151,6 +147,7 @@ class _SysCmd:
         return self._uid == 0
 
     def __iter__(self):
+        self._idx = 0
         return self
 
     def __next__(self):
@@ -181,10 +178,10 @@ class Node(AsyncObject):
         user=None,
         password=None,
         auth_mode=constants.AuthMode.INTERNAL,
-        ssl_context=None,
+        ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
-    ):
+    ) -> None:
         """
         address -- ip or fqdn for this node
         port -- info port for this node
@@ -198,8 +195,6 @@ class Node(AsyncObject):
         access port. Can we detect from the socket?
         ALSO NOTE: May be better to just use telnet instead?
         """
-        self.logger = logging.getLogger("asadm")
-        self.remote_system_command_prompt = "[#$] "
         self.ip: str = address
         self.port: int = port
         self._timeout = timeout
@@ -221,17 +216,7 @@ class Node(AsyncObject):
         self.session_expiration = 0
         self.perform_login = True
 
-        # System Details
-        self.sys_ssh_port = None
-        self.sys_user_id = None
-        self.sys_pwd = None
-        self.sys_ssh_key = None
-        self.sys_credential_file = None
-        self.sys_default_ssh_port = None
-        self.sys_default_user_id = None
-        self.sys_default_pwd = None
-        self.sys_default_ssh_key = None
-
+        # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
         self.sys_cmds: list[_SysCmd] = [
             _SysCmd(
@@ -345,17 +330,41 @@ class Node(AsyncObject):
         self.peers_generation = -1
         self.service_addresses = []
         self._initialize_socket_pool()
-        await self.connect(address, port)
+        await self.connect(
+            address, port
+        )  # TODO Init and connect steps should be separate
         self.localhost = False
 
-        try:
-            if address.lower() == "localhost":
+        if address.lower() == "localhost" or address == "127.0.0.1":
+            p = await util.async_shell_command(
+                "docker ps | tail -n +2 | awk '{print $2}' | grep 'aerospike/aerospike-server'"
+            )
+
+            if not p or p.returncode != 0:
+                """
+                Check if any docker containers are running. If they are then lets assume
+                that an aerospike node is not running on localhost since this affects how
+                we gather logs and the aerospike.conf file
+                """
+
                 self.localhost = True
-            else:
-                o, e = util.shell_command(["hostname -I"])
-                self.localhost = self._is_any_my_ip(o.split())
-        except Exception:
-            pass
+
+        elif self.alive:
+            try:
+                """
+                This could still result in self.localhost being False if the node
+                has access-address or alternate-access-addres (in the case of
+                --use-alternate) configured to something other than what is returned
+                by hostname -I. This could occur in cloud environments where the
+                external IP is different than the internal IP.
+                """
+                p = await util.async_shell_command("hostname -I")
+
+                if p and p.returncode == 0 and p.stdout:
+                    stdout = (await p.stdout.read()).decode("utf-8").strip()
+                    self.localhost = self._is_any_my_ip(stdout.split())
+            except Exception as e:
+                pass
 
         # configurations from conf file
         self.as_conf_data = {}
@@ -469,7 +478,7 @@ class Node(AsyncObject):
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception as e:
-            self.logger.debug(e)  # type: ignore
+            logger.debug(e, exc_info=True)  # type: ignore
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -514,7 +523,7 @@ class Node(AsyncObject):
         )
 
         if not await sock.connect():
-            self.logger.debug(
+            logger.debug(
                 "%s:%s failed to connect to socket %s", self.ip, self.port, sock
             )
             await sock.close()
@@ -522,24 +531,24 @@ class Node(AsyncObject):
 
         try:
             if not await sock.login():
-                self.logger.debug(
+                logger.debug(
                     "%s:%s failed to login to socket %s", self.ip, self.port, sock
                 )
                 await sock.close()
                 return False
         except ASProtocolError as e:
             if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
-                self.logger.debug(
+                logger.debug(
                     "%s:%s failed to login to socket, security not enabled, ignoring... %s",
                     self.ip,
                     self.port,
                     sock,
                 )
                 if not Node.security_disabled_warning:
-                    self.logger.warning(e)
+                    logger.warning(e)
                     Node.security_disabled_warning = True
             else:
-                self.logger.debug(
+                logger.debug(
                     "%s:%s failed to login to socket %s, exc: %s",
                     self.ip,
                     self.port,
@@ -552,9 +561,7 @@ class Node(AsyncObject):
         self.socket_pool[self.port].add(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
-        self.logger.debug(
-            "%s:%s successful login to socket %s", self.ip, self.port, sock
-        )
+        logger.debug("%s:%s successful login to socket %s", self.ip, self.port, sock)
         return True
 
     @property
@@ -595,6 +602,9 @@ class Node(AsyncObject):
             address = self.ip
 
         return self.create_key(address, self.port)
+
+    def is_localhost(self):
+        return self.localhost
 
     def __str__(self):
         return self.sock_name()
@@ -639,11 +649,14 @@ class Node(AsyncObject):
 
         return common.is_new_histogram_version(as_version)
 
-    async def _get_connection(self, ip, port) -> ASSocket:
+    async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
 
         try:
             while True:
+                if port not in self.socket_pool or len(self.socket_pool[port]) == 0:
+                    break
+
                 sock = self.socket_pool[port].pop()
 
                 if await sock.is_connected():
@@ -653,7 +666,7 @@ class Node(AsyncObject):
                 sock = None
 
         except Exception as e:
-            self.logger.debug(e)
+            logger.debug(e, exc_info=True)
 
         if sock:
             return sock
@@ -669,15 +682,15 @@ class Node(AsyncObject):
             timeout=self._timeout,
         )
 
-        self.logger.debug("%s:%s created new sock %s", ip, port, id(sock))
+        logger.debug("%s:%s created new sock %s", ip, port, id(sock))
 
         if await sock.connect():
             try:
                 if await sock.authenticate(self.session_token):
-                    self.logger.debug("sock auth successful %s", id(sock))
+                    logger.debug("sock auth successful %s", id(sock))
                     return sock
             except ASProtocolError as e:
-                self.logger.debug("sock auth failed %s", id(sock))
+                logger.debug("sock auth failed %s", id(sock))
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
@@ -688,19 +701,17 @@ class Node(AsyncObject):
                 ):
                     # A node likely switched from security disabled to security enable.
                     # In which case the error is caused by login never being called.
-                    self.logger.debug("trying to sock login again %s", id(sock))
+                    logger.debug("trying to sock login again %s", id(sock))
                     self.perform_login = True
                     await self.login()
                     if await sock.authenticate(self.session_token):
-                        self.logger.debug(
-                            "sock auth successful on second try %s", id(sock)
-                        )
+                        logger.debug("sock auth successful on second try %s", id(sock))
                         return sock
 
                 await sock.close()
                 raise
 
-        self.logger.debug("sock connect failed %s", id(sock))
+        logger.debug("sock connect failed %s", id(sock))
         return None
 
     async def close(self):
@@ -737,7 +748,7 @@ class Node(AsyncObject):
 
         sock = await self._get_connection(ip, port)
         if not sock:
-            raise IOError("Error: Could not connect to node %s" % ip)
+            raise IOError("Could not connect to node %s" % ip)
 
         try:
             if sock:
@@ -755,7 +766,7 @@ class Node(AsyncObject):
                     await sock.close()
 
             if result is not None:
-                self.logger.debug(
+                logger.debug(
                     "%s:%s info cmd '%s' and sock %s returned %s",
                     self.ip,
                     self.port,
@@ -772,7 +783,7 @@ class Node(AsyncObject):
             if sock:
                 await sock.close()
 
-            self.logger.debug(
+            logger.debug(
                 "%s:%s info cmd '%s' and sock %s raised %s for",
                 self.ip,
                 self.port,
@@ -1865,8 +1876,7 @@ class Node(AsyncObject):
             return config
 
         if not self.as_conf_data:
-            conf_path = "/etc/aerospike/aerospike.conf"
-            self.as_conf_data = conf_parser.parse_file(conf_path)
+            self.as_conf_data = conf_parser.parse_file("/etc/aerospike/aerospike.conf")
             if "namespace" in self.as_conf_data:
                 for ns in self.as_conf_data["namespace"].keys():
                     if "service" in self.as_conf_data["namespace"][ns]:
@@ -2941,7 +2951,7 @@ class Node(AsyncObject):
         sock = await self._get_connection(ip, port)
 
         if not sock:
-            raise IOError("Error: Could not connect to node %s" % ip)
+            raise IOError("Could not connect to node %s" % ip)
 
         try:
             result = await admin_func(sock, *args)
@@ -3185,120 +3195,12 @@ class Node(AsyncObject):
     #
     ############################################################################
 
-    def _set_default_system_credentials(
-        self,
-        default_user=None,
-        default_pwd=None,
-        default_ssh_key=None,
-        default_ssh_port=None,
-        credential_file=None,
-    ):
-        if default_user:
-            self.sys_default_user_id = default_user
-
-        if default_pwd:
-            self.sys_default_pwd = default_pwd
-
-        if default_ssh_key:
-            self.sys_default_ssh_key = default_ssh_key
-
-        self.sys_credential_file = None
-        if credential_file:
-            self.sys_credential_file = credential_file
-
-        if default_ssh_port:
-            try:
-                self.sys_default_ssh_port = int(default_ssh_port)
-            except Exception:
-                pass
-
-    def _set_system_credentials_from_file(self):
-        if not self.sys_credential_file:
-            return False
-        result = False
-        f = None
-        try:
-            try:
-                f = open(self.sys_credential_file, "r")
-            except IOError as e:
-                self.logger.warning(
-                    "Ignoring credential file. cannot open credential file. \n%s."
-                    % (str(e))
-                )
-                return result
-
-            for line in f.readlines():
-                if not line or not line.strip():
-                    continue
-                try:
-                    line = line.strip().replace("\n", " ").strip().split(",")
-                    if len(line) < 2:
-                        continue
-
-                    ip = None
-                    port = None
-                    ip_port = line[0].strip()
-                    if not ip_port:
-                        continue
-
-                    if "]" in ip_port:
-                        # IPv6
-                        try:
-                            ip_port = ip_port[1:].split("]")
-                            ip = ip_port[0].strip()
-                            if len(ip_port) > 1:
-                                # Removing ':' from port
-                                port = int(ip_port[1].strip()[1:])
-                        except Exception:
-                            pass
-
-                    else:
-                        # IPv4
-                        try:
-                            ip_port = ip_port.split(":")
-                            ip = ip_port[0]
-                            if len(ip_port) > 1:
-                                port = int(ip_port[1].strip())
-                        except Exception:
-                            pass
-
-                    if ip and self._is_any_my_ip([ip]):
-                        self.sys_user_id = line[1].strip()
-                        try:
-                            self.sys_pwd = line[2].strip()
-                            self.sys_ssh_key = line[3].strip()
-                        except Exception:
-                            pass
-                        self.sys_ssh_port = port
-                        result = True
-                        break
-
-                except Exception:
-                    pass
-        except Exception as e:
-            self.logger.warning("Ignoring credential file.\n%s." % (str(e)))
-        finally:
-            if f:
-                f.close()
-        return result
-
-    def _clear_sys_credentials(self):
-        self.sys_ssh_port = None
-        self.sys_user_id = None
-        self.sys_pwd = None
-        self.sys_ssh_key = None
-
-    def _set_system_credentials(self):
-        self._clear_sys_credentials()
-        set = self._set_system_credentials_from_file()
-        if set:
-            return
-        self.sys_user_id = self.sys_default_user_id
-        self.sys_pwd = self.sys_default_pwd
-        self.sys_ssh_key = self.sys_default_ssh_key
-        self.sys_ssh_port = self.sys_default_ssh_port
-
+    @return_exceptions
     def _get_localhost_system_statistics(self, commands):
+        logger.info(
+            f"({self.ip}:{self.port}): Collecting system information for localhost..."
+        )
+
         sys_stats = {}
 
         logger.debug(
@@ -3323,157 +3225,105 @@ class Node(AsyncObject):
 
                 try:
                     sys_stats[sys_cmd.key] = sys_cmd.parse(o)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Failed to parse system cmd {cmd}: {e}")
                     pass
 
                 break
 
+        logger.info(
+            f"({self.ip}:{self.port}): Finished collecting system info for localhost."
+        )
+
         return sys_stats
 
-    def _login_remote_system(self, ip, user, pwd, ssh_key=None, port=None):
-        s = pxssh.pxssh()
-        s.force_password = True
-        s.SSH_OPTS = "-o 'NumberOfPasswordPrompts=1'"
-        s.login(ip, user, pwd, ssh_key=ssh_key, port=port)
-        return s
-
-    def _create_ssh_connection(self, ip, user, pwd, ssh_key=None, port=None):
-        if user is None and pwd is None and ssh_key is None:
-            raise Exception("Insufficient credentials to connect.")
-
-        if PEXPECT_VERSION == PXSSH_NEW_MODULE:
-            return self._login_remote_system(ip, user, pwd, ssh_key, port)
-
-        return None
-
-    def _execute_remote_system_command(self, conn, cmd):
-        if not conn or not cmd or PEXPECT_VERSION == PXSSH_NO_MODULE:
-            return None
-
-        conn.sendline(cmd)
-        if PEXPECT_VERSION == PXSSH_NEW_MODULE:
-            conn.prompt()
-        else:
-            return None
-        return conn.before
-
-    def _execute_system_command(self, conn, cmd):
-        out = self._execute_remote_system_command(conn, cmd)
-        status = self._execute_remote_system_command(conn, "echo $?")
-        status = status.split("\r\n")
-        status = status[1].strip() if len(status) > 1 else status[0].strip()
-        try:
-            status = int(status)
-        except Exception:
-            status = 1
-
-        return status, out
-
-    def _stop_ssh_connection(self, conn):
-        if not conn or PEXPECT_VERSION == PXSSH_NO_MODULE:
-            return
-
-        if PEXPECT_VERSION == PXSSH_NEW_MODULE:
-            conn.logout()
-            if conn:
-                conn.close()
-
-        self.remote_system_command_prompt = "[#$] "
-
-    def _get_remote_host_system_statistics(self, commands):
+    async def _get_remote_host_system_statistics(
+        self,
+        commands,
+        ssh_user: str | None = None,
+        ssh_pwd: str | None = None,
+        ssh_key: str | None = None,
+        ssh_key_pwd: str | None = None,
+        ssh_port: int | None = None,
+    ):
         sys_stats = {}
+        conn = None
 
-        if PEXPECT_VERSION == PXSSH_NO_MODULE:
-            self.logger.warning(
-                "Ignoring system statistics collection from node %s. No module named pexpect."
-                % (str(self.ip))
+        try:
+            conn_config = SSHConnectionConfig(
+                username=ssh_user,
+                password=ssh_pwd,
+                private_key=ssh_key,
+                private_key_pwd=ssh_key_pwd,
+                port=ssh_port,
             )
+            conn_factory = SSHConnectionFactory(conn_config)
+            conn = await conn_factory.create_connection(self.ip)
+            logger.info(
+                f"({self.ip}:{self.port}): Collecting system info for remote host"
+            )
+
+        except (SSHError, FileNotFoundError) as e:
+            logger.error(
+                f"({self.ip}:{self.port}): Ignoring system statistics collection. Couldn't SSH login to remote server: {e}"
+            )
+            raise
+
+        if not conn:
             return sys_stats
 
-        sys_stats_collected = False
-        self._set_system_credentials()
-        max_tries = 1
-        tries = 0
+        try:
+            # Collects system statistics by running commands sequentially
+            for sys_cmd in self.sys_cmds:
+                key = sys_cmd.key
 
-        while tries < max_tries and not sys_stats_collected:
-            tries += 1
-            s = None
+                if key not in commands:
+                    continue
 
-            try:
-                s = self._create_ssh_connection(
-                    self.ip,
-                    self.sys_user_id,
-                    self.sys_pwd,
-                    self.sys_ssh_key,
-                    self.sys_ssh_port,
-                )
-                if not s:
-                    raise Exception("Wrong credentials to connect.")
+                # Finds first command that works
+                for cmd in sys_cmd:
+                    try:
+                        cp = await conn.run(cmd)
+                        stdout = cp.stdout
 
-            except Exception as e:
-                if tries >= max_tries:
-                    self.logger.warning(
-                        "Ignoring system statistics collection. Couldn't make SSH login to remote server %s:%s. \n%s"
-                        % (
-                            str(self.ip),
-                            "22"
-                            if self.sys_ssh_port is None
-                            else str(self.sys_ssh_port),
-                            str(e),
-                        )
-                    )
-
-                continue
-
-            try:
-                for sys_cmd in self.sys_cmds:
-                    key = sys_cmd.key
-                    if key not in commands:
+                        if stdout is not None:
+                            sys_stats[sys_cmd.key] = sys_cmd.parse(
+                                util.bytes_to_str(stdout)
+                            )
+                        break
+                    except (SSHNonZeroExitCodeError, SSHTimeoutError):
+                        """
+                        ProcessError is raised if the command exits with a non-zero exit status.
+                        We will try the next command in the list.
+                        """
                         continue
 
-                    for cmd in sys_cmd:
-                        try:
-                            status, o = self._execute_system_command(s, cmd)
-                            if status or not o or isinstance(o, Exception):
-                                continue
-                            sys_cmd.parse(o, sys_stats)
-                            break
+            logger.info(
+                f"({self.ip}:{self.port}): Finished collecting system info for remote host"
+            )
 
-                        except Exception:
-                            pass
+        except SSHError as e:
+            # Catches async.ChannelOpenError
+            port = "22" if ssh_port is None else str(ssh_port)
+            logger.warning(
+                f"Ignoring system statistics collection. Couldn't get or parse remote system stats for remote server {self.ip}:{port} : {e}"
+            )
 
-                sys_stats_collected = True
-                self._stop_ssh_connection(s)
-
-            except Exception as e:
-                if tries >= max_tries:
-                    self.logger.error(
-                        "Ignoring system statistics collection. Couldn't get or parse remote system stats for remote server %s:%s. \n%s"
-                        % (
-                            str(self.ip),
-                            "22"
-                            if self.sys_ssh_port is None
-                            else str(self.sys_ssh_port),
-                            str(e),
-                        )
-                    )
-
-            finally:
-                if s and not isinstance(s, Exception):
-                    s.close()
+        finally:
+            await conn.close()
 
         return sys_stats
 
-    @return_exceptions
-    def info_system_statistics(
+    @async_return_exceptions
+    async def info_system_statistics(
         self,
-        default_user=None,
-        default_pwd=None,
-        default_ssh_key=None,
-        default_ssh_port=None,
-        credential_file=None,
         commands=[],
-        collect_remote_data=False,
+        enable_ssh=False,
+        ssh_user=None,
+        ssh_pwd=None,
+        ssh_key=None,
+        ssh_key_pwd=None,
+        ssh_port=None,
     ):
         """
         Get statistics for a system.
@@ -3481,21 +3331,15 @@ class Node(AsyncObject):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        # TODO make async
         logger.debug(
-            (
-                "%s.info_system_statistics default_user=%s default_pws=%s"
-                "default_ssh_key=%s default_ssh_port=%s credential_file=%s"
-                "commands=%s collect_remote_data=%s"
-            ),
+            "ssh_user=%s ssh_pwd=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
             self.ip,
-            default_user,
-            default_pwd,
-            default_ssh_key,
-            default_ssh_port,
-            credential_file,
+            ssh_user,
+            ssh_pwd,
+            ssh_key,
+            ssh_port,
             commands,
-            collect_remote_data,
+            enable_ssh,
         )
 
         if commands:
@@ -3506,15 +3350,15 @@ class Node(AsyncObject):
         if self.localhost:
             return self._get_localhost_system_statistics(cmd_list)
 
-        if collect_remote_data:
-            self._set_default_system_credentials(
-                default_user,
-                default_pwd,
-                default_ssh_key,
-                default_ssh_port,
-                credential_file,
+        if enable_ssh:
+            return await self._get_remote_host_system_statistics(
+                cmd_list,
+                ssh_user=ssh_user,
+                ssh_pwd=ssh_pwd,
+                ssh_key=ssh_key,
+                ssh_key_pwd=ssh_key_pwd,
+                ssh_port=ssh_port,
             )
-            return self._get_remote_host_system_statistics(cmd_list)
 
         return {}
 

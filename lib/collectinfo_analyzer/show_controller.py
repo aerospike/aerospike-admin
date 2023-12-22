@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
     GetClusterMetadataController,
@@ -20,8 +21,9 @@ from lib.collectinfo_analyzer.get_controller import (
 )
 from lib.utils import common, constants, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp
-
 from .collectinfo_command_controller import CollectinfoCommandController
+
+logger = logging.getLogger(__name__)
 
 Modifiers = constants.Modifiers
 ModifierUsage = constants.ModifierUsage
@@ -356,7 +358,7 @@ class ShowConfigController(CollectinfoCommandController):
                 **self.mods,
             )
 
-        self.logger.warning(
+        logger.warning(
             "The 'show config dc' command is deprecated. Please use 'show config xdr dc' instead."
         )
 
@@ -384,7 +386,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
         for ts_stats in xdr_ns_stats.values():
             for node_stats in ts_stats.values():
                 if not node_stats:
-                    self.logger.warning(
+                    logger.warning(
                         "XDR namespace subcontexts were introduced in server 5.0. Try 'show config namespace'"
                     )
                     return
@@ -1016,7 +1018,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                     for build in nodes_builds.values()
                 ]
             ):
-                self.logger.error(
+                logger.error(
                     f"Server version {constants.SERVER_INFO_BINS_REMOVAL_VERSION} removed namespace bin-name limits and statistics."
                 )
 
@@ -1104,7 +1106,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 **self.mods,
             )
 
-        self.logger.warning(
+        logger.warning(
             "'show statistics dc' is deprecated. Please use 'show statistics xdr dc' instead."
         )
 
@@ -1220,7 +1222,7 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
         for ts_stats in xdr_ns_stats.values():
             for node_stats in ts_stats.values():
                 if not node_stats:
-                    self.logger.warning(
+                    logger.warning(
                         "XDR namespace statistics were introduced in server 5.0 and not added to the collectinfo file until asadm 2.13.0"
                     )
                     return
@@ -1544,7 +1546,7 @@ class ShowUdfsController(CollectinfoCommandController):
             except KeyError:
                 data = list(udf_data[timestamp].values())[0]
                 self.view.show_udfs(data, timestamp=timestamp, **self.mods)
-                self.logger.warning(
+                logger.warning(
                     f"No UDF data found for principal node {principal_id}. Using a random node instead."
                 )
 
@@ -1579,7 +1581,7 @@ class ShowSIndexController(CollectinfoCommandController):
                 data = list(sindexes_data[timestamp].values())[0]
                 formatted_data = list(data.values())
                 self.view.show_sindex(formatted_data, timestamp=timestamp, **self.mods)
-                self.logger.warning(
+                logger.warning(
                     f"No sindex data found for principal node {principal_id}. Using a random node instead."
                 )
 
@@ -1733,7 +1735,7 @@ class ShowRacksController(CollectinfoCommandController):
             except KeyError:
                 data = {1: list(data.values())[0]}
                 self.view.show_racks(data, timestamp=timestamp, **self.mods)
-                self.logger.warning(
+                logger.warning(
                     f"No racks data found for principal node {principal_id}. Using a random node instead."
                 )
 

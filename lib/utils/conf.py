@@ -27,7 +27,7 @@ from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
 
-logger = logging.getLogger("asadm")
+logger = logging.getLogger(__name__)
 
 
 class _Namespace(object):

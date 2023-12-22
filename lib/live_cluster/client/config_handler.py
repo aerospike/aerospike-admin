@@ -218,8 +218,8 @@ def configTypeFactory(value):
 
 
 class BaseConfigHandler:
-    def __init__(self):
-        self.logger = logging.getLogger("asadm")
+    def __init__(self, as_build):
+        self.as_build = as_build
 
     def get_subcontext(self, context):
         """
@@ -283,7 +283,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
         """
         self.init_successful = False
         self.as_build = as_build
-        super().__init__()
+        super().__init__(as_build)
 
         try:
             as_build = ".".join(as_build.split(".")[0:3])

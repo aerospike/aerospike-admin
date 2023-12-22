@@ -62,9 +62,10 @@ class _AsyncioSSLConnectionAdapter(SSL.Connection):
             raise BlockingIOError("Wrapped SSL.WantReadError")
 
 
-class ASSocket:
-    logger = logging.getLogger("asadm")
+logger = logging.getLogger(__name__)
 
+
+class ASSocket:
     def __init__(
         self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5
     ):
@@ -127,16 +128,14 @@ class ASSocket:
                     await asyncio.wait_for(_handshake(), self._timeout)
 
                 except Exception as tlse:
-                    self.logger.debug(
-                        f"TLS connection exception {type(tlse)}: {str(tlse)}"
-                    )
+                    logger.debug(f"TLS connection exception {type(tlse)}: {str(tlse)}")
                     if sock:
                         sock.close()
                         sock = None
                     return None
 
         except Exception as e:
-            self.logger.debug("Failed to connect to socket %s", e)
+            logger.debug("Failed to connect to socket %s", e)
             sock = None
             pass
 
@@ -153,8 +152,8 @@ class ASSocket:
                 if sock:
                     break
             except Exception:
-                self.logger.debug("Failed to create socket to %s", addrinfo)
-                pass
+                logger.debug("Failed to create socket to %s", addrinfo)
+                raise
         return sock
 
     async def login(self):
@@ -212,8 +211,9 @@ class ASSocket:
                 return False
             self.reader, self.writer = await asyncio.open_connection(sock=self.sock)
         except Exception as e:
-            self.logger.debug(e)
-            return False
+            logger.debug(e, exc_info=True)
+            raise
+
         return True
 
     async def is_connected(self):
@@ -227,7 +227,7 @@ class ASSocket:
                 return False
 
         except Exception as e:
-            self.logger.debug(e)
+            logger.debug(e, exc_info=True)
             return False
 
         return True

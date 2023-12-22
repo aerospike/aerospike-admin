@@ -234,7 +234,7 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageACLCreateUserController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
@@ -331,7 +331,7 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageACLCreateRoleController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
@@ -653,7 +653,7 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageACLQuotasRoleController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
@@ -817,7 +817,7 @@ class ManageConfigControllerTest(asynctest.TestCase):
         ).start()
         self.controller = ManageConfigController()
         ManageConfigLeafController.mods = {}
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageConfigLeafController.prompt_challenge"
@@ -1390,7 +1390,7 @@ class ManageConfigAutoCompleteTest(asynctest.TestCase):
         self.controller = ManageConfigController()
         self.controller._context = ["manage", "config"]
         ManageConfigLeafController.mods = {}
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageConfigLeafController.prompt_challenge"
@@ -1688,7 +1688,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageSIndexCreateController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageSIndexCreateController.prompt_challenge"
@@ -1784,7 +1784,7 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageSIndexDeleteController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageSIndexDeleteController.prompt_challenge"
@@ -1849,7 +1849,7 @@ class ManageTruncateControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageTruncateController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
@@ -2166,7 +2166,7 @@ class ManageTruncateUndoControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageTruncateController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageTruncateController.prompt_challenge"
@@ -2255,7 +2255,7 @@ class ManageReclusterControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageReclusterController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.cluster_mock.info_build.return_value = {"principal": "5.6.0.0"}
@@ -2309,7 +2309,7 @@ class ManageQuiesceControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageQuiesceController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
         self.controller.mods = {}
@@ -2364,7 +2364,7 @@ class ManageReviveControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageReviveController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
@@ -2578,7 +2578,7 @@ class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllScansController.prompt_challenge"
         ).start()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.addCleanup(patch.stopall)
 
     async def test_kill_all_scans(self):
@@ -2629,7 +2629,7 @@ class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageJobsKillAllQueriesController.prompt_challenge"
         ).start()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.addCleanup(patch.stopall)
 
     async def test_kill_all_queries(self):
@@ -2676,7 +2676,7 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
             AsyncMock,
         ).start()
         self.controller = ManageRosterLeafCommandController(self.cluster_mock)
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
 
         self.addCleanup(patch.stopall)
 
@@ -2774,7 +2774,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageRosterAddController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageRosterLeafCommandController.prompt_challenge"
@@ -2922,7 +2922,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
         ).start()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
 
     async def test_success(self):
@@ -3078,7 +3078,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageRosterStageNodesController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"
@@ -3202,7 +3202,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
             AsyncMock(),
         ).start()
         self.controller = ManageRosterStageObservedController()
-        self.logger_mock = patch("lib.base_controller.BaseController.logger").start()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         self.prompt_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.prompt_challenge"

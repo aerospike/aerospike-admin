@@ -346,6 +346,7 @@ def start_server(
             "FEATURES": "{}".format(feat_key),
         },
         name="aerospike-%d" % (index),
+        privileged=True,
     )
 
     NODES[index - 1] = container

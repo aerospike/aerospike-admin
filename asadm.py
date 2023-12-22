@@ -21,8 +21,12 @@ try:
 except:
     pass
 
+from lib.utils.logger import (
+    logger,  # type: ignore
+    stderr_log_handler,
+    get_exit_code,
+)  # THIS MUST BE THE FIRST IMPORT
 from signal import SIGINT, SIGTERM
-from lib.utils.logger import logger  # THIS MUST BE THE FIRST IMPORT
 from lib.live_cluster.client import Cluster, Addr_Port_TLSName
 from lib.live_cluster.get_controller import GetConfigController, GetStatisticsController
 from lib.base_controller import ShellException
@@ -230,6 +234,8 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         except Exception as e:
             await self.do_exit("")
             logger.critical(e)
+            self.connected = False
+            return
 
         if not execute_only_mode:
             try:
@@ -696,6 +702,7 @@ async def main():
     if cli_args.debug:
         loop.set_debug(True)
         logger.setLevel(logging.DEBUG)
+        stderr_log_handler.setLevel(logging.DEBUG)
 
     if cli_args.help:
         conf.print_config_help()
@@ -733,7 +740,6 @@ async def main():
 
     if cli_args.execute is not None:
         execute_only_mode = True
-        logger.execute_only_mode = True
 
     cli_args, seeds = conf.loadconfig(cli_args)
 
@@ -877,6 +883,8 @@ async def main():
             f.close()
     except Exception:
         pass
+
+    sys.exit(get_exit_code())
 
 
 def disable_coloring():

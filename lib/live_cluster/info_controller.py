@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import logging
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -19,6 +20,8 @@ from lib.live_cluster.get_controller import (
 from lib.utils import util, version, constants
 from lib.base_controller import CommandHelp, ModifierHelp
 from .live_cluster_command_controller import LiveClusterCommandController
+
+logger = logging.getLogger(__name__)
 
 Modifiers = constants.Modifiers
 ModifierUsageHelp = constants.ModifierUsage
@@ -154,7 +157,7 @@ class InfoController(LiveClusterCommandController):
         if nodes_running_v5_or_higher:
             futures.append(
                 util.callable(
-                    self.logger.warning,
+                    logger.warning,
                     "'info dc' is deprecated on aerospike versions >= 5.0. "
                     + "Use 'info xdr' instead.",
                 )

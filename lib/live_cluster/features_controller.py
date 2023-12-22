@@ -17,7 +17,9 @@ from lib.base_controller import CommandHelp, ModifierHelp
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
-with_modifier_help = ModifierHelp(constants.Modifiers.WITH, constants.ModifierHelp.WITH)
+with_modifier_help = ModifierHelp(
+    constants.Modifiers.WITH, constants.ModifierHelpText.WITH
+)
 
 
 @CommandHelp(

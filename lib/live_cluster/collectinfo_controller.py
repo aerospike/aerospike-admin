@@ -1,4 +1,4 @@
-# Copyright 2021-2023 Aerospike, Inc.
+# Copyright 2023-2023 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,20 +15,26 @@ import asyncio
 import copy
 import json
 import logging
+from os import path
+import os
 import pprint
 import shutil
 import time
 import sys
 import traceback
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.generate_config_controller import GenerateConfigController
+from lib.live_cluster.logfile_downloader import LogFileDownloader
+from lib.live_cluster import ssh
 from lib.utils.types import NodeDict
 
 from lib.view.sheet.render import get_style_json, set_style_json
 from lib.view.terminal import terminal
-from lib.utils import common, constants, util, version, logger
-from lib.base_controller import CommandHelp, ModifierHelp
+from lib.utils import common, constants, util, version
+from lib.live_cluster.constants import SSH_MODIFIER_HELP, SSH_MODIFIER_USAGE
+from lib.utils.logger import LogFormatter, stderr_log_handler, logger as g_logger
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
@@ -46,35 +52,18 @@ from .features_controller import FeaturesController
 from .info_controller import InfoController
 from .show_controller import ShowController
 
+logger = logging.getLogger(__name__)
+
 
 @CommandHelp(
     "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
-    usage="[-n <num-snapshots>] [-s <sleep>] [--enable-ssh --ssh-user <user> --ssh-pwd <pwd> [--ssh-port <port>] [--ssh-key <key>] [--ssh-cf <credentials-file>]] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
+    usage=f"[-n <num-snapshots>] [-s <sleep>] [{SSH_MODIFIER_USAGE}] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
     modifiers=(
         ModifierHelp("-n", "Number of snapshots.", default="1"),
         ModifierHelp(
             "-s", "Sleep time in seconds between each snapshot.", default="5 sec"
         ),
-        ModifierHelp(
-            "--enable-ssh",
-            "Enables the collection of system statistics from the remote server.",
-        ),
-        ModifierHelp(
-            "--ssh-user",
-            "Default user ID for remote servers. This is the ID of a user of the system, not the ID of an Aerospike user.",
-        ),
-        ModifierHelp(
-            "--ssh-pwd",
-            "Default password or passphrase for key for remote servers. This is the user's password for logging into the system, not a password for logging into Aerospike.",
-        ),
-        ModifierHelp(
-            "--ssh-port", "Default SSH port for remote servers.", default="22"
-        ),
-        ModifierHelp("--ssh-key", "Default SSH key (file path) for remote servers."),
-        ModifierHelp(
-            "--ssh-cf",
-            "Remote System Credentials file path. If the server credentials are not in the credentials file, then authentication is attempted with the default credentials. File format: each line must contain <IP[:PORT]>,<USER_ID>,<PASSWORD-or-PASSPHRASE>,<SSH_KEY>",
-        ),
+        *SSH_MODIFIER_HELP,
         ModifierHelp(
             "--agent-host",
             "Host IP of the Unique Data Agent to collect license data usage.",
@@ -98,7 +87,7 @@ class CollectinfoController(LiveClusterCommandController):
         self.collectinfo_root_controller = None
 
     def _collect_local_file(self, src, dest_dir):
-        self.logger.info("Copying file %s to %s" % (src, dest_dir))
+        logger.info("Copying file %s to %s" % (src, dest_dir))
         try:
             shutil.copy2(src, dest_dir)
         except Exception as e:
@@ -128,11 +117,6 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception as e:
             pass
 
-        info_line = constants.COLLECTINFO_PROGRESS_MSG % (
-            name,
-            "%s" % (" %s" % (str(param)) if param else ""),
-        )
-        self.logger.info(info_line)
         if param:
             sep += " ".join(param) + "\n"
 
@@ -244,6 +228,23 @@ class CollectinfoController(LiveClusterCommandController):
             for node in data[section]:
                 if isinstance(data[section][node], Exception):
                     data[section][node] = {}
+
+    async def _get_as_cluster_name(self) -> str:
+        cluster_names = await self.cluster.info("cluster-name")
+
+        # Get the cluster name and add one more level in map
+        cluster_name = "null"
+
+        # Cluster name.
+        for node in cluster_names:
+            if (
+                not isinstance(cluster_names[node], Exception)
+                and cluster_names[node] != "null"
+            ):
+                cluster_name = cluster_names[node]
+                break
+
+        return cluster_name
 
     async def _get_as_data_json(self):
         as_map = {}
@@ -401,18 +402,19 @@ class CollectinfoController(LiveClusterCommandController):
 
     async def _get_collectinfo_data_json(
         self,
-        default_user,
-        default_pwd,
-        default_ssh_port,
-        default_ssh_key,
-        credential_file,
-        enable_ssh,
+        enable_ssh: bool,
+        ssh_user: str | None = None,
+        ssh_pwd: str | None = None,
+        ssh_key: str | None = None,
+        ssh_key_pwd: str | None = None,
+        ssh_port: int | None = None,
     ):
-        self.logger.debug("Collectinfo data to store in collectinfo_*.json")
+        logger.debug("Collectinfo data to store in collectinfo_*.json")
 
         dump_map = {}
 
         (
+            cluster_name,
             as_map,
             meta_map,
             histogram_map,
@@ -420,23 +422,28 @@ class CollectinfoController(LiveClusterCommandController):
             acl_map,
             sys_map,
         ) = await asyncio.gather(
+            self._get_as_cluster_name(),
             self._get_as_data_json(),
             self._get_as_metadata(),
             self._get_as_histograms(),
             self._get_as_latency(),
             self._get_as_access_control_list(),
             self.cluster.info_system_statistics(
-                default_user=default_user,
-                default_pwd=default_pwd,
-                default_ssh_key=default_ssh_key,
-                default_ssh_port=default_ssh_port,
-                credential_file=credential_file,
+                enable_ssh=enable_ssh,
+                ssh_user=ssh_user,
+                ssh_pwd=ssh_pwd,
+                ssh_key=ssh_key,
+                ssh_key_pwd=ssh_key_pwd,
+                ssh_port=ssh_port,
                 nodes=self.nodes,
-                collect_remote_data=enable_ssh,
             ),
         )
 
-        cluster_names = asyncio.create_task(self.cluster.info("cluster-name"))
+        for val in sys_map.values():
+            # TODO: remove this when we no longer return all exceptions by default
+            if isinstance(val, Exception):
+                raise val
+
         pmap_map = None
 
         if CollectinfoController.get_pmap:
@@ -464,18 +471,6 @@ class CollectinfoController(LiveClusterCommandController):
             if node in acl_map:
                 dump_map[node]["as_stat"]["acl"] = acl_map[node]
 
-        # Get the cluster name and add one more level in map
-        cluster_name = "null"
-        cluster_names = await cluster_names
-
-        # Cluster name.
-        for node in cluster_names:
-            if not isinstance(cluster_names[node], Exception) and cluster_names[
-                node
-            ] not in ["null"]:
-                cluster_name = cluster_names[node]
-                break
-
         snp_map = {}
         snp_map[cluster_name] = dump_map
         return snp_map
@@ -483,22 +478,22 @@ class CollectinfoController(LiveClusterCommandController):
     def _dump_in_json_file(self, complete_name, dump):
         try:
             json_dump = json.dumps(dump, indent=2, separators=(",", ":"))
+            util.filter_exceptions(json_dump)
             self._dump_collectinfo_file(complete_name, json_dump)
         except Exception:
             pretty_json = pprint.pformat(dump, indent=1)
-            self.logger.debug(pretty_json)
+            logger.debug(pretty_json)
             raise
 
     async def _dump_collectinfo_json(
         self,
-        timestamp,
         as_logfile_prefix,
-        default_user,
-        default_pwd,
-        default_ssh_port,
-        default_ssh_key,
-        credential_file,
         enable_ssh,
+        ssh_user,
+        ssh_pwd,
+        ssh_key,
+        ssh_key_pwd,
+        ssh_port,
         snp_count,
         wait_time,
     ):
@@ -506,30 +501,32 @@ class CollectinfoController(LiveClusterCommandController):
 
         for i in range(snp_count):
             snp_timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-            self.logger.info(
+            logger.info(
                 "Data collection for Snapshot: " + str(i + 1) + " in progress..."
             )
 
             snpshots[snp_timestamp] = await self._get_collectinfo_data_json(
-                default_user,
-                default_pwd,
-                default_ssh_port,
-                default_ssh_key,
-                credential_file,
                 enable_ssh,
+                ssh_user,
+                ssh_pwd,
+                ssh_key,
+                ssh_key_pwd,
+                ssh_port,
             )
 
-            time.sleep(wait_time)
+            logger.info("Data collection for Snapshot " + str(i + 1) + " finished.")
+
+            await asyncio.sleep(wait_time)
 
         self._dump_in_json_file(as_logfile_prefix + "ascinfo.json", snpshots)
 
     def _dump_collectinfo_file(self, filename: str, dump: str):
-        self.logger.info("Dumping collectinfo %s.", filename)
+        logger.info("Dumping collectinfo %s.", filename)
 
         try:
             util.write_to_file(filename, dump)
         except Exception as e:
-            self.logger.warning("Failed to write file {}: {}", filename, str(e))
+            logger.warning("Failed to write file {}: {}", filename, str(e))
             raise
 
     async def _dump_collectinfo_license_data(
@@ -539,9 +536,8 @@ class CollectinfoController(LiveClusterCommandController):
         agent_port: str,
         get_store: bool,
     ) -> None:
-        self.logger.info("Data collection license usage in progress...")
-        self.logger.info("Requesting data usage for past 365 days...")
-        error = None
+        logger.info("Data collection license usage in progress...")
+        logger.info("Requesting data usage for past 365 days...")
         resp = {}
 
         try:
@@ -549,7 +545,7 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception as e:
             msg = "Failed to retrieve license usage information : {}".format(e)
             resp["error"] = msg
-            self.logger.error(msg)
+            logger.error(msg)
 
             complete_filename = as_logfile_prefix + "aslicenseusage.json"
             self._dump_in_json_file(complete_filename, resp)
@@ -573,7 +569,9 @@ class CollectinfoController(LiveClusterCommandController):
         self, as_logfile_prefix, file_header
     ) -> None:
         ####### Dignostic info ########
-        complete_filename = as_logfile_prefix + "ascollectinfo.log"
+        file = "ascollectinfo.log"
+        complete_filename = as_logfile_prefix + file
+        logger.info(f"Capturing pretty print output for {file} . . .")
 
         try:
             dignostic_info_params = [
@@ -671,6 +669,9 @@ class CollectinfoController(LiveClusterCommandController):
             try:
                 info_controller = InfoController()
                 for info_param in dignostic_info_params:
+                    logger.info(
+                        f"Capturing output of command 'info {info_param}' and writing to {file}"
+                    )
                     await self._collectinfo_capture_and_write_to_file(
                         complete_filename, info_controller, info_param.split()
                     )
@@ -680,6 +681,9 @@ class CollectinfoController(LiveClusterCommandController):
             try:
                 show_controller = ShowController()
                 for show_param in dignostic_show_params:
+                    logger.info(
+                        f"Capturing output of command 'show {show_param}' for {file}"
+                    )
                     await self._collectinfo_capture_and_write_to_file(
                         complete_filename, show_controller, show_param.split()
                     )
@@ -689,6 +693,9 @@ class CollectinfoController(LiveClusterCommandController):
             try:
                 features_controller = FeaturesController()
                 for cmd in dignostic_features_params:
+                    logger.info(
+                        f"Capturing output of command '{cmd}' and writing to {file}"
+                    )
                     await self._collectinfo_capture_and_write_to_file(
                         complete_filename, features_controller, cmd.split()
                     )
@@ -697,6 +704,9 @@ class CollectinfoController(LiveClusterCommandController):
 
             try:
                 for cmd in dignostic_aerospike_info_commands:
+                    logger.info(
+                        f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+                    )
                     result = await self.cluster.info(cmd)
                     self._write_func_output_to_file(
                         complete_filename, self.cluster.info, [cmd], result
@@ -705,9 +715,11 @@ class CollectinfoController(LiveClusterCommandController):
                 util.write_to_file(complete_filename, str(e))
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate %s file.", complete_filename)
-            self.logger.debug(traceback.format_exc())
+            logger.warning("Failed to generate %s file.", complete_filename)
+            logger.debug(traceback.format_exc())
             raise
+
+        logger.info(f"Finished capturing pretty print output for {file}.")
 
     async def _dump_collectinfo_summary(self, as_logfile_prefix: str, fileHeader: str):
         complete_filename = as_logfile_prefix + "summary.log"
@@ -726,7 +738,7 @@ class CollectinfoController(LiveClusterCommandController):
                 util.write_to_file(complete_filename, str(e))
 
             if self.collectinfo_root_controller is None:
-                self.logger.critical("Collectinfo root controller is not initialized.")
+                logger.critical("Collectinfo root controller is not initialized.")
                 return
 
             try:
@@ -750,13 +762,13 @@ class CollectinfoController(LiveClusterCommandController):
 
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate %s file.", complete_filename)
-            self.logger.debug(traceback.format_exc())
+            logger.warning("Failed to generate %s file.", complete_filename)
+            logger.debug(traceback.format_exc())
             raise
 
     async def _dump_collectinfo_health(self, as_logfile_prefix: str, fileHeader: str):
         if self.collectinfo_root_controller is None:
-            self.logger.critical("Collectinfo root controller is not initialized.")
+            logger.critical("Collectinfo root controller is not initialized.")
             return
 
         complete_filename = as_logfile_prefix + "health.log"
@@ -774,8 +786,8 @@ class CollectinfoController(LiveClusterCommandController):
                 )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate %s file.", complete_filename)
-            self.logger.debug(traceback.format_exc())
+            logger.warning("Failed to generate %s file.", complete_filename)
+            logger.debug(traceback.format_exc())
             raise
 
     async def _dump_collectinfo_sysinfo(self, as_logfile_prefix: str, fileHeader: str):
@@ -790,16 +802,16 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             self.failed_cmds = common.collect_sys_info(
-                port=port, timestamp=fileHeader, outfile=complete_filename
+                port=port, file_header=fileHeader, outfile=complete_filename
             )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
-            self.logger.warning("Failed to generate %s file.", complete_filename)
-            self.logger.debug(traceback.format_exc())
+            logger.warning("Failed to generate %s file.", complete_filename)
+            logger.debug(traceback.format_exc())
             raise
 
     async def _dump_collectinfo_aerospike_conf(
-        self, as_logfile_prefix: str, conf_path: Optional[str] = None
+        self, as_logfile_prefix: str, conf_path: str | None = None
     ):
         """
         Gets the static aerospike.conf if available.
@@ -812,52 +824,56 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             self._collect_local_file(conf_path, complete_filename)
         except Exception as e:
-            self.logger.debug(traceback.format_exc())
-            self.logger.warning("Failed to generate %s file.", complete_filename)
-            self.logger.warning(str(e))
+            logger.debug(traceback.format_exc())
+            logger.warning("Failed to generate %s file.", complete_filename)
+            logger.warning(str(e))
             util.write_to_file(complete_filename, str(e))
 
-    async def _dump_collectinfo_dynamic_aerospike_conf(self, as_logfile_prefix):
-        """
-        Used the GenerateConfigController to get the active runtime config of the
-        cluster. This will include changes that have not yet been save to the static
-        aerospike.conf file.
-        """
-        nodes: list[Node] = self.cluster.get_nodes()
+    def setup_loggers(self, individual_file_prefix: str):
+        debug_file = individual_file_prefix + "collectinfo_debug.log"
+        self.debug_output_handler = logging.FileHandler(debug_file)
+        self.debug_output_handler.setLevel(logging.DEBUG)
+        self.debug_output_handler.setFormatter(LogFormatter())
+        self.loggers: list[logging.Logger | logging.Handler] = [
+            g_logger,
+            stderr_log_handler,
+            logging.getLogger(Node.__module__),
+            logging.getLogger(common.__name__),
+            logging.getLogger(LogFileDownloader.__module__),
+        ]
+        self.old_levels = [logger.level for logger in self.loggers]
 
-        async def _get_aerospike_conf(self, key, id):
-            complete_filename = as_logfile_prefix + id + "_aerospike.conf"
-            line = f"-o {complete_filename} with {key}"
-            await GenerateConfigController().execute(line.split())
-            
-        level = self.logger.getEffectiveLevel()
-        self.logger.setLevel(logging.ERROR)
-        results = await asyncio.gather(
-            *[_get_aerospike_conf(self, node.key, node.node_id) for node in nodes],
-            return_exceptions=True,
-        )
-        self.logger.setLevel(level)
+        g_logger.setLevel(logging.DEBUG)
 
-        for result in results:
-            if isinstance(result, Exception):
-                self.logger.error(str(result))
-                continue
+        for logger in self.loggers[1:]:
+            # Only set the level to INFO if it is not already set to DEBUG or INFO.
+            if logger.level > logging.INFO:
+                logger.setLevel(logging.INFO)
+
+        g_logger.addHandler(self.debug_output_handler)
+
+    def teardown_loggers(self):
+        g_logger.removeHandler(self.debug_output_handler)
+        for logger, level in zip(self.loggers, self.old_levels):
+            logger.setLevel(level)
+
+        # TODO: clean up log levels
 
     ###########################################################################
     # Collectinfo caller functions
 
     async def _run_collectinfo(
         self,
-        default_user: Optional[str],
-        default_pwd: Optional[str],
-        default_ssh_port: Optional[int],
-        default_ssh_key: Optional[str],
-        credential_file: Optional[str],
+        ssh_user: str | None,
+        ssh_pwd: str | None,
+        ssh_port: int | None,
+        ssh_key: str | None,
+        ssh_key_pwd: str | None,
         snp_count: int,
         wait_time: int,
         ignore_errors: bool,
-        agent_host: Optional[str] = None,
-        agent_port: Optional[str] = None,
+        agent_host: str | None = None,
+        agent_port: str | None = None,
         agent_store: bool = False,
         enable_ssh: bool = False,
         output_prefix: str = "",
@@ -865,99 +881,126 @@ class CollectinfoController(LiveClusterCommandController):
     ):
         # JSON collectinfo snapshot count check
         if snp_count < 1:
-            self.logger.error("Wrong collectinfo snapshot count")
+            logger.error("Wrong collectinfo snapshot count")
             return
 
         timestamp = time.gmtime()
-        aslogdir, as_logfile_prefix = common.set_collectinfo_path(
-            timestamp, output_prefix=output_prefix
+        cf_path_info = common.get_collectinfo_path(
+            timestamp,
+            output_prefix=output_prefix,
         )
-
-        debug_file = as_logfile_prefix + "collectinfo_debug.log"
-        debug_output_handler = logging.FileHandler(debug_file)
-        debug_output_handler.setLevel(logging.DEBUG)
-        debug_output_handler.setFormatter(logger.LogFormatter())
-        self.logger.addHandler(debug_output_handler)
+        individual_file_prefix = path.join(
+            cf_path_info.cf_dir,
+            cf_path_info.files_prefix,
+        )
         ignore_errors_msg = "Aborting collectinfo. To bypass use --ignore-errors."
 
-        # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
-        terminal.enable_color(False)
-
         try:
-            if agent_host is not None and agent_port is not None:
-                await self._dump_collectinfo_license_data(
-                    as_logfile_prefix,
-                    agent_host,
-                    agent_port,
-                    agent_store,
-                )
+            # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
+            self.setup_loggers(individual_file_prefix)
+            terminal.enable_color(False)
 
-        except Exception:
-            exc = traceback.format_exc()
-            self.logger.debug(exc)
-
-            if not ignore_errors:
-                self.logger.error(ignore_errors_msg)
-                return
-
-        file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
-        self.failed_cmds = []
-
-        try:
-            await self._dump_collectinfo_json(
-                timestamp,
-                as_logfile_prefix,
-                default_user,
-                default_pwd,
-                default_ssh_port,
-                default_ssh_key,
-                credential_file,
-                enable_ssh,
-                snp_count,
-                wait_time,
-            )
-        except Exception as e:
-            if not ignore_errors:
-                self.logger.debug(e, exc_info=True)
-                self.logger.error(ignore_errors_msg)
-                return
-
-        # Must happen after json dump and before summary and health. The json data is used
-        # to generate the summary and health output.
-        self.collectinfo_root_controller = CollectinfoRootController(
-            asadm_version=self.asadm_version, clinfo_path=aslogdir
-        )
-
-        coroutines = [
-            self._dump_collectinfo_ascollectinfo(as_logfile_prefix, file_header),
-            self._dump_collectinfo_summary(as_logfile_prefix, file_header),
-            self._dump_collectinfo_health(as_logfile_prefix, file_header),
-            self._dump_collectinfo_sysinfo(as_logfile_prefix, file_header),
-            self._dump_collectinfo_aerospike_conf(as_logfile_prefix, config_path),
-            self._dump_collectinfo_dynamic_aerospike_conf(as_logfile_prefix),
-        ]
-
-        for c in coroutines:
             try:
-                await c
-            except:
-                # close remaining coroutines.  An error will be raised if they are not
-                # awaited.
-                for c in coroutines:
-                    c.close()
+                if agent_host is not None and agent_port is not None:
+                    await self._dump_collectinfo_license_data(
+                        individual_file_prefix,
+                        agent_host,
+                        agent_port,
+                        agent_store,
+                    )
 
+            except Exception as e:
+                logger.error(e)
                 if not ignore_errors:
-                    self.logger.error(ignore_errors_msg)
+                    logger.error(ignore_errors_msg)
                     return
 
-        self.logger.removeHandler(debug_output_handler)
+            file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
+            self.failed_cmds = []
 
-        # Archive collectinfo directory
-        common.archive_log(aslogdir)
+            try:
+                await self._dump_collectinfo_json(
+                    individual_file_prefix,
+                    enable_ssh,
+                    ssh_user,
+                    ssh_pwd,
+                    ssh_key,
+                    ssh_key_pwd,
+                    ssh_port,
+                    snp_count,
+                    wait_time,
+                )
+            except (ssh.SSHError, FileNotFoundError) as e:
+                logger.error(ShellException(e))
+                logger.error(
+                    "Failed to login to node using ssh. Stopping creation of the collectinfo."
+                )
+                return
+            except Exception as e:
+                logger.error(e)
+                if not ignore_errors:
+                    logger.error(ignore_errors_msg)
+                    return
 
-        # printing collectinfo summary
-        common.print_collectinfo_summary(aslogdir, failed_cmds=self.failed_cmds)
-        terminal.enable_color(True)
+            # Must happen after json dump and before summary and health. The json data is used
+            # to generate the summary and health output.
+            self.collectinfo_root_controller = CollectinfoRootController(
+                asadm_version=self.asadm_version,
+                clinfo_path=cf_path_info.cf_dir,
+            )
+
+            coroutines = [
+                self._dump_collectinfo_ascollectinfo(
+                    individual_file_prefix, file_header
+                ),
+                self._dump_collectinfo_summary(individual_file_prefix, file_header),
+                self._dump_collectinfo_health(individual_file_prefix, file_header),
+            ]
+
+            if self.cluster.is_localhost_a_node():
+                coroutines.append(
+                    self._dump_collectinfo_sysinfo(individual_file_prefix, file_header)
+                )
+                coroutines.append(
+                    self._dump_collectinfo_aerospike_conf(
+                        individual_file_prefix, config_path
+                    )
+                )
+            else:
+                logger.info(
+                    "Localhost is not an Aerospike node. Skipping sysinfo.log and aerospike.conf collection."
+                )
+
+            for c in coroutines:
+                try:
+                    await c
+                except:
+                    # close remaining coroutines.  An error will be raised if they are not
+                    # awaited.
+                    for c in coroutines:
+                        c.close()
+
+                    if not ignore_errors:
+                        logger.error(ignore_errors_msg)
+                        return
+
+            common.print_collectinfo_failed_cmds(self.failed_cmds)
+
+            # Archive collectinfo directory
+            cf_archive_path, success = common.archive_dir(cf_path_info.cf_dir)
+
+            if success:
+                common.print_collect_summary(
+                    cf_archive_path,
+                )
+            else:
+                logger.error(
+                    "Failed to archive collectinfo logs. See earlier errors for more details."
+                )
+        finally:
+            # printing collectinfo summary
+            self.teardown_loggers()
+            terminal.enable_color(True)
 
     async def _do_default(self, line):
         snp_count = util.get_arg_and_delete_from_mods(
@@ -1012,7 +1055,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_user = util.get_arg_and_delete_from_mods(
+        ssh_user = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-user",
             return_type=str,
@@ -1021,7 +1064,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_pwd = util.get_arg_and_delete_from_mods(
+        ssh_pwd = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-pwd",
             return_type=str,
@@ -1030,7 +1073,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_port = util.get_arg_and_delete_from_mods(
+        ssh_port = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-port",
             return_type=int,
@@ -1039,7 +1082,7 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        default_ssh_key = util.get_arg_and_delete_from_mods(
+        ssh_key = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--ssh-key",
             return_type=str,
@@ -1048,9 +1091,9 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        credential_file = util.get_arg_and_delete_from_mods(
+        ssh_key_pwd = util.get_arg_and_delete_from_mods(
             line=line,
-            arg="--ssh-cf",
+            arg="--ssh-key-pwd",
             return_type=str,
             default=None,
             modifiers=self.modifiers,
@@ -1086,14 +1129,14 @@ class CollectinfoController(LiveClusterCommandController):
         )
 
         if line:
-            self.logger.error("Unrecognized option(s): {}".format(", ".join(line)))
+            logger.error("Unrecognized option(s): {}".format(", ".join(line)))
 
         await self._run_collectinfo(
-            default_user,
-            default_pwd,
-            default_ssh_port,
-            default_ssh_key,
-            credential_file,
+            ssh_user,
+            ssh_pwd,
+            ssh_port,
+            ssh_key,
+            ssh_key_pwd,
             snp_count,
             wait_time,
             ignore_errors,

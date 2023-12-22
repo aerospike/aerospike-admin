@@ -27,7 +27,6 @@ from lib.view import view, terminal
 DEFAULT = "_do_default"
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.CRITICAL)
 
 
 class ModifierHelp:
@@ -245,7 +244,7 @@ def create_disabled_controller(controller, command_):
     class DisableController(controller):
         # override
         async def execute(self, line):
-            self.logger.error(
+            logger.error(
                 'User must be in privileged mode to issue "{}" commands.\n'
                 '       Type "enable" to enter privileged mode.'.format(command_)
             )
@@ -263,7 +262,6 @@ class BaseController(object):
     # Create static instances of view / health_checker / asadm_version / logger
     view = view.CliView()
     health_checker = HealthChecker()
-    logger = logging.getLogger("asadm")
     asadm_version: str | None
 
     def _init_commands(self):
