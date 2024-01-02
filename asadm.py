@@ -21,6 +21,7 @@ try:
 except:
     pass
 
+from typing import Any, Callable
 from lib.utils.logger import (
     logger,  # type: ignore
     stderr_log_handler,
@@ -874,7 +875,9 @@ async def main():
 
             cleanup()
 
-    await cmdloop(shell, func, args, use_yappi, single_command)
+    if func:
+        await cmdloop(shell, func, args, use_yappi, single_command)
+
     await shell.close()
 
     try:
@@ -895,7 +898,13 @@ def output_json():
     sheet.set_style_json()
 
 
-async def cmdloop(shell, func, args, use_yappi, single_command):
+async def cmdloop(
+    shell: AerospikeShell,
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    use_yappi: bool,
+    single_command: bool,
+):
     try:
         if use_yappi:
             yappi.start()
