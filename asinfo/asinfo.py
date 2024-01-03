@@ -283,17 +283,9 @@ if args.version:
 if args.value == "stats":
     args.value = "statistics"
 
-old_path = os.getenv("PATH")
-
-if old_path:
-    old_path = ":" + old_path
-else:
-    old_path = ""
-
-for sys_path in sys.path:
-    # Force asinfo to use the asadm shipped with it rather than the installed asadm.
-    if sys_path.endswith("asadm"):
-        os.environ["PATH"] = sys_path + old_path
+os.environ["PATH"] = (
+    os.path.dirname(os.path.realpath(sys.argv[0])) + ":" + os.getenv("PATH")
+)
 
 # asadm ( >= 0.1.22)
 cmd = ["asadm", "--asinfo-mode"]
