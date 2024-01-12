@@ -9,6 +9,7 @@ from lib.live_cluster.ssh import (
     FileTransfer,
     LocalDst,
     RemoteSrc,
+    SFTPError,
     SSHConnection,
     SSHConnectionError,
     SSHConnectionFactory,
@@ -436,6 +437,18 @@ class LogFileDownloader:
                 format_node_msg(
                     node,
                     f"Unable to download logs from node. Couldn't SSH login to remote server: {e}",
+                )
+            )
+
+            if self.exception_handler:
+                self.exception_handler(e, node)
+            else:
+                raise e
+        except SFTPError as e:
+            logger.error(
+                format_node_msg(
+                    node,
+                    f"Unable to download logs from node. This is likely an issue with your SFTP subsystem : {e}",
                 )
             )
 

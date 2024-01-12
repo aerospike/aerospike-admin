@@ -32,7 +32,10 @@ class SSHConnection:
             raise SSHError(e)
 
     async def start_sftp_client(self) -> asyncssh.SFTPClient:
-        return await self._conn.start_sftp_client()
+        try:
+            return await self._conn.start_sftp_client()
+        except (asyncssh.SFTPError, asyncssh.ChannelOpenError) as e:
+            raise SFTPConfigError(e)
 
     async def close(self):
         self._conn.close()
@@ -218,4 +221,12 @@ class SSHNonZeroExitCodeError(SSHError):
 
 
 class SSHConnectionError(SSHError):
+    pass
+
+
+class SFTPError(SSHError):
+    pass
+
+
+class SFTPConfigError(SFTPError):
     pass
