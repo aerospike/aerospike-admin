@@ -17,12 +17,14 @@ import re
 import hashlib
 import logging
 
+
 from lib.utils import constants, log_util
 from lib.view import terminal
 
 from .log_reader import LogReader
 from .server_log import ServerLog
 
+logger = logging.getLogger(__name__)
 
 ###### Constants ######
 DT_TO_MINUTE_FMT = "%b %d %Y %H:%M"
@@ -40,7 +42,9 @@ MM = 1
 SS = 2
 ######################
 
-logger = logging.getLogger(__name__)
+
+class LogHandlerException(Exception):
+    pass
 
 
 class LogHandler(object):
@@ -158,7 +162,6 @@ class LogHandler(object):
 
         for index in indices:
             try:
-                print(index)
                 log = log_names[int(index) - 1]
 
                 if log in self.all_logs:
@@ -172,11 +175,10 @@ class LogHandler(object):
                     del self.selected_logs[log]
 
             except Exception as e:
-                logger.warning(
+                raise LogHandlerException(
                     "Ignoring remove operation for index %s. Error: %s"
                     % (str(index), str(e))
                 )
-                continue
 
     def select_logs_by_index(self, indices="all"):
         if not indices or not isinstance(indices, list):
