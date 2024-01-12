@@ -13,14 +13,19 @@
 # limitations under the License.
 
 import logging
-from lib.base_controller import BaseController, CommandHelp, ModifierHelp
+from lib.base_controller import (
+    BaseController,
+    CommandHelp,
+    ModifierHelp,
+    ShellException,
+)
 from lib.utils import util
 from lib.view import terminal
 from lib.view.view import CliView
 
 from .log_analyzer_command_controller import LogAnalyzerCommandController
 from .grep_file_controller import GrepFile
-from .log_handler.log_handler import LogHandler
+from .log_handler.log_handler import LogHandler, LogHandlerException
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +34,17 @@ logger = logging.getLogger(__name__)
 class LogAnalyzerRootController(BaseController):
     log_handler = None
 
-    def __init__(self, asadm_version="", log_path=" "):
+    def __init__(self, asadm_version="", log_path=""):
         BaseController.asadm_version = asadm_version
 
         # Create static instance of log_handler
         LogAnalyzerRootController.log_handler = LogHandler(log_path)
+        logs_added = LogAnalyzerRootController.log_handler.get_log_files()
+
+        if not logs_added:
+            logger.warning(
+                "No log files added. Use the 'add' command to add log files."
+            )
 
         LogAnalyzerRootController.command = LogAnalyzerCommandController(
             self.log_handler
@@ -291,10 +302,11 @@ class AddController(LogAnalyzerCommandController):
 
             n_log_added, error = self.log_handler.add_log_files_at_path(path)
 
-            if n_log_added == 1:
-                print("%d server log added for server analysis." % (n_log_added))
-            elif n_log_added > 1:
-                print("%d server logs added for server analysis." % (n_log_added))
+            if n_log_added > 0:
+                print(
+                    "Successfully added %d server log(s) added for analysis.\n"
+                    % (n_log_added)
+                )
 
             if error:
                 logger.error(error)
@@ -367,7 +379,11 @@ class RemoveController(LogAnalyzerCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
-        self.log_handler.remove_logs_by_index(line)
+        try:
+            self.log_handler.remove_logs_by_index(line)
+            print("Successfully removed server log(s).\n")
+        except LogHandlerException as e:
+            raise ShellException(e)
 
 
 @CommandHelp("Turn terminal pager on and off")
