@@ -42,9 +42,14 @@ class LogAnalyzerRootController(BaseController):
         logs_added = LogAnalyzerRootController.log_handler.get_log_files()
 
         if not logs_added:
-            logger.warning(
-                "No log files added. Use the 'add' command to add log files."
-            )
+            if log_path != "":
+                logger.error(
+                    f"Error reading log path {log_path}. Use the 'add' command to add log files."
+                )
+            else:
+                logger.warning(
+                    "No log files added. Use the 'add' command to add log files."
+                )
 
         LogAnalyzerRootController.command = LogAnalyzerCommandController(
             self.log_handler
@@ -360,7 +365,11 @@ class SelectController(LogAnalyzerCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
-        self.log_handler.select_logs_by_index(line)
+        try:
+            num_selected = self.log_handler.select_logs_by_index(line)
+            print(f"Successfully selected {num_selected} server log(s).\n")
+        except LogHandlerException as e:
+            raise ShellException(e)
 
 
 @CommandHelp(
