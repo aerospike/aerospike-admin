@@ -42,7 +42,7 @@ class LogAnalyzerRootController(BaseController):
         logs_added = LogAnalyzerRootController.log_handler.get_log_files()
 
         if not logs_added:
-            if log_path != "":
+            if log_path:
                 logger.error(
                     f"Error reading log path {log_path}. Use the 'add' command to add log files."
                 )

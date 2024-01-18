@@ -30,7 +30,7 @@ class CollectinfoRootController(BaseController):
     log_handler = None
     command = None
 
-    def __init__(self, asadm_version="", clinfo_path=" "):
+    def __init__(self, asadm_version="", clinfo_path=""):
         BaseController.asadm_version = asadm_version
 
         # Create Static Instance of Loghdlr
