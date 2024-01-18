@@ -201,6 +201,11 @@ class LogHandler(object):
 
         self.selected_logs = selected_list
 
+        if not self.selected_logs:
+            raise LogHandlerException("No log files selected.")
+
+        return len(self.selected_logs)
+
     def grep(
         self,
         logs,
