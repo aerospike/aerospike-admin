@@ -135,10 +135,10 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         cmd.Cmd.__init__(self)
 
         try:
-            if mode == AdminMode.LOG_ANALYZER:
-                if not log_path:
-                    log_path = " "
+            if log_path:
+                log_path = log_path.strip()
 
+            if mode == AdminMode.LOG_ANALYZER:
                 self.ctrl = LogAnalyzerRootController(admin_version, log_path)
 
             elif mode == AdminMode.COLLECTINFO_ANALYZER:
