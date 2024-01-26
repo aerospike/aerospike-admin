@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
-    "BETA: Currently only supports generating a static configuration file from a live node via the 'config' subcommand.",
+    "DEPRECATED: Use asconfig's `generate` command instead.",
+    hide=True,
 )
 class GenerateController(LiveClusterCommandController):
     def __init__(self):
@@ -25,7 +26,7 @@ class GenerateController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "BETA: Generates a static configuration file from a live node,",
+    "DEPRECATED: Generates a static configuration file from a live node. Use asconfig's `generate` command instead.",
     usage=f"[-o <output_file>] {ModifierUsage.WITH}",
     modifiers=(
         ModifierHelp(
@@ -37,6 +38,7 @@ class GenerateController(LiveClusterCommandController):
             "Generate an aerospike.conf file from the specified node. If multiple are selected a random node is used. Acceptable values are ip:port, node-id, or FQDN",
         ),
     ),
+    hide=True,
 )
 class GenerateConfigController(LiveClusterCommandController):
     def __init__(self):
@@ -94,8 +96,5 @@ class GenerateConfigController(LiveClusterCommandController):
             self.view.print_result(str_config + "\n")
 
         logger.warning(
-            "Community Edition is not supported. Generated static configuration does not save logging.syslog, mod-lua, service.user and service.group."
-        )
-        logger.warning(
-            "This feature is currently in beta. Use at your own risk and please report any issue to support."
+            "This feature is now deprecated in favor of asconfig's `generate` command. It will be removed in a future release."
         )
