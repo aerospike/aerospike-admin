@@ -125,7 +125,7 @@ class SSHConnectionFactory:
             async with SSHConnectionFactory.semaphore_host_dict[ip].semaphore:
                 logger.debug(f"{ip}: Creating connection")
                 return SSHConnection(await asyncssh.connect(ip, options=self.opts))
-        except asyncssh.DisconnectError as e:
+        except (asyncssh.DisconnectError, ConnectionRefusedError) as e:
             raise SSHConnectionError(e)
         finally:
             SSHConnectionFactory.semaphore_host_dict[ip].count -= 1
