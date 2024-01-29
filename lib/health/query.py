@@ -507,7 +507,7 @@ n = do n - 1;
 e1 = do u / n;
 e1 = group by CLUSTER, NAMESPACE do MAX(e1) save as "distribution share of used storage space per node";
 r = do e > e1;
-ASSERT(r, False, "Namespace storage under configured for single node failure.", "OPERATIONS", WARNING,
+ASSERT(r, True, "Namespace storage under configured for single node failure.", "OPERATIONS", WARNING,
 				"Listed namespace[s] does not have enough storage space configured to deal with increase in data per node in case of 1 node failure. Please run 'show statistics namespace like bytes' to check storage space. It is non-issue if single replica limit is set to larger values, i.e if number of replica copies are reduced in case of node loss.",
 				"Namespace single node failure storage space config check.");
 
