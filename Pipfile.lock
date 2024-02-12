@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "53c064a7b405032a3df56a02fbb4ce84849705d62b13119ae0038ba83d7d37f8"
+            "sha256": "6d64a6aeeee4171aef432d057020e7b71d9b11c2870721297009484c360e794b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1501,29 +1501,30 @@
         },
         "pyinstaller": {
             "hashes": [
-                "sha256:104430686149b2f1c135b2c17aa2967c85d54ef77dc92feb4e179ec846c0c467",
-                "sha256:1ce77043929bf525be38289d78feecde0fcf15506215eda6500176a8715c5047",
-                "sha256:29d164394f1e949072f78a64c1e040f1c47b7f4aff08514c7666a031c8b44996",
-                "sha256:3b586196277c4c54b69880650984c39c28bb6258c2b4b64200032e6ac69d53a0",
-                "sha256:8ec9d6c98972bb922cedb16a6638257aa66e5deadd79e2953f3464696237c413",
-                "sha256:a1adbd3cf25dc90926d783eae0f444d65cdfecc7bcdf6da522c3ae3ff47b4c25",
-                "sha256:ba602a38d7403de89c38b8956b221ce6de0280730d269bab522492fcad82ee33",
-                "sha256:d0c87b605bf13c3a04dfaa1d2fa7cd36765b8137000eeadccba865e1d6a19bf0",
-                "sha256:e5561e9a9b946d835c8dbc11ae4c16cc21e62bc77d10cc043406dc2992dfb4c6",
-                "sha256:e87fd60292b53bb9965cb5a84122875469a2bd475fd0d0db0052a3f1be351f75",
-                "sha256:ebac06d99b80d2035594c3cc2fb5f2612d86289edd0510dbcbeb20a873f51d5a",
-                "sha256:fcfabc0ff1d38a4262c051dea3fdc1f7f106405c1f1b491b4c79cd28df19cab6"
+                "sha256:11e6da6a6e441379352ee460a8880f2633dac91dac0f5a9eeff5d449d459b046",
+                "sha256:1bf608ed947b58614711275a7ff169289b32560dc97ec748ebd5fa8bdec80649",
+                "sha256:28b98fa3c74602bdc4c5a7698e907f31e714cc40a13f6358082bcbc74ddab35c",
+                "sha256:3127724d1841f785a9916d7b4cfd9595f359925e9ce7d137a16db8c29ca8453b",
+                "sha256:3ae62cf8858ec4dc54df6fa03d29bc78297e3c87caf532887eae8c3893be0789",
+                "sha256:78fb66ca753ef8becdf059eaa1e764d384cacb8c2ec76800126f8c9ef6d19a50",
+                "sha256:a2e63fa71784f290bbf79b31b60a27c45b17a18b8c7f910757f9474e0c12c95d",
+                "sha256:a37f83850cb150ad1e00fe92acecc4d39b8e10162a1850a5836a05fcb2daa870",
+                "sha256:c7bc0fbea8a9010484cfa7d3856416003af73271f03ca3da4bc0eaf14680ad17",
+                "sha256:e07cff584600647af7dc279dd04c60cd1b4b1b41947b0753f8fcf1969300a583",
+                "sha256:e3e1e6922a4260dcacf6f5655b0ca857451e05ac502d01642935d0f2873ad3c7",
+                "sha256:ec8a08c983e3febb0247893cd9bd59f55b6767a1f649cb41a0a129b8f04ff2cb"
             ],
             "index": "pypi",
-            "version": "==6.2.0"
+            "markers": "python_version < '3.13' and python_version >= '3.8'",
+            "version": "==6.4.0"
         },
         "pyinstaller-hooks-contrib": {
             "hashes": [
-                "sha256:5dd7a8a054a65c19cdaa381cabcfbe76f44d5f88d18214b0c570a0cd139be77f",
-                "sha256:f2a75dac2968ec81f92dcd3768906f654fa4204bc496126ae8483e87a5d89602"
+                "sha256:131494f9cfce190aaa66ed82e82c78b2723d1720ce64d012fbaf938f4ab01d35",
+                "sha256:51a51ea9e1ae6bd5ffa7ec45eba7579624bf4f2472ff56dba0edc186f6ed46a6"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==2023.11"
+            "version": "==2024.1"
         },
         "pytest": {
             "hashes": [
@@ -1543,11 +1544,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:1e8fdff6797d3865f37397be788a4e3cba233608e9b509382a2777d25ebde7f2",
-                "sha256:735896e78a4742605974de002ac60562d286fa8051a7e2299445e8e8fbb01aa6"
+                "sha256:850894c4195f09c4ed30dba56213bf7c3f21d86ed6bdaafb5df5972593bfc401",
+                "sha256:c054629b81b946d63a9c6e732bc8b2513a7c3ea645f11d0139a2191d735c60c6"
             ],
-            "index": "pypi",
-            "version": "==69.0.2"
+            "markers": "python_version >= '3.8'",
+            "version": "==69.1.0"
         },
         "tomli": {
             "hashes": [
