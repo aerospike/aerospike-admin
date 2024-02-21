@@ -692,7 +692,7 @@ async def execute_asinfo_commands(
 
 async def main():
     loop = asyncio.get_event_loop()
-    admin_version = get_version()
+    admin_version, asadm_build = get_version()
 
     if admin_version != "development":
         # Do nothing in production. It is likely that another error occurred too that will be displayed.
@@ -712,6 +712,10 @@ async def main():
     if cli_args.version:
         print("Aerospike Administration Shell")
         print("Version " + str(admin_version))
+
+        if asadm_build:
+            print("Build " + str(asadm_build))
+
         sys.exit(0)
 
     if cli_args.no_color:
@@ -945,11 +949,16 @@ def parse_commands(file):
     return commands
 
 
-def get_version():
+def get_version() -> tuple[str, str]:
     if __version__.startswith("$$"):
-        return "development"
+        return "development", ""
 
-    return __version__
+    sVersion = __version__.split("-")
+
+    version = sVersion[0]
+    build = sVersion[-1] if len(sVersion) > 1 else ""
+
+    return version, build
 
 
 if __name__ == "__main__":

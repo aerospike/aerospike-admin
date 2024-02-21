@@ -267,8 +267,15 @@ if args.help:
     sys.exit(0)
 
 if args.version:
+    sVersion = __version__.split("-")
+
+    version = sVersion[0]
+    build = sVersion[-1] if len(sVersion) > 1 else ""
+
     print("Aerospike Information Tool")
-    print("Version " + str(__version__))
+    print("Version " + version)
+    print("Build " + build)
+
     sys.exit(0)
 
 if args.value == "stats":
