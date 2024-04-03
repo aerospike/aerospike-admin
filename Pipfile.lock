@@ -1,11 +1,7 @@
 {
     "_meta": {
         "hash": {
-<<<<<<< HEAD
-            "sha256": "bdc1356ec528fc3090a5079b7b3d29c411d088e54df6a87c25f3e9d2fac943b7"
-=======
-            "sha256": "5755accad2fb7956376703a2c3d729dc1b902a2d209155801ad2446ae75a7849"
->>>>>>> e0cbb41 (dep: Update dependencies)
+            "sha256": "5073264e30135e562df8380e3a15a7e310a5d793a790a4d7d63a9b989594100b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -265,11 +261,11 @@
         },
         "distro": {
             "hashes": [
-                "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed",
-                "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2"
+                "sha256:02e111d1dc6a50abb8eed6bf31c3e48ed8b0830d1ea2a1b78c61765c2513fdd8",
+                "sha256:99522ca3e365cac527b44bde033f64c6945d90eb9f769703caaec52b09bbd3ff"
             ],
             "index": "pypi",
-            "version": "==1.9.0"
+            "version": "==1.8.0"
         },
         "frozenlist": {
             "hashes": [
@@ -725,7 +721,7 @@
                 "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926",
                 "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'",
             "version": "==1.16.0"
         },
         "toml": {
