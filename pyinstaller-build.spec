@@ -34,7 +34,7 @@ options = parser.parse_args()
 # TLDR; Use onedir for MacOS.
 #
 
-datas = [('lib/live_cluster/client/config-schemas', './lib/live_cluster/client/config-schemas')]
+datas = [('lib/live_cluster/client/schemas/json/aerospike', './lib/live_cluster/client/schemas/json/aerospike')]
 binaries = [('/usr/bin/less','.')]
 hiddenimports = []
 

@@ -369,7 +369,6 @@ class Node(AsyncObject):
         # configurations from conf file
         self.as_conf_data = {}
 
-        # TODO: Put json files in a submodule
         if self.alive:
             self.conf_schema_handler = JsonDynamicConfigHandler(
                 constants.CONFIG_SCHEMAS_HOME, await self.info_build()
@@ -1276,9 +1275,9 @@ class Node(AsyncObject):
                 raise err
 
         async def helper(dc: str):
-            dc_config: dict[
-                str, dict[str, Any]
-            ] | Exception = await self.info_xdr_dcs_config([dc])
+            dc_config: dict[str, dict[str, Any]] | Exception = (
+                await self.info_xdr_dcs_config([dc])
+            )
 
             if isinstance(dc_config, Exception):
                 raise Exception("Could not get stats for dc %s : %s", dc, dc_config)

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from unittest.mock import call
+from lib.utils import constants
 from test.unit import util
 from lib.live_cluster.client.config_handler import (
     BoolConfigType,
@@ -262,7 +263,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.maxDiff = None
-        cls.handler = JsonDynamicConfigHandler("config-schemas", "5.6.0")
+        cls.handler = JsonDynamicConfigHandler(constants.CONFIG_SCHEMAS_HOME, "5.6.0")
 
     def pkgutil_side_effect(self, name, path):
         if path.endswith("schema_map.json"):
