@@ -15,9 +15,6 @@
 import asyncio
 from io import StringIO
 import sys
-from lib.live_cluster.generate_config_controller import (
-    GenerateController,
-)
 
 from OpenSSL import SSL
 from lib.live_cluster.collectlogs_controller import CollectlogsController
@@ -85,7 +82,6 @@ class LiveClusterRootController(BaseController, AsyncObject):
 
         self.controller_map = {
             "health": HealthCheckController,
-            "generate": GenerateController,
             "summary": SummaryController,
             "features": FeaturesController,
             "pager": PagerController,

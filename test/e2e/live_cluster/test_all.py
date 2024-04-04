@@ -135,13 +135,11 @@ CMDS = [
     Cmd("show sindex"),
     Cmd("show stop-writes"),
     Cmd("summary"),
-    Cmd(f"generate config with all"),
 ]
 NOT_IN_CI_MODE = [
     Cmd("show mapping ip"),
     Cmd("show mapping node"),
     Cmd("show pmap"),
-    Cmd(f"generate config with all"),
 ]
 
 

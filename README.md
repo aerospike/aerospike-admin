@@ -25,7 +25,8 @@ bundled with asadm version 2.6 and later.
 ### Build and Install Asadm
 1. Install python 3.10
 2. Install [pipenv](https://pypi.org/project/pipenv/)
-3. Build Asadm
+3. Initialize submodules `git submodule update --init`
+4. Build Asadm
     - There are two ways asadm can be bundled: one-file and one-dir. Both, are related to
     pyinstaller's two methods of bundling. The one-file build is great if you want a single 
     executable artifact. The downside of one-file is that it must decompress into a /tmp
@@ -41,7 +42,7 @@ bundled with asadm version 2.6 and later.
             ```
             make one-file
             ```
-4. Install asadm
+5. Install asadm
     ```
     sudo make install
     ```

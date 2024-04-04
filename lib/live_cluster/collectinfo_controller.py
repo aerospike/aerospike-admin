@@ -24,7 +24,6 @@ import sys
 import traceback
 from typing import Any, Callable
 from lib.live_cluster.client.node import Node
-from lib.live_cluster.generate_config_controller import GenerateConfigController
 from lib.live_cluster.logfile_downloader import LogFileDownloader
 from lib.live_cluster import ssh
 from lib.utils.types import NodeDict
