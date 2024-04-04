@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from unittest.mock import call
+from lib.utils import constants
 from test.unit import util
 from lib.live_cluster.client.config_handler import (
     BoolConfigType,
@@ -262,38 +264,9 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.maxDiff = None
-        cls.handler = JsonDynamicConfigHandler("config-schemas", "5.6.0")
+        cls.handler = JsonDynamicConfigHandler(constants.CONFIG_SCHEMAS_HOME, "5.6.0")
 
     def pkgutil_side_effect(self, name, path):
-        if path.endswith("schema_map.json"):
-            return """
-{
-    "4.0.0": "4_0_0.json",
-    "4.1.0": "4_1_0.json",
-    "4.2.0": "4_2_0.json",
-    "4.3.0": "4_3_0.json",
-    "4.3.1": "4_3_1.json",
-    "4.4.0": "4_4_0.json",
-    "4.5.0": "4_5_0.json",
-    "4.5.1": "4_5_1.json",
-    "4.5.2": "4_5_2.json",
-    "4.5.3": "4_5_3.json",
-    "4.6.0": "4_6_0.json",
-    "4.7.0": "4_7_0.json",
-    "4.8.0": "4_8_0.json",
-    "4.9.0": "4_9_0.json",
-    "5.0.0": "5_0_0.json",
-    "5.1.0": "5_1_0.json",
-    "5.2.0": "5_2_0.json",
-    "5.3.0": "5_3_0.json",
-    "5.4.0": "5_4_0.json",
-    "5.5.0": "5_5_0.json",
-    "5.6.0": "5_6_0.json",
-    "5.7.0": "5_7_0.json",
-    "6.0.0": "6_0_0.json"
-}
-                """
-
         return None
 
     def test_loads_correct_file(self):
@@ -301,33 +274,40 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
         pkgutil_mock.side_effect = self.pkgutil_side_effect
+        os.listdir = lambda *arg: [
+            "5.5.0.json",
+            "6.0.0.json",
+            "4.2.0.json",
+            "5.6.0.json",
+            "4.0.0.json",
+            "5.4.0.json",
+        ]
 
         JsonDynamicConfigHandler("dir", "0.0.0")
         pkgutil_mock.assert_has_calls(
             [
-                call("lib.live_cluster.client.config_handler", "dir/schema_map.json"),
-                call("lib.live_cluster.client.config_handler", "dir/4_0_0.json"),
+                call("lib.live_cluster.client.config_handler", "dir/4.0.0.json"),
             ]  # type: ignore
         )
         JsonDynamicConfigHandler("dir", "4.0.1")
         pkgutil_mock.assert_called_with(
-            "lib.live_cluster.client.config_handler", "dir/4_0_0.json"
+            "lib.live_cluster.client.config_handler", "dir/4.0.0.json"
         )
 
         JsonDynamicConfigHandler("dir", "10.9.0.1")
         pkgutil_mock.assert_called_with(
             "lib.live_cluster.client.config_handler",
-            "dir/6_0_0.json",
+            "dir/6.0.0.json",
         )
 
         JsonDynamicConfigHandler("dir", "5.4.9")
         pkgutil_mock.assert_called_with(
-            "lib.live_cluster.client.config_handler", "dir/5_4_0.json"
+            "lib.live_cluster.client.config_handler", "dir/5.4.0.json"
         )
 
         JsonDynamicConfigHandler("dir", "4.2.1")
         pkgutil_mock.assert_called_with(
-            "lib.live_cluster.client.config_handler", "dir/4_2_0.json"
+            "lib.live_cluster.client.config_handler", "dir/4.2.0.json"
         )
 
         patch.stopall()
@@ -337,6 +317,13 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
         pkgutil_mock.side_effect = self.pkgutil_side_effect
+        os.listdir = lambda *arg: [
+            "10.2.0.json",
+            "4.0.0.json",
+            "5.4.0.json",
+            "5.6.0.json",
+            "4.2.0.json",
+        ]
 
         self.assertRaises(
             FileNotFoundError, JsonDynamicConfigHandler, "dir", "0.0.0", strict=True

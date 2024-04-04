@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from os import path
+import os
 import pkgutil
 import json
 import logging
@@ -291,18 +291,20 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
             logger.debug("JsonConfigHandler: Incorrect format for server version.")
             return
 
-        try:
-            file_map_path = path.join(dir, "schema_map.json")
-            file_map_json = pkgutil.get_data(__name__, file_map_path)
-        except Exception as e:
-            logger.debug("%s", e)
-            return
+        file_map = {}
+        files = []
+        schemas_dir = os.path.join(os.path.dirname(__file__), dir)
 
-        try:
-            file_map = json.loads(file_map_json)
-        except Exception as e:
-            logger.debug("JsonConfigHandler: Failed to load json: %s", e)
-            return
+        for file in os.listdir(schemas_dir):
+            if file.endswith(".json"):
+                files.append(file.removesuffix(".json"))
+
+        # os.listdir does not return files in sorted order. lexorgraphical sort does not
+        # work here since 10.0.0 > 2.0.0. We need to sort by version.
+        files = sorted(files, key=lambda x: version.LooseVersion(x))
+
+        for file in files:
+            file_map[file] = file + ".json"
 
         file_path = self._get_file_path(dir, as_build, file_map, strict)
 
@@ -316,6 +318,9 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
             return
 
         try:
+            if not data:
+                return
+
             config_schema = json.loads(data)
         except Exception as e:
             logger.debug("JsonConfigHandler: Failed to load json: %s", e)
@@ -348,7 +353,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
 
         logger.debug("JsonConfigHandler: Using server config schema %s", file)
 
-        file_path = path.join(dir, file)
+        file_path = os.path.join(dir, file)
 
         return file_path
 
@@ -463,6 +468,7 @@ class JsonDynamicConfigHandler(BaseConfigHandler):
                 set(param_objects.keys()) - set(filtered_keys)
             )
         )
+        logger.debug("JsonConfigHandler: filtered-keys: {}".format(set(filtered_keys)))
 
         return self._replace_context_out(filtered_keys)
 

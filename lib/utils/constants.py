@@ -18,7 +18,8 @@ from typing import Literal
 ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 
 # For "manage config". Directory is relative to live_cluster/client
-CONFIG_SCHEMAS_HOME = "config-schemas"
+# This variable should match what is reflected in pyinstaller-build.spec
+CONFIG_SCHEMAS_HOME = "schemas/json/aerospike"
 
 CONFIG_LOGGING = "logging"
 CONFIG_SERVICE = "service"
