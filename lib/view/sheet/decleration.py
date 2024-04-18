@@ -626,7 +626,7 @@ class Projectors(object):
             den = self.denominator_projector(sheet, sources)
 
             if den == 0:
-                return 0
+                return None
 
             return num / den
 
