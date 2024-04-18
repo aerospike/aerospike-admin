@@ -149,3 +149,5 @@ tramp
 
 # vscode user settings
 .vscode
+
+.repl-show-racks

@@ -14,10 +14,12 @@
 
 import asyncio
 import copy
+import os
 import random
 import re
 import logging
 import inspect
+import sys
 from OpenSSL import SSL
 from typing import Any, Callable, Coroutine, Literal, Union
 from time import time
@@ -212,6 +214,7 @@ class Cluster(AsyncObject):
         try:
             principal = "0"
             for k in self.nodes.keys():
+                print("Node: ", k)
                 n = self.nodes[k]
                 if n.node_id.zfill(16) > principal.zfill(16):
                     principal = n.node_id
@@ -432,6 +435,7 @@ class Cluster(AsyncObject):
         # Can't use "if not in self.node_lookup" here because we need to check for
         # exact matches. Unless using node id than this condition requires they provide
         # ip:port.
+        print("Node lookup: ", node)
         try:
             return [self.node_lookup.get_exact(node)]
         except KeyError:
@@ -480,6 +484,8 @@ class Cluster(AsyncObject):
             use_nodes = [live_nodes[randint]]
         elif nodes == constants.NodeSelection.PRINCIPAL:
             principal = self.get_expected_principal()
+            print("Principal: ", principal)
+            sys.stdout.flush()
             use_nodes = self.get_node(principal)
 
         elif isinstance(nodes, list):
@@ -734,9 +740,7 @@ class Cluster(AsyncObject):
 
         return ip_map
 
-    def __getattr__(
-        self, name
-    ) -> Union[
+    def __getattr__(self, name) -> Union[
         Callable[[Any, Any], Coroutine[Any, Any, dict[str, Any]]],
         Callable[[Any, Any], dict[str, Any]],
     ]:

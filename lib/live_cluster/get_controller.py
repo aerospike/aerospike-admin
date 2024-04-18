@@ -406,9 +406,9 @@ class GetConfigController(BaseGetConfigController):
         all_dcs = await _get_all_dcs(self.cluster, nodes)
         filtered_dcs = list(util.filter_list(all_dcs, for_mods))
 
-        result: NodeDict[
-            DatacenterDict[dict[str, str]] | Exception
-        ] = await self.cluster.info_xdr_dcs_config(nodes=nodes, dcs=filtered_dcs)
+        result: NodeDict[DatacenterDict[dict[str, str]] | Exception] = (
+            await self.cluster.info_xdr_dcs_config(nodes=nodes, dcs=filtered_dcs)
+        )
 
         for node, node_config in result.items():
             if isinstance(node_config, Exception) or not node_config:
@@ -483,9 +483,9 @@ class GetConfigController(BaseGetConfigController):
             all_dcs = await _get_all_dcs(self.cluster, nodes)
             filtered_dcs = list(util.filter_list(list(all_dcs), dcs_filter))
 
-        result: NodeDict[
-            DatacenterDict[NamespaceDict[dict[str, str]]]
-        ] = await self.cluster.info_get_xdr_filter(dcs=filtered_dcs, nodes=nodes)
+        result: NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]] = (
+            await self.cluster.info_get_xdr_filter(dcs=filtered_dcs, nodes=nodes)
+        )
 
         for host, host_filters in result.items():
             if isinstance(host_filters, Exception) or host_filters is None:
@@ -531,6 +531,8 @@ class GetConfigController(BaseGetConfigController):
 
         if configs:
             for node, config in configs.items():
+                print("node", node)
+                print("config", config)
                 if isinstance(config, Exception):
                     continue
 
@@ -777,10 +779,10 @@ class GetStatisticsController:
 
         # Not all dcs have all namespaces but that is OK. This function checks that
         # a particular namespace is apart of a dc before making a request.
-        result: NodeDict[
-            DatacenterDict[NamespaceDict[dict[str, str]]]
-        ] = await self.cluster.info_all_xdr_namespaces_statistics(
-            namespaces=filtered_namespaces, dcs=filtered_dcs, nodes=nodes
+        result: NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]] = (
+            await self.cluster.info_all_xdr_namespaces_statistics(
+                namespaces=filtered_namespaces, dcs=filtered_dcs, nodes=nodes
+            )
         )
 
         for host, host_stats in result.items():
