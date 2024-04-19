@@ -103,11 +103,17 @@ def weighted_avg(values: Iterable[float], weights: Iterable[float]):
     """
     weights_total = 0.0
     values_total = 0.0
+    itr = 0
 
     for v, w in zip(values, weights):
         weighted_value = v * w
         values_total += weighted_value
         weights_total += w
+        itr += 1
+
+    if itr == 0:
+        # Prevents us from printing zero if there are no elements to average.
+        return None
 
     if not weights_total:
         return 0.0
@@ -145,9 +151,11 @@ info_network_sheet = Sheet(
             "Node ID",
             Projectors.String("node_ids", None),
             converter=(
-                lambda edata: "*" + edata.value
-                if edata.value == edata.common["principal"]
-                else edata.value
+                lambda edata: (
+                    "*" + edata.value
+                    if edata.value == edata.common["principal"]
+                    else edata.value
+                )
             ),
             formatters=(
                 Formatters.green_alert(
@@ -277,6 +285,7 @@ info_namespace_usage_sheet = Sheet(
                     "Total",
                     Projectors.Number(
                         "ns_stats",
+                        "indexes-memory-budget",  # Added in 7.1 for memory only
                         "index-type.mounts-budget",  # Added in 7.0
                         "index-type.mounts-size-limit",
                     ),
@@ -306,6 +315,7 @@ info_namespace_usage_sheet = Sheet(
                         ),
                         Projectors.Number(
                             "ns_stats",
+                            "indexes-memory-budget",  # Added in 7.1 for memory only
                             "index-type.mounts-budget",  # Meant to be used with index_used_bytes. Both added in 7.0
                             "index-type.mounts-size-limit",
                         ),
@@ -327,7 +337,8 @@ info_namespace_usage_sheet = Sheet(
                     "Evict%",
                     Projectors.Number(
                         "ns_stats",
-                        "index-type.evict-mounts-pct",  # Added in 7.0
+                        "evict-indexes-memory-pct",  # Added in 7.1 for memory only
+                        "index-type.evict-mounts-pct",  # Added in 7.0 for flash and pmem
                         "index-type.mounts-high-water-pct",
                     ),
                     converter=Converters.pct,
@@ -772,9 +783,9 @@ info_set_sheet = Sheet(
                             Projectors.Number("set_stats", "data_used_bytes"),
                             Projectors.Func(
                                 FieldType.number,
-                                lambda m_data, d_data: d_data
-                                if m_data == 0
-                                else m_data,
+                                lambda m_data, d_data: (
+                                    d_data if m_data == 0 else m_data
+                                ),
                                 Projectors.Number(
                                     "set_stats",
                                     "memory_data_bytes",
@@ -2308,9 +2319,11 @@ show_roster = Sheet(
             "Node ID",
             Projectors.String("node_ids", None),
             converter=(
-                lambda edata: "*" + edata.value
-                if edata.value == edata.common["principal"]
-                else edata.value
+                lambda edata: (
+                    "*" + edata.value
+                    if edata.value == edata.common["principal"]
+                    else edata.value
+                )
             ),
             formatters=(
                 Formatters.green_alert(

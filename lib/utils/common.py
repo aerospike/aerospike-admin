@@ -1670,7 +1670,11 @@ def _format_ns_stop_writes_metrics(
     service_stats,
     ns_stats,
 ):
+    # Notes for adding new stop-writes metrics:
+    # - The threshold values should be in the same units as the usage values.
+
     for node in service_stats:
+        # Gather global stats relevant to namespace level stop-writes
         cluster_clock_skew_ms: int | None = util.get_value_from_dict(
             service_stats[node],
             "cluster_clock_skew_ms",
@@ -1802,7 +1806,9 @@ def _format_ns_stop_writes_metrics(
             )
 
             if usage is not None and threshold is not None and bytes_total is not None:
-                threshold = bytes_total * (threshold / 100)
+                threshold = bytes_total * (
+                    threshold / 100
+                )  # threshold units should match metrics units (bytes)
                 sw = _is_stop_writes_cause(usage, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
@@ -1827,7 +1833,30 @@ def _format_ns_stop_writes_metrics(
             )
 
             if usage is not None and threshold is not None and bytes_total is not None:
-                threshold = bytes_total * (threshold / 100)
+                threshold = bytes_total * (
+                    threshold / 100
+                )  # threshold units should match metrics units (bytes)
+                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
+                _create_stop_writes_entry(
+                    stop_writes_metrics[node],
+                    metric,
+                    usage,
+                    sw,
+                    threshold,
+                    config=config,
+                    namespace=ns,
+                )
+
+            metric = "index_used_bytes"
+            config = "indexes-memory-budget"
+            usage = util.get_value_from_dict(
+                stats, metric, default_value=None, return_type=int
+            )
+            threshold = util.get_value_from_dict(
+                stats, config, default_value=None, return_type=int
+            )
+
+            if usage is not None and threshold is not None:
                 sw = _is_stop_writes_cause(usage, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
@@ -3009,11 +3038,13 @@ def get_collectinfo_path(timestamp, output_prefix=""):
     if output_prefix:
         aslogdir_prefix = "%s%s" % (
             str(output_prefix),
-            "_"
-            if output_prefix
-            and not output_prefix.endswith("-")
-            and not output_prefix.endswith("_")
-            else "",
+            (
+                "_"
+                if output_prefix
+                and not output_prefix.endswith("-")
+                and not output_prefix.endswith("_")
+                else ""
+            ),
         )
 
     cf_path_info = CollectinfoPathInfo()
