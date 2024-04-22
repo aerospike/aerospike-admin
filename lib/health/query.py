@@ -215,12 +215,12 @@ ASSERT(r, True, "Low namespace memory available pct (stop-write enabled).", "OPE
 
 /* NB : ADD CHECKS IF NODES ARE NOT HOMOGENOUS MEM / NUM CPU etc */
 
-SET CONSTRAINT VERSION < 7.0
+SET CONSTRAINT VERSION < 7.0;
 
 s = select "available_bin_names", "available-bin-names" from NAMESPACE save;
-r = group by NAMESPACE do s > 3200;
+r = group by NAMESPACE do s > 6400;
 ASSERT(r, True, "Low namespace available bin names.", "LIMITS", WARNING,
-				"Listed node[s] have low available bin name (< 3200) for corresponding namespace[s]. Maximum unique bin names allowed per namespace are 32k. Please run 'show statistics namespace like available' to get actual values. Possible improperly modeled data.",
+				"Listed node[s] have low available bin name (< 6400) for corresponding namespace[s]. Maximum unique bin names allowed per namespace are 64k. Please run 'show statistics namespace like available' to get actual values. Possible improperly modeled data.",
 				"Namespace available bin names check.");
 
 
@@ -329,6 +329,15 @@ warn = do warn || skip;
 ASSERT(warn, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
+    
+SET CONSTRAINT VERSION >= 7.1.0;
+used_bytes = select "index_used_bytes" as "stats" from NAMESPACE.STATISTICS save;
+stop_used_bytes = select "indexes-memory-budget" as "stats" from NAMESPACE.CONFIG save;
+budget_configured = do stop_used_bytes > 0;
+critical = do used_bytes <= stop_used_bytes;
+ASSERT(critical, True, "High namespace index memory used pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have higher than normal memory usage for indexes. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace index memory used pct check.", budget_configured);
 
 SET CONSTRAINT VERSION >= 7.0.0;
 used = select "data_used_pct" as "stats" from NAMESPACE.STATISTICS save;
@@ -1567,7 +1576,7 @@ ASSERT(r, True, "Non-zero sindex background ops query errors", "OPERATIONS", INF
 				"Non-zero sindex background ops query error check");
 
 // Should be constrained to just 5.7
-SET CONSTRAINT VERSION < 6.0
+SET CONSTRAINT VERSION < 6.0;
 
 // Scan Background OPS statistics
 s = select "scan_ops_bg_complete" as "cnt" from NAMESPACE.STATISTICS;
@@ -1592,7 +1601,7 @@ ASSERT(r, True, "Non-zero scan background ops errors", "OPERATIONS", INFO,
 				"Listed namespace[s] show non-zero scan background ops errors. Please run 'show statistics namespace like scan_ops_bg' to see values.",
 				"Non-zero scan background ops error check");
 
-SET CONSTRAINT VERSION > 3.9
+SET CONSTRAINT VERSION > 3.9;
 
 // Scan Agg statistics
 s = select "scan_aggr_complete" as "cnt" from NAMESPACE.STATISTICS;
@@ -1754,7 +1763,7 @@ ASSERT(r, False, "Skewed Fail Key Busy count.", "ANOMALY", INFO,
 
 // XDR Write statistics
 
-SET CONSTRAINT VERSION < 4.5.1
+SET CONSTRAINT VERSION < 4.5.1;
 
 s = select "xdr_write_success" as "cnt", "xdr_client_write_success" as "cnt" from NAMESPACE.STATISTICS;
 t = select "xdr_write_timeout" as "cnt" from NAMESPACE.STATISTICS;
@@ -1950,6 +1959,7 @@ ASSERT(r, False, "Non-recommended partition-tree-sprigs for Community edition", 
 				"Namespace partition-tree-sprigs check for Community edition",
 				e);
 
+# Should be further restricted to < 7.0;
 SET CONSTRAINT VERSION >= 4.2;
 
 cs = select "cluster_size" from SERVICE.STATISTICS;

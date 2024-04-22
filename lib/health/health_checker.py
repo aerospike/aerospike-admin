@@ -100,15 +100,15 @@ class HealthChecker:
         res[HealthResultType.STATUS_COUNTERS] = copy.deepcopy(self.status_counters)
 
         res[HealthResultType.EXCEPTIONS] = {}
-        res[HealthResultType.EXCEPTIONS][
-            HealthResultType.EXCEPTIONS_SYNTAX
-        ] = copy.deepcopy(self.syntax_exceptions)
-        res[HealthResultType.EXCEPTIONS][
-            HealthResultType.EXCEPTIONS_PROCESSING
-        ] = copy.deepcopy(self.health_exceptions)
-        res[HealthResultType.EXCEPTIONS][
-            HealthResultType.EXCEPTIONS_OTHER
-        ] = copy.deepcopy(self.other_exceptions)
+        res[HealthResultType.EXCEPTIONS][HealthResultType.EXCEPTIONS_SYNTAX] = (
+            copy.deepcopy(self.syntax_exceptions)
+        )
+        res[HealthResultType.EXCEPTIONS][HealthResultType.EXCEPTIONS_PROCESSING] = (
+            copy.deepcopy(self.health_exceptions)
+        )
+        res[HealthResultType.EXCEPTIONS][HealthResultType.EXCEPTIONS_OTHER] = (
+            copy.deepcopy(self.other_exceptions)
+        )
 
         res[HealthResultType.ASSERT] = copy.deepcopy(self.assert_outputs)
         res[HealthResultType.DEBUG_MESSAGES] = copy.deepcopy(self.debug_outputs)
@@ -349,6 +349,7 @@ class HealthChecker:
             if self.no_valid_version:
                 self._increment_counter(HealthResultCounter.QUERY_SKIPPED_COUNTER)
                 continue
+
             if self._is_assert_query(query):
                 self._increment_counter(HealthResultCounter.ASSERT_QUERY_COUNTER)
 
