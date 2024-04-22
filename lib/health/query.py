@@ -329,6 +329,15 @@ warn = do warn || skip;
 ASSERT(warn, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
 				"Listed namespace[s] have lower than normal (< 20 %) available disk space. Probable cause - namespace size misconfiguration.",
 				"Namespace disk available pct check.");
+    
+SET CONSTRAINT VERSION >= 7.1.0;
+used_bytes = select "index_used_bytes" as "stats" from NAMESPACE.STATISTICS save;
+stop_used_bytes = select "indexes-memory-budget" as "stats" from NAMESPACE.CONFIG save;
+budget_configured = do stop_used_bytes > 0;
+critical = do used_bytes <= stop_used_bytes;
+ASSERT(critical, True, "High namespace index memory used pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have higher than normal memory usage for indexes. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace index memory used pct check.", budget_configured);
 
 SET CONSTRAINT VERSION >= 7.0.0;
 used = select "data_used_pct" as "stats" from NAMESPACE.STATISTICS save;
