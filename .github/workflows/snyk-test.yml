@@ -13,7 +13,7 @@ jobs:
       - name: Get Python version from Pipfile
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
-          echo "PYTHON_VERSION=$(grep "python_full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Setup Python
         uses: actions/setup-python@v3
         with:
@@ -28,7 +28,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       - name: Upload snyk results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: asadm-snyk.txt
           path: asadm-snyk.txt
