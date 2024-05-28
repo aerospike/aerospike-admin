@@ -4,9 +4,9 @@ on:
   repository_dispatch:
     types: mac-build
   push:
-    branches: [actionsHub, master, test-ready, "bugfix-*"]
+    branches: [actionsHub, master, "bugfix-*"]
   pull_request:
-    branches: [test-ready, master]
+    branches: [master]
   workflow_call:
     inputs:
       submodule:
@@ -16,7 +16,10 @@ on:
 
 jobs:
   build:
-    runs-on: macos-11
+    strategy:
+      matrix:
+        os: [macos-11, macos-14]  
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Get checkout directory
         uses: haya14busa/action-cond@v1
