@@ -13,7 +13,7 @@ jobs:
       - name: Get Python version from Pipfile
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
-          echo "PYTHON_VERSION=$(grep "python_full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Setup Python
         uses: actions/setup-python@v3
         with:
