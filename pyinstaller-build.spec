@@ -36,7 +36,7 @@ options = parser.parse_args()
 
 datas = [('lib/live_cluster/client/schemas/json/aerospike', './lib/live_cluster/client/schemas/json/aerospike')]
 binaries = [('/usr/bin/less','.')]
-hiddenimports = []
+hiddenimports = ["pkg_resources.extern"]
 
 '''
 RHEL9 removed libcrypt (different from libcrypto) from its default distribution.
