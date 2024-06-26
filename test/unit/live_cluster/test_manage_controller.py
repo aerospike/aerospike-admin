@@ -2328,7 +2328,7 @@ class ManageQuiesceControllerTest(asynctest.TestCase):
             "Quiesce Nodes", {"1.1.1.1": ASINFO_RESPONSE_OK}, self.cluster_mock, **mods
         )
         self.view_mock.print_result.assert_called_once_with(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
     async def test_success_with_undo(self):
@@ -2350,7 +2350,7 @@ class ManageQuiesceControllerTest(asynctest.TestCase):
             **mods,
         )
         self.view_mock.print_result(
-            'Run "manage recluster for your changes to take affect.'
+            'Run "manage recluster for your changes to take effect.'
         )
 
 
@@ -2388,7 +2388,7 @@ class ManageReviveControllerTest(asynctest.TestCase):
             **self.controller.mods,
         )
         self.view_mock.print_result.assert_any_call(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
     async def test_warn_prompt_returns_false(self):
@@ -2805,7 +2805,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
             "Node(s) successfully added to pending-roster."
         )
         self.view_mock.print_result.assert_any_call(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
     async def test_logs_error_from_roster(self):
@@ -2941,7 +2941,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
             "Node(s) successfully removed from pending-roster."
         )
         self.view_mock.print_result.assert_any_call(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
     async def test_logs_error_from_roster(self):
@@ -3104,7 +3104,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         )
         self.view_mock.print_result.assert_any_call("Pending roster successfully set.")
         self.view_mock.print_result.assert_any_call(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
     async def test_logs_error_from_roster_set(self):
@@ -3230,7 +3230,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
             "Pending roster now contains observed nodes."
         )
         self.view_mock.print_result.assert_any_call(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
     async def test_logs_error_from_roster(self):
