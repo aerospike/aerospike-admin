@@ -89,7 +89,9 @@ jobs:
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           sudo make install
+          asadm -e "info" || true
           asadm -e "info" 2>&1 | grep "Not able to connect"
+          asinfo || true
           asinfo 2>&1 | grep "Not able to connect"
       - name: Create .tar
         working-directory: ${{ steps.working-dir.outputs.value }}
