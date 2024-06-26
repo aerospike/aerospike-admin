@@ -418,6 +418,9 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats",
                         "data_total_bytes",
+                        "device_total_bytes",
+                        "pmem_total_bytes",
+                        "total-bytes-disk",
                     ),
                     hidden=True,
                 ),
@@ -426,6 +429,9 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats",
                         "data_used_bytes",
+                        "device_used_bytes",
+                        "pmem_used_bytes",
+                        "used-bytes-disk",
                     ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
@@ -436,10 +442,16 @@ info_namespace_usage_sheet = Sheet(
                         Projectors.Number(
                             "ns_stats",
                             "data_used_bytes",
+                            "device_used_bytes",
+                            "pmem_used_bytes",
+                            "used-bytes-disk",
                         ),
                         Projectors.Number(
                             "ns_stats",
                             "data_total_bytes",
+                            "device_total_bytes",
+                            "pmem_total_bytes",
+                            "total-bytes-disk",
                         ),
                     ),
                     converter=Converters.ratio_to_pct,
@@ -452,14 +464,20 @@ info_namespace_usage_sheet = Sheet(
                             lambda edata: edata.value * 100
                             >= edata.record["Storage Engine"]["Evict%"]
                             and edata.record["Storage Engine"]["Evict%"] != 0
-                            or edata.value * 100
-                            >= edata.record["Storage Engine"]["Used Stop%"]
+                            or (
+                                edata.value * 100
+                                >= edata.record["Storage Engine"]["Used Stop%"]
+                            )
                         ),
                     ),
                 ),
                 Field(
                     "Evict%",
-                    Projectors.Number("ns_stats", "storage-engine.evict-used-pct"),
+                    Projectors.Number(
+                        "ns_stats",
+                        "storage-engine.evict-used-pct",
+                        "high-water-disk-pct",
+                    ),
                     converter=Converters.pct,
                 ),
                 Field(
@@ -474,6 +492,9 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats",
                         "data_avail_pct",
+                        "device_available_pct",
+                        "pmem_available_pct",
+                        "available_pct",
                     ),
                     converter=Converters.pct,
                     formatters=(
@@ -547,62 +568,6 @@ info_namespace_usage_sheet = Sheet(
         ),
         # Replaced by "Storage Engine" in 7.0. This will
         # only be displayed if the cluster is running 6.4 or earlier.
-        Subgroup(
-            "Device",
-            (
-                Field(
-                    "Total",
-                    Projectors.Number(
-                        "ns_stats", "device_total_bytes", "total-bytes-disk"
-                    ),
-                    hidden=True,
-                ),
-                Field(
-                    "Used",
-                    Projectors.Number(
-                        "ns_stats", "device_used_bytes", "used-bytes-disk"
-                    ),
-                    converter=Converters.byte,
-                    aggregator=Aggregators.sum(),
-                ),
-                Field(
-                    "Used%",
-                    Projectors.Div(
-                        Projectors.Number(
-                            "ns_stats", "device_used_bytes", "used-bytes-disk"
-                        ),
-                        Projectors.Number(
-                            "ns_stats", "device_total_bytes", "total-bytes-disk"
-                        ),
-                    ),
-                    converter=Converters.ratio_to_pct,
-                    aggregator=ComplexAggregator(
-                        create_usage_weighted_avg("Device"),
-                        converter=Converters.ratio_to_pct,
-                    ),
-                    formatters=(
-                        Formatters.yellow_alert(
-                            lambda edata: edata.value * 100
-                            >= edata.record["Device"]["HWM%"]
-                            and edata.record["Device"]["HWM%"] != 0
-                        ),
-                    ),
-                ),
-                Field(
-                    "HWM%",
-                    Projectors.Number("ns_stats", "high-water-disk-pct"),
-                    converter=Converters.pct,
-                ),
-                Field(
-                    "Avail%",
-                    Projectors.Number(
-                        "ns_stats", "device_available_pct", "available_pct"
-                    ),
-                    converter=Converters.pct,
-                    formatters=(Formatters.red_alert(lambda edata: edata.value < 10),),
-                ),
-            ),
-        ),
     ),
     from_source=("node_ids", "node_names", "ns_stats", "service_stats"),
     for_each="ns_stats",

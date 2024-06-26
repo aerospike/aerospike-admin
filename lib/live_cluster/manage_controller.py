@@ -2682,7 +2682,7 @@ class ManageQuiesceController(ManageLeafCommandController):
 
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
         self.view.print_result(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
 
@@ -2711,7 +2711,7 @@ class ManageReviveController(ManageLeafCommandController):
         title = "Revive Namespace Partitions"
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
         self.view.print_result(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
 
@@ -2834,7 +2834,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
 
         self.view.print_result("Node(s) successfully added to pending-roster.")
         self.view.print_result(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
 
@@ -2915,7 +2915,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
 
         self.view.print_result("Node(s) successfully removed from pending-roster.")
         self.view.print_result(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
 
@@ -2996,7 +2996,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
 
         self.view.print_result("Pending roster successfully set.")
         self.view.print_result(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
 
@@ -3050,7 +3050,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
 
         self.view.print_result("Pending roster now contains observed nodes.")
         self.view.print_result(
-            'Run "manage recluster" for your changes to take affect.'
+            'Run "manage recluster" for your changes to take effect.'
         )
 
 
