@@ -32,14 +32,14 @@ jobs:
           pipenv run bash -c "coverage xml"
       - name: Upload Collectinfo for Debugging
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test_collectinfo
           path: /tmp/asadm_test*
           if-no-files-found: error
       - name: Upload Health Struct for Debugging
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: health_files
           path: "*_health_input.txt"

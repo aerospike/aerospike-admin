@@ -4,9 +4,9 @@ on:
   repository_dispatch:
     types: mac-build
   push:
-    branches: [actionsHub, master, test-ready, "bugfix-*"]
+    branches: [actionsHub, master, "bugfix-*"]
   pull_request:
-    branches: [test-ready, master]
+    branches: [master]
   workflow_call:
     inputs:
       submodule:
@@ -16,7 +16,10 @@ on:
 
 jobs:
   build:
-    runs-on: macos-11
+    strategy:
+      matrix:
+        os: [macos-12, macos-14]  
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Get checkout directory
         uses: haya14busa/action-cond@v1
@@ -47,13 +50,13 @@ jobs:
         run: |
           git describe --tags --always
           echo "tag=$(git describe --tags --always)" >> $GITHUB_OUTPUT
-      - uses: kenchan0130/actions-system-info@master
+      - uses: kenchan0130/actions-system-info@v1.3.0
         id: system-info
       - name: Get Python version from Pipfile
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           git rev-parse HEAD
-          echo "PYTHON_VERSION=$(grep "python_full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
           echo ${{ steps.system-info.outputs.name }}
           echo ${{ steps.system-info.outputs.kernel-release }}
           echo ${{ steps.system-info.outputs.platform }}
@@ -97,7 +100,7 @@ jobs:
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           tar -C build/bin/ -cvf asadm.tar asadm
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ runner.os }}-${{ steps.system-info.outputs.release }}-asadm
           path: ${{ steps.working-dir.outputs.value }}/asadm.tar
