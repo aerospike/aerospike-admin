@@ -2087,7 +2087,8 @@ class Node(AsyncObject):
                 hist_info.append(await self._info(cmd))
             except Exception:
                 return data
-            if hist_info[-1].startswith("error"):
+            # TOOLS-2964: Error came as ERROR for 7.2 onwards
+            if hist_info[-1].startswith("error") or hist_info[-1].startswith("ERROR"):
                 hist_info.pop()
                 continue
 
