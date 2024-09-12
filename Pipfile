@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 bcrypt = "4.0.1"
 cryptography = "==43.0.1"
+pyopenssl = "==24.2.1"
 distro = "==1.8.0"
 jsonschema = "==4.20.0"
 pexpect = "==4.9.0"
@@ -20,7 +21,6 @@ msgpack = "1.0.7"
 parameterized = "*"
 typing-extensions = "*"
 asyncssh = "*"
-pyopenssl = "==24.2.1"
 
 [dev-packages]
 parameterized = "*"
