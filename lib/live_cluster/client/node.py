@@ -1097,7 +1097,7 @@ class Node(AsyncObject):
     async def info_set_statistics(self, namespace, set_):
         set_stat = await self._info("sets/{}/{}".format(namespace, set_))
 
-        if set_stat[-1] == ";":
+        if set_stat and set_stat[-1] == ";":
             set_stat = client_util.info_colon_to_dict(set_stat[0:-1])
         else:
             set_stat = client_util.info_colon_to_dict(set_stat)
