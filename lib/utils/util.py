@@ -688,24 +688,15 @@ def find_delimiter_in(value):
 
 
 def convert_edition_to_shortform(edition):
-    """Convert edition to shortform Enterprise or Community or N/E"""
+    """Convert edition to shortform Enterprise or Community or Federal or N/E"""
 
-    if (
-        edition.lower() in ["enterprise", "true", "ee"]
-        or "enterprise" in edition.lower()
-    ):
+    if "enterprise" in edition.lower():
         return "Enterprise"
 
-    if (
-        edition.lower() in ["community", "false", "ce"]
-        or "community" in edition.lower()
-    ):
+    if "community" in edition.lower():
         return "Community"
     
-    if (
-        edition.lower() in ["federal", "false", "ee"]
-        or "federal" in edition.lower()
-    ):
+    if "federal" in edition.lower():
         return "Federal"
 
     return "N/E"
