@@ -701,6 +701,12 @@ def convert_edition_to_shortform(edition):
         or "community" in edition.lower()
     ):
         return "Community"
+    
+    if (
+        edition.lower() in ["federal", "false", "ee"]
+        or "federal" in edition.lower()
+    ):
+        return "Federal"
 
     return "N/E"
 
