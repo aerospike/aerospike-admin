@@ -1747,7 +1747,7 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_any_call("latencies:", self.ip)
         self.info_mock.assert_any_call("latencies:hist={test}-proxy", self.ip)
         self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmark-fabric", self.ip
+            "latencies:hist={test}-benchmarks-fabric", self.ip
         )
         self.info_mock.assert_any_call(
             "latencies:hist={test}-benchmarks-ops-sub", self.ip
