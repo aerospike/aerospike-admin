@@ -2067,7 +2067,7 @@ class Node(AsyncObject):
                     return data
             micro_benchmarks = [
                 "proxy",
-                "benchmark-fabric",
+                "benchmarks-fabric",
                 "benchmarks-ops-sub",
                 "benchmarks-read",
                 "benchmarks-write",
