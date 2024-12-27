@@ -1743,11 +1743,14 @@ class NodeTest(asynctest.TestCase):
 
         _ = await self.node.info_latencies(verbose=True)
 
-        self.assertEqual(self.info_mock.call_count, 10)
+        self.assertEqual(self.info_mock.call_count, 11)
         self.info_mock.assert_any_call("latencies:", self.ip)
         self.info_mock.assert_any_call("latencies:hist={test}-proxy", self.ip)
         self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmark-fabric", self.ip
+            "latencies:hist={test}-read-touch", self.ip
+        )
+        self.info_mock.assert_any_call(
+            "latencies:hist={test}-re-repl", self.ip
         )
         self.info_mock.assert_any_call(
             "latencies:hist={test}-benchmarks-ops-sub", self.ip

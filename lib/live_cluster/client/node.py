@@ -2065,9 +2065,11 @@ class Node(AsyncObject):
                     namespaces = (await self._info("namespaces")).split(";")
                 except Exception:
                     return data
+
             micro_benchmarks = [
                 "proxy",
-                "benchmark-fabric",
+                "read-touch",
+                "re-repl",
                 "benchmarks-ops-sub",
                 "benchmarks-read",
                 "benchmarks-write",
@@ -2075,6 +2077,7 @@ class Node(AsyncObject):
                 "benchmarks-udf-sub",
                 "benchmarks-batch-sub",
             ]
+
             cmd_latencies += [
                 "latencies:hist={%s}-%s" % (ns, optional)
                 for ns in namespaces
