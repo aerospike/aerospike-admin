@@ -2067,13 +2067,13 @@ class Node(AsyncObject):
                     return data
             micro_benchmarks = [
                 "proxy",
-                "benchmarks-fabric",
                 "benchmarks-ops-sub",
                 "benchmarks-read",
                 "benchmarks-write",
                 "benchmarks-udf",
                 "benchmarks-udf-sub",
                 "benchmarks-batch-sub",
+                "benchmarks-fabric"
             ]
             cmd_latencies += [
                 "latencies:hist=%s" % (optional) if optional == "benchmarks-fabric" else "latencies:hist={%s}-%s" % (ns, optional)
