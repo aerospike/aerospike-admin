@@ -21,7 +21,6 @@ msgpack = "1.0.7"
 parameterized = "*"
 typing-extensions = "*"
 asyncssh = "*"
-black = "*"
 
 [dev-packages]
 parameterized = "*"
