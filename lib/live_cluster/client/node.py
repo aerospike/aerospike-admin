@@ -2073,13 +2073,15 @@ class Node(AsyncObject):
                 "benchmarks-udf",
                 "benchmarks-udf-sub",
                 "benchmarks-batch-sub",
-                "benchmarks-fabric"
             ]
             cmd_latencies += [
-                "latencies:hist=%s" % (optional) if optional == "benchmarks-fabric" else "latencies:hist={%s}-%s" % (ns, optional)
+                "latencies:hist={%s}-%s" % (ns, optional)
                 for ns in namespaces
                 for optional in micro_benchmarks
             ]
+            
+            # TOOLS-2984: benchmarks-fabric is not at namespace-level
+            cmd_latencies.append("latencies:hist=benchmarks-fabric")
 
         hist_info = []
         for cmd in cmd_latencies:
