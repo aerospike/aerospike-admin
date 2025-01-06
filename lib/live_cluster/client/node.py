@@ -2067,7 +2067,6 @@ class Node(AsyncObject):
                     return data
             micro_benchmarks = [
                 "proxy",
-                "benchmark-fabric",
                 "benchmarks-ops-sub",
                 "benchmarks-read",
                 "benchmarks-write",
@@ -2080,6 +2079,9 @@ class Node(AsyncObject):
                 for ns in namespaces
                 for optional in micro_benchmarks
             ]
+            
+            # TOOLS-2984: benchmarks-fabric is not at namespace-level
+            cmd_latencies.append("latencies:hist=benchmarks-fabric")
 
         hist_info = []
         for cmd in cmd_latencies:
