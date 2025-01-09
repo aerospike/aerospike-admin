@@ -2401,11 +2401,11 @@ class Node(AsyncObject):
         resp = await self._info(req)
 
         if "error" in resp.lower():
-            if "cluster-not-specified-size" in resp or "unstable-cluster" in resp:
+            if "cluster not specified size" in resp or "unstable cluster" in resp:
                 raise ASInfoClusterStableError(resp)
 
             raise ASInfoResponseError(
-                ErrorsMsgs.UNABLE_TO_DETERMINE_CLUSTER_STABILITY, resp
+                ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp
             )
 
         return resp
