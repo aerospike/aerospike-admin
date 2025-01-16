@@ -1,4 +1,4 @@
-# Copyright 2013-2023 Aerospike, Inc.
+# Copyright 2013-2025 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -771,7 +771,7 @@ class CliViewTest(unittest.TestCase):
    10.  Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    11.  Device                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    12.  Pmem                     :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   13.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   13.  License Usage            :  Latest (2025-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    14.  Active Namespaces        :  2 of 2
    15.  Active Features          :  Compression, Depression
 
@@ -943,7 +943,7 @@ class CliViewTest(unittest.TestCase):
    6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   9.   License Usage            :  Latest (2025-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    10.  Replication Factor       :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
    12.  Rack-aware               :  True
@@ -960,7 +960,7 @@ class CliViewTest(unittest.TestCase):
    6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   9.   License Usage            :  Latest (2025-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    10.  Replication Factor       :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
    12.  Rack-aware               :  False
