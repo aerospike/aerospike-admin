@@ -66,7 +66,7 @@ class CollectLogsControllerTest(asynctest.TestCase):
         await self.controller.execute(line.split())
 
         self.controller._gather_logs.assert_called_once_with(
-            "/tmp/prefix_collect_logs_20250828_214727/20250828_214727_",
+            "/tmp/prefix_collect_logs_20230828_214727/20230828_214727_",
             True,
             "user",
             "pwd",
@@ -165,7 +165,7 @@ class CollectLogsControllerTest(asynctest.TestCase):
         )
         self.assertEqual(self.cluster_mock, downloader_mock.cluster)  # type: ignore
         self.assertEqual(factory_mock, downloader_mock.factory)  # type: ignore
-        archive_dir.assert_called_once_with("/tmp/collect_logs_20250828_214727")
+        archive_dir.assert_called_once_with("/tmp/collect_logs_20230828_214727")
         summary_mock.assert_called_once_with("log_archive")
         self.controller.teardown_loggers.assert_called_once()
 
@@ -244,7 +244,7 @@ class CollectLogsControllerTest(asynctest.TestCase):
         self.logger_mock.error.assert_called_with(
             "Failed to download logs from some nodes."
         )
-        archive_dir.assert_called_once_with("/tmp/collect_logs_20250828_214727")
+        archive_dir.assert_called_once_with("/tmp/collect_logs_20230828_214727")
         summary_mock.assert_called_once_with("log_archive")
         self.controller.teardown_loggers.assert_called_once()
 
