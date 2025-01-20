@@ -17,10 +17,12 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - name: Install dependencies
         run: |
           python -m pip install pipenv
-          pipenv install --dev --python ${{ env.PYTHON_VERSION }}
+          pipenv install --dev
       - name: Build
         run: |
           make
