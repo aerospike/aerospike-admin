@@ -2401,7 +2401,6 @@ class Node(AsyncObject):
         resp = await self._info(req)
 
         if "error" in resp.lower():
-            # check if any of these array is present in resp.lower()
             unstable_cluster_error_strs = [
                 # Before https://github.com/citrusleaf/aerospike-server/commit/450922b89fcc12ad9ff85842a89997e2eb3a7a9f
                 "cluster-not-specified-size",
