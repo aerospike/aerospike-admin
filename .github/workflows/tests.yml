@@ -12,17 +12,14 @@ jobs:
         with:
           submodules: true
       - name: Get Python version from Pipfile
-        run: echo "PYTHON_VERSION=$(grep "python_full_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
+        run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v3
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
       - name: Install dependencies
         run: |
           python -m pip install pipenv
-          pipenv --python /usr/bin/python
           pipenv install --dev
       - name: Build
         run: |
