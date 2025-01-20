@@ -34,6 +34,7 @@ from .client import (
     ASInfoClusterStableError,
     ASInfoError,
     ASProtocolError,
+    ASInfoConfigError,
     BoolConfigType,
     EnumConfigType,
     StringConfigType,
@@ -2748,6 +2749,23 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
             return False
 
         return True
+    
+    async def _check_ns_is_strong_consistency(self, ns):
+        """
+        Check if a namespace is in strong consistency mode.
+        """
+        namespace_stats = await self.cluster.info_namespace_statistics(ns, nodes='all')
+        namespace_stats = list(namespace_stats.values())[0]
+        if not namespace_stats or namespace_stats is None:
+            logger.error("namespace {} not does not exist".format(ns))
+            return False
+
+        strong_consistency = namespace_stats.get("strong-consistency", "false").lower() == 'true'
+        if strong_consistency is False:
+            logger.error("namespace {} is not in strong consistency mode".format(ns))
+            return strong_consistency
+       
+        return strong_consistency
 
 
 @CommandHelp(
@@ -3014,6 +3032,9 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
 
     async def _do_default(self, line):
         ns = self.mods["ns"][0]
+        ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
+        if not ns_strong_consistency:
+            return
         current_roster = asyncio.create_task(
             self.cluster.info_roster(ns, nodes="principal")
         )
