@@ -34,7 +34,6 @@ from .client import (
     ASInfoClusterStableError,
     ASInfoError,
     ASProtocolError,
-    ASInfoConfigError,
     BoolConfigType,
     EnumConfigType,
     StringConfigType,
