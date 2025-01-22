@@ -1357,6 +1357,7 @@ class CliView(object):
                 print("\n")
             else:
                 if isinstance(value, str):
+                    value = value.strip(';')
                     delimiter = util.find_delimiter_in(value)
                     value = value.split(delimiter)
 
