@@ -2755,8 +2755,15 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
         """
         try:
             namespace_stats = await self.cluster.info_namespace_statistics(ns, nodes='all')
+            if isinstance(namespace_stats, Exception):
+                raise namespace_stats
+            
+            if not namespace_stats:
+                logger.error("namespace {} not found".format(ns))
+                return False
+
             namespace_stats = list(namespace_stats.values())[0] if len(namespace_stats.values()) > 0 else None
-            if not namespace_stats or namespace_stats is None:
+            if not namespace_stats:
                 logger.error("namespace {} not does not exist".format(ns))
                 return False
 
@@ -2767,7 +2774,7 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
 
         except Exception as e:
             logger.error("Error while checking namespace strong consistency mode: {}".format(e))
-            raise ASInfoError("Error while checking namespace strong consistency mode", e)
+            raise e
        
         return strong_consistency
 
@@ -2814,7 +2821,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, ASInfoError):
+        if isinstance(ns_strong_consistency, Exception):
             return
         elif not ns_strong_consistency:
             return
@@ -2896,7 +2903,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
         
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, ASInfoError):
+        if isinstance(ns_strong_consistency, Exception):
             return
         elif not ns_strong_consistency:
             return
@@ -2996,7 +3003,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
 
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, ASInfoError):
+        if isinstance(ns_strong_consistency, Exception):
             return
         elif not ns_strong_consistency:
             return
@@ -3061,7 +3068,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
         
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, ASInfoError):
+        if isinstance(ns_strong_consistency, Exception):
             return
         elif not ns_strong_consistency:
             return

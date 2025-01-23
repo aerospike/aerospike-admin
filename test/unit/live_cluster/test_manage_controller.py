@@ -27,7 +27,7 @@ from parameterized import parameterized
 
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
-    ASInfoClusterStableError,
+    ASInfoError,
     ASInfoResponseError,
     ASProtocolError,
     ASResponse,
@@ -2712,6 +2712,16 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 self.logger_mock.warning.assert_called_with(
                     "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
                 )
+                
+            self.assertRaises(
+                ASInfoError,
+                self.controller._check_and_log_cluster_stable,
+                {
+                    "1.1.1.1": "ABC",
+                    "2.2.2.2": "ABC",
+                    "3.3.3.3": ASInfoError("", "foo"),
+                },
+            )
 
     def test_check_and_log_nodes_in_observed(self):
         class test_case:
@@ -2813,6 +2823,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
 
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_from_roster_set(self):
@@ -2830,7 +2841,90 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
 
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_called_once()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.view_mock.print_result.assert_not_called()
+        
+    async def test_raises_warn_from_none_ns(self):
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = None
+
+        await self.controller.execute(line.split())
+        
+        self.logger_mock.error.assert_called()
+        self.cluster_mock.info_namespace_statistics.assert_called()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test not found'
+        )
+        
+    async def test_raises_warn_from_invalid_ns(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": {}}
+        self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": {}}
+
+        await self.controller.execute(line.split())
+        
+        self.logger_mock.error.assert_called()
+        self.cluster_mock.info_namespace_statistics.assert_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test not does not exist'
+        )
+    
+    async def test_raises_warn_from_ap_ns(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": {}}
+        self.cluster_mock.info_namespace_statistics.return_value = { 
+            "1.1.1.1": { "strong-consistency": "false" }
+        }
+
+        await self.controller.execute(line.split())
+        
+        self.logger_mock.error.assert_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test is not in strong consistency mode'
+        )
+    
+    async def test_raises_warn_from_malformed_ns(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": {}}
+        self.cluster_mock.info_namespace_statistics.return_value = { 
+            "1.1.1.1": { "disable-mrt-writes": "false" }
+        }
+
+        await self.controller.execute(line.split())
+        
+        self.logger_mock.error.assert_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test is not in strong consistency mode'
+        )
+        
+    async def test_raises_error_from_ns_stats(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
+        self.cluster_mock.info_namespace_statistics.return_value = error
+
+        await test_util.assert_exception_async(
+            self, Exception, "test exception", self.controller.execute, line.split()
+        )
+        self.logger_mock.error.assert_called()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.view_mock.print_result.assert_not_called()
+
 
     async def test_raises_error_from_roster(self):
         error = Exception("test exception")
@@ -2862,6 +2956,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
@@ -2889,6 +2984,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
             "You are about to set the pending-roster for namespace test to: GHI, ABC@rack1, DEF@rack2"
         )
         self.cluster_mock.info_roster_set.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_warn_returns_true(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
@@ -2915,6 +3011,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
             "You are about to set the pending-roster for namespace test to: GHI, ABC@rack1, DEF@rack2"
         )
         self.cluster_mock.info_roster_set.assert_called_once()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
 
 @asynctest.fail_on(active_handles=True)
@@ -2957,6 +3054,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_any_call(
             'Run "manage recluster" for your changes to take effect.'
         )
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
@@ -2971,6 +3069,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_logs_error_from_roster_set(self):
         error = ASInfoResponseError("blah", "error::foo")
@@ -2991,6 +3090,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_logs_error_when_node_not_in_pending(self):
         line = "nodes GHI ns test"
@@ -3014,6 +3114,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_raises_error_from_roster(self):
         error = Exception("test exception")
@@ -3027,6 +3128,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
 
@@ -3048,6 +3150,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
             self, Exception, "test exception", self.controller.execute, line.split()
         )
         self.logger_mock.error.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
 
@@ -3074,6 +3177,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
             {"1.1.1.1": "ABCDEF"}
         )
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
 
     async def test_warn_returns_true(self):
@@ -3101,6 +3205,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
             {"1.1.1.1": "ABCDEF"}
         )
         self.cluster_mock.info_roster_set.assert_called_once()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
 
 @asynctest.fail_on(active_handles=True)
@@ -3144,6 +3249,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_any_call(
             'Run "manage recluster" for your changes to take effect.'
         )
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_logs_error_from_roster_set(self):
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3159,6 +3265,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
             "test", ["ABC@rack1", "DEF@rack2"], nodes="principal"
         )
 
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_called_once_with(error)
         self.view_mock.print_result.assert_not_called()
 
@@ -3185,6 +3292,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         )
         self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_warn_returns_false(self):
         line = "ABC@rack1 DEF@rack2 ns test"
@@ -3212,6 +3320,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
             [], ["ABC@rack1", "DEF@rack2"]
         )
         self.cluster_mock.info_roster_set.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_warn_returns_true(self):
         line = "ABC@rack1 DEF@rack2 ns test"
@@ -3240,6 +3349,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
             "You are about to set the pending-roster for namespace test to: ABC@rack1, DEF@rack2"
         )
         self.cluster_mock.info_roster_set.assert_called_once()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
 
 @asynctest.fail_on(active_handles=True)
@@ -3299,6 +3409,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.logger_mock.error.assert_called_once_with(error)
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_logs_error_from_roster_set(self):
         line = "ns test"
@@ -3318,6 +3429,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         )
         self.logger_mock.error.assert_called_once_with(error)
         self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_raises_error_from_roster(self):
         error = Exception("test exception")
@@ -3333,6 +3445,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.logger_mock.error.assert_not_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_raises_error_from_roster_set(self):
         error = Exception("test exception")
@@ -3373,6 +3486,7 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
             "You are about to set the pending-roster for namespace test to: GHI, ABC@rack1, DEF@rack2"
         )
         self.cluster_mock.info_roster_set.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
 
     async def test_warn_returns_true(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
@@ -3397,3 +3511,4 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_called_once()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
+        
