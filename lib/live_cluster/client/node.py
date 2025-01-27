@@ -2247,6 +2247,21 @@ class Node(AsyncObject):
         return client_util.info_to_dict_multi_level(
             udf_data, "filename", delimiter2=","
         )
+    
+    @async_return_exceptions
+    async def info_udf_get(self, filename):
+        """
+        Get list of UDFs stored on the node.
+
+        Returns:
+        dict -- {<file-name>: {"content": <content>, "type": 'LUA'}, . . .}
+        """
+        udf_data = await self._info("udf-get:filename={}".format(filename))
+
+        if not udf_data:
+            return {}
+
+        return client_util.info_to_dict(udf_data)
 
     @async_return_exceptions
     async def info_udf_put(self, udf_file_name, udf_str, udf_type="LUA"):

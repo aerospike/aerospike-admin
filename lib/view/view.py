@@ -16,6 +16,7 @@ from collections.abc import Iterator
 import datetime
 import locale
 import logging
+import base64
 from os import path
 import sys
 import time
@@ -1120,6 +1121,30 @@ class CliView(object):
         sources = dict(data=roles_data)
 
         CliView.print_result(sheet.render(templates.show_roles, title, sources))
+
+    @staticmethod
+    def show_udf_content(udf_data, udf_name="", timestamp="", **ignore):
+        if not udf_data:
+            return
+
+        if 'error' in udf_data:
+            CliView.print_result("Failed to find the udf {}".format(udf_name))
+            return
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "UDF Module Content {}".format(title_timestamp)
+        
+        CliView.print_result(title)
+        CliView.print_result("=" * len(title))
+       
+        
+        # decode the base64 encoded content
+        content = base64.b64decode(udf_data['content']).decode('utf-8')
+        radius = (max([ len(line) for line in content.split('\n') ]) + 1 ) // 2
+        CliView.print_result("~" * radius + " Type:" + udf_data['type'] + " " + "~" * radius + "\n")
+        CliView.print_result(content)
+        CliView.print_result("~" * radius * 2)
+        
 
     @staticmethod
     def show_udfs(udfs_data, like, timestamp="", **ignore):

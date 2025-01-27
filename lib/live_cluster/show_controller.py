@@ -1587,20 +1587,48 @@ class ShowRolesController(LiveClusterCommandController):
     "Displays UDF modules along with metadata.",
     modifiers=(
         ModifierHelp(Modifiers.LIKE, "Filter UDFs by name using a substring match"),
+        ModifierHelp(
+            "--name",
+            "Show UDF by exact name match",
+        ),
+        ModifierHelp(
+            "-n",
+            "Show UDF by exact name match",
+        ),
     ),
-    usage=f"[{ModifierUsage.LIKE}]",
+    usage=f"[{ModifierUsage.LIKE}] [--name <udf-name>] [-n <udf-name>]",
 )
 class ShowUdfsController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set([Modifiers.LIKE])
+        self.modifiers = set([Modifiers.LIKE, '-v', '--name', '-n'])
         self.getter = GetUdfController(self.cluster)
 
     async def _do_default(self, line):
-        udfs_data = await self.getter.get_udfs(nodes="principal")
-        resp = list(udfs_data.values())[0]
-
-        return self.view.show_udfs(resp, **self.mods)
-
+        udf_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--filename",
+            default="",
+            return_type=str,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-f",
+            default="",
+            return_type=str,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+        
+        if udf_name != "":
+            udfs_data = await self.getter.get_udf_content(nodes="principal", filename=udf_name)
+            resp = list(udfs_data.values())[0]
+            return self.view.show_udf_content(resp, udf_name, **self.mods)
+        else: 
+            udfs_data = await self.getter.get_udfs(nodes="principal")
+            resp = list(udfs_data.values())[0]
+            self.view.show_udfs(resp, **self.mods)
+        
 
 @CommandHelp(
     "Displays secondary indexes and static metadata.",
