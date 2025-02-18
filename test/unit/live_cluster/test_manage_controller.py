@@ -3153,6 +3153,116 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
+        
+    async def test_raises_warn_from_none_ns(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = None
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["GHI", "ABC@rack1", "DEF@rack2"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+        
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test does not exist on this node'
+        )
+        
+    async def test_raises_warn_from_invalid_ns(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["GHI", "ABC@rack1", "DEF@rack2"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": {}}
+
+        await self.controller.execute(line.split())
+        
+        self.logger_mock.error.assert_called()
+        self.cluster_mock.info_namespace_statistics.assert_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test does not exist on this node'
+        )
+    
+    async def test_raises_warn_from_ap_ns(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = { 
+            "1.1.1.1": { "strong-consistency": "false" }
+        }
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["GHI", "ABC@rack1", "DEF@rack2"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+        
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test is not in strong consistency mode'
+        )
+    
+    async def test_raises_warn_from_malformed_ns(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = { 
+            "1.1.1.1": { "disable-mrt-writes": "false" }
+        }
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["GHI", "ABC@rack1", "DEF@rack2"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+        
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test is not in strong consistency mode'
+        )
+        
+    async def test_raises_error_from_ns_stats(self):
+        error = Exception("test exception")
+        line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": error}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "pending_roster": ["GHI", "ABC@rack1", "DEF@rack2"],
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+        
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_any_call(
+            'namespace test does not exist on this node'
+        )
 
     async def test_warn_returns_false(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test"
@@ -3293,6 +3403,115 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
+        
+    async def test_raises_warn_from_none_ns(self):
+        error = Exception("test exception")
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = None
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.logger_mock.error.assert_any_call(
+            'namespace test does not exist on this node'
+        )
+        
+    async def test_raises_warn_from_invalid_ns(self):
+        error = Exception("test exception")
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": {}}
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.logger_mock.error.assert_any_call(
+            'namespace test does not exist on this node'
+        )
+        
+    async def test_raises_warn_from_ap_ns(self):
+        error = Exception("test exception")
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = { 
+            "1.1.1.1": { "strong-consistency": "false" }
+        }
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.logger_mock.error.assert_any_call(
+            'namespace test is not in strong consistency mode'
+        )
+    
+    async def test_raises_warn_from_malformed_ns(self):
+        error = Exception("test exception")
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = { 
+            "1.1.1.1": { "disable-mrt-writes": "false" }
+        }
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.logger_mock.error.assert_any_call(
+            'namespace test is not in strong consistency mode'
+        )
+        
+    async def test_raises_error_from_ns_stats(self):
+        error = Exception("test exception")
+        line = "ABC@rack1 DEF@rack2 ns test --no-warn"
+        self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": error}
+        self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
+        self.cluster_mock.info_roster.return_value = {
+            "1.1.1.1": {
+                "observed_nodes": [],
+            }
+        }
+        self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.info_roster_set.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        self.cluster_mock.info_namespace_statistics.assert_called_once()
+        self.logger_mock.error.assert_any_call(
+            'namespace test does not exist on this node'
+        )
 
     async def test_warn_returns_false(self):
         line = "ABC@rack1 DEF@rack2 ns test"

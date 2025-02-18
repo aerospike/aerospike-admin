@@ -2761,7 +2761,7 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
                 raise namespace_stats
 
             namespace_stats = list(namespace_stats.values())[0] if namespace_stats and len(namespace_stats.values()) > 0 else None
-            if not namespace_stats:
+            if not namespace_stats or not isinstance(namespace_stats, dict):
                 logger.error("namespace {} does not exist on this node".format(ns))
                 return False
 
