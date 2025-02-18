@@ -44,7 +44,6 @@ from lib.live_cluster.client import (
     ASInfoConfigError,
     ASInfoResponseError,
 )
-from lib.live_cluster.client.constants import ErrorsMsgs
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
