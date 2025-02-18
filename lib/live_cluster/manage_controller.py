@@ -31,6 +31,7 @@ from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.utils.lookup_dict import PrefixDict
 from .client import (
+    ASInfoClusterStableError,
     ASInfoResponseError,
     ASInfoError,
     ASProtocolError,
@@ -2721,11 +2722,11 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
         warning_str = "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
 
         for resp in stable_data.values():
-            if isinstance(resp, ASInfoResponseError):
+            if isinstance(resp, ASInfoClusterStableError):
                 logger.warning(warning_str)
                 return False
 
-            if isinstance(resp, ASInfoError):
+            if isinstance(resp, ASInfoError) or isinstance(resp, ASInfoResponseError):
                 raise resp
 
             if cluster_key is not None and cluster_key != resp:
@@ -2752,19 +2753,16 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
     async def _check_ns_is_strong_consistency(self, ns):
         """
         Check if a namespace is in strong consistency mode.
+        Assumption: The same namespace cannot be in SC mode on some nodes and non-SC mode on others.
         """
         try:
             namespace_stats = await self.cluster.info_namespace_statistics(ns, nodes='all')
             if isinstance(namespace_stats, Exception):
                 raise namespace_stats
-            
-            if not namespace_stats:
-                logger.error("namespace {} not found".format(ns))
-                return False
 
-            namespace_stats = list(namespace_stats.values())[0] if len(namespace_stats.values()) > 0 else None
+            namespace_stats = list(namespace_stats.values())[0] if namespace_stats and len(namespace_stats.values()) > 0 else None
             if not namespace_stats:
-                logger.error("namespace {} not does not exist".format(ns))
+                logger.error("namespace {} does not exist on this node".format(ns))
                 return False
 
             strong_consistency = namespace_stats.get("strong-consistency", "false").lower() == 'true'
@@ -2821,9 +2819,7 @@ class ManageRosterAddController(ManageRosterLeafCommandController):
         
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, Exception):
-            return
-        elif not ns_strong_consistency:
+        if isinstance(ns_strong_consistency, Exception) or not ns_strong_consistency:
             return
 
         current_roster = asyncio.create_task(
@@ -2903,9 +2899,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
         
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, Exception):
-            return
-        elif not ns_strong_consistency:
+        if isinstance(ns_strong_consistency, Exception) or not ns_strong_consistency:
             return
         
         current_roster = asyncio.create_task(
@@ -3003,9 +2997,7 @@ class ManageRosterStageNodesController(ManageRosterLeafCommandController):
 
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, Exception):
-            return
-        elif not ns_strong_consistency:
+        if isinstance(ns_strong_consistency, Exception) or not ns_strong_consistency:
             return
 
         if warn:
@@ -3068,9 +3060,7 @@ class ManageRosterStageObservedController(ManageRosterLeafCommandController):
         
         # to be run against a SC namespace only
         ns_strong_consistency = await self._check_ns_is_strong_consistency(ns)
-        if isinstance(ns_strong_consistency, Exception):
-            return
-        elif not ns_strong_consistency:
+        if isinstance(ns_strong_consistency, Exception) or not ns_strong_consistency:
             return
 
         current_roster = asyncio.create_task(

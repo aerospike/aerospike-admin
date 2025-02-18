@@ -29,6 +29,7 @@ from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoError,
     ASInfoResponseError,
+    ASInfoClusterStableError,
     ASProtocolError,
     ASResponse,
     Cluster,
@@ -2693,7 +2694,7 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 {
                     "1.1.1.1": "ABC",
                     "2.2.2.2": "ABC",
-                    "3.3.3.3": ASInfoResponseError("", "foo"),
+                    "3.3.3.3": ASInfoClusterStableError("foo"),
                 },
                 False,
             ),
@@ -2714,12 +2715,12 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 )
                 
             self.assertRaises(
-                ASInfoError,
+                ASInfoResponseError,
                 self.controller._check_and_log_cluster_stable,
                 {
                     "1.1.1.1": "ABC",
                     "2.2.2.2": "ABC",
-                    "3.3.3.3": ASInfoError("", "foo"),
+                    "3.3.3.3": ASInfoResponseError("", "foo"),
                 },
             )
 
@@ -2855,7 +2856,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test not found'
+            'namespace test does not exist on this node'
         )
         
     async def test_raises_warn_from_invalid_ns(self):
@@ -2872,7 +2873,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test not does not exist'
+            'namespace test does not exist on this node'
         )
     
     async def test_raises_warn_from_ap_ns(self):
@@ -2924,7 +2925,6 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.view_mock.print_result.assert_not_called()
-
 
     async def test_raises_error_from_roster(self):
         error = Exception("test exception")

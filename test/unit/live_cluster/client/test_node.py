@@ -2054,10 +2054,9 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_cluster_stable_with_errors(self):
         self.info_mock.return_value = "ERROR::cluster not specified size"
-        expected = ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, "ERROR::cluster not specified size")
+        expected = ASInfoClusterStableError("ERROR::cluster not specified size")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
-        print("LOLLL", actual)
 
         self.info_mock.assert_called_with(
             "cluster-stable:size=3;namespace=bar", self.ip
@@ -2069,7 +2068,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.return_value = "ERROR::unstable cluster"
-        expected = ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, "ERROR::unstable cluster")
+        expected = ASInfoClusterStableError("ERROR::unstable cluster")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 

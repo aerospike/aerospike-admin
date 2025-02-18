@@ -2401,6 +2401,10 @@ class Node(AsyncObject):
         resp = await self._info(req)
 
         if "error" in resp.lower():
+            cluster_unstable_strs  = ["cluster not specified size", "unstable cluster", "cluster-not-specified-size", "unstable-cluster"]
+            if any(cluster_unstable_str in resp for cluster_unstable_str in cluster_unstable_strs):
+                raise ASInfoClusterStableError(resp)
+                
             info_server_response_err = ASInfoResponseError(
                 ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp
             )
