@@ -1,4 +1,4 @@
-# Copyright 2013-2023 Aerospike, Inc.
+# Copyright 2013-2025 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1357,6 +1357,7 @@ class CliView(object):
                 print("\n")
             else:
                 if isinstance(value, str):
+                    value = value.strip(';')
                     delimiter = util.find_delimiter_in(value)
                     value = value.split(delimiter)
 
