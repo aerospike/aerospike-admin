@@ -27,9 +27,8 @@ from parameterized import parameterized
 
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
-    ASInfoError,
-    ASInfoResponseError,
     ASInfoClusterStableError,
+    ASInfoResponseError,
     ASProtocolError,
     ASResponse,
     Cluster,
