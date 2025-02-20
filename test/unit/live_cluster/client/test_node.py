@@ -2053,7 +2053,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_cluster_stable_with_errors(self):
         self.info_mock.return_value = "ERROR::cluster not specified size"
-        expected = ASInfoClusterStableError("ERROR::cluster not specified size")
+        expected = ASInfoResponseError("Server returned an error response for info command", "ERROR::cluster not specified size")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
@@ -2067,7 +2067,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.return_value = "ERROR::unstable cluster"
-        expected = ASInfoClusterStableError("ERROR::unstable cluster")
+        expected = ASInfoResponseError("Server returned an error response for info command", "ERROR::unstable cluster")
 
         actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
 
@@ -2082,7 +2082,7 @@ class NodeTest(asynctest.TestCase):
 
         self.info_mock.return_value = "ERROR::foo"
         expected = ASInfoResponseError(
-            "Failed to execute info command - server error", "ERROR::foo"
+            "Server returned an error response for info command", "ERROR::foo"
         )
 
         actual = await self.node.info_cluster_stable(namespace="bar")
