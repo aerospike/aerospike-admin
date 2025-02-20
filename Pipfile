@@ -5,8 +5,8 @@ name = "pypi"
 
 [packages]
 bcrypt = "4.0.1"
-cryptography = "==43.0.1"
-pyopenssl = "==24.2.1"
+cryptography = "==44.0.1"
+pyopenssl = "==25.0.0"
 distro = "==1.9.0"
 jsonschema = "==4.23.0"
 pexpect = "==4.9.0"
