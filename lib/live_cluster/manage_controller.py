@@ -31,7 +31,6 @@ from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.utils.lookup_dict import PrefixDict
 from .client import (
-    ASInfoClusterStableError,
     ASInfoResponseError,
     ASInfoError,
     ASProtocolError,
@@ -2719,10 +2718,11 @@ class ManageReviveController(ManageLeafCommandController):
 class ManageRosterLeafCommandController(ManageLeafCommandController):
     def _check_and_log_cluster_stable(self, stable_data):
         cluster_key = None
-        warning_str = "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
+        warning_str = "It is advised that you do not manage the roster. Run 'info network' for more information."
 
         for resp in stable_data.values():
-            if isinstance(resp, ASInfoClusterStableError):
+            if isinstance(resp, ASInfoResponseError):
+                logger.error(resp)
                 logger.warning(warning_str)
                 return False
 
