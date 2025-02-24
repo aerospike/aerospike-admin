@@ -34,13 +34,14 @@ from lib.live_cluster.client.types import (
     ASProtocolExcFactory,
     ASResponse,
 )
+
+from lib.live_cluster.client.constants import ErrorsMsgs
 from test.unit import util
 from lib.utils import constants
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.node import _SysCmd, Node
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
-    ASInfoClusterStableError,
     ASInfoConfigError,
     ASInfoResponseError,
 )
@@ -2052,37 +2053,9 @@ class NodeTest(asynctest.TestCase):
         )
 
     async def test_info_cluster_stable_with_errors(self):
-        self.info_mock.return_value = "ERROR::cluster not specified size"
-        expected = ASInfoClusterStableError("ERROR::cluster not specified size")
-
-        actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
-
-        self.info_mock.assert_called_with(
-            "cluster-stable:size=3;namespace=bar", self.ip
-        )
-        self.assertEqual(
-            actual,
-            expected,
-            "info_cluster_stable did not return the expected result",
-        )
-
-        self.info_mock.return_value = "ERROR::unstable cluster"
-        expected = ASInfoClusterStableError("ERROR::unstable cluster")
-
-        actual = await self.node.info_cluster_stable(cluster_size=3, namespace="bar")
-
-        self.info_mock.assert_called_with(
-            "cluster-stable:size=3;namespace=bar", self.ip
-        )
-        self.assertEqual(
-            actual,
-            expected,
-            "info_cluster_stable did not return the expected result",
-        )
-
         self.info_mock.return_value = "ERROR::foo"
         expected = ASInfoResponseError(
-            "Failed to execute info command - server error", "ERROR::foo"
+           ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, "ERROR::foo"
         )
 
         actual = await self.node.info_cluster_stable(namespace="bar")

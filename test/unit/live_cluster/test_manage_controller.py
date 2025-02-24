@@ -2710,18 +2710,17 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
 
             if tc.output is False:
                 self.logger_mock.warning.assert_called_with(
-                    "The cluster is unstable. It is advised that you do not manage the roster. Run 'info network' for more information."
+                    "It is advised that you do not manage the roster. Run 'info network' for more information."
                 )
                 
-            self.assertRaises(
-                ASInfoResponseError,
-                self.controller._check_and_log_cluster_stable,
-                {
-                    "1.1.1.1": "ABC",
-                    "2.2.2.2": "ABC",
-                    "3.3.3.3": ASInfoResponseError("", "foo"),
-                },
-            )
+        self.assertEqual(
+            False,
+            self.controller._check_and_log_cluster_stable({
+                "1.1.1.1": "ABC",
+                "2.2.2.2": "ABC",
+                "3.3.3.3": ASInfoResponseError("", "foo"),
+            })
+        )
 
     def test_check_and_log_nodes_in_observed(self):
         class test_case:
