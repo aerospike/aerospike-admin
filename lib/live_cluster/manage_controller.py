@@ -844,7 +844,7 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
         ),
         ModifierHelp("write", "Quota for write transaction (TPS)."),
     ),
-    usage="<role> [read <read-quota>]|[write <write-quota>]",
+    usage="role <role> [read <read-quota>]|[write <write-quota>]",
     short_msg="Change the read and write quotes for a role",
 )
 class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
