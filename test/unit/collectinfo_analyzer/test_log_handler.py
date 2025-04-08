@@ -16,7 +16,7 @@ import unittest
 import os
 import tempfile
 import shutil
-from mock import patch, MagicMock
+from mock import patch
 from lib.utils import log_util
 
 class LogUtilTest(unittest.TestCase):
