@@ -61,7 +61,7 @@ jobs:
           echo ${{ steps.system-info.outputs.kernel-release }}
           echo ${{ steps.system-info.outputs.platform }}
       - name: Setup Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pipenv"
