@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import platform
 
 DATE_SEG = 0
 DATE_SEPARATOR = "-"
@@ -86,6 +87,10 @@ def get_dirs(path=""):
     except Exception:
         return []
 
+def _is_macos_resource_fork(filename):
+    """Check if a file is a macOS resource fork file (starts with '._')"""
+    # skip processing Apple resource fork files https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats
+    return "darwin" in platform.system().lower() and os.path.basename(filename).startswith('._')
 
 def get_all_files(dir_path=""):
     fname_list = []
@@ -94,7 +99,9 @@ def get_all_files(dir_path=""):
     try:
         for root, sub_dir, files in os.walk(dir_path):
             for fname in files:
-                fname_list.append(os.path.join(root, fname))
+                # Skip macOS resource fork files
+                if not _is_macos_resource_fork(fname):
+                    fname_list.append(os.path.join(root, fname))
     except Exception:
         pass
 
