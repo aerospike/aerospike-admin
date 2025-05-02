@@ -16,7 +16,6 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
 #############################################################################################################
 
-import asyncio
 import datetime
 import json
 import logging
@@ -25,18 +24,14 @@ import os
 import platform
 from typing import (
     Any,
-    Literal,
-    Optional,
-    TypedDict,
-    Union,
     Callable,
+    TypedDict
 )
 from typing_extensions import NotRequired, Required
 import distro
 import socket
 import time
 from urllib import request
-import aiohttp
 import zipfile
 from collections import OrderedDict
 from dateutil import parser as date_parser
@@ -601,139 +596,6 @@ def find_nodewise_features(
 #############################
 
 ########## Summary ##########
-
-
-class UDAEntryNamespaceDict(TypedDict):
-    master_objects: int
-    unique_data_bytes: int
-
-
-UDAEntryNamespacesDict = NamespaceDict[UDAEntryNamespaceDict]
-
-
-class UDAEntryDict(TypedDict):
-    cluster_name: str
-    cluster_generation: int
-    node_count: int
-    hours_since_start: int
-    time: str
-    level: Union[Literal["info"], Literal["error"]]
-    master_objects: int
-    unique_data_bytes: int
-    namespaces: UDAEntryNamespacesDict
-    cluster_stable: bool
-    errors: list[str]
-
-
-class UDAEntriesRespDict(TypedDict):
-    count: int
-    entries: list[UDAEntryDict]
-
-
-class UDAResponsesRequiredDict(TypedDict):
-    license_usage: UDAEntriesRespDict
-    health: dict
-
-
-class UDAResponsesOptionalDict(TypedDict, total=False):
-    raw_store: str
-
-
-class UDAResponsesDict(UDAResponsesRequiredDict, UDAResponsesOptionalDict):
-    pass
-
-
-async def _fetch_url(session, url, func, **kwargs):
-    async with session.get(url, **kwargs) as resp:
-        resp.raise_for_status()
-        resp = await func(resp)
-    return resp
-
-
-async def _fetch_url_json(session, url, **kwargs):
-    async def json_func(resp):
-        return await resp.json()
-
-    return await _fetch_url(session, url, json_func, **kwargs)
-
-
-async def _fetch_url_text(session, url, **kwargs):
-    async def text_func(resp):
-        return await resp.text()
-
-    return await _fetch_url(session, url, text_func, **kwargs)
-
-
-async def _request_license_usage(
-    agent_host: str, agent_port: str, get_store: bool = False
-) -> UDAResponsesDict:
-    json_data: UDAResponsesDict = {
-        "license_usage": {"count": 0, "entries": []},
-        "health": {},
-    }
-
-    a_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-        days=365
-    )
-    a_year_ago = a_year_ago.isoformat()
-    timeout = aiohttp.ClientTimeout(total=5)
-
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            entries_params = {"start": a_year_ago}
-            agent_req_base = "http://" + agent_host + ":" + str(agent_port) + "/v1/"
-            requests = [
-                _fetch_url_json(
-                    session,
-                    agent_req_base + "entries/range/time",
-                    params=entries_params,
-                ),
-                _fetch_url_json(session, agent_req_base + "health"),
-            ]
-
-            entries_json: UDAEntriesRespDict
-            health_json: dict
-            store_txt: Optional[str] = None
-
-            if get_store:
-                requests.append(_fetch_url_text(session, agent_req_base + "raw-store"))
-                (
-                    entries_json,
-                    health_json,
-                    store_txt,
-                ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
-                    *requests
-                )
-            else:
-                (
-                    entries_json,
-                    health_json,
-                ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
-                    *requests
-                )
-
-                json_data["health"] = health_json
-
-                json_data["license_usage"] = entries_json
-
-            if store_txt is not None:
-                json_data["raw_store"] = store_txt
-
-    except asyncio.TimeoutError as e:
-        raise TimeoutError("Unable to connect to agent. Connection timed out.")
-    except aiohttp.ClientConnectorError as e:
-        raise OSError("Unable to connect to agent : {}".format(e.os_error))
-    except aiohttp.ClientResponseError as e:
-        raise OSError(
-            "Incorrect response from agent : {} {}".format(e.status, e.message)
-        )
-    except Exception as e:
-        raise OSError("Unknown error : {}".format(e))
-
-    return json_data
-
-
-request_license_usage = util.async_cached(_request_license_usage, ttl=30)
 
 
 def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
