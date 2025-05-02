@@ -912,75 +912,17 @@ class AggregateLicenseUsage:
         return d
 
 
-def _parse_agent_response(
-    license_usage: UDAEntriesRespDict,
+def compute_license_data_size(
+    namespace_stats,
+    server_builds: dict[str, str],
     summary_dict: SummaryDict,
-    allow_unstable: bool,
-) -> bool:
-    """
-    license_usage - a combination of responses from the unique-data-agent.
-    cluster_dict - A dictionary in which to store the result.
-    filter_cluster_stable - Ignore entries where the cluster is unstable because
-                              the computation may not be accurate. Default=True
-    """
-    entries = license_usage["entries"]
-    cluster_result = AggregateLicenseUsage()
-    namespaces_result: dict[str, AggregateLicenseUsage] = {}
-
-    for entry in entries:
-        if entry["level"] == "info":
-            # Pre-release v. of uda did not have cluster-stable
-            if not allow_unstable and not entry["cluster_stable"]:
-                continue
-
-            time_ = entry["time"]
-
-            total_data_bytes = entry["unique_data_bytes"]
-            cluster_result.update(total_data_bytes, time_)
-
-            if "namespaces" in entry:
-                for ns, usage in entry["namespaces"].items():
-                    ns_data_bytes = usage["unique_data_bytes"]
-                    if ns not in namespaces_result:
-                        namespaces_result[ns] = AggregateLicenseUsage()
-
-                    namespaces_result[ns].update(ns_data_bytes, time_)
-
-    if cluster_result.count != 0:
-        summary_dict["CLUSTER"][
-            "license_data"
-        ] = (
-            cluster_result.__dict__()
-        )  # allows type checker to view type rather than generic dict
-    else:
-        return False
-
-    for ns, ns_result in namespaces_result.items():
-        if ns_result.count != 0:
-            if ns in summary_dict["NAMESPACES"]:
-                summary_dict["NAMESPACES"][ns][
-                    "license_data"
-                ] = (
-                    ns_result.__dict__()
-                )  # allows type checker to view type rather than generic dict
-            else:
-                logger.warning(
-                    "Namespace %s found in UDA response but not in current cluster.", ns
-                )
-
-    return True
-
-
-def _manually_compute_license_data_size(
-    namespace_stats, server_builds, summary_dict: SummaryDict
 ):
     """
-    Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
-    Function finds license data size per namespace, and per cluster and updates output dictionaries.
+    Function takes dictionary of namespace stats and server builds.
+    Computes license data size per namespace and per cluster and updates output dictionaries.
     Please check formulae at https://aerospike.atlassian.net/wiki/spaces/SUP/pages/198344706/License+Data+Formulae.
     For more detail please see https://www.aerospike.com/docs/operations/plan/capacity/index.html.
     """
-
     if not namespace_stats:
         return
 
@@ -1097,45 +1039,14 @@ def _manually_compute_license_data_size(
     summary_dict["CLUSTER"]["license_data"]["latest"] = int(round(cl_unique_data))
 
 
-def compute_license_data_size(
-    namespace_stats,
-    license_data_usage: Optional[UDAResponsesDict],
-    server_builds: dict[str, str],
-    allow_unstable: bool,
-    summary_dict: SummaryDict,
-):
-    if not license_data_usage:
-        _manually_compute_license_data_size(
-            namespace_stats, server_builds, summary_dict
-        )
-    else:
-        try:
-            license_usage = license_data_usage["license_usage"]
-            if not _parse_agent_response(license_usage, summary_dict, allow_unstable):
-                logger.warning("Zero entries found in uda response")
-                _manually_compute_license_data_size(
-                    namespace_stats, server_builds, summary_dict
-                )
-
-        #  an error was returned from request
-        except (TypeError, ValueError, KeyError) as e:
-            logger.error("Issue parsing agent response: %s", e)
-            _manually_compute_license_data_size(
-                namespace_stats, server_builds, summary_dict
-            )
-            return
-
-
 def create_summary(
     service_stats,
     namespace_stats,
     xdr_dc_stats,
     metadata,
-    license_allow_unstable: bool,
     service_configs={},
     ns_configs={},
     security_configs={},
-    license_data_usage: UDAResponsesDict | None = None,
 ) -> SummaryDict:
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
@@ -1189,9 +1100,7 @@ def create_summary(
 
     compute_license_data_size(
         namespace_stats,
-        license_data_usage,
         metadata["server_build"],
-        license_allow_unstable,
         summary_dict,
     )
     _set_migration_status(
