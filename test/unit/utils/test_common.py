@@ -27,8 +27,6 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
         self,
         namespace_stats,
         server_builds,
-        license_data_usage,
-        allow_unstable,
         expected_summary_dict: common.SummaryDict,
     ):
         # merge expected summary with init summary output so we don't have put the entire thing
@@ -41,9 +39,7 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
 
         common.compute_license_data_size(
             namespace_stats=namespace_stats,
-            license_data_usage=license_data_usage,
             server_builds=server_builds,
-            allow_unstable=allow_unstable,
             summary_dict=summary_dict,
         )
 
@@ -56,9 +52,7 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
             (
                 {
                     "ns_stats": {},
-                    "license_data": None,
                     "server_builds": {},
-                    "allow_unstable": False,
                     "exp_summary_dict": {},
                 },
             ),
@@ -73,9 +67,7 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
                             }
                         }
                     },
-                    "license_data": None,
                     "server_builds": {"1.1.1.1": "5.0.0.0"},
-                    "allow_unstable": False,
                     "exp_summary_dict": {
                         "CLUSTER": {"license_data": {"latest": 46000}},
                         "NAMESPACES": {"foo": {"license_data": {"latest": 46000}}},
@@ -99,8 +91,6 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
                         }
                     },
                     "server_builds": {"1.1.1.1": "5.0.0.0"},
-                    "license_data": {},
-                    "allow_unstable": False,
                     "exp_summary_dict": {
                         "CLUSTER": {
                             "license_data": {"latest": int((99000 / 2) - (35 * 100))}
@@ -132,8 +122,6 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
                         }
                     },
                     "server_builds": {"1.1.1.1": "5.0.0.0", "2.2.2.2": "6.0.0.0"},
-                    "license_data": {},
-                    "allow_unstable": False,
                     "exp_summary_dict": {
                         "CLUSTER": {
                             "license_data": {
@@ -168,8 +156,6 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
                         }
                     },
                     "server_builds": {"1.1.1.1": "5.0.0.0"},
-                    "license_data": None,
-                    "allow_unstable": False,
                     "exp_summary_dict": {
                         "CLUSTER": {"license_data": {"latest": 100}},
                         "NAMESPACES": {"foo": {"license_data": {"latest": 100}}},
@@ -196,9 +182,7 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
                             }
                         },
                     },
-                    "license_data": None,
                     "server_builds": {"1.1.1.1": "5.0.0.0"},
-                    "allow_unstable": False,
                     "exp_summary_dict": {
                         "CLUSTER": {"license_data": {"latest": 500 + 250}},
                         "NAMESPACES": {
@@ -238,8 +222,6 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
                             },
                         },
                     },
-                    "license_data": None,
-                    "allow_unstable": False,
                     "server_builds": {"1.1.1.1": "5.0.0.0", "2.2.2.2": "5.0.0.0"},
                     "exp_summary_dict": {
                         "CLUSTER": {
@@ -297,8 +279,6 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
                             },
                         },
                     },
-                    "license_data": None,
-                    "allow_unstable": False,
                     "server_builds": {"1.1.1.1": "5.0.0.0", "2.2.2.2": "5.0.0.0"},
                     "exp_summary_dict": {
                         "CLUSTER": {
@@ -330,355 +310,42 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
             ),
         ]
     )
-    # Try to parameterize these tests and add a test using "data_used_bytes"
     def test_success_with_out_agent(self, tc):
         self.run_test_case(
             tc["ns_stats"],
             tc["server_builds"],
-            tc["license_data"],
-            tc["allow_unstable"],
             tc["exp_summary_dict"],
         )
 
     @parameterized.expand(
         [
+            ({"1.1.1.1": {}, "2.2.2.2": {}}, False),
             (
                 {
-                    "ns_stats": {"foo": {}},
-                    "license_data": {
-                        "license_usage": {
-                            "count": 1,
-                            "entries": [
-                                {
-                                    "time": "2022-04-07T22:59:47",
-                                    "unique_data_bytes": 500,
-                                    "level": "info",
-                                    "cluster_stable": True,
-                                    "namespaces": {"foo": {"unique_data_bytes": 100}},
-                                }
-                            ],
-                        },
-                    },
-                    "allow_unstable": False,
-                    "exp_summary_dict": {
-                        "CLUSTER": {
-                            "license_data": {
-                                "latest_time": datetime.fromisoformat(
-                                    "2022-04-07T22:59:47"
-                                ),
-                                "latest": 500,
-                                "min": 500,
-                                "max": 500,
-                                "avg": 500,
-                            }
-                        },
-                        "NAMESPACES": {
-                            "foo": {
-                                "license_data": {
-                                    "latest_time": datetime.fromisoformat(
-                                        "2022-04-07T22:59:47"
-                                    ),
-                                    "latest": 100,
-                                    "min": 100,
-                                    "max": 100,
-                                    "avg": 100,
-                                }
-                            }
-                        },
-                    },
+                    "1.1.1.1": {("test", "testset", "a"): {"stop_writes": False}},
+                    "2.2.2.2": {("test", "testset", "a"): {"stop_writes": False}},
                 },
+                False,
             ),
             (
                 {
-                    "ns_stats": {"foo": {}},
-                    "license_data": {
-                        "license_usage": {
-                            "count": 1,
-                            "entries": [
-                                {
-                                    "time": "2022-04-07T22:59:47",
-                                    "unique_data_bytes": 500,
-                                    "level": "info",
-                                    "cluster_stable": True,
-                                    "namespaces": {"foo": {"unique_data_bytes": 100}},
-                                },
-                                {
-                                    "latest_time": "2022-04-07T22:59:47",
-                                    "unique_data_bytes": 0,
-                                    "level": "error",
-                                    "namespaces": {"foo": {"unique_data_bytes": 100}},
-                                },
-                            ],
-                        }
+                    "1.1.1.1": {
+                        ("test", "testset", "a"): {"stop_writes": False},
+                        ("bar", "testset", "a"): {"stop_writes": False},
                     },
-                    "allow_unstable": False,
-                    "exp_summary_dict": {
-                        "CLUSTER": {
-                            "license_data": {
-                                "latest_time": datetime.fromisoformat(
-                                    "2022-04-07T22:59:47"
-                                ),
-                                "latest": 500,
-                                "min": 500,
-                                "max": 500,
-                                "avg": 500,
-                            }
-                        },
-                        "NAMESPACES": {
-                            "foo": {
-                                "license_data": {
-                                    "latest_time": datetime.fromisoformat(
-                                        "2022-04-07T22:59:47"
-                                    ),
-                                    "latest": 100,
-                                    "min": 100,
-                                    "max": 100,
-                                    "avg": 100,
-                                }
-                            }
-                        },
+                    "2.2.2.2": {
+                        ("test", "testset", "a"): {"stop_writes": False},
+                        ("bar", "testset", "a"): {"stop_writes": True},
                     },
                 },
-            ),
-            (
-                {
-                    "ns_stats": {"foo": {}},
-                    "license_data": {
-                        "license_usage": {
-                            "count": 2,
-                            "entries": [
-                                {
-                                    "time": "2022-04-07T22:58:47",
-                                    "unique_data_bytes": 500,
-                                    "level": "info",
-                                    "cluster_stable": True,
-                                    "namespaces": {"foo": {"unique_data_bytes": 1000}},
-                                },
-                                {
-                                    "time": "2022-04-07T22:59:47",
-                                    "unique_data_bytes": 100,
-                                    "level": "info",
-                                    "cluster_stable": True,
-                                    "namespaces": {"foo": {"unique_data_bytes": 500}},
-                                },
-                                {"unique_data_bytes": 0, "level": "error"},
-                            ],
-                        }
-                    },
-                    "allow_unstable": False,
-                    "exp_summary_dict": {
-                        "CLUSTER": {
-                            "license_data": {
-                                "latest_time": datetime.fromisoformat(
-                                    "2022-04-07T22:59:47"
-                                ),
-                                "latest": 100,
-                                "min": 100,
-                                "max": 500,
-                                "avg": 300,
-                            }
-                        },
-                        "NAMESPACES": {
-                            "foo": {
-                                "license_data": {
-                                    "latest_time": datetime.fromisoformat(
-                                        "2022-04-07T22:59:47"
-                                    ),
-                                    "latest": 500,
-                                    "min": 500,
-                                    "max": 1000,
-                                    "avg": 750,
-                                }
-                            }
-                        },
-                    },
-                },
-            ),
-            (
-                {
-                    "ns_stats": {
-                        "foo": {
-                            "1.1.1.1": {
-                                "master_objects": 100,
-                                "effective_replication_factor": 2,
-                                "pmem_used_bytes": 99000,
-                            }
-                        }
-                    },
-                    "license_data": {
-                        "license_usage": {
-                            "count": 3,
-                            "entries": [
-                                {"unique_data_bytes": 500, "level": "error"},
-                                {"unique_data_bytes": 100, "level": "error"},
-                                {"unique_data_bytes": 0, "level": "error"},
-                            ],
-                        }
-                    },
-                    "allow_unstable": False,
-                    "exp_summary_dict": {
-                        "CLUSTER": {"license_data": {"latest": 46000}},
-                        "NAMESPACES": {"foo": {"license_data": {"latest": 46000}}},
-                    },
-                },
-            ),
-            (
-                {
-                    "ns_stats": {
-                        "foo": {
-                            "1.1.1.1": {
-                                "master_objects": 100,
-                                "effective_replication_factor": 2,
-                                "pmem_used_bytes": 99000,
-                            }
-                        }
-                    },
-                    "license_data": {
-                        "license_usage": {
-                            "count": 2,
-                            "entries": [
-                                {
-                                    "time": "2022-04-07T22:58:47",
-                                    "unique_data_bytes": 500,
-                                    "level": "info",
-                                    "cluster_stable": False,
-                                    "namespaces": {"foo": {"unique_data_bytes": 1000}},
-                                },
-                                {
-                                    "time": "2022-04-07T22:59:47",
-                                    "unique_data_bytes": 100,
-                                    "level": "info",
-                                    "cluster_stable": False,
-                                    "namespaces": {"foo": {"unique_data_bytes": 500}},
-                                },
-                                {"unique_data_bytes": 0, "level": "error"},
-                            ],
-                        }
-                    },
-                    "allow_unstable": False,
-                    "exp_summary_dict": {
-                        "CLUSTER": {"license_data": {"latest": 46000}},
-                        "NAMESPACES": {"foo": {"license_data": {"latest": 46000}}},
-                    },
-                },
-            ),
-            (
-                {
-                    "ns_stats": {"foo": {}},
-                    "license_data": {
-                        "license_usage": {
-                            "count": 2,
-                            "entries": [
-                                {
-                                    "time": "2022-04-07T22:58:47",
-                                    "unique_data_bytes": 500,
-                                    "level": "info",
-                                    "cluster_stable": False,
-                                    "namespaces": {"foo": {"unique_data_bytes": 1000}},
-                                },
-                                {
-                                    "time": "2022-04-07T22:59:47",
-                                    "unique_data_bytes": 100,
-                                    "level": "info",
-                                    "cluster_stable": False,
-                                    "namespaces": {"foo": {"unique_data_bytes": 500}},
-                                },
-                                {"unique_data_bytes": 0, "level": "error"},
-                            ],
-                        }
-                    },
-                    "allow_unstable": True,
-                    "exp_summary_dict": {
-                        "CLUSTER": {
-                            "license_data": {
-                                "latest_time": datetime.fromisoformat(
-                                    "2022-04-07T22:59:47"
-                                ),
-                                "latest": 100,
-                                "min": 100,
-                                "max": 500,
-                                "avg": 300,
-                            }
-                        },
-                        "NAMESPACES": {
-                            "foo": {
-                                "license_data": {
-                                    "latest_time": datetime.fromisoformat(
-                                        "2022-04-07T22:59:47"
-                                    ),
-                                    "latest": 500,
-                                    "min": 500,
-                                    "max": 1000,
-                                    "avg": 750,
-                                }
-                            }
-                        },
-                    },
-                },
-            ),
-            (
-                {
-                    "ns_stats": {"foo": {}},
-                    "license_data": {
-                        "license_usage": {
-                            "count": 2,
-                            "entries": [
-                                {
-                                    "time": "2022-04-07T22:58:47",
-                                    "unique_data_bytes": 500,
-                                    "level": "info",
-                                    "cluster_stable": True,
-                                    "namespaces": {"foo": {"unique_data_bytes": 1000}},
-                                },
-                                {
-                                    "time": "2022-04-07T22:59:47",
-                                    "unique_data_bytes": 100,
-                                    "level": "info",
-                                    "cluster_stable": False,
-                                    "namespaces": {"foo": {"unique_data_bytes": 500}},
-                                },
-                                {"unique_data_bytes": 0, "level": "error"},
-                            ],
-                        }
-                    },
-                    "allow_unstable": False,
-                    "exp_summary_dict": {
-                        "CLUSTER": {
-                            "license_data": {
-                                "latest_time": datetime.fromisoformat(
-                                    "2022-04-07T22:58:47"
-                                ),
-                                "latest": 500,
-                                "min": 500,
-                                "max": 500,
-                                "avg": 500,
-                            }
-                        },
-                        "NAMESPACES": {
-                            "foo": {
-                                "license_data": {
-                                    "latest_time": datetime.fromisoformat(
-                                        "2022-04-07T22:58:47"
-                                    ),
-                                    "latest": 1000,
-                                    "min": 1000,
-                                    "max": 1000,
-                                    "avg": 1000,
-                                }
-                            }
-                        },
-                    },
-                },
+                True,
             ),
         ]
     )
-    def test_success_with_agent(self, tc):
-        self.run_test_case(
-            tc["ns_stats"],
-            {"1.1.1.1": "5.0.0.0"},
-            tc["license_data"],
-            tc["allow_unstable"],
-            tc["exp_summary_dict"],
+    def test_active_stop_writes(self, stop_writes_dict, expected):
+        self.assertEqual(
+            common.active_stop_writes(stop_writes_dict),
+            expected,
         )
 
 
@@ -1171,7 +838,7 @@ class CreateStopWritesSummaryTests(asynctest.TestCase):
                     }
                 },
             ),
-            # stop_writes not triggered by data_used_bytes
+            # stop_writes is not triggered by data_used_bytes
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
@@ -1582,11 +1249,9 @@ class CreateSummaryTests(unittest.TestCase):
         ns_stats={},
         xdr_dc_stats={},
         metadata={},
-        license_allow_unstable=False,
         service_configs={},
         ns_configs={},
         security_configs={},
-        license_data_usage={},
         expected={},
     ):
         namespaces = list(expected.get("NAMESPACES", {}).keys())
@@ -1608,11 +1273,9 @@ class CreateSummaryTests(unittest.TestCase):
             ns_stats,
             xdr_dc_stats,
             metadata,
-            license_allow_unstable,
             service_configs,
             ns_configs,
             security_configs,
-            license_data_usage,
             init_expected,
         )
 
@@ -2255,7 +1918,13 @@ class CreateSummaryTests(unittest.TestCase):
                 ns_stats={
                     "1.1.1.1": {
                         "test": {
-                            "pmem_compression_ratio": "0.75",
+                            "data_compression_ratio": "0.73",  # Post 7.0
+                        },
+                        "bar": {
+                            "device_compression_ratio": "0.74",  # Pre 7.0
+                        },
+                        "foo": {
+                            "pmem_compression_ratio": "0.75",  # Pre 7.0
                         },
                     },
                 },
@@ -2264,16 +1933,32 @@ class CreateSummaryTests(unittest.TestCase):
                         "test": {
                             "replication-factor": 1,
                         },
+                        "bar": {
+                            "replication-factor": 1,
+                        },
+                        "foo": {
+                            "replication-factor": 1,
+                        },
                     },
                 },
                 expected={
                     "CLUSTER": {
                         "active_features": ["Compression"],
-                        "ns_count": 1,
+                        "ns_count": 3,
                         "license_data": {"latest": 0},
                     },
                     "NAMESPACES": {
                         "test": {
+                            "compression_ratio": 0.73,
+                            "repl_factor": [1],
+                            "license_data": {"latest": 0},
+                        },
+                        "bar": {
+                            "compression_ratio": 0.74,
+                            "repl_factor": [1],
+                            "license_data": {"latest": 0},
+                        },
+                        "foo": {
                             "compression_ratio": 0.75,
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
@@ -2289,11 +1974,9 @@ class CreateSummaryTests(unittest.TestCase):
         ns_stats,
         xdr_dc_stats,
         metadata,
-        license_allow_unstable,
         service_configs,
         ns_configs,
         security_configs,
-        license_data_usage,
         expected,
     ):
         actual = common.create_summary(
@@ -2301,11 +1984,9 @@ class CreateSummaryTests(unittest.TestCase):
             ns_stats,
             xdr_dc_stats,
             metadata,
-            license_allow_unstable,
             service_configs,
             ns_configs,
             security_configs,
-            license_data_usage,
         )
 
         self.assertDictEqual(actual, expected)
@@ -2373,11 +2054,9 @@ class CreateSummaryTests(unittest.TestCase):
         ns_stats,
         xdr_dc_stats,
         metadata,
-        license_allow_unstable,
         service_configs,
         ns_configs,
         security_configs,
-        license_data_usage,
         expected,
     ):
         actual = common.create_summary(
@@ -2385,11 +2064,9 @@ class CreateSummaryTests(unittest.TestCase):
             ns_stats,
             xdr_dc_stats,
             metadata,
-            license_allow_unstable,
             service_configs,
             ns_configs,
             security_configs,
-            license_data_usage,
         )
 
         self.assertDictEqual(actual, expected)
