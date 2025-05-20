@@ -792,12 +792,18 @@ def validate_roles(roles: list[str], valid_role_names: list[str]) -> bool:
     
     invalid_roles = [role for role in roles if role not in valid_role_names]
     if invalid_roles:
-        logger.error(
-            "Invalid %s: %s. Valid %s are: %s",
-            "roles" if len(roles) > 1 else "role",
-            ", ".join(invalid_roles),
+        valid_roles = "" if len(valid_role_names) == 0 else "Valid %s are: %s" % (
             "roles" if len(valid_role_names) > 1 else "role",
             ", ".join(valid_role_names)
+        )
+        invalid_roles = "" if len(invalid_roles) == 0 else "Invalid %s: %s" % (
+            "roles" if len(roles) > 1 else "role",
+            ", ".join(invalid_roles)
+        )
+        logger.error(
+            "%s. %s",
+            invalid_roles,
+            valid_roles
         )
         return False
     
