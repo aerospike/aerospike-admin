@@ -783,6 +783,27 @@ def str_to_bytes(data: Union[bytes, str]) -> bytes:
     return str.encode(data, "utf-8")
 
 
+def validate_roles(roles: list[str], valid_role_names: list[str]) -> bool:
+    """
+    Checks if all roles in `roles` are present in `valid_role_names`.
+    If not, returns False.
+    Returns True if all roles are valid, otherwise False.
+    """
+    
+    invalid_roles = [role for role in roles if role not in valid_role_names]
+    if invalid_roles:
+        logger.error(
+            "Invalid %s: %s. Valid %s are: %s",
+            "roles" if len(roles) > 1 else "role",
+            ", ".join(invalid_roles),
+            "roles" if len(valid_role_names) > 1 else "role",
+            ", ".join(valid_role_names)
+        )
+        return False
+    
+    return True
+
+
 ItemsType = TypeVar("ItemsType")
 
 
