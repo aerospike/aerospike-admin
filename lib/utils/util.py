@@ -786,7 +786,7 @@ def str_to_bytes(data: Union[bytes, str]) -> bytes:
 def validate_roles(roles: list[str], valid_role_names: list[str]) -> bool:
     """
     Checks if all roles in `roles` are present in `valid_role_names`.
-    If not, returns False.
+    If not, logs an error message and returns False.
     Returns True if all roles are valid, otherwise False.
     """
     
