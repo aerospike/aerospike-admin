@@ -269,6 +269,11 @@ class ManageACLCreateUserController(ManageLeafCommandController):
 
         if self.warn and not self.prompt_challenge():
             return
+        
+        resp = await self.cluster.admin_query_roles(nodes="principal")
+        valid_roles = list(resp.values())[0].keys()
+        if not util.validate_roles(roles, valid_roles):
+            return
 
         result = await self.cluster.admin_create_user(
             username, password, roles, nodes="principal"
@@ -445,6 +450,11 @@ class ManageACLGrantUserController(ManageLeafCommandController):
 
         if self.warn and not self.prompt_challenge():
             return
+        
+        resp = await self.cluster.admin_query_roles(nodes="principal")
+        valid_roles = list(resp.values())[0].keys()
+        if not util.validate_roles(roles, valid_roles):
+            return
 
         result = await self.cluster.admin_grant_roles(
             username, roles, nodes="principal"
@@ -480,6 +490,11 @@ class ManageACLRevokeUserController(ManageLeafCommandController):
         roles = self.mods["roles"]
 
         if self.warn and not self.prompt_challenge():
+            return
+        
+        resp = await self.cluster.admin_query_roles(nodes="principal")
+        valid_roles = list(resp.values())[0].keys()
+        if not util.validate_roles(roles, valid_roles):
             return
 
         result = await self.cluster.admin_revoke_roles(

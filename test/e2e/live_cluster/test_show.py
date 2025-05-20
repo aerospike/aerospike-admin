@@ -856,13 +856,13 @@ class TestShowUsers(asynctest.TestCase):
                 "bar",
                 "roles",
                 *exp_roles,
-                "to-remove",
+                "read",
             ],
         )
         time.sleep(0.25)
         await util.capture_stdout(
             self.rc.execute,
-            ["manage", "acl", "revoke", "user", exp_user, "roles", "to-remove"],
+            ["manage", "acl", "revoke", "user", exp_user, "roles", "read"],
         )
         time.sleep(0.25)
 

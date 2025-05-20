@@ -235,6 +235,7 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
         ).start()
         self.controller = ManageACLCreateUserController()
         self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.utils_logger_mock = patch("lib.utils.util.logger").start()
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
@@ -244,6 +245,9 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
     async def test_no_roles_and_no_password(self):
         getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
         getpass_mock.return_value = "pass"
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {}
+        }
         self.cluster_mock.admin_create_user.return_value = {
             "principal_ip": ASResponse.OK
         }
@@ -262,6 +266,13 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_create_user.return_value = {
             "principal_ip": ASResponse.OK
         }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "role1": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+                "role2": {"privileges": ["read", "write"], "whitelist": []},
+                "role3": {"privileges": ["read", "write"], "whitelist": []}
+            }
+        }
 
         await self.controller.execute(
             ["test-user", "password", "pass", "roles", "role1", "role2", "role3"]
@@ -279,9 +290,16 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_create_user.return_value = {
             "principal_ip": ASResponse.OK
         }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "role1": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+                "role2": {"privileges": ["read", "write"], "whitelist": []},
+                "role3": {"privileges": ["read", "write"], "whitelist": []}
+            }
+        }
 
         await self.controller.execute(
-            ["test-user", "password", "pass", "role", "role1", "role2", "role3"]
+            ["test-user", "password", "pass", "roles", "role1", "role2", "role3"]
         )
 
         self.cluster_mock.admin_create_user.assert_called_with(
@@ -290,11 +308,61 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_called_with(
             "Successfully created user test-user."
         )
+        
+    async def test_logs_error_when_invalid_roles_returned(self):
+        line = "test-user-invalid password pass role role1 role2 role3"
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal_ip": {}
+        }
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_query_roles.assert_called_with(nodes="principal"
+        )
+        self.utils_logger_mock.error.assert_called_with(
+            '%s. %s', 'Invalid roles: role1, role2, role3', ''
+        )
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        
+    async def test_logs_error_when_invalid_subset_roles_returned(self):
+        line = "test-user-invalid password pass role role1 role2 role3"
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal_ip": {
+                "role3": {"privileges": ["read", "write"], "whitelist": []},
+                "role4": {"privileges": ["read", "write"], "whitelist": []},
+                "role5": {"privileges": ["read", "write"], "whitelist": []}
+            }
+        }
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_query_roles.assert_called_with(nodes="principal"
+        )
+        self.utils_logger_mock.error.assert_called_with(
+            '%s. %s', 'Invalid roles: role1, role2', 'Valid roles are: role3, role4, role5'
+        )
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
 
     async def test_logs_error_when_asprotocol_error_returned(self):
         as_error = ASProtocolError(ASResponse.USER_ALREADY_EXISTS, "test-message")
         line = "test-user password pass"
         self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "test-role": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+                "test-role2": {"privileges": ["read", "write"], "whitelist": []}
+            }
+        }
         self.cluster_mock.admin_create_user.return_value = {"principal_ip": as_error}
 
         await self.controller.execute(line.split())
@@ -309,6 +377,11 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
         as_error = IOError("test-message")
         line = "test-user password pass"
         self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "test-role": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+            }
+        }
         self.cluster_mock.admin_create_user.return_value = {"principal_ip": as_error}
 
         await test_util.assert_exception_async(
@@ -688,6 +761,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "test-role": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+            }
+        }
 
         await self.controller.execute(line.split())
 
@@ -701,6 +779,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         line = "role test-role read 100"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
+        }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "test-role": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+            }
         }
 
         await self.controller.execute(line.split())
@@ -716,6 +799,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "test-role": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+            }
+        }
 
         await self.controller.execute(line.split())
 
@@ -729,6 +817,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "read": {"privileges": ["read"], "whitelist": []},
+            }
+        }
 
         await self.controller.execute(line.split())
 
@@ -741,6 +834,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
         }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "write": {"privileges": ["write"], "whitelist": []},
+            }
+        }
 
         await self.controller.execute(line.split())
 
@@ -752,6 +850,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         line = "role write read 100"
         self.cluster_mock.admin_set_quotas.return_value = {
             "principal_ip": ASResponse.OK
+        }
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "write": {"privileges": ["write"], "whitelist": []},
+            }
         }
 
         await self.controller.execute(line.split())
@@ -782,6 +885,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         as_error = ASProtocolError(ASResponse.RATE_QUOTA_EXCEEDED, "test-message")
         line = "role test-role write 100 read 100"
         self.cluster_mock.admin_set_quotas.return_value = {"principal_ip": as_error}
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "test-role": {"privileges": ["write", "test-role"], "whitelist": []},
+            }
+        }
 
         await self.controller.execute(line.split())
 
@@ -795,6 +903,11 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         as_error = IOError("test-message")
         line = "role test-role write 100 read 100"
         self.cluster_mock.admin_set_quotas.return_value = {"principal_ip": as_error}
+        self.cluster_mock.admin_query_roles.return_value = {
+            "principal": {
+                "test-role": {"privileges": ["read", "write"], "whitelist": ["1.1.1.1", "2.2.2.2"]}, 
+            }
+        }
 
         await test_util.assert_exception_async(
             self, ShellException, "test-message", self.controller.execute, line.split()

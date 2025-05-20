@@ -146,3 +146,23 @@ class UtilTest(asynctest.TestCase):
         self.assertEqual(
             result, expected, "deep_merge_dicts did not return the expected result"
         )
+
+    def test_validate_roles(self):
+        valid_roles = ["admin", "user_1", "role-2", "A_B-C123", "X", "x_y-z", "123", "A1_B2-C3"]
+        # All valid
+        self.assertTrue(util.validate_roles(["admin", "user_1"], valid_roles))
+        self.assertTrue(util.validate_roles(["role-2", "A_B-C123"], valid_roles))
+        self.assertTrue(util.validate_roles(["X", "x_y-z", "123", "A1_B2-C3"], valid_roles))
+        # Single valid role
+        self.assertTrue(util.validate_roles(["admin"], valid_roles))
+        self.assertTrue(util.validate_roles(["A1_B2-C3"], valid_roles))
+        # Empty list (should be valid)
+        self.assertTrue(util.validate_roles([], valid_roles))
+        # One invalid (not in valid_roles)
+        self.assertFalse(util.validate_roles(["admin", "invalid"], valid_roles))
+        # One invalid (bad format)
+        self.assertFalse(util.validate_roles(["admin", "bad role"], valid_roles))
+        # All invalid (bad format)
+        self.assertFalse(util.validate_roles(["bad role", "bad,role"], valid_roles))
+        # All invalid (not in valid_roles)
+        self.assertFalse(util.validate_roles(["foo", "bar"], valid_roles))
