@@ -654,11 +654,6 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
 
         if self.warn and not self.prompt_challenge():
             return
-        
-        resp = await self.cluster.admin_query_roles(nodes="principal")
-        valid_roles = list(resp.values())[0].keys()
-        if not util.validate_roles([role_name], valid_roles):
-            return
 
         result = await self.cluster.admin_delete_role(role_name, nodes="principal")
         result = list(result.values())[0]
@@ -698,11 +693,6 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
 
         if len(self.mods["set"]) and not len(self.mods["ns"]):
             logger.error("A set must be accompanied by a namespace.")
-            return
-        
-        resp = await self.cluster.admin_query_roles(nodes="principal")
-        valid_roles = list(resp.values())[0].keys()
-        if not util.validate_roles([role_name], valid_roles):
             return
 
         if len(self.mods["ns"]):
@@ -766,11 +756,6 @@ class ManageACLRevokeRoleController(ManageLeafCommandController):
 
         if self.warn and not self.prompt_challenge():
             return
-        
-        resp = await self.cluster.admin_query_roles(nodes="principal")
-        valid_roles = list(resp.values())[0].keys()
-        if not util.validate_roles([role_name], valid_roles):
-            return
 
         result = await self.cluster.admin_delete_privileges(
             role_name, [privilege], nodes="principal"
@@ -833,11 +818,6 @@ class ManageACLAllowListRoleController(ManageLeafCommandController):
             return
 
         if self.warn and not self.prompt_challenge():
-            return
-        
-        resp = await self.cluster.admin_query_roles(nodes="principal")
-        valid_roles = list(resp.values())[0].keys()
-        if not util.validate_roles([role_name], valid_roles):
             return
 
         result = None
@@ -954,11 +934,6 @@ class ManageACLQuotasRoleController(ManageACLRolesLeafCommandController):
             return
 
         if self.warn and not self.prompt_challenge():
-            return
-
-        resp = await self.cluster.admin_query_roles(nodes="principal")
-        valid_roles = list(resp.values())[0].keys()
-        if not util.validate_roles([role], valid_roles):
             return
 
         result = await self.cluster.admin_set_quotas(
