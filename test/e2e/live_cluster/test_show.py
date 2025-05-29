@@ -38,8 +38,8 @@ def print_header(actual_header):
 class TestShowLatenciesDefault(asynctest.TestCase):
     """
     TODO: enable-micro benchmarks
-    asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-write=true' -Uadmin -Padmin
-    asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true' -Uadmin -Padmin
+    asinfo -v 'set-config:context=namespace;namespace=test;enable-benchmarks-write=true' -Uadmin -Padmin
+    asinfo -v 'set-config:context=namespace;namespace=test;enable-benchmarks-read=true' -Uadmin -Padmin
     """
 
     async def setUp(self):

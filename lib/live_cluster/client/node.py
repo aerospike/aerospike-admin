@@ -1567,7 +1567,7 @@ class Node(AsyncObject):
 
             new_param = delimiter.join([subcontext, param])
 
-        req = "set-config:context=namespace;id={};{}={}".format(
+        req = "set-config:context=namespace;namespace={};{}={}".format(
             namespace, new_param, value
         )
 
@@ -1693,7 +1693,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_single_namespace_config(self, namespace):
         return client_util.info_to_dict(
-            await self._info("get-config:context=namespace;id=%s" % namespace)
+            await self._info("get-config:context=namespace;namespace=%s" % namespace)
         )
 
     @async_return_exceptions
@@ -2579,7 +2579,7 @@ class Node(AsyncObject):
         if index_type:
             command += "indextype={};".format(index_type)
 
-        command += "ns={};".format(namespace)
+        command += "namespace={};".format(namespace)
 
         if set_:
             command += "set={};".format(set_)
@@ -2614,9 +2614,9 @@ class Node(AsyncObject):
         command = ""
 
         if set_ is None:
-            command = "sindex-delete:ns={};indexname={}".format(namespace, index_name)
+            command = "sindex-delete:namespace={};indexname={}".format(namespace, index_name)
         else:
-            command = "sindex-delete:ns={};set={};indexname={}".format(
+            command = "sindex-delete:namespace={};set={};indexname={}".format(
                 namespace, set_, index_name
             )
 

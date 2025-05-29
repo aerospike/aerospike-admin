@@ -50,7 +50,7 @@ if ! run_test ${asinfo_cmd} ${output_substring} ; then
 	exit 1
 fi
 
-asinfo_cmd="get-config:context=namespace;id=test"
+asinfo_cmd="get-config:context=namespace;namespace=test"
 output_substring="default-ttl"
 if ! run_test ${asinfo_cmd} ${output_substring} ; then
 	echo "Error while running asinfo command: ${asinfo_cmd}"
