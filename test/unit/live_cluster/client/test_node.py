@@ -1316,7 +1316,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;foo=bar;set=test-set", self.ip
+            "set-config:context=namespace;namespace=buff;foo=bar;set=test-set", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -1327,7 +1327,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;foo=bar", self.ip
+            "set-config:context=namespace;namespace=buff;foo=bar", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -1338,7 +1338,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;geo2dsphere-within-foo=bar", self.ip
+            "set-config:context=namespace;namespace=buff;geo2dsphere-within-foo=bar", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -1347,7 +1347,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;mounts-size-limit=50", self.ip
+            "set-config:context=namespace;namespace=buff;mounts-size-limit=50", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -1442,7 +1442,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_get_config("namespace", "test")
         self.info_mock.assert_called_with(
-            "get-config:context=namespace;id=test", self.ip
+            "get-config:context=namespace;namespace=test", self.ip
         )
         self.assertDictEqual(expected, actual)
 
@@ -1462,8 +1462,8 @@ class NodeTest(asynctest.TestCase):
 
         self.info_mock.assert_has_calls(
             [
-                call("get-config:context=namespace;id=test", self.ip),
-                call("get-config:context=namespace;id=bar", self.ip),
+                call("get-config:context=namespace;namespace=test", self.ip),
+                call("get-config:context=namespace;namespace=bar", self.ip),
             ]  # type: ignore
         )
 
@@ -3437,7 +3437,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_sindex_create_success(self):
         self.info_mock.return_value = "OK"
         expected_call = (
-            "sindex-create:indexname=iname;ns=ns;indexdata=data1,data2".format()
+            "sindex-create:indexname=iname;namespace=ns;indexdata=data1,data2".format()
         )
 
         actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
@@ -3446,7 +3446,7 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
         self.info_mock.return_value = "OK"
-        expected_call = "sindex-create:indexname=iname;indextype=itype;ns=ns;set=set;context=khAB;indexdata=data1,data2"
+        expected_call = "sindex-create:indexname=iname;indextype=itype;namespace=ns;set=set;context=khAB;indexdata=data1,data2"
 
         actual = await self.node.info_sindex_create(
             "iname",
@@ -3471,7 +3471,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_sindex_delete_success(self):
         self.info_mock.return_value = "OK"
-        expected_call = "sindex-delete:ns={};indexname={}".format(
+        expected_call = "sindex-delete:namespace={};indexname={}".format(
             "ns",
             "iname",
         )
@@ -3482,7 +3482,7 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
         self.info_mock.return_value = "OK"
-        expected_call = "sindex-delete:ns={};set={};indexname={}".format(
+        expected_call = "sindex-delete:namespace={};set={};indexname={}".format(
             "ns",
             "set",
             "iname",
