@@ -76,6 +76,7 @@ _confdefault = {
         "log-analyser": False,
         "log-path": "",
         "pmap": False,
+        "use-seed-node": False,
     },
 }
 
@@ -713,5 +714,7 @@ def get_cli_args():
     # include pmap analysis in collect info file.
     # Usage, `asadm collectinfo --pmap`
     add_fn("--pmap", action="store_true")
+
+    add_fn("--use-seed-node", dest="use_seed_node", action="store_true")
 
     return parser.parse_args()

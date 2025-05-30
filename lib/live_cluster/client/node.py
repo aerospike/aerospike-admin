@@ -181,6 +181,7 @@ class Node(AsyncObject):
         ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
+        use_seed_node=False,  # RENAMED ARGUMENT
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -210,6 +211,8 @@ class Node(AsyncObject):
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
         self.peers: list[tuple[Addr_Port_TLSName]] = []
+        
+        self.use_seed_node = use_seed_node
 
         # session token
         self.session_token: bytes | None = None
@@ -431,6 +434,17 @@ class Node(AsyncObject):
             await self.close()
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
+
+            print("use_seed_node", self.use_seed_node)
+            if self.use_seed_node:
+                # Do not update self.ip/self.port, do not crawl peers, use only the seed address
+                print("current_host", current_host)
+                print("address", address)
+                print("port", port)
+                self.service_addresses = [current_host]
+                self.ip = address
+                self.port = port
+                return
 
             if not self.service_addresses or current_host not in self.service_addresses:
                 # if asd >= 3.10 and node has only IPv6 address

@@ -225,6 +225,52 @@ class NodeInitTest(asynctest.TestCase):
             ],
         )
 
+    async def test_use_seed_node_disables_ip_port_update(self):
+        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
+            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
+        ).start()
+        # Simulate service address different from seed
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A00000000000000",
+                    "service-clear-std": "192.3.3.3:4567",
+                    "features": "",
+                    "peers-clear-std": "",
+                }
+            return Exception("Unknown command")
+        self.info_mock.side_effect = info_side_effect
+        node = await lib.live_cluster.client.node.Node(
+            "1.2.3.4", 3000, use_seed_node=True
+        )
+        self.assertEqual(node.ip, "1.2.3.4")
+        self.assertEqual(node.port, 3000)
+        self.assertEqual(node.service_addresses, [("1.2.3.4", 3000, None)])
+
+    async def test_use_seed_node_does_not_affect_default(self):
+        # This test ensures that the default behavior is unchanged
+        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
+            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
+        ).start()
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+                return {
+                    "node": "A00000000000000",
+                    "service-clear-std": "192.3.3.3:4567",
+                    "features": "",
+                    "peers-clear-std": "",
+                }
+            return Exception("Unknown command")
+        self.info_mock.side_effect = info_side_effect
+        node = await lib.live_cluster.client.node.Node(
+            "1.2.3.4", 3000, use_seed_node=False
+        )
+        self.assertEqual(node.ip, "192.3.3.3")
+        self.assertEqual(node.port, 4567)
+        self.assertEqual(node.service_addresses, [("192.3.3.3", 4567, None)])
+
 
 class NodeTest(asynctest.TestCase):
     async def setUp(self):

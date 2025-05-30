@@ -106,6 +106,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         execute_only_mode=False,
         privileged_mode=False,
         timeout=1,
+        use_seed_node=False,
     ):
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
         self.connected = True
@@ -176,6 +177,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     only_connect_seed,
                     timeout=timeout,
                     asadm_version=admin_version,
+                    use_seed_node=use_seed_node,
                 )
 
                 if not self.ctrl.cluster.get_live_nodes():
@@ -252,6 +254,8 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         for command in commands:
             if command != "help":
                 self.commands.add(command)
+
+        self.use_seed_node = use_seed_node
 
     async def active_stop_writes(self, cluster: Cluster):
         """
@@ -788,6 +792,7 @@ async def main():
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
 
+
     shell: AerospikeShell = await AerospikeShell(
         admin_version,
         seeds,
@@ -803,6 +808,7 @@ async def main():
         execute_only_mode=execute_only_mode,
         privileged_mode=cli_args.enable,
         timeout=cli_args.timeout,
+        use_seed_node=cli_args.use_seed_node,
     )  # type: ignore
 
     use_yappi = False
