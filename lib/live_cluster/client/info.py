@@ -134,14 +134,14 @@ def _unpack_protocol_header(buf, offset=0):
 
 async def _receive_data(reader: asyncio.StreamReader, sz):
     pos = 0
-    data = b""
+    chunks = []
     while pos < sz:
         chunk = await reader.read(sz - pos)
         if chunk == b"":
             raise ConnectionResetError("Connection closed by server.")
-        data += chunk
+        chunks.append(chunk)
         pos += len(chunk)
-    return data
+    return b"".join(chunks)
 
 
 ####### Password hashing ######
