@@ -2034,15 +2034,6 @@ show_users = Sheet(
     (
         Field("User", Projectors.String("data", None, for_each_key=True)),
         Field(
-            "Auth Mode",
-            Projectors.Func(
-                FieldType.string,
-                turn_empty_to_none,
-                Projectors.Identity("data", "auth-mode"),
-            ),
-            align=FieldAlignment.right,
-        ),
-        Field(
             "Roles",
             Projectors.Func(
                 FieldType.undefined,
@@ -2077,6 +2068,15 @@ show_users = Sheet(
                     ),
                 ),
             ),
+        ),
+        Field(
+            "Auth Mode",
+            Projectors.Func(
+                FieldType.string,
+                turn_empty_to_none,
+                Projectors.Identity("data", "auth-mode"),
+            ),
+            align=FieldAlignment.right,
         ),
     ),
     from_source="data",
@@ -2189,15 +2189,6 @@ def create_quota_tps_subgroup(
 show_users_stats = Sheet(
     (
         Field("User", Projectors.String("data", None, for_each_key=True)),
-        Field(
-            "Auth Mode",
-            Projectors.Func(
-                FieldType.string,
-                turn_empty_to_none,
-                Projectors.Identity("data", "auth-mode"),
-            ),
-            align=FieldAlignment.right,
-        ),
         node_field,
         Field(
             "Connections",
