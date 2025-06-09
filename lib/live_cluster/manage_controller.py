@@ -1086,8 +1086,8 @@ class ManageSIndexController(LiveClusterManageCommandController):
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
-        self.required_modifiers = set(["line", "ns", "bin"])
-        self.modifiers = set(["set", "in", "ctx"])
+        self.required_modifiers = set(["line", "ns"])
+        self.modifiers = set(["set", "in", "ctx", "exp"])
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
     @staticmethod
@@ -1297,9 +1297,21 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
             cdt_ctx = self._list_to_cdt_ctx(ctx_list)
 
+        # Validate mutually exclusive modifiers
         if ctx_list and exp is not None:
             raise ShellException(
                 "Cannot use 'ctx' and 'exp' modifiers together. Use 'ctx' to specify how to index into a CDT, and 'exp' to specify an expression to be evaluated."
+            )
+        
+        # Validate required modifiers - exactly one of 'bin' or 'exp' is required
+        if not exp and not bin_name:
+            raise ShellException(
+                "Either 'bin' or 'exp' modifier is required. Use 'bin' to specify a bin to index, and 'exp' to specify an expression to be evaluated."
+            )
+        
+        if exp and bin_name:
+            raise ShellException(
+                "Cannot use both 'bin' and 'exp' modifiers together. Use either 'bin' to specify a bin to index, or 'exp' to specify an expression to be evaluated."
             )
 
         if exp is not None:
@@ -1309,9 +1321,8 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 [
                     version.LooseVersion(build)
                     >= version.LooseVersion(
-                        constants.SERVER_SINDEX_EXPRESSION_FIRST_VERSION
-                    )
-                    for build in builds.values()
+                        constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION
+                    ) for build in builds.values()
                 ]
             ):
                 raise ShellException(
