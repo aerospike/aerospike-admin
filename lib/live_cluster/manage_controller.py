@@ -1080,7 +1080,7 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ),
         ModifierHelp(
             "exp",
-            "The base64 encoding of the expression. ctx is not supported with expressions, ctx should be provided as part of the expression.",
+            "The base64 encoding of the expression. ctx is not supported with expression, ctx should be provided as part of the expression.",
         ),
     ),
 )
