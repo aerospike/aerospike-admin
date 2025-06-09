@@ -2568,6 +2568,7 @@ class Node(AsyncObject):
         index_type: Optional[str] = None,
         set_: Optional[str] = None,
         ctx: Optional[CDTContext] = None,
+        exp: Optional[str] = None,
     ):
         """
         Create a new secondary index. index_type and set are optional.
@@ -2593,7 +2594,13 @@ class Node(AsyncObject):
 
             command += "context={};".format(ctx_b64)
 
-        command += "indexdata={},{}".format(bin_name, bin_type)
+        if exp:
+            command += "exp={};".format(exp)
+
+            # if expression is passed, use type instead of indexdata
+            command += "type={};".format(bin_type)
+        else:
+            command += "indexdata={},{}".format(bin_name, bin_type)
 
         resp = await self._info(command)
 

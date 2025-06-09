@@ -1057,7 +1057,7 @@ class ManageSIndexController(LiveClusterManageCommandController):
 
 @CommandHelp(
     "Create a new secondary index",
-    usage="<bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>] [ctx <ctx-item> [. . .]]",
+    usage="<bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>] [ctx <ctx-item> [. . .]] [exp <expression>]",
     modifiers=(
         ModifierHelp(
             "bin-type",
@@ -1077,6 +1077,10 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ModifierHelp(
             "ctx",
             "A list of context items describing how to index into a CDT. Possible values include: list_index(<int>) list_rank(<int>) list_value(<value>), map_index(<int>), map_rank(<int>) map_key(<value>), and map_value(<value>). Where <value> i <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64 encoded byte array (no quotes).",
+        ),
+        ModifierHelp(
+            "exp",
+            "The base64 encoding of the expression. ctx is not supported with expressions, ctx should be provided as part of the expression.",
         ),
     ),
 )
@@ -1265,6 +1269,14 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
+        exp = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="exp",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
 
         ctx_list = self.mods["ctx"]
         cdt_ctx = None
@@ -1285,6 +1297,34 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
             cdt_ctx = self._list_to_cdt_ctx(ctx_list)
 
+        if ctx_list and exp is not None:
+            raise ShellException(
+                "Cannot use 'ctx' and 'exp' modifiers together. Use 'ctx' to specify how to index into a CDT, and 'exp' to specify an expression to be evaluated."
+            )
+
+        if exp is not None:
+            builds = await self.meta_getter.get_builds(nodes=self.nodes)
+
+            if not all(
+                [
+                    version.LooseVersion(build)
+                    >= version.LooseVersion(
+                        constants.SERVER_SINDEX_EXPRESSION_FIRST_VERSION
+                    )
+                    for build in builds.values()
+                ]
+            ):
+                raise ShellException(
+                    "One or more servers does not support 'exp' modifier."
+                )
+
+            try:
+                util.is_valid_base64(exp)
+            except Exception as e:
+                raise ShellException(
+                    "Unable to parse expression '{}': {}".format(exp, e)
+                )
+
         index_type = index_type.lower() if index_type else None
         bin_type = bin_type.lower()
 
@@ -1301,6 +1341,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             index_type,
             set_,
             cdt_ctx,
+            exp,
             nodes="principal",
         )
         resp = list(resp.values())[0]
