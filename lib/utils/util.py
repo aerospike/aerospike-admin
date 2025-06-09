@@ -14,6 +14,7 @@
 
 import asyncio
 from asyncio.subprocess import Process
+import base64
 import contextlib
 import copy
 import functools
@@ -886,3 +887,27 @@ class async_cached(Generic[AwaitableType]):
     def __get__(self, obj, objtype):
         """Support instance methods."""
         return functools.partial(self.__call__, obj)
+
+
+def is_valid_base64(data: Union[str, bytes]) -> None:
+    """
+    Validates if the given data is valid base64 encoding.
+    
+    Args:
+        data: String or bytes to validate as base64
+        
+    Raises:
+        ValueError: If the data is not valid base64 encoding.
+    """
+    if not data:
+        raise ValueError("Invalid base64 encoding: empty data")
+    
+    try:
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        base64.b64decode(data, validate=True)
+    except (base64.binascii.Error, ValueError):
+        raise ValueError("Invalid base64 encoding")
+    except Exception as e:
+        logger.debug("Error validating base64: %s", e)
+        raise ValueError("Invalid base64 encoding")
