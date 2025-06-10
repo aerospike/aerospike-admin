@@ -2261,6 +2261,12 @@ show_sindex = Sheet(
                 "string", _ignore_null, Projectors.String("data", "context")
             ),
         ),
+        Field(
+            "Expression",
+            Projectors.Func(
+                "string", _ignore_null, Projectors.String("data", "exp")
+            ),
+        ),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),
