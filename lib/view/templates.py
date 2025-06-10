@@ -1132,6 +1132,14 @@ info_sindex_sheet = Sheet(
                 Projectors.String("sindex_stats", "context"),
             ),
         ),
+        Field(
+            "Expression",
+            Projectors.Func(
+                FieldType.string,
+                _ignore_null,
+                Projectors.String("sindex_stats", "exp"),
+            ),
+        ),
         Subgroup(
             "Queries",
             (
