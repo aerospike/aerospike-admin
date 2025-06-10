@@ -2568,6 +2568,8 @@ class Node(AsyncObject):
         index_type: Optional[str] = None,
         set_: Optional[str] = None,
         ctx: Optional[CDTContext] = None,
+        cdt_ctx_base64: Optional[str] = None,
+        supports_sindex_type_syntax: bool = False,
         exp: Optional[str] = None,
     ):
         """
@@ -2593,14 +2595,21 @@ class Node(AsyncObject):
             ctx_b64 = util.bytes_to_str(ctx_b64)
 
             command += "context={};".format(ctx_b64)
+        elif cdt_ctx_base64:
+            # Use pre-encoded base64 context string directly
+            command += "context={};".format(cdt_ctx_base64)
 
         if exp:
             command += "exp={};".format(exp)
 
             # if expression is passed, use type instead of indexdata
             command += "type={};".format(bin_type)
+
         else:
-            command += "indexdata={},{}".format(bin_name, bin_type)
+            if supports_sindex_type_syntax:
+                command += "bin={};type={};".format(bin_name, bin_type)
+            else:
+                command += "indexdata={},{}".format(bin_name, bin_type)
 
         resp = await self._info(command)
 

@@ -1057,7 +1057,7 @@ class ManageSIndexController(LiveClusterManageCommandController):
 
 @CommandHelp(
     "Create a new secondary index",
-    usage="<bin-type> <index-name> ns <ns> [set <set>] bin <bin-name> [in <index-type>] [ctx <ctx-item> [. . .]] [exp <expression>]",
+    usage="<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>] [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]",
     modifiers=(
         ModifierHelp(
             "bin-type",
@@ -1079,15 +1079,19 @@ class ManageSIndexController(LiveClusterManageCommandController):
             "A list of context items describing how to index into a CDT. Possible values include: list_index(<int>) list_rank(<int>) list_value(<value>), map_index(<int>), map_rank(<int>) map_key(<value>), and map_value(<value>). Where <value> i <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64 encoded byte array (no quotes).",
         ),
         ModifierHelp(
-            "exp",
-            "The base64 encoding of the expression. ctx is not supported with expression, ctx should be provided as part of the expression.",
+            "ctx_base64",
+            "The base64 encoding of the context. Cannot be used with 'ctx' modifier.",
+        ),
+        ModifierHelp(
+            "exp_base64",
+            "The base64 encoding of the expression. ctx, ctx_base64 and bin will not be allowed when exp is specified.",
         ),
     ),
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line", "ns"])
-        self.modifiers = set(["set", "in", "ctx", "exp"])
+        self.modifiers = set(["bin", "set", "in", "ctx", "exp_base64", "ctx_base64"])
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
     @staticmethod
@@ -1269,9 +1273,17 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
-        exp = util.get_arg_and_delete_from_mods(
+        cdt_ctx_base64 = util.get_arg_and_delete_from_mods(
             line=line,
-            arg="exp",
+            arg="ctx_base64",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        exp_base64 = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="exp_base64",
             return_type=str,
             default=None,
             modifiers=self.required_modifiers,
@@ -1281,59 +1293,82 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         ctx_list = self.mods["ctx"]
         cdt_ctx = None
 
-        if ctx_list:
-            builds = await self.meta_getter.get_builds(nodes=self.nodes)
+        # get the every node version to determine if the server supports CDT and expression indexes
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
 
-            if not all(
-                [
-                    version.LooseVersion(build)
-                    >= version.LooseVersion(
-                        constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION
-                    )
-                    for build in builds.values()
-                ]
-            ):
+        # Check cluster capability for secondary index features
+        min_cdt_version = version.LooseVersion(constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION)
+        min_expression_version = version.LooseVersion(constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION)
+        
+        supports_cdt_indexing = True
+        supports_expression_indexing = True
+        
+        # Check versions and exit early if any feature is unsupported on any node
+        for build in builds.values():
+            build_version = version.LooseVersion(build)
+            if build_version < min_cdt_version:
+                supports_cdt_indexing = False
+            if build_version < min_expression_version:
+                supports_expression_indexing = False
+            
+            # Early exit once both features are determined to be unsupported
+            if not supports_cdt_indexing and not supports_expression_indexing:
+                break
+
+        # Validate mutually exclusive ctx modifiers
+        if ctx_list and cdt_ctx_base64:
+            raise ShellException(
+                "Cannot use both 'ctx' and 'ctx_base64' modifiers together. Use either 'ctx' to specify context items, or 'ctx_base64' to provide pre-encoded context."
+            )
+
+        # Handle ctx_list
+        if ctx_list:
+            if not supports_cdt_indexing:
                 raise ShellException("One or more servers does not support 'ctx'.")
 
             cdt_ctx = self._list_to_cdt_ctx(ctx_list)
 
-        # Validate mutually exclusive modifiers
-        if ctx_list and exp is not None:
-            raise ShellException(
-                "Cannot use 'ctx' and 'exp' modifiers together. Use 'ctx' to specify how to index into a CDT, and 'exp' to specify an expression to be evaluated."
-            )
-        
-        # Validate required modifiers - exactly one of 'bin' or 'exp' is required
-        if not exp and not bin_name:
-            raise ShellException(
-                "Either 'bin' or 'exp' modifier is required. Use 'bin' to specify a bin to index, and 'exp' to specify an expression to be evaluated."
-            )
-        
-        if exp and bin_name:
-            raise ShellException(
-                "Cannot use both 'bin' and 'exp' modifiers together. Use either 'bin' to specify a bin to index, or 'exp' to specify an expression to be evaluated."
-            )
-
-        if exp is not None:
-            builds = await self.meta_getter.get_builds(nodes=self.nodes)
-
-            if not all(
-                [
-                    version.LooseVersion(build)
-                    >= version.LooseVersion(
-                        constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION
-                    ) for build in builds.values()
-                ]
-            ):
-                raise ShellException(
-                    "One or more servers does not support 'exp' modifier."
-                )
+        # Handle cdt_ctx_base64
+        if cdt_ctx_base64:
+            if not supports_cdt_indexing:
+                raise ShellException("One or more servers does not support 'ctx_base64'.")
 
             try:
-                util.is_valid_base64(exp)
+                util.is_valid_base64(cdt_ctx_base64)
             except Exception as e:
                 raise ShellException(
-                    "Unable to parse expression '{}': {}".format(exp, e)
+                    "Unable to parse ctx_base64 '{}': {}".format(cdt_ctx_base64, e)
+                )
+
+        # Validate mutually exclusive modifiers - ctx (including ctx_base64) and exp_base64
+        if (ctx_list or cdt_ctx_base64) and exp_base64 is not None:
+            raise ShellException(
+                "Cannot use both 'ctx' and 'exp_base64' modifiers together. Use either 'ctx' to specify how to index into a CDT, or 'exp_base64' to specify an expression to be evaluated."
+            )
+        
+        # Validate required modifiers - exactly one of 'bin' or 'exp_base64' is required
+        if not exp_base64 and not bin_name:
+            raise ShellException(
+                "Either 'bin' or 'exp_base64' modifier is required. Use either 'bin' to specify a bin to index, or 'exp_base64' to specify an expression to be evaluated."
+            )
+
+        if exp_base64 and bin_name:
+            raise ShellException(
+                "Cannot use both 'bin' and 'exp_base64' modifiers together. Use either 'bin' to specify a bin to index, or 'exp_base64' to specify an expression to be evaluated."
+            )
+
+        if exp_base64 is not None:
+            if not supports_expression_indexing:
+                logger.error(
+                    "One or more servers does not support 'expression' modifier."
+                )
+                return False
+
+            try:
+                util.is_valid_base64(exp_base64)
+            except Exception as e:
+                raise ShellException(
+                    "Unable to parse expression '{}': {}".format(exp_base64, e)
                 )
 
         index_type = index_type.lower() if index_type else None
@@ -1352,7 +1387,9 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             index_type,
             set_,
             cdt_ctx,
-            exp,
+            cdt_ctx_base64,
+            supports_expression_indexing,
+            exp_base64,
             nodes="principal",
         )
         resp = list(resp.values())[0]
