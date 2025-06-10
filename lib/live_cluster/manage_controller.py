@@ -1084,7 +1084,7 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ),
         ModifierHelp(
             "exp_base64",
-            "The base64 encoding of the expression. ctx, ctx_base64 and bin will not be allowed when exp is specified.",
+            "The base64 encoding of the expression. ctx, ctx_base64 and bin will not be allowed when exp_base64 is specified.",
         ),
     ),
 )
