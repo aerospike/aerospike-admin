@@ -2542,7 +2542,7 @@ class Node(AsyncObject):
     async def info_sindex(self):
         return [
             client_util.info_to_dict(v, ":")
-            for v in client_util.info_to_list(await self._info("sindex"))
+            for v in client_util.info_to_list(await self._info("sindex-list"))
             if v != ""
         ]
 
