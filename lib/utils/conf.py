@@ -76,7 +76,7 @@ _confdefault = {
         "log-analyser": False,
         "log-path": "",
         "pmap": False,
-        "use-seed-node": False,
+        "use-seed-address": False,
     },
 }
 
@@ -454,6 +454,11 @@ def print_config_help():
         " --single-node        Enable asadm mode to connect only seed node. \n"
         "                      By default asadm connects to all nodes in cluster."
     )
+    print(
+        " --use-seed-address   Enable asadm mode to connect only seed address. \n"
+        "                      By default asadm connects to cluster via service address. \n"
+        "                      Allowed only with --single-node \n"
+    )
     print(" --collectinfo        Start asadm to run against offline collectinfo files.")
     print(" --pmap               Include partition map analysis in collectinfo files.")
     print(
@@ -715,6 +720,6 @@ def get_cli_args():
     # Usage, `asadm collectinfo --pmap`
     add_fn("--pmap", action="store_true")
 
-    add_fn("--use-seed-node", dest="use_seed_node", action="store_true")
+    add_fn("--use-seed-address", dest="use_seed_address", action="store_true")
 
     return parser.parse_args()

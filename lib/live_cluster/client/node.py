@@ -181,7 +181,7 @@ class Node(AsyncObject):
         ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
-        use_seed_node=False,  # RENAMED ARGUMENT
+        use_seed_address=False,
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -211,8 +211,9 @@ class Node(AsyncObject):
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
         self.peers: list[tuple[Addr_Port_TLSName]] = []
-        
-        self.use_seed_node = use_seed_node
+
+        # Use the seed address if specified. this ensure we connect to the seed address only.
+        self.use_seed_address = use_seed_address
 
         # session token
         self.session_token: bytes | None = None
@@ -435,27 +436,29 @@ class Node(AsyncObject):
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
-            if self.use_seed_node:
-                # use only the seed address
+            if self.use_seed_address:
                 self.service_addresses = [current_host]
-                self.ip = address
-                self.port = port
 
                 try:
                     await self._update_IP(self.ip, self.port)
-                    node_id, update_ip, peers = await asyncio.gather(
+                    # Get node info using the seed address
+                    self.node_id, self.peers = await asyncio.gather(
                         self.info_node(),
-                        self._update_IP(self.ip, self.port),
                         self.info_peers_list(),
                     )
-                    # If any of these are exceptions, handle gracefully
-                    if isinstance(node_id, Exception) or isinstance(update_ip, Exception) or isinstance(peers, Exception):
-                        raise RuntimeError("Failed to connect to seed node or retrieve its info. Please check the address and port.")
-                    self.node_id = node_id
-                    self.peers = peers
+                    
+                    # Check if we got valid responses
+                    if isinstance(self.node_id, Exception):
+                        raise self.node_id
+                    if isinstance(self.peers, Exception):
+                        raise self.peers
+                        
+                except (ASInfoNotAuthenticatedError, ASProtocolError):
+                    # Re-raise authentication and protocol errors
+                    raise
                 except Exception as e:
-                    logger.error(f"Seed node connection failed: {e}")
-                    raise RuntimeError("Failed to connect to seed node or retrieve its info. Please check the address and port.")
+                    logger.debug(f"Seed node connection failed: {e}", exc_info=True)
+                    raise RuntimeError(f"Failed to connect to seed node {address}:{port}. Please check the address and port.")
 
                 self._service_IP_port = self.create_key(self.ip, self.port)
                 self._key = hash(self._service_IP_port)

@@ -54,7 +54,7 @@ class Cluster(AsyncObject):
         ssl_context: SSL.Context | None = None,
         only_connect_seed=False,
         timeout=1,
-        use_seed_node=False,
+        use_seed_address=False,
     ):
         """
         Want to be able to support multiple nodes on one box (for testing)
@@ -89,7 +89,7 @@ class Cluster(AsyncObject):
         # crawl the cluster search for nodes in addition to the seed nodes.
         self.last_cluster_refresh_time = 0
         self.only_connect_seed = only_connect_seed
-        self.use_seed_node = use_seed_node
+        self.use_seed_address = use_seed_address
         await self._refresh_cluster()
 
         # to avoid same label (NODE column) for multiple nodes we need to keep track
@@ -589,7 +589,7 @@ class Cluster(AsyncObject):
                 ssl_context=self.ssl_context,
                 consider_alumni=self.use_services_alumni,
                 use_services_alt=self.use_services_alt,
-                use_seed_node=self.use_seed_node,
+                use_seed_address=self.use_seed_address,
             )  # type: ignore
 
             if not new_node:
