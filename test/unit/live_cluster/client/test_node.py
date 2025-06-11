@@ -225,51 +225,86 @@ class NodeInitTest(asynctest.TestCase):
             ],
         )
 
-    async def test_use_seed_node_disables_ip_port_update(self):
-        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
-            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
-        ).start()
-        # Simulate service address different from seed
-        def info_side_effect(*args, **kwargs):
-            cmd = args[0]
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
-                return {
-                    "node": "A00000000000000",
-                    "service-clear-std": "192.3.3.3:4567",
-                    "features": "",
-                    "peers-clear-std": "",
-                }
-            return Exception("Unknown command")
-        self.info_mock.side_effect = info_side_effect
-        node = await lib.live_cluster.client.node.Node(
-            "1.2.3.4", 3000, use_seed_node=True
-        )
-        self.assertEqual(node.ip, "1.2.3.4")
-        self.assertEqual(node.port, 3000)
-        self.assertEqual(node.service_addresses, [("1.2.3.4", 3000, None)])
+    @patch("lib.live_cluster.client.node.Node._info_cinfo", new_callable=AsyncMock)
+    @patch("lib.live_cluster.client.node.Node._update_IP", new_callable=AsyncMock)
+    async def test_node_connect_seed_mode(self, mock_update_ip, mock_info_cinfo):
+        """Test _node_connect behavior when use_seed_address is True"""
+        # Mock _update_IP to just set the IP without DNS resolution
+        async def update_ip_side_effect(address, port):
+            self.ip = address
+            self.port = port
+            self.fqdn = None
+        mock_update_ip.side_effect = update_ip_side_effect
 
-    async def test_use_seed_node_does_not_affect_default(self):
-        # This test ensures that the default behavior is unchanged
-        self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
-            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
-        ).start()
+        # Mock the info response for seed mode
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "features"]:
+                return {
+                    "node": "A00000000000001",
+                    "features": "feature1;feature2"
+                }
+            return {}
+        
+        mock_info_cinfo.side_effect = info_side_effect
+        
+        # Create node with use_seed_address=True
+        node = await Node("1.2.3.4", 3000, use_seed_address=True)
+        node_id, service_addresses, features, peers = await node._node_connect()
+        
+        # Verify correct commands were sent
+        mock_info_cinfo.assert_any_call(
+            ["node", "features"], "1.2.3.4", disable_cache=True
+        )
+        
+        # Verify returned values
+        self.assertEqual(node_id, "A00000000000001")
+        self.assertEqual(features, "feature1;feature2")
+        self.assertEqual(service_addresses, [("1.2.3.4", 3000, None)])
+        self.assertEqual(peers, [])
+
+    @patch("lib.live_cluster.client.node.Node._info_cinfo", new_callable=AsyncMock)
+    @patch("lib.live_cluster.client.node.Node._update_IP", new_callable=AsyncMock)
+    async def test_node_connect_full_mode(self, mock_update_ip, mock_info_cinfo):
+        """Test _node_connect behavior when use_seed_address is False"""
+        # Mock _update_IP to just set the IP without DNS resolution
+        async def update_ip_side_effect(address, port):
+            self.ip = address
+            self.port = port
+            self.fqdn = None
+        mock_update_ip.side_effect = update_ip_side_effect
+
+        # Mock the info response for full discovery mode
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
             if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
                 return {
-                    "node": "A00000000000000",
-                    "service-clear-std": "192.3.3.3:4567",
-                    "features": "",
-                    "peers-clear-std": "",
+                    "node": "A00000000000002",
+                    "service-clear-std": "1.2.3.4:3000",  # Keep the same IP as input
+                    "features": "feature1;feature2",
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]]]"
                 }
-            return Exception("Unknown command")
-        self.info_mock.side_effect = info_side_effect
-        node = await lib.live_cluster.client.node.Node(
-            "1.2.3.4", 3000, use_seed_node=False
+            return {}
+        
+        mock_info_cinfo.side_effect = info_side_effect
+        
+        # Create node with use_seed_address=False
+        node = await Node("1.2.3.4", 3000, use_seed_address=False)
+        node_id, service_addresses, features, peers = await node._node_connect()
+        
+        # Verify correct commands were sent
+        mock_info_cinfo.assert_any_call(
+            ["node", "service-clear-std", "features", "peers-clear-std"],
+            "1.2.3.4",
+            disable_cache=True
         )
-        self.assertEqual(node.ip, "192.3.3.3")
-        self.assertEqual(node.port, 4567)
-        self.assertEqual(node.service_addresses, [("192.3.3.3", 4567, None)])
+        
+        # Verify returned values
+        self.assertEqual(node_id, "A00000000000002")
+        self.assertEqual(features, "feature1;feature2")
+        self.assertEqual(service_addresses, [("1.2.3.4", 3000, None)])
+        self.assertEqual(len(peers), 1)
+        self.assertEqual(peers[0][0], ("172.17.0.1", 3000, None))
 
 
 class NodeTest(asynctest.TestCase):
