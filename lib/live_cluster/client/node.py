@@ -393,16 +393,24 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
-        peers_info_calls = self._get_info_peers_list_calls()
-        service_info_call = self._get_service_info_call()
-        commands = ["node", service_info_call, "features"] + peers_info_calls
-        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+        # If use_seed_address is True, we only need to get the node id and features
+        if self.use_seed_address:
+            commands = ["node", "features"]
+            results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+            node_id = results["node"]
+            features = results["features"]
+            return node_id, [(self.ip, self.port, self.tls_name)], features, []
+        else:
+            peers_info_calls = self._get_info_peers_list_calls()
+            service_info_call = self._get_service_info_call()
+            commands = ["node", service_info_call, "features"] + peers_info_calls
+            results = await self._info_cinfo(commands, self.ip, disable_cache=True)
 
-        node_id = results["node"]
-        service_addresses = self._info_service_helper(results[service_info_call])
-        features = results["features"]
-        peers = self._aggregate_peers([results[call] for call in peers_info_calls])
-        return node_id, service_addresses, features, peers
+            node_id = results["node"]
+            service_addresses = self._info_service_helper(results[service_info_call])
+            features = results["features"]
+            peers = self._aggregate_peers([results[call] for call in peers_info_calls])
+            return node_id, service_addresses, features, peers
 
     async def connect(self, address, port):
         try:
@@ -435,36 +443,6 @@ class Node(AsyncObject):
             await self.close()
             self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
-
-            if self.use_seed_address:
-                self.service_addresses = [current_host]
-
-                try:
-                    await self._update_IP(self.ip, self.port)
-                    # Get node info using the seed address
-                    self.node_id, self.peers = await asyncio.gather(
-                        self.info_node(),
-                        self.info_peers_list(),
-                    )
-                    
-                    # Check if we got valid responses
-                    if isinstance(self.node_id, Exception):
-                        raise self.node_id
-                    if isinstance(self.peers, Exception):
-                        raise self.peers
-                        
-                except (ASInfoNotAuthenticatedError, ASProtocolError):
-                    # Re-raise authentication and protocol errors
-                    raise
-                except Exception as e:
-                    logger.debug(f"Seed node connection failed: {e}", exc_info=True)
-                    raise RuntimeError(f"Failed to connect to seed node {address}:{port}. Please check the address and port.")
-
-                self._service_IP_port = self.create_key(self.ip, self.port)
-                self._key = hash(self._service_IP_port)
-                self.new_histogram_version = await self._is_new_histogram_version()
-                self.alive = True
-                return
 
             if not self.service_addresses or current_host not in self.service_addresses:
                 # if asd >= 3.10 and node has only IPv6 address
