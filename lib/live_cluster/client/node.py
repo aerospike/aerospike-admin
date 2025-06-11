@@ -2570,7 +2570,7 @@ class Node(AsyncObject):
         ctx: Optional[CDTContext] = None,
         cdt_ctx_base64: Optional[str] = None,
         supports_sindex_type_syntax: bool = False,
-        exp: Optional[str] = None,
+        exp_base64: Optional[str] = None,
     ):
         """
         Create a new secondary index. index_type and set are optional.
@@ -2599,15 +2599,15 @@ class Node(AsyncObject):
             # Use pre-encoded base64 context string directly
             command += "context={};".format(cdt_ctx_base64)
 
-        if exp:
-            command += "exp={};".format(exp)
+        if exp_base64:
+            command += "exp={};".format(exp_base64)
 
             # if expression is passed, use type instead of indexdata
-            command += "type={};".format(bin_type)
+            command += "type={}".format(bin_type)
 
         else:
             if supports_sindex_type_syntax:
-                command += "bin={};type={};".format(bin_name, bin_type)
+                command += "bin={};type={}".format(bin_name, bin_type)
             else:
                 command += "indexdata={},{}".format(bin_name, bin_type)
 
