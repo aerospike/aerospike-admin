@@ -2069,6 +2069,15 @@ show_users = Sheet(
                 ),
             ),
         ),
+        Field(
+            "Auth Mode",
+            Projectors.Func(
+                FieldType.string,
+                turn_empty_to_none,
+                Projectors.Identity("data", "auth-mode"),
+            ),
+            align=FieldAlignment.right,
+        ),
     ),
     from_source="data",
     for_each="data",

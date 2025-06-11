@@ -50,6 +50,7 @@ class ASField(IntEnum):
     CLEAR_PASSWORD = 4
     SESSION_TOKEN = 5
     SESSION_TTL = 6
+    AUTH_MODE = 7
     ROLES = 10
     ROLE = 11
     PRIVILEGES = 12
