@@ -393,7 +393,12 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
-        # If use_seed_address is True, we only need to get the node id and features
+        """
+        Connect to the node and retrieve basic information.
+        If use_seed_address is True, only retrieves node ID and features,
+        using the seed address as the only service address and skipping peer discovery.
+        Otherwise, performs full service and peer discovery.
+        """
         if self.use_seed_address:
             commands = ["node", "features"]
             results = await self._info_cinfo(commands, self.ip, disable_cache=True)
