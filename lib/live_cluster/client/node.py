@@ -181,6 +181,7 @@ class Node(AsyncObject):
         ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
+        use_seed_address=False,
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -210,6 +211,9 @@ class Node(AsyncObject):
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
         self.peers: list[tuple[Addr_Port_TLSName]] = []
+
+        # Use the seed address if specified. this ensure we connect to the seed address only.
+        self.use_seed_address = use_seed_address
 
         # session token
         self.session_token: bytes | None = None
@@ -389,16 +393,29 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
-        peers_info_calls = self._get_info_peers_list_calls()
-        service_info_call = self._get_service_info_call()
-        commands = ["node", service_info_call, "features"] + peers_info_calls
-        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+        """
+        Connect to the node and retrieve basic information.
+        If use_seed_address is True, only retrieves node ID and features,
+        using the seed address as the only service address and skipping peer discovery.
+        Otherwise, performs full service and peer discovery.
+        """
+        if self.use_seed_address:
+            commands = ["node", "features"]
+            results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+            node_id = results["node"]
+            features = results["features"]
+            return node_id, [(self.ip, self.port, self.tls_name)], features, []
+        else:
+            peers_info_calls = self._get_info_peers_list_calls()
+            service_info_call = self._get_service_info_call()
+            commands = ["node", service_info_call, "features"] + peers_info_calls
+            results = await self._info_cinfo(commands, self.ip, disable_cache=True)
 
-        node_id = results["node"]
-        service_addresses = self._info_service_helper(results[service_info_call])
-        features = results["features"]
-        peers = self._aggregate_peers([results[call] for call in peers_info_calls])
-        return node_id, service_addresses, features, peers
+            node_id = results["node"]
+            service_addresses = self._info_service_helper(results[service_info_call])
+            features = results["features"]
+            peers = self._aggregate_peers([results[call] for call in peers_info_calls])
+            return node_id, service_addresses, features, peers
 
     async def connect(self, address, port):
         try:

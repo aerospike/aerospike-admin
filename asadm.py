@@ -106,6 +106,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         execute_only_mode=False,
         privileged_mode=False,
         timeout=1,
+        use_seed_address=False,
     ):
         # indicates shell created successfully and connected to cluster/collectinfo/logfile
         self.connected = True
@@ -176,6 +177,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     only_connect_seed,
                     timeout=timeout,
                     asadm_version=admin_version,
+                    use_seed_address=use_seed_address,
                 )
 
                 if not self.ctrl.cluster.get_live_nodes():
@@ -758,6 +760,11 @@ async def main():
     ):
         logger.critical("TLS is required for authentication mode: " + cli_args.auth)
 
+    if cli_args.use_seed_address and not cli_args.single_node:
+        logger.critical(
+            "--use-seed-address can only be used with --single-node. Please enable --single-node or remove --use-seed-address."
+        )
+
     ssl_context = parse_tls_input(cli_args)
 
     if cli_args.asinfo_mode:
@@ -788,6 +795,7 @@ async def main():
     if not execute_only_mode:
         readline.set_completer_delims(" \t\n;")
 
+
     shell: AerospikeShell = await AerospikeShell(
         admin_version,
         seeds,
@@ -803,6 +811,7 @@ async def main():
         execute_only_mode=execute_only_mode,
         privileged_mode=cli_args.enable,
         timeout=cli_args.timeout,
+        use_seed_address=cli_args.use_seed_address,
     )  # type: ignore
 
     use_yappi = False
