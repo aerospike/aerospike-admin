@@ -20,16 +20,12 @@ from .collectinfo_command_controller import CollectinfoCommandController
 
 @CommandHelp(
     "Displays summary of Aerospike cluster.",
-    usage=f"[-l] [--agent-unstable]",
+    usage=f"[-l]",
     modifiers=(
         ModifierHelp(
             "-l",
             "Enable to display namespace output in list view.",
             default="table view",
-        ),
-        ModifierHelp(
-            "--agent-unstable",
-            "When processing UDA entries allow instances where the cluster is unstable.",
         ),
     ),
 )
@@ -40,13 +36,6 @@ class SummaryController(CollectinfoCommandController):
     def _do_default(self, line):
         enable_list_view = util.check_arg_and_delete_from_mods(
             line=line, arg="-l", default=False, modifiers=self.modifiers, mods=self.mods
-        )
-        agent_unstable = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="--agent-unstable",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
         )
 
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
@@ -73,7 +62,6 @@ class SummaryController(CollectinfoCommandController):
         last_timestamp = sorted(service_stats.keys())[-1]
 
         cluster_name = {}
-        license_data_usage = None
 
         try:
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=last_timestamp)
@@ -150,11 +138,6 @@ class SummaryController(CollectinfoCommandController):
         except Exception:
             pass
 
-        try:
-            license_data_usage = self.log_handler.get_unique_data_usage()
-        except Exception:
-            pass
-
         self.view.print_summary(
             common.create_summary(
                 service_stats=service_stats[last_timestamp],
@@ -164,8 +147,6 @@ class SummaryController(CollectinfoCommandController):
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],
                 security_configs=security_configs[last_timestamp],
-                license_data_usage=license_data_usage,
-                license_allow_unstable=agent_unstable,
             ),
             list_view=enable_list_view,
         )

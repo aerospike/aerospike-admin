@@ -56,19 +56,13 @@ logger = logging.getLogger(__name__)
 
 @CommandHelp(
     "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
-    usage=f"[-n <num-snapshots>] [-s <sleep>] [{SSH_MODIFIER_USAGE}] [--agent-host <host> --agent-port <port> [--agent-store]] [--output-prefix <prefix>] [--asconfig-file <path>]",
+    usage=f"[-n <num-snapshots>] [-s <sleep>] [{SSH_MODIFIER_USAGE}] [--output-prefix <prefix>] [--asconfig-file <path>]",
     modifiers=(
         ModifierHelp("-n", "Number of snapshots.", default="1"),
         ModifierHelp(
             "-s", "Sleep time in seconds between each snapshot.", default="5 sec"
         ),
         *SSH_MODIFIER_HELP,
-        ModifierHelp(
-            "--agent-host",
-            "Host IP of the Unique Data Agent to collect license data usage.",
-        ),
-        ModifierHelp("--agent-port", "Port of the UDA.", default="8080"),
-        ModifierHelp("--agent-store", "Collect the raw datastore of the UDA."),
         ModifierHelp("--output-prefix", "Output directory name prefix."),
         ModifierHelp(
             "--asconfig-file",
@@ -528,39 +522,6 @@ class CollectinfoController(LiveClusterCommandController):
             logger.warning("Failed to write file {}: {}", filename, str(e))
             raise
 
-    async def _dump_collectinfo_license_data(
-        self,
-        as_logfile_prefix: str,
-        agent_host: str,
-        agent_port: str,
-        get_store: bool,
-    ) -> None:
-        logger.info("Data collection license usage in progress...")
-        logger.info("Requesting data usage for past 365 days...")
-        resp = {}
-
-        try:
-            resp = await common.request_license_usage(agent_host, agent_port, get_store)
-        except Exception as e:
-            msg = "Failed to retrieve license usage information : {}".format(e)
-            resp["error"] = msg
-            logger.error(msg)
-
-            complete_filename = as_logfile_prefix + "aslicenseusage.json"
-            self._dump_in_json_file(complete_filename, resp)
-
-            raise Exception(msg)
-
-        if "raw_store" in resp:
-            filename = "aslicenseraw.store"
-            complete_filename = as_logfile_prefix + filename
-            raw_store = resp["raw_store"]
-            self._dump_collectinfo_file(complete_filename, raw_store)
-            del resp["raw_store"]
-
-        complete_filename = as_logfile_prefix + "aslicenseusage.json"
-        self._dump_in_json_file(complete_filename, resp)
-
     ###########################################################################
     # Functions for dumping pretty print files
 
@@ -871,9 +832,6 @@ class CollectinfoController(LiveClusterCommandController):
         snp_count: int,
         wait_time: int,
         ignore_errors: bool,
-        agent_host: str | None = None,
-        agent_port: str | None = None,
-        agent_store: bool = False,
         enable_ssh: bool = False,
         output_prefix: str = "",
         config_path: str = "",
@@ -898,21 +856,6 @@ class CollectinfoController(LiveClusterCommandController):
             # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
             self.setup_loggers(individual_file_prefix)
             terminal.enable_color(False)
-
-            try:
-                if agent_host is not None and agent_port is not None:
-                    await self._dump_collectinfo_license_data(
-                        individual_file_prefix,
-                        agent_host,
-                        agent_port,
-                        agent_store,
-                    )
-
-            except Exception as e:
-                logger.error(e)
-                if not ignore_errors:
-                    logger.error(ignore_errors_msg)
-                    return
 
             file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
             self.failed_cmds = []
@@ -1020,32 +963,6 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        agent_host = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="--agent-host",
-            default=None,
-            return_type=str,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        agent_port = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="--agent-port",
-            default="8080",
-            return_type=str,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        agent_store = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="--agent-store",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
         enable_ssh = util.check_arg_and_delete_from_mods(
             line=line,
             arg="--enable-ssh",
@@ -1139,9 +1056,6 @@ class CollectinfoController(LiveClusterCommandController):
             snp_count,
             wait_time,
             ignore_errors,
-            agent_host=agent_host,
-            agent_port=agent_port,
-            agent_store=agent_store,
             enable_ssh=enable_ssh,
             output_prefix=output_prefix,
             config_path=config_path,
