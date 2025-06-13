@@ -2286,7 +2286,7 @@ class CreateSummaryTests(unittest.TestCase):
                 ns_stats={
                     "1.1.1.1": {
                         "test": {
-                            "pmem_used_bytes": 8000,
+                            "pmem_used_bytes": 40000,  # Increased from 8000
                             "memory_used_bytes": 500,
                             "index_used_bytes": 200,
                             "master_objects": 200,
@@ -2301,7 +2301,7 @@ class CreateSummaryTests(unittest.TestCase):
                     },
                     "2.2.2.2": {
                         "test": {
-                            "pmem_used_bytes": 8000,
+                            "pmem_used_bytes": 40000,  # Increased from 8000
                             "memory_used_bytes": 500,
                             "index_used_bytes": 200,
                             "master_objects": 200,
@@ -2352,8 +2352,8 @@ class CreateSummaryTests(unittest.TestCase):
                         "device_count": 0,
                         "device_count_per_node": 0,
                         "device_count_same_across_nodes": True,
-                        # Total license usage = 10000 (8000 from test + 2000 from bar)
-                        "license_data": {"latest": 10000},
+                        # Total license usage = 42000 (40000 from test + 2000 from bar)
+                        "license_data": {"latest": 42000},
                         "migrations_in_progress": False,
                         "ns_count": 2,
                         "os_version": [],
@@ -2365,12 +2365,12 @@ class CreateSummaryTests(unittest.TestCase):
                             "devices_per_node": 0,
                             "devices_total": 0,
                             # Pre-8.0 license calculation:
-                            # - pmem_used_bytes = 8000
+                            # - pmem_used_bytes = 40000
                             # - effective_replication_factor = 2
-                            # - master_objects = 400 (200 per node * 2 nodes)
-                            # Formula: (pmem_used_bytes / replication_factor) - (35 * master_objects)
-                            # (8000 / 2) - (35 * 400) = 4000 - 14000 = 8000
-                            "license_data": {"latest": 8000},
+                            # Formula: pmem_used_bytes / replication_factor
+                            # 40000 / 2 = 20000 per node
+                            # Total across nodes = 40000
+                            "license_data": {"latest": 40000},
                             "master_objects": 400,  # Summed across nodes (200 * 2)
                             "migrations_in_progress": False,
                             "rack_aware": False,
