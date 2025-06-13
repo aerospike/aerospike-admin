@@ -2281,6 +2281,122 @@ class CreateSummaryTests(unittest.TestCase):
                     },
                 },
             ),
+            # Test License Usage Pre-8.0 and Post-8.0
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "pmem_used_bytes": 1000,
+                            "memory_used_bytes": 500,
+                            "index_used_bytes": 200,
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
+                        },
+                        "bar": {
+                            "data_used_bytes": 1000,
+                            "data_compression_ratio": 0.5,
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
+                        },
+                    },
+                    "2.2.2.2": {
+                        "test": {
+                            "pmem_used_bytes": 1000,
+                            "memory_used_bytes": 500,
+                            "index_used_bytes": 200,
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
+                        },
+                        "bar": {
+                            "data_used_bytes": 1000,
+                            "data_compression_ratio": 0.5,
+                            "master_objects": 100,
+                            "effective_replication_factor": 2,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "pmem",
+                            "replication-factor": 2,
+                        },
+                        "bar": {
+                            "storage-engine": "device",
+                            "replication-factor": 2,
+                        },
+                    },
+                    "2.2.2.2": {
+                        "test": {
+                            "storage-engine": "pmem",
+                            "replication-factor": 2,
+                        },
+                        "bar": {
+                            "storage-engine": "device",
+                            "replication-factor": 2,
+                        },
+                    },
+                },
+                metadata={
+                    "server_build": {
+                        "1.1.1.1": "7.0.0",
+                        "2.2.2.2": "8.0.0",
+                    }
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Compression"],
+                        "active_ns": 2,
+                        "cluster_name": [],
+                        "cluster_size": [],
+                        "device_count": 0,
+                        "device_count_per_node": 0,
+                        "device_count_same_across_nodes": True,
+                        # Total license usage = 3000 (1000 from test + 2000 from bar)
+                        "license_data": {"latest": 3000},
+                        "migrations_in_progress": False,
+                        "ns_count": 2,
+                        "os_version": [],
+                        "server_version": [],
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "device_count_same_across_nodes": True,
+                            "devices_per_node": 0,
+                            "devices_total": 0,
+                            # Pre-8.0 license calculation:
+                            # - pmem_used_bytes = 1000
+                            # - effective_replication_factor = 2
+                            # - master_objects = 100
+                            # Formula: (pmem_used_bytes / replication_factor) - (35 * master_objects)
+                            # (1000 / 2) - (35 * 100) = 500 - 3500 = 1000
+                            "license_data": {"latest": 1000},
+                            "master_objects": 200,
+                            "migrations_in_progress": False,
+                            "rack_aware": False,
+                            "repl_factor": [2],
+                        },
+                        "bar": {
+                            "compression_ratio": 0.5,
+                            "device_count_same_across_nodes": True,
+                            "devices_per_node": 0,
+                            "devices_total": 0,
+                            # Post-8.0 license calculation:
+                            # - data_used_bytes = 1000
+                            # - data_compression_ratio = 0.5
+                            # - effective_replication_factor = 2
+                            # - master_objects = 100
+                            # Formula: (data_used_bytes / compression_ratio / replication_factor) - (35 * master_objects)
+                            # (1000 / 0.5 / 2) - (35 * 100) = 1000 - 3500 = 2000
+                            "license_data": {"latest": 2000},
+                            "master_objects": 200,
+                            "migrations_in_progress": False,
+                            "rack_aware": False,
+                            "repl_factor": [2],
+                        },
+                    },
+                },
+            ),
         ]
     )
     def test_create_summary_namespace_usage_stats(
