@@ -2286,31 +2286,31 @@ class CreateSummaryTests(unittest.TestCase):
                 ns_stats={
                     "1.1.1.1": {
                         "test": {
-                            "pmem_used_bytes": 1000,
+                            "pmem_used_bytes": 8000,
                             "memory_used_bytes": 500,
                             "index_used_bytes": 200,
-                            "master_objects": 100,
+                            "master_objects": 200,
                             "effective_replication_factor": 2,
                         },
                         "bar": {
                             "data_used_bytes": 1000,
                             "data_compression_ratio": 0.5,
-                            "master_objects": 100,
+                            "master_objects": 200,
                             "effective_replication_factor": 2,
                         },
                     },
                     "2.2.2.2": {
                         "test": {
-                            "pmem_used_bytes": 1000,
+                            "pmem_used_bytes": 8000,
                             "memory_used_bytes": 500,
                             "index_used_bytes": 200,
-                            "master_objects": 100,
+                            "master_objects": 200,
                             "effective_replication_factor": 2,
                         },
                         "bar": {
                             "data_used_bytes": 1000,
                             "data_compression_ratio": 0.5,
-                            "master_objects": 100,
+                            "master_objects": 200,
                             "effective_replication_factor": 2,
                         },
                     },
@@ -2352,8 +2352,8 @@ class CreateSummaryTests(unittest.TestCase):
                         "device_count": 0,
                         "device_count_per_node": 0,
                         "device_count_same_across_nodes": True,
-                        # Total license usage = 3000 (1000 from test + 2000 from bar)
-                        "license_data": {"latest": 3000},
+                        # Total license usage = 10000 (8000 from test + 2000 from bar)
+                        "license_data": {"latest": 10000},
                         "migrations_in_progress": False,
                         "ns_count": 2,
                         "os_version": [],
@@ -2365,13 +2365,13 @@ class CreateSummaryTests(unittest.TestCase):
                             "devices_per_node": 0,
                             "devices_total": 0,
                             # Pre-8.0 license calculation:
-                            # - pmem_used_bytes = 1000
+                            # - pmem_used_bytes = 8000
                             # - effective_replication_factor = 2
-                            # - master_objects = 100
+                            # - master_objects = 400 (200 per node * 2 nodes)
                             # Formula: (pmem_used_bytes / replication_factor) - (35 * master_objects)
-                            # (1000 / 2) - (35 * 100) = 500 - 3500 = 1000
-                            "license_data": {"latest": 1000},
-                            "master_objects": 200,
+                            # (8000 / 2) - (35 * 400) = 4000 - 14000 = 8000
+                            "license_data": {"latest": 8000},
+                            "master_objects": 400,  # Summed across nodes (200 * 2)
                             "migrations_in_progress": False,
                             "rack_aware": False,
                             "repl_factor": [2],
@@ -2385,11 +2385,11 @@ class CreateSummaryTests(unittest.TestCase):
                             # - data_used_bytes = 1000
                             # - data_compression_ratio = 0.5
                             # - effective_replication_factor = 2
-                            # - master_objects = 100
-                            # Formula: (data_used_bytes / compression_ratio / replication_factor) - (35 * master_objects)
-                            # (1000 / 0.5 / 2) - (35 * 100) = 1000 - 3500 = 2000
+                            # Formula: (data_used_bytes / compression_ratio / replication_factor)
+                            # No overhead subtraction for post-8.0
+                            # (1000 / 0.5 / 2) = 2000
                             "license_data": {"latest": 2000},
-                            "master_objects": 200,
+                            "master_objects": 400,  # Summed across nodes (200 * 2)
                             "migrations_in_progress": False,
                             "rack_aware": False,
                             "repl_factor": [2],
