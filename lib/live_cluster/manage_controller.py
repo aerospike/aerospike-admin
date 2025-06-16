@@ -1388,8 +1388,8 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             set_,
             cdt_ctx,
             cdt_ctx_base64,
-            supports_expression_indexing,
             exp_base64,
+            supports_expression_indexing,
             nodes="principal",
         )
         resp = list(resp.values())[0]

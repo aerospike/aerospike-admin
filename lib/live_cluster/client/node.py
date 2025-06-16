@@ -2569,8 +2569,8 @@ class Node(AsyncObject):
         set_: Optional[str] = None,
         ctx: Optional[CDTContext] = None,
         cdt_ctx_base64: Optional[str] = None,
-        supports_sindex_type_syntax: bool = False,
         exp_base64: Optional[str] = None,
+        supports_sindex_type_syntax: bool = False,
     ):
         """
         Create a new secondary index. index_type and set are optional.
