@@ -710,17 +710,20 @@ def write_to_file(file, data):
 def is_valid_role_name(role_name: str) -> bool:
     """
     A valid role name can include only Latin lowercase and uppercase letters with 
-    no diacritical marks (a-z, A-Z), digits 0-9, underscores (_), hyphens (-), and dollar signs ($). 
+    no diacritical marks (a-z, A-Z), digits 0-9, underscores (_), hyphens (-), and dollar signs ($).
     
-    Raises:
-        ValueError: If the role name contains illegal characters.
+    Args:
+        role_name: The role name to validate
+        
+    Returns:
+        bool: True if the role name is valid, False otherwise
     """
         
     pattern = r'^[a-zA-Z0-9_\-$]+$'
     if not re.match(pattern, role_name):
         # Find all illegal characters
         illegal_chars = set(re.findall(r'[^a-zA-Z0-9_\-$]', role_name))
-        logger.error(f'The role "{role_name}" contains illegal characters {", ".join(sorted(illegal_chars))}')
+        logger.error(f'Invalid role name "{role_name}": contains illegal characters {", ".join(sorted(illegal_chars))}')
         return False
     
     return True
