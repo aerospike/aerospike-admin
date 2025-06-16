@@ -1729,6 +1729,9 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             "mapkeys",
             "testset",
             CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
+            None,
+            None,
+            False,
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
