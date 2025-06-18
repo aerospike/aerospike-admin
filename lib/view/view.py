@@ -2474,3 +2474,56 @@ class CliView(object):
         else:
             CliView._summary_cluster_table_view(summary["CLUSTER"])
             CliView._summary_namespace_table_view(summary["NAMESPACES"])
+
+    @staticmethod
+    @reserved_modifiers
+    def show_user_agents(cluster, user_agents_data, with_=None, timestamp="", **ignore):
+        """Display user agent information in a tabular format.
+        
+        Args:
+            cluster: Cluster object
+            user_agents_data: Dictionary mapping node IDs to lists of user agent info
+            with_: Optional node filter
+            timestamp: Optional timestamp string
+            **ignore: Ignored arguments
+        """
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "User Agent Information" + title_suffix
+        
+        # Get the filtered nodes based on 'with' parameter
+        filtered_nodes = cluster.get_nodes(with_)
+        
+        # Create a set of node addresses for filtering
+        filtered_node_addresses = set()
+        if with_:
+            filtered_node_addresses = {str(node) for node in filtered_nodes}
+
+        # Flatten user agents data for sheet rendering - similar to show_sindex pattern
+        flattened_data = []
+        
+        for node_id, agents in user_agents_data.items():
+            # Check if this node should be included based on 'with' filter
+            if with_ and node_id not in filtered_node_addresses:
+                continue
+                
+            if not agents or isinstance(agents, Exception):
+                continue
+                
+            # Use the node_id directly (which is the IP:port) instead of resolved name
+            node_display = node_id
+                
+            # Create a flattened entry for each user agent
+            for agent in agents:
+                flattened_data.append({
+                    'node': node_display,
+                    'client_version': agent['client_version'],
+                    'app_id': agent['app_id'],
+                    'count': agent['count']
+                })
+
+        # Prepare data for sheet - similar to show_sindex
+        sources = dict(data=flattened_data)
+
+        CliView.print_result(
+            sheet.render(templates.user_agents_sheet, title, sources)
+        )

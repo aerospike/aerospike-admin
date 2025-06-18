@@ -2558,6 +2558,15 @@ class Node(AsyncObject):
             for v in client_util.info_to_list(await self._info("sindex-list"))
             if v != ""
         ]
+        
+    
+    @async_return_exceptions
+    async def info_user_agents(self):
+        return [
+            client_util.info_to_dict(v, ":")
+            for v in client_util.info_to_list(await self._info("user-agents"))
+            if v != ""
+        ]
 
     @async_return_exceptions
     async def info_sindex_statistics(self, namespace, indexname):
