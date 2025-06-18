@@ -647,6 +647,14 @@ class Node(AsyncObject):
             return False
 
         return common.is_new_histogram_version(as_version)
+    
+    async def _set_user_agent(self, sock):
+        #TODO: get the version from the asadm version
+        version = "3.1.2"
+        user_agent = f"1,asadm-{version},unknown"
+        user_agent_b64 = base64.b64encode(user_agent.encode()).decode()
+        user_agent_info = await sock.info(f"user-agent-set:value={user_agent_b64}")
+        logger.debug("user-agent-set resp %s on the sock %s", user_agent_info, id(sock))
 
     async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
@@ -687,12 +695,15 @@ class Node(AsyncObject):
             try:
                 if await sock.authenticate(self.session_token):
                     logger.debug("sock auth successful %s", id(sock))
+                    await self._set_user_agent(sock)
                     return sock
             except ASProtocolError as e:
                 logger.debug("sock auth failed %s", id(sock))
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
+                    
+                    await self._set_user_agent(sock)
                     return sock
                 elif (
                     e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
@@ -705,6 +716,8 @@ class Node(AsyncObject):
                     await self.login()
                     if await sock.authenticate(self.session_token):
                         logger.debug("sock auth successful on second try %s", id(sock))
+                        
+                        await self._set_user_agent(sock)
                         return sock
 
                 await sock.close()
