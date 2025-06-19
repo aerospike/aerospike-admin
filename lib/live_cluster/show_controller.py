@@ -1901,7 +1901,7 @@ class ShowUserAgentsController(LiveClusterCommandController):
         for node, agents in user_agents_data.items():
             if isinstance(agents, Exception):
                 raise ShellException(
-                        f"Error processing user agent data from {node}: {e}"
+                        f"Error processing user agent data from {node}: {agents}"
                     )
                 
             processed_data[node] = []

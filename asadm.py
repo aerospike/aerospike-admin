@@ -65,7 +65,7 @@ from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.utils import common, util, conf
-from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode
+from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode, DEFAULT_ASADM_VERSION
 from lib.view import terminal, view, sheet
 from time import sleep
 import yappi  # noqa F401
@@ -951,7 +951,7 @@ def parse_commands(file):
 
 def get_version() -> tuple[str, str]:
     if __version__.startswith("$$"):
-        return "development", ""
+        return DEFAULT_ASADM_VERSION, ""
 
     sVersion = __version__.split("-")
 

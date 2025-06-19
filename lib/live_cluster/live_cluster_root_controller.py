@@ -60,7 +60,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
         ssl_context: SSL.Context | None = None,
         only_connect_seed=False,
         timeout=5,
-        asadm_version="",
+        asadm_version=constants.DEFAULT_ASADM_VERSION,
     ):
         BaseController.asadm_version = asadm_version
 
@@ -75,6 +75,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
             ssl_context,
             only_connect_seed,
             timeout=timeout,
+            asadm_version=asadm_version,
         )  # type: ignore linter does not understand AsyncObject
 
         # Create Basic Command Controller Object

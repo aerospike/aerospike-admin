@@ -33,6 +33,7 @@ from lib.live_cluster.ssh import (
 
 from lib.utils import common, constants, util, version, conf_parser
 from lib.utils.async_object import AsyncObject
+from lib.utils.constants import DEFAULT_ASADM_VERSION, USER_AGENT_FORMAT_VERSION, ASADM_APP_ID
 
 from .constants import ErrorsMsgs
 from .ctx import CDTContext
@@ -181,6 +182,7 @@ class Node(AsyncObject):
         ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
+        asadm_version=DEFAULT_ASADM_VERSION,
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -215,6 +217,7 @@ class Node(AsyncObject):
         self.session_token: bytes | None = None
         self.session_expiration = 0
         self.perform_login = True
+        self.asadm_version = asadm_version
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -650,8 +653,7 @@ class Node(AsyncObject):
     
     async def _set_user_agent(self, sock):
         #TODO: get the version from the asadm version
-        version = "3.1.2"
-        user_agent = f"1,asadm-{version},unknown"
+        user_agent = f"{USER_AGENT_FORMAT_VERSION},asadm-{self.asadm_version},{ASADM_APP_ID}"
         user_agent_b64 = base64.b64encode(user_agent.encode()).decode()
         user_agent_info = await sock.info(f"user-agent-set:value={user_agent_b64}")
         logger.debug("user-agent-set resp %s on the sock %s", user_agent_info, id(sock))
