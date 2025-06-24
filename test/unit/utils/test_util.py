@@ -146,3 +146,19 @@ class UtilTest(asynctest.TestCase):
         self.assertEqual(
             result, expected, "deep_merge_dicts did not return the expected result"
         )
+
+    def test_is_valid_role_name(self):
+        # Valid role names
+        self.assertTrue(util.is_valid_role_name("valid_role"))
+        self.assertTrue(util.is_valid_role_name("Valid-Role"))
+        self.assertTrue(util.is_valid_role_name("role$123"))
+        self.assertTrue(util.is_valid_role_name("read-write"))
+        self.assertTrue(util.is_valid_role_name("sys_admin"))
+        
+        # Invalid role names
+        self.assertFalse(util.is_valid_role_name("invalid role"))  # contains space
+        self.assertFalse(util.is_valid_role_name("invalid@role"))  # contains @
+        self.assertFalse(util.is_valid_role_name("role,with,commas"))  # contains commas
+        self.assertFalse(util.is_valid_role_name("role;with;semicolons"))  # contains semicolons
+        self.assertFalse(util.is_valid_role_name(""))  # empty string
+        self.assertFalse(util.is_valid_role_name("truncate,sys-admin,sindex-admin,read-write,read-write-udf;"))  # complex invalid case

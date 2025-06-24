@@ -563,6 +563,9 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
         role_name = line.pop(0)
         privilege = None
         allowlist = self.mods["allow"]
+        
+        if not util.is_valid_role_name(role_name):
+            return
 
         # Can't use util.get_arg_and_delete_from_mods because of conflict
         # between read modifier and read privilege
