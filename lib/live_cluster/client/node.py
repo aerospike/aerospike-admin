@@ -652,7 +652,12 @@ class Node(AsyncObject):
         return common.is_new_histogram_version(as_version)
     
     async def _set_user_agent(self, sock):
-        #TODO: get the version from the asadm version
+        """
+        Sets user agent on the Aerospike connection socket.
+        
+        Arguments:
+        sock -- the ASSocket instance to set the user agent on.
+        """
         user_agent = f"{USER_AGENT_FORMAT_VERSION},asadm-{self.asadm_version},{ASADM_APP_ID}"
         user_agent_b64 = base64.b64encode(user_agent.encode()).decode()
         user_agent_info = await sock.info(f"user-agent-set:value={user_agent_b64}")
