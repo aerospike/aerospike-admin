@@ -493,9 +493,8 @@ class CollectinfoLog(object):
         self.files = files
         self.snapshots: dict[str, _CollectinfoSnapshot] = {}
         self.data = {}
-        self.license_data_usage = {}
         collectinfo_parser.parse_collectinfo_files(
-            files, self.data, self.license_data_usage, True
+            files, self.data, True
         )
 
         if self.data:
