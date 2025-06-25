@@ -2569,9 +2569,16 @@ class Node(AsyncObject):
     
     @async_return_exceptions
     async def info_user_agents(self):
+        """
+        Get a list of user agents for this node. 
+        """
+        response = await self._info("user-agents")
+        if isinstance(response, Exception):
+            return response
+        
         return [
             client_util.info_to_dict(v, ":")
-            for v in client_util.info_to_list(await self._info("user-agents"))
+            for v in client_util.info_to_list(response)
             if v != ""
         ]
 
