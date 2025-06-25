@@ -3469,6 +3469,57 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual.message, "Failed to create sindex iname")
         self.assertEqual(actual.response, "Invalid indexdata")
 
+    async def test_info_sindex_create_with_ctx_base64(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=ctx-idx;ns=test;context=dGVzdA==;indexdata=mybin,string"
+
+        actual = await self.node.info_sindex_create(
+            "ctx-idx", "test", "mybin", "string", cdt_ctx_base64="dGVzdA=="
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_exp_base64(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=exp-idx;ns=test;exp=dGVzdA==;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "exp-idx", "test", None, "string", exp_base64="dGVzdA=="
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_supports_sindex_type_syntax(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=new-idx;ns=test;bin=mybin;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "new-idx", "test", "mybin", "string", supports_sindex_type_syntax=True
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_all_new_params(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=full-idx;indextype=mapkeys;ns=test;set=myset;context=dGVzdA==;bin=mybin;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "full-idx",
+            "test", 
+            "mybin",
+            "string",
+            index_type="mapkeys",
+            set_="myset",
+            cdt_ctx_base64="dGVzdA==",
+            supports_sindex_type_syntax=True
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
     async def test_info_sindex_delete_success(self):
         self.info_mock.return_value = "OK"
         expected_call = "sindex-delete:ns={};indexname={}".format(

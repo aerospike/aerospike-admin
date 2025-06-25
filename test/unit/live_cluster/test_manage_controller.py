@@ -1729,6 +1729,9 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             "mapkeys",
             "testset",
             CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
+            None,
+            None,
+            False,
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1773,6 +1776,149 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         await self.assertAsyncRaisesRegex(
             ShellException,
             "Blob type secondary index is not supported on server version < 7.0",
+            self.controller.execute(line),
+        )
+
+    async def test_create_successful_with_exp_base64(self):
+        line = "string exp-index ns test exp_base64 dGVzdA==".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "exp-index",
+            "test",
+            "",
+            "string",
+            None,
+            None,
+            None,
+            None,
+            "dGVzdA==",
+            True,
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm exp-index was created successfully."
+        )
+
+    async def test_create_successful_with_ctx_base64(self):
+        line = "string ctx-index ns test bin mybin ctx_base64 dGVzdA==".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "ctx-index",
+            "test",
+            "mybin",
+            "string",
+            None,
+            None,
+            None,
+            "dGVzdA==",
+            None,
+            False,
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm ctx-index was created successfully."
+        )
+
+    async def test_exp_base64_not_supported(self):
+        line = "string exp-index ns test exp_base64 dGVzdA==".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.0.0.0"}
+
+        result = await self.controller.execute(line)
+
+        self.assertFalse(result)
+        self.logger_mock.error.assert_called_once_with(
+            "One or more servers does not support 'expression' modifier."
+        )
+
+    async def test_exp_base64_invalid_base64(self):
+        line = "string exp-index ns test exp_base64 invalid_base64!".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Unable to parse expression 'invalid_base64!'",
+            self.controller.execute(line),
+        )
+
+    async def test_ctx_and_ctx_base64_conflict(self):
+        line = "string idx ns test bin mybin ctx list_index(0) ctx_base64 dGVzdA==".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Cannot use both 'ctx' and 'ctx_base64' modifiers together",
+            self.controller.execute(line),
+        )
+
+    async def test_ctx_and_exp_base64_conflict(self):
+        line = "string idx ns test bin mybin ctx list_index(0) exp_base64 dGVzdA==".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Cannot use both 'ctx' and 'exp_base64' modifiers together",
+            self.controller.execute(line),
+        )
+
+    async def test_ctx_base64_and_exp_base64_conflict(self):
+        line = "string idx ns test bin mybin ctx_base64 dGVzdA== exp_base64 ZXhwcmVzc2lvbg==".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Cannot use both 'ctx' and 'exp_base64' modifiers together",
+            self.controller.execute(line),
+        )
+
+    async def test_bin_and_exp_base64_conflict(self):
+        line = "string idx ns test bin mybin exp_base64 dGVzdA==".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Cannot use both 'bin' and 'exp_base64' modifiers together",
+            self.controller.execute(line),
+        )
+
+    async def test_missing_bin_and_exp_base64(self):
+        line = "string idx ns test".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Either 'bin' or 'exp_base64' modifier is required",
+            self.controller.execute(line),
+        )
+
+    async def test_ctx_base64_not_supported(self):
+        line = "string idx ns test bin mybin ctx_base64 dGVzdA==".split()
+        self.meta_mock.get_builds.return_value = {"principal": "6.0.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "One or more servers does not support 'ctx_base64'",
+            self.controller.execute(line),
+        )
+
+    async def test_ctx_base64_invalid_base64(self):
+        line = "string idx ns test bin mybin ctx_base64 invalid_base64!".split()
+        self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
+
+        await self.assertAsyncRaisesRegex(
+            ShellException,
+            "Unable to parse ctx_base64 'invalid_base64!'",
             self.controller.execute(line),
         )
 
