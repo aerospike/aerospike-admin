@@ -54,7 +54,7 @@ class Cluster(AsyncObject):
         ssl_context: SSL.Context | None = None,
         only_connect_seed=False,
         timeout=1,
-        asadm_version=constants.DEFAULT_ASADM_VERSION,
+        user_agent=None,
     ):
         """
         Want to be able to support multiple nodes on one box (for testing)
@@ -70,6 +70,7 @@ class Cluster(AsyncObject):
 
         self.use_services_alumni = use_services_alumni
         self.use_services_alt = use_services_alt
+        self.user_agent = user_agent
 
         # self.nodes is a dict from Node ID -> Node objects
         self.nodes: dict[str, Node] = {}
@@ -85,7 +86,7 @@ class Cluster(AsyncObject):
         self._seed_nodes: set[Addr_Port_TLSName] = set(seed_nodes)
         self._live_nodes: set[Addr_Port_TLSName] = set()
         self.ssl_context = ssl_context
-        self.asadm_version = asadm_version
+        self.user_agent = user_agent
 
         # crawl the cluster search for nodes in addition to the seed nodes.
         self.last_cluster_refresh_time = 0
@@ -589,7 +590,7 @@ class Cluster(AsyncObject):
                 consider_alumni=self.use_services_alumni,
                 use_services_alt=self.use_services_alt,
                 ssl_context=self.ssl_context,
-                asadm_version=self.asadm_version,
+                user_agent=self.user_agent,
             )  # type: ignore
 
             if not new_node:

@@ -65,7 +65,7 @@ from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.utils import common, util, conf
-from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode, DEFAULT_ASADM_VERSION
+from lib.utils.constants import ADMIN_HOME, AdminMode, AuthMode, DEFAULT_ASADM_VERSION, USER_AGENT_FORMAT_VERSION, ASADM_APP_ID
 from lib.view import terminal, view, sheet
 from time import sleep
 import yappi  # noqa F401
@@ -165,6 +165,10 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         else:
                             password = sys.stdin.readline().strip()
 
+                # Construct user agent string using username if available, otherwise "unknown"
+                user_agent_id = user if user is not None else ASADM_APP_ID
+                user_agent = f"{USER_AGENT_FORMAT_VERSION},asadm-{admin_version},{user_agent_id}"
+
                 self.ctrl = await LiveClusterRootController(
                     seeds,
                     user,
@@ -175,7 +179,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     ssl_context,
                     only_connect_seed,
                     timeout=timeout,
-                    asadm_version=admin_version,
+                    user_agent=user_agent,
                 )
 
                 if not self.ctrl.cluster.get_live_nodes():
