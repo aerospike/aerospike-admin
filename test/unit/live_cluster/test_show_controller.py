@@ -23,6 +23,7 @@ from lib.live_cluster.get_controller import (
     GetJobsController,
     GetStatisticsController,
     GetAclController,
+    GetUserAgentsController,
 )
 
 from lib.live_cluster.show_controller import (
@@ -36,6 +37,7 @@ from lib.live_cluster.show_controller import (
     ShowStatisticsController,
     ShowStatisticsXDRController,
     ShowStopWritesController,
+    ShowUserAgentsController,
     ShowUsersController,
     ShowUsersStatsController,
 )
@@ -1317,3 +1319,73 @@ class ShowStopWritesControllerTest(asynctest.TestCase):
         self.view_mock.show_stop_writes.assert_called_with(
             summary_resp, self.cluster_mock, **self.controller.mods
         )
+
+
+class ShowUserAgentsControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.controller = ShowUserAgentsController()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(GetUserAgentsController)
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.controller.mods = {}
+        self.controller.nodes = "all"  # Initialize nodes
+        self.addCleanup(patch.stopall)
+
+    async def test_do_default_success(self):
+        """Test successful user agents display"""
+        line = []
+        # Use proper format: "format-version,client-version,app-id"
+        user_agents_data = {
+            "node1": [
+                {"user-agent": "MS4wLDIuMCx0ZXN0LWFwcA==", "count": "5"},  # base64 for "1.0,2.0,test-app"
+                {"user-agent": "MS4wLDMuMCxhc2FkbQ==", "count": "3"}   # base64 for "1.0,3.0,asadm"
+            ]
+        }
+        self.getter_mock.get_user_agents.return_value = user_agents_data
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_user_agents.assert_called_with(nodes="all")
+        expected_processed_data = {
+            "node1": [
+                {"client_version": "2.0", "app_id": "test-app", "count": 5},
+                {"client_version": "3.0", "app_id": "asadm", "count": 3}
+            ]
+        }
+        self.view_mock.show_user_agents.assert_called_with(
+            self.cluster_mock, expected_processed_data, **self.controller.mods
+        )
+
+    async def test_do_default_with_modifier(self):
+        """Test user agents display with 'with' modifier"""
+        line = []
+        self.controller.mods = {"with": ["node1"]}
+        self.controller.nodes = ["node1"]  # Set nodes based on with modifier
+        user_agents_data = {"node1": [{"user-agent": "MS4wLDIuMCx0ZXN0LWFwcA==", "count": "5"}]}
+        self.getter_mock.get_user_agents.return_value = user_agents_data
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_user_agents.assert_called_with(nodes=["node1"])
+        expected_processed_data = {
+            "node1": [
+                {"client_version": "2.0", "app_id": "test-app", "count": 5}
+            ]
+        }
+        self.view_mock.show_user_agents.assert_called_with(
+            self.cluster_mock, expected_processed_data, **self.controller.mods
+        )
+
+    async def test_do_default_node_exception(self):
+        """Test handling node exceptions"""
+        line = []
+        user_agents_data = {"node1": Exception("Node error")}
+        self.getter_mock.get_user_agents.return_value = user_agents_data
+
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute(line)
+        
+        self.assertIn("Error processing user agent data from node1", str(cm.exception))
+        self.getter_mock.get_user_agents.assert_called_with(nodes="all")

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+from base64 import b64decode
 from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
     GetClusterMetadataController,
@@ -66,6 +67,7 @@ class ShowController(CollectinfoCommandController):
             "roster": ShowRosterController,
             "roles": ShowRolesController,
             "users": ShowUsersController,
+            "user-agents": ShowUserAgentsController,
             "udfs": ShowUdfsController,
             "stop-writes": ShowStopWritesController,
             "sindex": ShowSIndexController,
@@ -1783,3 +1785,68 @@ class ShowStopWritesController(CollectinfoCommandController):
                 cinfo_log,
                 **self.mods,
             )
+
+
+@CommandHelp("Display user agent information")
+class ShowUserAgentsController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    async def _do_default(self, line):
+        """Display user agents information from collectinfo"""
+        from .get_controller import GetUserAgentsController
+        
+        getter = GetUserAgentsController(self.log_handler)
+        user_agents_data = getter.get_user_agents()
+        
+        # Get the latest timestamp
+        if not user_agents_data:
+            return
+            
+        latest_timestamp = max(user_agents_data.keys())
+        data = user_agents_data[latest_timestamp]
+        
+        # Process the data (base64 decode, etc.) similar to live cluster
+        processed_data = {}
+        for node, agents in data.items():
+            if isinstance(agents, Exception):
+                processed_data[node] = agents
+                continue
+                
+            processed_data[node] = []
+            if not agents:
+                continue
+                
+            for agent in agents:
+                try:
+                    # Get user-agent and count from the agent dict
+                    user_agent = agent['user-agent']
+                    count = agent['count']
+                    
+                    # Decode base64 user agent
+                    decoded_ua = b64decode(user_agent).decode('utf-8')
+                    # Split by comma to get format-version, client-version, and app-id
+                    ua_parts = decoded_ua.split(',')
+                    
+                    if len(ua_parts) < 3:
+                        # If we don't have enough parts, mark as unknown
+                        version = "unknown"
+                        app_id = "unknown"
+                    else:
+                        # First part is format-version which we ignore
+                        # Second part is client-version
+                        version = ua_parts[1].strip()
+                        # Last part is app-id
+                        app_id = ua_parts[-1].strip()
+                    
+                    processed_data[node].append({
+                        'client_version': version,
+                        'app_id': app_id,
+                        'count': int(count)
+                    })
+                except Exception:
+                    # Skip invalid entries
+                    continue
+        
+        cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=latest_timestamp)
+        return self.view.show_user_agents(cinfo_log, processed_data, **self.mods)

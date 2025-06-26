@@ -44,6 +44,7 @@ from lib.live_cluster.get_controller import (
     GetLatenciesController,
     GetPmapController,
     GetJobsController,
+    GetUserAgentsController,
 )
 
 from .live_cluster_command_controller import LiveClusterCommandController
@@ -399,6 +400,23 @@ class CollectinfoController(LiveClusterCommandController):
         users_map = util.flip_keys(users_map)
         return users_map
 
+    async def _get_as_user_agents(self) -> NodeDict[list[dict[str, str]]]:
+        """Collect user agents data from all nodes"""
+        user_agents_getter = GetUserAgentsController(self.cluster)
+        user_agents_data = await user_agents_getter.get_user_agents(nodes=self.nodes)
+        user_agents_map = {}
+
+        for node in user_agents_data:
+            if node not in user_agents_map:
+                user_agents_map[node] = []
+
+            if not user_agents_data[node] or isinstance(user_agents_data[node], Exception):
+                continue
+
+            user_agents_map[node] = user_agents_data[node]
+
+        return user_agents_map
+
     async def _get_collectinfo_data_json(
         self,
         enable_ssh: bool,
@@ -419,6 +437,7 @@ class CollectinfoController(LiveClusterCommandController):
             histogram_map,
             latency_map,
             acl_map,
+            user_agents_map,
             sys_map,
         ) = await asyncio.gather(
             self._get_as_cluster_name(),
@@ -427,6 +446,7 @@ class CollectinfoController(LiveClusterCommandController):
             self._get_as_histograms(),
             self._get_as_latency(),
             self._get_as_access_control_list(),
+            self._get_as_user_agents(),
             self.cluster.info_system_statistics(
                 enable_ssh=enable_ssh,
                 ssh_user=ssh_user,
@@ -469,6 +489,9 @@ class CollectinfoController(LiveClusterCommandController):
             # for the principal
             if node in acl_map:
                 dump_map[node]["as_stat"]["acl"] = acl_map[node]
+
+            if node in user_agents_map:
+                dump_map[node]["as_stat"]["user_agents"] = user_agents_map[node]
 
         snp_map = {}
         snp_map[cluster_name] = dump_map

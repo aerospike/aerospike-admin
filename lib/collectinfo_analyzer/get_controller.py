@@ -369,3 +369,15 @@ class GetClusterMetadataController:
     def get_builds(self) -> TimestampDict[NodeDict[str]]:
         builds = self.log_handler.info_meta_data(stanza="asd_build")
         return util.filter_exceptions(builds)
+
+
+class GetUserAgentsController:
+    """Controller for retrieving user agents data from collectinfo"""
+
+    def __init__(self, log_analyzer: CollectinfoLogHandler):
+        self.log_handler = log_analyzer
+
+    def get_user_agents(self) -> TimestampDict[NodeDict[list[dict[str, str]]]]:
+        """Get user agents data from collectinfo"""
+        user_agents = self.log_handler.info_user_agents()
+        return util.filter_exceptions(user_agents)

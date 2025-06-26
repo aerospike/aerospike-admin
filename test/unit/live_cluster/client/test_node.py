@@ -4051,6 +4051,39 @@ class NodeTest(asynctest.TestCase):
                 tc.assocket_func, tc.args, self.node.ip
             )
 
+    async def test_info_user_agents_success(self):
+        """Test successful user agents retrieval"""
+        # Mock response with base64 encoded user agents
+        mock_response = "user-agent=dGVzdA==:count=5;user-agent=YXNhZG0=:count=3"
+        self.info_mock.return_value = mock_response
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["user-agent"], "dGVzdA==")
+        self.assertEqual(result[0]["count"], "5")
+        self.assertEqual(result[1]["user-agent"], "YXNhZG0=")
+        self.assertEqual(result[1]["count"], "3")
+
+    async def test_info_user_agents_empty(self):
+        """Test when no user agents are present"""
+        self.info_mock.return_value = ""
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertEqual(result, [])
+
+    async def test_info_user_agents_error(self):
+        """Test error handling"""
+        self.info_mock.return_value = ASInfoResponseError("error", "Test error")
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertIsInstance(result, ASInfoResponseError)
+
 
 class SyscmdTest(unittest.TestCase):
     def setUp(self) -> None:

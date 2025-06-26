@@ -181,6 +181,7 @@ class Node(AsyncObject):
         ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
+        user_agent=None,
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -215,6 +216,7 @@ class Node(AsyncObject):
         self.session_token: bytes | None = None
         self.session_expiration = 0
         self.perform_login = True
+        self.user_agent = user_agent
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -473,6 +475,8 @@ class Node(AsyncObject):
             self._service_IP_port = self.create_key(self.ip, self.port)
             self._key = hash(self._service_IP_port)
             self.new_histogram_version = await self._is_new_histogram_version()
+            # Set the user agent for this node
+            await self._set_user_agent()
             self.alive = True
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
@@ -647,6 +651,14 @@ class Node(AsyncObject):
             return False
 
         return common.is_new_histogram_version(as_version)
+    
+    async def _set_user_agent(self):
+        """
+        Sets user agent on the Aerospike connection socket.
+        """
+        if self.user_agent is not None:
+            user_agent_b64 = base64.b64encode(self.user_agent.encode()).decode()
+            await self._info(f"user-agent-set:value={user_agent_b64}")
 
     async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
@@ -693,6 +705,7 @@ class Node(AsyncObject):
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
+                    
                     return sock
                 elif (
                     e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
@@ -705,6 +718,7 @@ class Node(AsyncObject):
                     await self.login()
                     if await sock.authenticate(self.session_token):
                         logger.debug("sock auth successful on second try %s", id(sock))
+                        
                         return sock
 
                 await sock.close()
@@ -2543,6 +2557,22 @@ class Node(AsyncObject):
         return [
             client_util.info_to_dict(v, ":")
             for v in client_util.info_to_list(await self._info("sindex-list"))
+            if v != ""
+        ]
+        
+    
+    @async_return_exceptions
+    async def info_user_agents(self):
+        """
+        Get a list of user agents for this node. 
+        """
+        response = await self._info("user-agents")
+        if isinstance(response, Exception):
+            return response
+        
+        return [
+            client_util.info_to_dict(v, ":")
+            for v in client_util.info_to_list(response)
             if v != ""
         ]
 
