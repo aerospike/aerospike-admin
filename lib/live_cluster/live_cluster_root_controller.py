@@ -60,6 +60,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
         ssl_context: SSL.Context | None = None,
         only_connect_seed=False,
         timeout=5,
+        asadm_version="",
         user_agent="1,asadm-development,unknown",
     ):
         BaseController.asadm_version = asadm_version

@@ -179,6 +179,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     ssl_context,
                     only_connect_seed,
                     timeout=timeout,
+                    asadm_version=admin_version,
                     user_agent=user_agent,
                 )
 
