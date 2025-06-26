@@ -2481,29 +2481,30 @@ class CliView(object):
         """Display user agent information in a tabular format.
         
         Args:
-            cluster: Cluster object
+            cluster: Cluster object (or cinfo_log in collectinfo mode)
             user_agents_data: Dictionary mapping node IDs to lists of user agent info
-            with_: Optional node filter
+            with_: Optional node filter (only applies in live_cluster mode)
             timestamp: Optional timestamp string
             **ignore: Ignored arguments
         """
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "User Agent Information" + title_suffix
-        
-        # Get the filtered nodes based on 'with' parameter
-        filtered_nodes = cluster.get_nodes(with_)
-        
-        # Create a set of node addresses for filtering
-        filtered_node_addresses = set()
-        if with_:
-            filtered_node_addresses = {str(node) for node in filtered_nodes}
 
         # Flatten user agents data for sheet rendering - similar to show_sindex pattern
         flattened_data = []
         
+        # Get filtered node names if with_ is specified and cluster supports it
+        filtered_node_names = None
+        if with_ and hasattr(cluster, 'get_node_names'):
+            try:
+                filtered_node_names = cluster.get_node_names(with_)
+            except Exception:
+                # If node filtering fails, continue without filtering
+                filtered_node_names = None
+
         for node_id, agents in user_agents_data.items():
-            # Check if this node should be included based on 'with' filter
-            if with_ and node_id not in filtered_node_addresses:
+            # Apply node filtering if available
+            if filtered_node_names is not None and node_id not in filtered_node_names:
                 continue
                 
             if not agents or isinstance(agents, Exception):
