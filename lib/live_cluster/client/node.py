@@ -476,6 +476,8 @@ class Node(AsyncObject):
             self._service_IP_port = self.create_key(self.ip, self.port)
             self._key = hash(self._service_IP_port)
             self.new_histogram_version = await self._is_new_histogram_version()
+            # Set the user agent for this node
+            await self._set_user_agent()
             self.alive = True
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
@@ -651,7 +653,7 @@ class Node(AsyncObject):
 
         return common.is_new_histogram_version(as_version)
     
-    async def _set_user_agent(self, sock):
+    async def _set_user_agent(self):
         """
         Sets user agent on the Aerospike connection socket.
         
@@ -660,8 +662,7 @@ class Node(AsyncObject):
         """
         user_agent = f"{USER_AGENT_FORMAT_VERSION},asadm-{self.asadm_version},{ASADM_APP_ID}"
         user_agent_b64 = base64.b64encode(user_agent.encode()).decode()
-        user_agent_info = await sock.info(f"user-agent-set:value={user_agent_b64}")
-        logger.debug("user-agent-set resp %s on the sock %s", user_agent_info, id(sock))
+        await self._info(f"user-agent-set:value={user_agent_b64}")
 
     async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
@@ -702,7 +703,6 @@ class Node(AsyncObject):
             try:
                 if await sock.authenticate(self.session_token):
                     logger.debug("sock auth successful %s", id(sock))
-                    await self._set_user_agent(sock)
                     return sock
             except ASProtocolError as e:
                 logger.debug("sock auth failed %s", id(sock))
@@ -710,7 +710,6 @@ class Node(AsyncObject):
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
                     
-                    await self._set_user_agent(sock)
                     return sock
                 elif (
                     e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
@@ -724,7 +723,6 @@ class Node(AsyncObject):
                     if await sock.authenticate(self.session_token):
                         logger.debug("sock auth successful on second try %s", id(sock))
                         
-                        await self._set_user_agent(sock)
                         return sock
 
                 await sock.close()
