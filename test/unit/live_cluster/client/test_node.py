@@ -682,6 +682,60 @@ class NodeTest(asynctest.TestCase):
         self.node.enable_tls = False
         self.node.consider_alumni = False
 
+    async def test_info_peers_admin_node_returns_empty_list(self):
+        """
+        Ensure that admin nodes always return empty lists for peer-related methods
+        """
+        # Mark node as admin node
+        self.node.is_admin_node = True
+        
+        # Test info_peers returns empty list for admin node
+        peers = await self.node.info_peers()
+        self.assertEqual(peers, [], "Admin node info_peers should return empty list")
+        
+        # Test info_peers_alumni returns empty list for admin node
+        alumni = await self.node.info_peers_alumni()
+        self.assertEqual(alumni, [], "Admin node info_peers_alumni should return empty list")
+        
+        # Test info_peers_alt returns empty list for admin node
+        alt_peers = await self.node.info_peers_alt()
+        self.assertEqual(alt_peers, [], "Admin node info_peers_alt should return empty list")
+        
+        # Test info_peers_list returns empty list for admin node
+        peers_list = await self.node.info_peers_list()
+        self.assertEqual(peers_list, [], "Admin node info_peers_list should return empty list")
+        
+        # Verify no info calls were made (peer discovery disabled)
+        self.info_mock.assert_not_called()
+
+    def test_is_admin_port_enabled(self):
+        """
+        Test the _is_admin_port_enabled method with various response types
+        """
+        # Test with string "true"
+        self.assertTrue(self.node._is_admin_port_enabled("true"))
+        
+        # Test with string "false"
+        self.assertFalse(self.node._is_admin_port_enabled("false"))
+        
+        # Test with string "TRUE" (case insensitive)
+        self.assertTrue(self.node._is_admin_port_enabled("TRUE"))
+        
+        # Test with string "FALSE" (case insensitive)
+        self.assertFalse(self.node._is_admin_port_enabled("FALSE"))
+        
+        # Test with empty string (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled(""))
+        
+        # Test with random string (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled("random"))
+        
+        # Test with numeric string (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled("123"))
+        
+        # Test with error string (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled("error"))
+
     async def test_info_service_list(self):
         self.info_mock.return_value = "172.17.0.1:3000,172.17.1.1:3000"
         expected = [("172.17.0.1", 3000, None), ("172.17.1.1", 3000, None)]

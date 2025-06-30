@@ -618,3 +618,63 @@ class ClusterTest(asynctest.TestCase):
             expected,
             "get_seed_nodes did not return the expected result",
         )
+
+    async def test_cluster_with_admin_node(self):
+        """
+        Test that clusters properly handle admin nodes
+        """
+        # Create a mock admin node using the existing infrastructure
+        # but override the mock to simulate admin port enabled
+        original_side_effect = Node._info_cinfo.side_effect
+        
+        async def admin_info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            ip = args[1] if len(args) > 1 else "127.0.0.1"
+            
+            # First call - admin port detection (enabled for this test)
+            if cmd == ["node", "features", "admin-port"]:
+                return {
+                    "node": "ADMIN000000000",
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "admin-port": "true",  # This makes it an admin node
+                }
+            # Second call - admin service info for admin nodes
+            elif cmd == ["service-clear-admin"]:
+                return {
+                    "service-clear-admin": "127.0.0.1:8081",
+                }
+            else:
+                # For any other calls, fall back to original mock behavior
+                if original_side_effect:
+                    return await original_side_effect(*args, **kwargs)
+                else:
+                    return ""
+
+        Node._info_cinfo.side_effect = admin_info_side_effect
+    
+        # Create admin node
+        admin_node = await Node("127.0.0.1", port=8081)
+        
+        # Verify admin node properties
+        self.assertTrue(admin_node.is_admin_node, "Node should be marked as admin node")
+        self.assertEqual(admin_node.node_id, "ADMIN000000000", "Admin node ID should be set")
+        self.assertEqual(admin_node.peers, [], "Admin node should have empty peers list")
+        
+        # Create a cluster and add the admin node
+        cl = await Cluster([("127.0.0.1", 8081, None)])
+        cl.update_node(admin_node)
+        
+        # Verify admin node is in cluster but has no peers
+        nodes = cl.get_nodes("all")
+        admin_nodes = [n for n in nodes if getattr(n, 'is_admin_node', False)]
+        self.assertEqual(len(admin_nodes), 1, "Should have exactly one admin node")
+        self.assertEqual(admin_nodes[0].peers, [], "Admin node should have empty peers")
+        
+        # Verify admin node peer methods return empty lists
+        self.assertEqual(await admin_nodes[0].info_peers(), [], "Admin node info_peers should return empty list")
+        self.assertEqual(await admin_nodes[0].info_peers_alumni(), [], "Admin node info_peers_alumni should return empty list")
+        self.assertEqual(await admin_nodes[0].info_peers_alt(), [], "Admin node info_peers_alt should return empty list")
+        self.assertEqual(await admin_nodes[0].info_peers_list(), [], "Admin node info_peers_list should return empty list")
+        
+        # Restore original mock behavior
+        Node._info_cinfo.side_effect = original_side_effect
