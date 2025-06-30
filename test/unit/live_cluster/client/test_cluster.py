@@ -52,6 +52,30 @@ class ClusterTest(asynctest.TestCase):
             ip_last_digit = ip.split(".")[3]
             cmd = args[0]
 
+            # First call - admin port detection
+            if cmd == ["node", "features", "admin-port"]:
+                return {
+                    "node": return_value,
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "admin-port": "false",  # Admin port disabled by default
+                }
+
+            # Second call - service and peers info for regular nodes
+            if cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": (
+                        str(ip)
+                        + ":"
+                        + str(port)
+                        + ",172.17.0.1:"
+                        + str(port)
+                        + ",172.17.1.1:"
+                        + str(port)
+                    ),
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                }
+
+            # Legacy single command support for backward compatibility
             if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
                 return {
                     "node": return_value,
