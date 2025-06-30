@@ -1844,8 +1844,8 @@ class ShowUserAgentsController(CollectinfoCommandController):
                         'app_id': app_id,
                         'count': int(count)
                     })
-                except Exception:
-                    # Skip invalid entries
+                except Exception as e:
+                    logger.error(f"Error processing user agent data: {e}")
                     continue
         
         cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=latest_timestamp)

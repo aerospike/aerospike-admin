@@ -61,7 +61,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
         only_connect_seed=False,
         timeout=5,
         asadm_version="",
-        user_agent="1,asadm-development,unknown",
+        user_agent=f"{constants.USER_AGENT_FORMAT_VERSION},asadm_{constants.DEFAULT_ASADM_VERSION},{constants.ASADM_APP_ID}",
     ):
         BaseController.asadm_version = asadm_version
 
