@@ -942,6 +942,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(await self._info(self._get_info_peers_call()))
 
     def _get_info_peers_alumni_call(self):
@@ -960,6 +964,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alumni_call())
         )
@@ -978,6 +986,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alt_call())
         )
