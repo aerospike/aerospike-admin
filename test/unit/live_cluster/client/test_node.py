@@ -91,12 +91,18 @@ class NodeInitTest(asynctest.TestCase):
 
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            # First call - admin port detection
+            if cmd == ["node", "features", "admin-port"]:
                 return {
                     "node": "A00000000000000",
+                    "features": "features",
+                    "admin-port": "false",  # Admin port disabled
+                }
+            # Second call - service and peers info for regular nodes
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
-                    "features": "features",
                 }
             elif cmd == "node":
                 return "A00000000000000"
@@ -138,12 +144,18 @@ class NodeInitTest(asynctest.TestCase):
 
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            # First call - admin port detection
+            if cmd == ["node", "features", "admin-port"]:
                 return {
                     "node": "A00000000000000",
+                    "features": "features",
+                    "admin-port": "false",  # Admin port disabled
+                }
+            # Second call - service and peers info for regular nodes
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
-                    "features": "features",
                 }
             elif cmd == "node":
                 return "A00000000000000"
@@ -204,24 +216,29 @@ class NodeInitTest(asynctest.TestCase):
         as_socket_mock_used_for_login.get_session_info.return_value = "token", 59
 
         def side_effect_info(*args, **kwargs):
-            if args[0] == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            # First call - admin port detection
+            if args[0] == ["node", "features", "admin-port"]:
                 return {
                     "node": "A0",
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "admin-port": "false",  # Admin port disabled
+                }
+            # Second call - service and peers info for regular nodes
+            elif args[0] == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "1.1.1.1:3000;172.17.0.1:3000;172.17.1.1:3000",
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
                 }
 
         as_socket_mock_used_for_login.info.side_effect = side_effect_info
 
         await Node("1.1.1.1", user="user")
         as_socket_mock_used_for_login.login.assert_called_once()
-        # Login and the first info call used different sockets
+        # Login and the node connection info calls
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
-                call(
-                    ["node", "service-clear-std", "features", "peers-clear-std"],
-                )
+                call(["node", "features", "admin-port"]),
+                call(["service-clear-std", "peers-clear-std"]),
             ],
         )
 
