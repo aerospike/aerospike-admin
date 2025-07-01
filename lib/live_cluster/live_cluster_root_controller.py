@@ -61,6 +61,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
         only_connect_seed=False,
         timeout=5,
         asadm_version="",
+        user_agent=f"{constants.USER_AGENT_FORMAT_VERSION},asadm_{constants.DEFAULT_ASADM_VERSION},{constants.ASADM_APP_ID}",
     ):
         BaseController.asadm_version = asadm_version
 
@@ -75,6 +76,7 @@ class LiveClusterRootController(BaseController, AsyncObject):
             ssl_context,
             only_connect_seed,
             timeout=timeout,
+            user_agent=user_agent,
         )  # type: ignore linter does not understand AsyncObject
 
         # Create Basic Command Controller Object

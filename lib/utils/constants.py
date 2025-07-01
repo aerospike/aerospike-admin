@@ -174,3 +174,8 @@ SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS = [
     ("4.5.0.6", "4.5.1.0"),
     ("4.5.1.5", None),
 ]
+
+
+DEFAULT_ASADM_VERSION = "development"
+ASADM_APP_ID = "unknown"
+USER_AGENT_FORMAT_VERSION = "1"

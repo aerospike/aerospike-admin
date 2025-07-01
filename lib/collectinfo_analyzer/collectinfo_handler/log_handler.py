@@ -226,6 +226,9 @@ class CollectinfoLogHandler(object):
     def info_pmap(self):
         return self._fetch_from_cinfo_log(type="pmap")
 
+    def info_user_agents(self):
+        return self._fetch_from_cinfo_log(type="user_agents")
+
     def info_namespaces(self):
         return self._fetch_from_cinfo_log(type="config", stanza="namespace_list")
 

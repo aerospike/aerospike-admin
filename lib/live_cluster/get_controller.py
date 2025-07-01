@@ -1098,6 +1098,14 @@ class GetSIndexController:
 
     async def get_sindexs(self, nodes="all"):
         return await self.cluster.info_sindex(nodes=nodes)
+    
+
+class GetUserAgentsController:
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    async def get_user_agents(self, nodes="all"):
+        return await self.cluster.info_user_agents(nodes=nodes)
 
 
 class GetJobsController:
