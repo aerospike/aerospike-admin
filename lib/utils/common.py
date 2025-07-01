@@ -1088,7 +1088,13 @@ def _manually_compute_license_data_size(
             ns_record_overhead += host_master_objects * host_record_overhead
             ns_master_objects += host_master_objects
 
-        ns_unique_data = round((ns_unique_data / ns_repl_factor) - ns_record_overhead)
+        if version.LooseVersion(constants.SERVER_NO_BYTE_OVERHEAD_FIRST_VERSION) <= version.LooseVersion(host_build_version):
+            # For 8.0 and above - don't subtract overhead
+            ns_unique_data = round((ns_unique_data / ns_repl_factor))
+        else:
+             # For versions below 8.0 - subtract overhead
+            ns_unique_data = round((ns_unique_data / ns_repl_factor) - ns_record_overhead)
+        
         summary_dict["NAMESPACES"][ns]["license_data"]["latest"] = int(
             round(ns_unique_data)
         )
