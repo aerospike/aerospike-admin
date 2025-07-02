@@ -53,11 +53,11 @@ class ClusterTest(asynctest.TestCase):
             cmd = args[0]
 
             # First call - admin port detection
-            if cmd == ["node", "features", "admin-port"]:
+            if cmd == ["node", "features", "connection"]:
                 return {
                     "node": return_value,
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "admin-port": "false",  # Admin port disabled by default
+                    "connection": "admin=false",  # Admin port disabled by default
                 }
 
             # Second call - service and peers info for regular nodes
@@ -632,11 +632,11 @@ class ClusterTest(asynctest.TestCase):
             ip = args[1] if len(args) > 1 else "127.0.0.1"
             
             # First call - admin port detection (enabled for this test)
-            if cmd == ["node", "features", "admin-port"]:
+            if cmd == ["node", "features", "connection"]:
                 return {
                     "node": "ADMIN000000000",
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "admin-port": "true",  # This makes it an admin node
+                    "connection": "admin=true;",  # This makes it an admin node
                 }
             # Second call - admin service info for admin nodes
             elif cmd == ["service-clear-admin"]:

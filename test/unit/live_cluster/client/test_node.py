@@ -92,11 +92,11 @@ class NodeInitTest(asynctest.TestCase):
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
             # First call - admin port detection
-            if cmd == ["node", "features", "admin-port"]:
+            if cmd == ["node", "features", "connection"]:
                 return {
                     "node": "A00000000000000",
                     "features": "features",
-                    "admin-port": "false",  # Admin port disabled
+                    "connection": "admin=false;",  # Admin port disabled
                 }
             # Second call - service and peers info for regular nodes
             elif cmd == ["service-clear-std", "peers-clear-std"]:
@@ -145,11 +145,11 @@ class NodeInitTest(asynctest.TestCase):
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
             # First call - admin port detection
-            if cmd == ["node", "features", "admin-port"]:
+            if cmd == ["node", "features", "connection"]:
                 return {
                     "node": "A00000000000000",
                     "features": "features",
-                    "admin-port": "false",  # Admin port disabled
+                    "connection": "admin=false;",  # Admin port disabled
                 }
             # Second call - service and peers info for regular nodes
             elif cmd == ["service-clear-std", "peers-clear-std"]:
@@ -217,11 +217,11 @@ class NodeInitTest(asynctest.TestCase):
 
         def side_effect_info(*args, **kwargs):
             # First call - admin port detection
-            if args[0] == ["node", "features", "admin-port"]:
+            if args[0] == ["node", "features", "connection"]:
                 return {
                     "node": "A0",
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "admin-port": "false",  # Admin port disabled
+                    "connection": "admin=false;",  # Admin port disabled
                 }
             # Second call - service and peers info for regular nodes
             elif args[0] == ["service-clear-std", "peers-clear-std"]:
@@ -237,7 +237,7 @@ class NodeInitTest(asynctest.TestCase):
         # Login and the node connection info calls
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
-                call(["node", "features", "admin-port"]),
+                call(["node", "features", "connection"]),
                 call(["service-clear-std", "peers-clear-std"]),
             ],
         )
@@ -712,29 +712,35 @@ class NodeTest(asynctest.TestCase):
         """
         Test the _is_admin_port_enabled method with various response types
         """
-        # Test with string "true"
-        self.assertTrue(self.node._is_admin_port_enabled("true"))
+        # Test with admin=true in info response format
+        self.assertTrue(self.node._is_admin_port_enabled("admin=true"))
         
-        # Test with string "false"
-        self.assertFalse(self.node._is_admin_port_enabled("false"))
+        # Test with admin=false in info response format
+        self.assertFalse(self.node._is_admin_port_enabled("admin=false"))
         
-        # Test with string "TRUE" (case insensitive)
-        self.assertTrue(self.node._is_admin_port_enabled("TRUE"))
+        # Test with admin=TRUE (case sensitive, should work)
+        self.assertFalse(self.node._is_admin_port_enabled("admin=TRUE"))
         
-        # Test with string "FALSE" (case insensitive)
-        self.assertFalse(self.node._is_admin_port_enabled("FALSE"))
+        # Test with no admin key in response (should default to false)
+        self.assertFalse(self.node._is_admin_port_enabled("other=value"))
         
         # Test with empty string (should be False)
         self.assertFalse(self.node._is_admin_port_enabled(""))
         
-        # Test with random string (should be False)
-        self.assertFalse(self.node._is_admin_port_enabled("random"))
+        # Test with None (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled(None))
         
-        # Test with numeric string (should be False)
-        self.assertFalse(self.node._is_admin_port_enabled("123"))
+        # Test with Exception (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled(Exception("test error")))
         
-        # Test with error string (should be False)
-        self.assertFalse(self.node._is_admin_port_enabled("error"))
+        # Test with malformed response (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled("malformed"))
+        
+        # Test with multiple key-value pairs including admin=true
+        self.assertTrue(self.node._is_admin_port_enabled("version=1.0;admin=true;port=3000"))
+        
+        # Test with multiple key-value pairs including admin=false
+        self.assertFalse(self.node._is_admin_port_enabled("version=1.0;admin=false;port=3000"))
 
     async def test_info_service_list(self):
         self.info_mock.return_value = "172.17.0.1:3000,172.17.1.1:3000"
