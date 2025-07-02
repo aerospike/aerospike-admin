@@ -146,3 +146,32 @@ class UtilTest(asynctest.TestCase):
         self.assertEqual(
             result, expected, "deep_merge_dicts did not return the expected result"
         )
+
+    def test_is_valid_base64(self):
+        # Test valid base64 string
+        try:
+            util.is_valid_base64("dGVzdA==")  # "test" in base64
+        except ValueError:
+            self.fail("is_valid_base64 raised ValueError for valid base64 string")
+
+        # Test valid base64 bytes
+        try:
+            util.is_valid_base64(b"dGVzdA==")
+        except ValueError:
+            self.fail("is_valid_base64 raised ValueError for valid base64 bytes")
+
+        # Test invalid base64 string
+        with self.assertRaises(ValueError):
+            util.is_valid_base64("invalid_base64!")
+
+        # Test empty string
+        with self.assertRaises(ValueError):
+            util.is_valid_base64("")
+
+        # Test None
+        with self.assertRaises(ValueError):
+            util.is_valid_base64(None)
+
+        # Test string with invalid characters
+        with self.assertRaises(ValueError):
+            util.is_valid_base64("dGVzd@#$%A==")

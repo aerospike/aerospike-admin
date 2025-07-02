@@ -1132,6 +1132,14 @@ info_sindex_sheet = Sheet(
                 Projectors.String("sindex_stats", "context"),
             ),
         ),
+        Field(
+            "Expression",
+            Projectors.Func(
+                FieldType.string,
+                _ignore_null,
+                Projectors.String("sindex_stats", "exp"),
+            ),
+        ),
         Subgroup(
             "Queries",
             (
@@ -2270,6 +2278,12 @@ show_sindex = Sheet(
                 "string", _ignore_null, Projectors.String("data", "context")
             ),
         ),
+        Field(
+            "Expression",
+            Projectors.Func(
+                "string", _ignore_null, Projectors.String("data", "exp")
+            ),
+        ),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),
@@ -2532,3 +2546,18 @@ node_info_responses = Sheet(
 #     from_source=('no', 'summary'),
 #     order_by='No'
 # )
+
+# User Agents Sheet
+user_agents_sheet = Sheet(
+    (
+        Field("Node", Projectors.String("data", "node")),
+        Field("Client Version", Projectors.String("data", "client_version")),
+        Field("App ID", Projectors.String("data", "app_id")), 
+        Field(
+            "Count", 
+            Projectors.Number("data", "count"),
+        ),
+    ),
+    from_source=("data",),
+    order_by=(FieldSorter("Node"), FieldSorter("Client Version")),
+)

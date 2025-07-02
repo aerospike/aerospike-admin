@@ -25,6 +25,7 @@ from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
     GetConfigController,
     GetStatisticsController,
+    GetUserAgentsController,
 )
 
 from lib.utils import constants
@@ -505,3 +506,49 @@ class GetACLControllerTest(unittest.TestCase):
         )
 
         self.assertEqual(actual, expected)
+
+
+class GetUserAgentsControllerTest(unittest.TestCase):
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        self.controller = GetUserAgentsController(self.log_handler)
+
+    def test_get_user_agents_success(self):
+        """Test successful retrieval of user agents data"""
+        self.log_handler.info_user_agents.return_value = {
+            "timestamp": {
+                "192.168.1.1:3000": [
+                    {"user-agent": "dGVzdA==", "count": "5"},
+                    {"user-agent": "YXNhZG0=", "count": "3"}
+                ],
+                "192.168.1.2:3000": [
+                    {"user-agent": "Y2xpZW50", "count": "2"}
+                ]
+            }
+        }
+        
+        expected = {
+            "timestamp": {
+                "192.168.1.1:3000": [
+                    {"user-agent": "dGVzdA==", "count": "5"},
+                    {"user-agent": "YXNhZG0=", "count": "3"}
+                ],
+                "192.168.1.2:3000": [
+                    {"user-agent": "Y2xpZW50", "count": "2"}
+                ]
+            }
+        }
+
+        actual = self.controller.get_user_agents()
+
+        self.log_handler.info_user_agents.assert_called_once()
+        self.assertEqual(actual, expected)
+
+    def test_get_user_agents_empty(self):
+        """Test handling of empty user agents data"""
+        self.log_handler.info_user_agents.return_value = {}
+        
+        actual = self.controller.get_user_agents()
+
+        self.log_handler.info_user_agents.assert_called_once()
+        self.assertEqual(actual, {})

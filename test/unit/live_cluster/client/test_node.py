@@ -3540,6 +3540,57 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual.message, "Failed to create sindex iname")
         self.assertEqual(actual.response, "Invalid indexdata")
 
+    async def test_info_sindex_create_with_ctx_base64(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=ctx-idx;ns=test;context=dGVzdA==;indexdata=mybin,string"
+
+        actual = await self.node.info_sindex_create(
+            "ctx-idx", "test", "mybin", "string", cdt_ctx_base64="dGVzdA=="
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_exp_base64(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=exp-idx;ns=test;exp=dGVzdA==;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "exp-idx", "test", None, "string", exp_base64="dGVzdA=="
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_supports_sindex_type_syntax(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=new-idx;ns=test;bin=mybin;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "new-idx", "test", "mybin", "string", supports_sindex_type_syntax=True
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_all_new_params(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=full-idx;indextype=mapkeys;ns=test;set=myset;context=dGVzdA==;bin=mybin;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "full-idx",
+            "test", 
+            "mybin",
+            "string",
+            index_type="mapkeys",
+            set_="myset",
+            cdt_ctx_base64="dGVzdA==",
+            supports_sindex_type_syntax=True
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
     async def test_info_sindex_delete_success(self):
         self.info_mock.return_value = "OK"
         expected_call = "sindex-delete:ns={};indexname={}".format(
@@ -4121,6 +4172,39 @@ class NodeTest(asynctest.TestCase):
             admin_cadmin_mock.assert_called_with(
                 tc.assocket_func, tc.args, self.node.ip
             )
+
+    async def test_info_user_agents_success(self):
+        """Test successful user agents retrieval"""
+        # Mock response with base64 encoded user agents
+        mock_response = "user-agent=dGVzdA==:count=5;user-agent=YXNhZG0=:count=3"
+        self.info_mock.return_value = mock_response
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["user-agent"], "dGVzdA==")
+        self.assertEqual(result[0]["count"], "5")
+        self.assertEqual(result[1]["user-agent"], "YXNhZG0=")
+        self.assertEqual(result[1]["count"], "3")
+
+    async def test_info_user_agents_empty(self):
+        """Test when no user agents are present"""
+        self.info_mock.return_value = ""
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertEqual(result, [])
+
+    async def test_info_user_agents_error(self):
+        """Test error handling"""
+        self.info_mock.return_value = ASInfoResponseError("error", "Test error")
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertIsInstance(result, ASInfoResponseError)
 
 
 class SyscmdTest(unittest.TestCase):
