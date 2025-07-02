@@ -393,13 +393,13 @@ class Node(AsyncObject):
 
     async def _node_connect(self):
         # Get node id, features and admin port
-        commands = ["node", "features", "admin-port"]
+        commands = ["node", "features", "connection"]
         results = await self._info_cinfo(commands, self.ip, disable_cache=True)
         node_id = results["node"]
         features = results["features"]
         
         # Check if the node is an admin node
-        if self._is_admin_port_enabled(results["admin-port"]): 
+        if self._is_admin_port_enabled(results["connection"]): 
             logger.debug("admin port is enabled for node %s", node_id)
             self.is_admin_node = True
 
@@ -1083,21 +1083,25 @@ class Node(AsyncObject):
 
         return "admin-clear-std"
     
-    def _is_admin_port_enabled(self, admin_info_response: str) -> bool:
+    def _is_admin_port_enabled(self, connection_info_response: str) -> bool:
         """
         Check if admin port is enabled on this node.
         Returns:
             bool: true if admin port is enabled, false otherwise.
         """
-
-        # Check for error responses (case-insensitive) or exceptions
-        response_lower = admin_info_response.lower()
-        if isinstance(admin_info_response, Exception) or "error" in response_lower or "false" in response_lower:
-            logger.debug("admin port not enabled, admin info response is: %s", admin_info_response)
+        
+        if not connection_info_response or isinstance(connection_info_response, Exception):
+            logger.debug("admin port not enabled, connection info response is: %s", connection_info_response)
             return False
         
-        # admin port is enabled if response is "true"
-        return admin_info_response.lower() == "true"
+        connection_info = client_util.info_to_dict(connection_info_response)
+        
+        # Safely check if admin key exists and equals 'true'
+        if connection_info.get('admin', 'false') == 'true':
+            return True
+        
+        logger.debug("admin port not enabled for node %s, connection info response is: %s", self.ip, connection_info_response)
+        return False
 
     @async_return_exceptions
     async def info_service_list(self):
