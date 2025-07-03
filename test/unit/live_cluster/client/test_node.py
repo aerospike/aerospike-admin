@@ -96,7 +96,7 @@ class NodeInitTest(asynctest.TestCase):
                 return {
                     "node": "A00000000000000",
                     "features": "features",
-                    "connection": "admin=false;",  # Admin port disabled
+                    "connection": "admin=false",  # Admin port disabled
                 }
             # Second call - service and peers info for regular nodes
             elif cmd == ["service-clear-std", "peers-clear-std"]:
@@ -149,7 +149,7 @@ class NodeInitTest(asynctest.TestCase):
                 return {
                     "node": "A00000000000000",
                     "features": "features",
-                    "connection": "admin=false;",  # Admin port disabled
+                    "connection": "admin=false",  # Admin port disabled
                 }
             # Second call - service and peers info for regular nodes
             elif cmd == ["service-clear-std", "peers-clear-std"]:
@@ -221,7 +221,7 @@ class NodeInitTest(asynctest.TestCase):
                 return {
                     "node": "A0",
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "connection": "admin=false;",  # Admin port disabled
+                    "connection": "admin=false",  # Admin port disabled
                 }
             # Second call - service and peers info for regular nodes
             elif args[0] == ["service-clear-std", "peers-clear-std"]:

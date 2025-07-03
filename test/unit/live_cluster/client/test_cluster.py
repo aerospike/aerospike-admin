@@ -636,7 +636,7 @@ class ClusterTest(asynctest.TestCase):
                 return {
                     "node": "ADMIN000000000",
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "connection": "admin=true;",  # This makes it an admin node
+                    "connection": "admin=true",  # This makes it an admin node
                 }
             # Second call - admin service info for admin nodes
             elif cmd == ["service-clear-admin"]:
