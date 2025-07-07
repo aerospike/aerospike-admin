@@ -217,6 +217,44 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
+    def info_transactions_mrt(
+        ns_stats, set_stats, cluster, timestamp="", with_=None, **ignore
+    ):
+        if not ns_stats:
+            return
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "MRT Transaction Metrics" + title_suffix
+        
+        
+        # Merge <ERO~MRT set statistics into ns_stats for consistent template access
+        if set_stats:
+            for node, sets_dict in set_stats.items():
+                if node in ns_stats and not isinstance(ns_stats[node], Exception):
+                    # sets_dict contains (namespace, set_name) tuples as keys
+                    for (ns, set_name), set_data in sets_dict.items():
+                        if set_name == "<ERO~MRT" and ns in ns_stats[node]:
+                            # Add set metrics to namespace stats with prefixed names
+                            ns_stats[node][ns]["mrt_set_data_used_bytes"] = int(set_data.get("data_used_bytes", 0))
+                            ns_stats[node][ns]["mrt_set_objects"] = int(set_data.get("objects", 0))
+        
+        sources = dict(
+            node_ids=node_ids,
+            node_names=node_names,
+            ns_stats=ns_stats,
+        )
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(
+                templates.info_transactions_mrt_sheet, title, sources, common=common
+            )
+        )
+
+    @staticmethod
+    @reserved_modifiers
     def info_set(stats, cluster, timestamp="", with_=None, **ignore):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
