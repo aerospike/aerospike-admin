@@ -211,6 +211,7 @@ class Node(AsyncObject):
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
         self.peers: list[tuple[Addr_Port_TLSName]] = []
+        self.is_admin_node = False  # Track if this is an admin node
 
         # session token
         self.session_token: bytes | None = None
@@ -391,14 +392,30 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
+        # Get node id, features and admin port
+        commands = ["node", "features", "connection"]
+        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+        node_id = results["node"]
+        features = results["features"]
+        
+        # Check if the node is an admin node
+        if self._is_admin_port_enabled(results["connection"]): 
+            logger.debug("admin port is enabled for node %s", node_id)
+            self.is_admin_node = True
+
+            admin_info_call = self._get_admin_info_call()
+            admin_info_response = await self._info_cinfo(admin_info_call, self.ip, disable_cache=True)
+            admin_addresses = self._info_service_helper(admin_info_response)
+            logger.debug("admin address discovered for node %s: %s", node_id, admin_addresses)
+            # disable peer discovery for admin node
+            return node_id, admin_addresses, features, []
+        
         peers_info_calls = self._get_info_peers_list_calls()
         service_info_call = self._get_service_info_call()
-        commands = ["node", service_info_call, "features"] + peers_info_calls
-        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
 
-        node_id = results["node"]
+        commands = [service_info_call] + peers_info_calls
+        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
         service_addresses = self._info_service_helper(results[service_info_call])
-        features = results["features"]
         peers = self._aggregate_peers([results[call] for call in peers_info_calls])
         return node_id, service_addresses, features, peers
 
@@ -493,6 +510,7 @@ class Node(AsyncObject):
             self.service_addresses = [(self.ip, self.port, self.tls_name)]
             self.features = ""
             self.peers = []
+            self.is_admin_node = False
             self.use_new_histogram_format = False
             self.alive = False
 
@@ -635,6 +653,10 @@ class Node(AsyncObject):
         return feature in self.features
 
     async def has_peers_changed(self):
+        # Admin nodes don't track peer changes
+        if getattr(self, 'is_admin_node', False):
+            return False
+            
         try:
             new_generation = await self._info("peers-generation")
             if self.peers_generation != new_generation:
@@ -934,6 +956,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(await self._info(self._get_info_peers_call()))
 
     def _get_info_peers_alumni_call(self):
@@ -952,6 +978,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alumni_call())
         )
@@ -970,6 +1000,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alt_call())
         )
@@ -993,6 +1027,10 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_peers_list(self) -> list[Addr_Port_TLSName]:
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         results = await asyncio.gather(
             *[self._info(call) for call in self._get_info_peers_list_calls()]
         )
@@ -1000,6 +1038,10 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_peers_flat_list(self):
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return client_util.flatten(await self.info_peers_list())
 
     ###### Services End ######
@@ -1034,6 +1076,32 @@ class Node(AsyncObject):
             return "service-tls-std"
 
         return "service-clear-std"
+    
+    def _get_admin_info_call(self):
+        if self.enable_tls:
+            return "admin-tls-std"
+
+        return "admin-clear-std"
+    
+    def _is_admin_port_enabled(self, connection_info_response: str) -> bool:
+        """
+        Check if admin port is enabled on this node.
+        Returns:
+            bool: true if admin port is enabled, false otherwise.
+        """
+        
+        if not connection_info_response or isinstance(connection_info_response, Exception):
+            logger.debug("admin port not enabled, connection info response is: %s", connection_info_response)
+            return False
+        
+        connection_info = client_util.info_to_dict(connection_info_response)
+        
+        # Safely check if admin key exists and equals 'true'
+        if connection_info.get('admin', 'false') == 'true':
+            return True
+        
+        logger.debug("admin port not enabled for node %s, connection info response is: %s", self.ip, connection_info_response)
+        return False
 
     @async_return_exceptions
     async def info_service_list(self):
