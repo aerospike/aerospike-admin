@@ -993,7 +993,6 @@ def _manually_compute_license_data_size(
         ns_unique_data = 0.0
         ns_master_objects = 0
         ns_repl_factor = 1
-        ns_record_overhead = 0.0
 
         for host_id, host_stats in ns_stats.items():
             host_memory_bytes = 0.0
@@ -1002,6 +1001,16 @@ def _manually_compute_license_data_size(
 
             if not host_stats or isinstance(host_stats, Exception):
                 continue
+            
+            host_build_version = util.get_value_from_dict(
+                server_builds,
+                host_id,
+                default_value=None,
+                return_type=str,
+            )
+
+            if host_build_version is None:
+                raise Exception("could not find host %s in build responses" % host_id)
 
             repl_factor = util.get_value_from_dict(
                 host_stats,
@@ -1066,16 +1075,6 @@ def _manually_compute_license_data_size(
                     return_type=float,
                 )
 
-            host_build_version = util.get_value_from_dict(
-                server_builds,
-                host_id,
-                default_value=None,
-                return_type=str,
-            )
-
-            if host_build_version is None:
-                raise Exception("could not find host %s in build responses" % host_id)
-
             host_record_overhead = 35
 
             if version.LooseVersion(
@@ -1084,17 +1083,19 @@ def _manually_compute_license_data_size(
                 host_record_overhead = 39
 
             host_unique_data = host_memory_bytes + host_data_bytes
-            ns_unique_data += host_unique_data
-            ns_record_overhead += host_master_objects * host_record_overhead
+            
+            # Calculate host contribution based on its build version
+            if version.LooseVersion(constants.SERVER_NO_BYTE_OVERHEAD_FIRST_VERSION) <= version.LooseVersion(host_build_version):
+                # For 8.0 and above - don't subtract overhead for this host
+                host_license_data = host_unique_data / ns_repl_factor
+            else:
+                # For versions below 8.0 - subtract overhead for this host
+                host_license_data = (host_unique_data / ns_repl_factor) - (host_master_objects * host_record_overhead / ns_repl_factor)
+            
+            ns_unique_data += host_license_data
             ns_master_objects += host_master_objects
 
-        if version.LooseVersion(constants.SERVER_NO_BYTE_OVERHEAD_FIRST_VERSION) <= version.LooseVersion(host_build_version):
-            # For 8.0 and above - don't subtract overhead
-            ns_unique_data = round((ns_unique_data / ns_repl_factor))
-        else:
-             # For versions below 8.0 - subtract overhead
-            ns_unique_data = round((ns_unique_data / ns_repl_factor) - ns_record_overhead)
-        
+        # No need for version comparison here - already done per host
         summary_dict["NAMESPACES"][ns]["license_data"]["latest"] = int(
             round(ns_unique_data)
         )
