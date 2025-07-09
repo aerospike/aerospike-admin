@@ -1094,7 +1094,10 @@ def _manually_compute_license_data_size(
             ns_unique_data += host_license_contribution
         
         # Clamp namespace license data to ensure it's never negative
+        if ns_unique_data < 0:
+            logger.debug(f"Namespace '{ns}' unique data is negative ({ns_unique_data}), clamping to 0")
         ns_unique_data_clamped = max(0, ns_unique_data)
+        
         summary_dict["NAMESPACES"][ns]["license_data"]["latest"] = int(
             round(ns_unique_data_clamped)
         )
