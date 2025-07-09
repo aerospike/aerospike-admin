@@ -681,6 +681,7 @@ class TestShowUsers(asynctest.TestCase):
             "--",
             "0",
             "0",
+            "password,PKI"
         ]
         exp_title = "Users"
         exp_header = [
@@ -726,6 +727,7 @@ class TestShowUsers(asynctest.TestCase):
             ",".join(exp_roles),
             "0",
             "0",
+            "password,PKI"
         ]
         exp_title = "Users"
         exp_header = [
