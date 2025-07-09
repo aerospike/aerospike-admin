@@ -659,6 +659,7 @@ class TestShowUsers(asynctest.TestCase):
             "Roles",
             "Read Quota",
             "Write Quota",
+            "Auth Mode"
         ]
 
         (
@@ -687,6 +688,7 @@ class TestShowUsers(asynctest.TestCase):
             "Roles",
             "Read Quota",
             "Write Quota",
+            "Auth Mode"
         ]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
@@ -782,6 +784,7 @@ class TestShowUsers(asynctest.TestCase):
             "Roles",
             "Read Quota",
             "Write Quota",
+            "Auth Mode"
         ]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
@@ -842,6 +845,7 @@ class TestShowUsers(asynctest.TestCase):
             "Roles",
             "Read Quota",
             "Write Quota",
+            "Auth Mode"
         ]
 
         await util.capture_stdout(
