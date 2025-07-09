@@ -2561,3 +2561,227 @@ user_agents_sheet = Sheet(
     from_source=("data",),
     order_by=(FieldSorter("Node"), FieldSorter("Client Version")),
 )
+
+# MRT (Multi-Record Transaction) metrics template
+info_transactions_mrt_sheet = Sheet(
+    (
+        namespace_field,
+        node_field,
+        hidden_node_id_field,
+        # Transaction Blocking
+        Field(
+            "MRT Blocked",
+            Projectors.Number("ns_stats", "fail_mrt_blocked"),
+            converter=Converters.scientific_units,
+            aggregator=Aggregators.sum(),
+            formatters=(
+                Formatters.red_alert(lambda edata: edata.value > 100),
+                Formatters.yellow_alert(lambda edata: edata.value > 10),
+            ),
+        ),
+        Field(
+            "Version Mismatch",
+            Projectors.Number("ns_stats", "fail_mrt_version_mismatch"),
+            converter=Converters.scientific_units,
+            aggregator=Aggregators.sum(),
+            formatters=(
+                Formatters.red_alert(lambda edata: edata.value > 100),
+                Formatters.yellow_alert(lambda edata: edata.value > 10),
+            ),
+        ),
+        # Active Transaction State
+        Field(
+            "Active Monitors",
+            Projectors.Number("ns_stats", "mrt_monitors_active"),
+            converter=Converters.scientific_units,
+            aggregator=Aggregators.sum(),
+        ),
+        Field(
+            "Provisionals",
+            Projectors.Number("ns_stats", "mrt_provisionals"),
+            converter=Converters.scientific_units,
+            aggregator=Aggregators.sum(),
+        ),
+        # Roll Back Metrics
+        Subgroup(
+            "Roll Back",
+            (
+                Field(
+                    "Success",
+                    Projectors.Number("ns_stats", "mrt_roll_back_success"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Error",
+                    Projectors.Number("ns_stats", "mrt_roll_back_error"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+                Field(
+                    "Timeout",
+                    Projectors.Number("ns_stats", "mrt_roll_back_timeout"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.yellow_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+            ),
+        ),
+        # Roll Forward Metrics
+        Subgroup(
+            "Roll Forward",
+            (
+                Field(
+                    "Success",
+                    Projectors.Number("ns_stats", "mrt_roll_forward_success"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Error",
+                    Projectors.Number("ns_stats", "mrt_roll_forward_error"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+                Field(
+                    "Timeout",
+                    Projectors.Number("ns_stats", "mrt_roll_forward_timeout"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.yellow_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+            ),
+        ),
+        # Verify Read Metrics
+        Subgroup(
+            "Verify Read",
+            (
+                Field(
+                    "Success",
+                    Projectors.Number("ns_stats", "mrt_verify_read_success"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Error",
+                    Projectors.Number("ns_stats", "mrt_verify_read_error"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+                Field(
+                    "Timeout",
+                    Projectors.Number("ns_stats", "mrt_verify_read_timeout"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.yellow_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+            ),
+        ),
+        # Monitor-specific Metrics
+        Subgroup(
+            "Monitor Roll Back",
+            (
+                Field(
+                    "Success",
+                    Projectors.Number("ns_stats", "mrt_monitor_roll_back_success"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Error",
+                    Projectors.Number("ns_stats", "mrt_monitor_roll_back_error"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+                Field(
+                    "Timeout",
+                    Projectors.Number("ns_stats", "mrt_monitor_roll_back_timeout"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.yellow_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+            ),
+        ),
+        Subgroup(
+            "Monitor Roll Forward",
+            (
+                Field(
+                    "Success",
+                    Projectors.Number("ns_stats", "mrt_monitor_roll_forward_success"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Error",
+                    Projectors.Number("ns_stats", "mrt_monitor_roll_forward_error"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+                Field(
+                    "Timeout",
+                    Projectors.Number("ns_stats", "mrt_monitor_roll_forward_timeout"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.yellow_alert(lambda edata: edata.value > 0),
+                    ),
+                ),
+            ),
+        ),
+        Field(
+            "Monitor Tombstones",
+            Projectors.Number("ns_stats", "mrt_monitor_roll_tombstone_creates"),
+            converter=Converters.scientific_units,
+            aggregator=Aggregators.sum(),
+        ),
+        # MRT Set-level Metrics (from internal <ERO~MRT set) - using ns_stats structure
+        Subgroup(
+            "MRT Data",
+            (
+                Field(
+                    "Data Used",
+                    Projectors.Number("ns_stats", "mrt_set_data_used_bytes"),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Objects (Ongoing MRTs)",
+                    Projectors.Number("ns_stats", "mrt_set_objects"),
+                    converter=Converters.scientific_units,
+                    aggregator=Aggregators.sum(),
+                    formatters=(
+                        Formatters.yellow_alert(lambda edata: edata.value > 1000),
+                        Formatters.red_alert(lambda edata: edata.value > 10000),
+                    ),
+                ),
+            ),
+        ),
+    ),
+    from_source=("node_ids", "node_names", "ns_stats"),
+    for_each="ns_stats",
+    group_by=("Namespace"),
+    order_by=FieldSorter("Node"),
+)

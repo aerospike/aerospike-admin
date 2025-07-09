@@ -42,7 +42,10 @@ with_modifier_help = ModifierHelp(
 class InfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "for"])
-        self.controller_map = dict(namespace=InfoNamespaceController)
+        self.controller_map = dict(
+            namespace=InfoNamespaceController,
+            transactions=InfoTransactionsController
+        )
         self.config_getter = GetConfigController(self.cluster)
         self.stat_getter = GetStatisticsController(self.cluster)
 
@@ -291,4 +294,36 @@ class InfoNamespaceController(LiveClusterCommandController):
 
         return util.callable(
             self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods
+        )
+
+
+@CommandHelp(
+    "Displays MRT (Multi-Record Transaction) metrics for each namespace",
+    usage=f"[{ModifierUsageHelp.WITH}]",
+    modifiers=(with_modifier_help,),
+)
+class InfoTransactionsController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["with"])
+        self.stats_getter = GetStatisticsController(self.cluster)
+
+    @CommandHelp(
+        "Displays MRT transaction metrics for each namespace",
+        usage=f"[{ModifierUsageHelp.WITH}]",
+        modifiers=(with_modifier_help,),
+    )
+    async def _do_default(self, line):
+        # Get namespace statistics which contain MRT metrics
+        # Also get set statistics to include <ERO~MRT internal set data
+        ns_stats, set_stats = await asyncio.gather(
+            self.stats_getter.get_namespace(nodes=self.nodes),
+            self.cluster.info_all_set_statistics(nodes=self.nodes),
+        )
+        
+        return util.callable(
+            self.view.info_transactions_mrt,
+            ns_stats,
+            set_stats,
+            self.cluster,
+            **self.mods,
         )
