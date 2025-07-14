@@ -355,7 +355,7 @@ def start_server(
     # For local development, use localhost since ports are mapped to host
     # For CI/CD environments, you might want to use the container IP
     # Check if we should use localhost or container IP
-    use_localhost = os.environ.get("ASADM_TEST_USE_LOCALHOST", "true").lower() == "true"
+    use_localhost = os.environ.get("E2E_TEST_USE_LOCALHOST", "true").lower() == "true"
     
     if use_localhost:
         return "127.0.0.1"
