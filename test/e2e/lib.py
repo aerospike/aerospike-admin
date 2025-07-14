@@ -279,7 +279,7 @@ def start_server(
     first_base,
     index,
     access_address="127.0.0.1",
-    docker_tag="latest",
+    docker_tag="8.1.0.0-rc3",
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
