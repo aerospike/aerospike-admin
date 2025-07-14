@@ -330,8 +330,13 @@ def start_server(
     except:
         pass
 
+    # Force pull the latest image
+    image_name = f"aerospike/aerospike-server-enterprise:{docker_tag}"
+    print(f"Pulling Docker image: {image_name}")
+    DOCKER_CLIENT.images.pull(image_name)
+
     container = DOCKER_CLIENT.containers.run(
-        f"aerospike/aerospike-server-enterprise:{docker_tag}",
+        image_name,
         command=cmd,
         ports={
             str(base) + "/tcp": str(base),
