@@ -366,7 +366,7 @@ def start_server(
 def start(
     do_reset=True,
     num_nodes=DEFAULT_N_NODES,
-    docker_tag="8.1.0.0-rc3",
+    docker_tag="8.1", # Change this to the desired latest Docker tag
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
