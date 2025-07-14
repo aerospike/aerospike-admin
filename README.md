@@ -88,6 +88,11 @@ to test the bundled app run:
 ASADM_TEST_BUNDLE=true FEATKEY=(base64 -i path/to/features.conf) make integration
 ```
 
+**Note for Mac users**: If you encounter Docker networking issues on macOS, enable localhost networking:
+```
+ASADM_TEST_USE_LOCALHOST=true FEATKEY=(base64 -i path/to/features.conf) make integration
+```
+
 ### Running all tests with coverage
 ```
 FEATKEY=(base64 -i path/to/features.conf) make coverage
