@@ -1302,3 +1302,121 @@ end
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_num_rows, actual_num_rows)
+
+
+class TestShowUserAgents(asynctest.TestCase):
+    async def setUp(self):
+        lib.start()
+        self.rc = await controller.LiveClusterRootController(
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
+        )  # type: ignore
+        await util.capture_stdout(self.rc.execute, ["enable"])
+
+    def tearDown(self):
+        lib.stop()
+
+    async def test_show_user_agents(self):
+        """
+        Test show user-agents command displays correct headers and data types
+        """
+        exp_title = "User Agent Information"
+        exp_header = [
+            "Node",
+            "Client Version", 
+            "App ID",
+            "Count",
+        ]
+        exp_data_types = [str, str, str, int]
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            _,
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["show", "user-agents"]
+        )
+
+        self.assertIn(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        
+        # Check data types if there's data
+        if actual_data:
+            self.assertTrue(
+                test_util.check_for_types(actual_data, exp_data_types),
+                "show user-agents returned wrong data types"
+            )
+
+    async def test_show_user_agents_with_node_filter(self):
+        """
+        Test show user-agents with node filtering using --with option
+        """
+        exp_title = "User Agent Information"
+        exp_header = [
+            "Node",
+            "Client Version",
+            "App ID", 
+            "Count",
+        ]
+        exp_data_types = [str, str, str, int]
+
+        # Get a specific node to filter by
+        nodes = list(self.rc.cluster._live_nodes.keys())
+        if nodes:
+            test_node = nodes[0]
+            
+            (
+                actual_title,
+                _,
+                actual_header,
+                actual_data,
+                _,
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["show", "user-agents", "--with", test_node]
+            )
+
+            self.assertIn(exp_title, actual_title)
+            self.assertListEqual(exp_header, actual_header)
+            
+            # Check data types if there's data
+            if actual_data:
+                self.assertTrue(
+                    test_util.check_for_types(actual_data, exp_data_types),
+                    "show user-agents with node filter returned wrong data types"
+                )
+                
+                # Verify all returned data is from the filtered node
+                for row in actual_data:
+                    node_in_row = row[0]  # Node is the first column
+                    self.assertEqual(node_in_row, test_node)
+
+    async def test_show_user_agents_empty_data(self):
+        """
+        Test show user-agents when no user agent data is available
+        """
+        exp_title = "User Agent Information"
+        exp_header = [
+            "Node",
+            "Client Version",
+            "App ID",
+            "Count",
+        ]
+
+        (
+            actual_title,
+            _,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["show", "user-agents"]
+        )
+
+        self.assertIn(exp_title, actual_title)
+        self.assertListEqual(exp_header, actual_header)
+        
+        # The command should succeed even if no data is available
+        self.assertIsInstance(actual_data, list)
+        self.assertIsInstance(actual_num_records, int)
+        self.assertGreaterEqual(actual_num_records, 0)
