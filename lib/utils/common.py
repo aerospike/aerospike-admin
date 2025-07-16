@@ -2992,7 +2992,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
             "netstat -ant | grep %d | grep ESTABLISHED | wc -l" % (port),
         ],
         [
-            "ss -ant state listen sport = :%d or dport = :%d |  wc -l" % (port, port),
+            "ss -ant state listening sport = :%d or dport = :%d |  wc -l" % (port, port),
             "netstat -ant | grep %d | grep LISTEN | wc -l" % (port),
         ],
         ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c'],
