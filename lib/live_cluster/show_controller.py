@@ -1916,6 +1916,7 @@ class ShowUserAgentsController(LiveClusterCommandController):
                     
                     # Decode base64 user agent
                     decoded_ua = b64decode(user_agent).decode('utf-8')
+                    logger.debug(f"Decoded user agent for {node}: {decoded_ua}")
                     # Split by comma to get format-version, client-version, and app-id
                     ua_parts = decoded_ua.split(',')
                     

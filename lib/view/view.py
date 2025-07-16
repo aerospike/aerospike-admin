@@ -1171,7 +1171,7 @@ class CliView(object):
                 templates.show_users,
                 title,
                 sources,
-                description="To see individual users metrics run 'show user statistics'",
+                description="To see individual users metrics run 'show users statistics <username>'",
             )
         )
 

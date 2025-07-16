@@ -991,9 +991,7 @@ def _manually_compute_license_data_size(
             continue
 
         ns_unique_data = 0.0
-        ns_master_objects = 0
         ns_repl_factor = 1
-        ns_record_overhead = 0.0
 
         for host_id, host_stats in ns_stats.items():
             host_memory_bytes = 0.0
@@ -1075,7 +1073,7 @@ def _manually_compute_license_data_size(
 
             if host_build_version is None:
                 raise Exception("could not find host %s in build responses" % host_id)
-
+            
             host_record_overhead = 35
 
             if version.LooseVersion(
@@ -1084,21 +1082,26 @@ def _manually_compute_license_data_size(
                 host_record_overhead = 39
 
             host_unique_data = host_memory_bytes + host_data_bytes
-            ns_unique_data += host_unique_data
-            ns_record_overhead += host_master_objects * host_record_overhead
-            ns_master_objects += host_master_objects
-
-        if version.LooseVersion(constants.SERVER_NO_BYTE_OVERHEAD_FIRST_VERSION) <= version.LooseVersion(host_build_version):
-            # For 8.0 and above - don't subtract overhead
-            ns_unique_data = round((ns_unique_data / ns_repl_factor))
-        else:
-             # For versions below 8.0 - subtract overhead
-            ns_unique_data = round((ns_unique_data / ns_repl_factor) - ns_record_overhead)
+            
+            # Calculate host contribution based on its individual version
+            if version.LooseVersion(constants.SERVER_NO_BYTE_OVERHEAD_FIRST_VERSION) <= version.LooseVersion(host_build_version):
+                # For 8.0 and above - don't subtract overhead for this host
+                host_license_contribution = host_unique_data / ns_repl_factor
+            else:
+                # For versions below 8.0 - subtract overhead for this host
+                host_license_contribution = (host_unique_data / ns_repl_factor) - (host_master_objects * host_record_overhead)
+            
+            ns_unique_data += host_license_contribution
+        
+        # Clamp namespace license data to ensure it's never negative
+        if ns_unique_data < 0:
+            logger.debug(f"Namespace '{ns}' unique data is negative ({ns_unique_data}), clamping to 0")
+        ns_unique_data_clamped = max(0, ns_unique_data)
         
         summary_dict["NAMESPACES"][ns]["license_data"]["latest"] = int(
-            round(ns_unique_data)
+            round(ns_unique_data_clamped)
         )
-        cl_unique_data += ns_unique_data
+        cl_unique_data += ns_unique_data_clamped
 
     summary_dict["CLUSTER"]["license_data"]["latest"] = int(round(cl_unique_data))
 
@@ -2989,7 +2992,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
             "netstat -ant | grep %d | grep ESTABLISHED | wc -l" % (port),
         ],
         [
-            "ss -ant state listen sport = :%d or dport = :%d |  wc -l" % (port, port),
+            "ss -ant state listening sport = :%d or dport = :%d |  wc -l" % (port, port),
             "netstat -ant | grep %d | grep LISTEN | wc -l" % (port),
         ],
         ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c'],
