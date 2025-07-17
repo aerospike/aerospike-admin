@@ -13,7 +13,8 @@
 # limitations under the License.
 import asyncio
 import logging
-from lib.base_controller import CommandHelp, CommandName, ModifierHelp
+from base64 import b64decode
+from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
 from lib.utils import common, util, version, constants
 from lib.utils.constants import ModifierUsage, Modifiers
 from lib.live_cluster.get_controller import (
@@ -27,6 +28,7 @@ from lib.live_cluster.get_controller import (
     GetUdfController,
     GetAclController,
     GetLatenciesController,
+    GetUserAgentsController,
 )
 
 from .client import ASProtocolError
@@ -85,6 +87,7 @@ class ShowController(LiveClusterCommandController):
             "config": ShowConfigController,
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
+            "user-agents": ShowUserAgentsController,
         }
 
         self.modifiers = set()
@@ -1878,3 +1881,64 @@ class ShowStopWritesController(LiveClusterCommandController):
             self.cluster,
             **self.mods,
         )
+
+
+@CommandHelp(
+    "Displays client user agent information including version and application ID",
+    modifiers=(with_modifier_help,),
+    usage=f"[{ModifierUsage.WITH}]",
+)
+class ShowUserAgentsController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set([Modifiers.WITH])
+        self.getter = GetUserAgentsController(self.cluster)
+
+    async def _do_default(self, line):
+        user_agents_data = await self.getter.get_user_agents(nodes=self.nodes)
+
+        # Process the user agents data
+        processed_data = {}
+        for node, agents in user_agents_data.items():
+            if isinstance(agents, Exception):
+                raise ShellException(
+                        f"Error processing user agent data from {node}: {agents}"
+                    )
+                
+            processed_data[node] = []
+            if not agents:
+                continue
+                
+            for agent in agents:
+                try:
+                    # Get user-agent and count from the agent dict
+                    user_agent = agent['user-agent']
+                    count = agent['count']
+                    
+                    # Decode base64 user agent
+                    decoded_ua = b64decode(user_agent).decode('utf-8')
+                    logger.debug(f"Decoded user agent for {node}: {decoded_ua}")
+                    # Split by comma to get format-version, client-version, and app-id
+                    ua_parts = decoded_ua.split(',')
+                    
+                    if len(ua_parts) < 3:
+                        # If we don't have enough parts, mark as unknown
+                        version = "unknown"
+                        app_id = "unknown"
+                    else:
+                        # First part is format-version which we ignore
+                        # Second part is client-version
+                        version = ua_parts[1].strip()
+                        # Last part is app-id
+                        app_id = ua_parts[-1].strip()
+                    
+                    processed_data[node].append({
+                        'client_version': version,
+                        'app_id': app_id,
+                        'count': int(count)
+                    })
+                except Exception as e:
+                    raise ShellException(
+                        f"Error processing user agent data from {node}: {e}"
+                    )
+                
+        return self.view.show_user_agents(self.cluster, processed_data, **self.mods)

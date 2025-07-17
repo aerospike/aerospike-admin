@@ -91,12 +91,18 @@ class NodeInitTest(asynctest.TestCase):
 
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            # First call - admin port detection
+            if cmd == ["node", "features", "connection"]:
                 return {
                     "node": "A00000000000000",
+                    "features": "features",
+                    "connection": "admin=false",  # Admin port disabled
+                }
+            # Second call - service and peers info for regular nodes
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
-                    "features": "features",
                 }
             elif cmd == "node":
                 return "A00000000000000"
@@ -138,12 +144,18 @@ class NodeInitTest(asynctest.TestCase):
 
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            # First call - admin port detection
+            if cmd == ["node", "features", "connection"]:
                 return {
                     "node": "A00000000000000",
+                    "features": "features",
+                    "connection": "admin=false",  # Admin port disabled
+                }
+            # Second call - service and peers info for regular nodes
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
-                    "features": "features",
                 }
             elif cmd == "node":
                 return "A00000000000000"
@@ -204,24 +216,29 @@ class NodeInitTest(asynctest.TestCase):
         as_socket_mock_used_for_login.get_session_info.return_value = "token", 59
 
         def side_effect_info(*args, **kwargs):
-            if args[0] == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            # First call - admin port detection
+            if args[0] == ["node", "features", "connection"]:
                 return {
                     "node": "A0",
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "connection": "admin=false",  # Admin port disabled
+                }
+            # Second call - service and peers info for regular nodes
+            elif args[0] == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "1.1.1.1:3000;172.17.0.1:3000;172.17.1.1:3000",
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
                 }
 
         as_socket_mock_used_for_login.info.side_effect = side_effect_info
 
         await Node("1.1.1.1", user="user")
         as_socket_mock_used_for_login.login.assert_called_once()
-        # Login and the first info call used different sockets
+        # Login and the node connection info calls
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
-                call(
-                    ["node", "service-clear-std", "features", "peers-clear-std"],
-                )
+                call(["node", "features", "connection"]),
+                call(["service-clear-std", "peers-clear-std"]),
             ],
         )
 
@@ -664,6 +681,66 @@ class NodeTest(asynctest.TestCase):
 
         self.node.enable_tls = False
         self.node.consider_alumni = False
+
+    async def test_info_peers_admin_node_returns_empty_list(self):
+        """
+        Ensure that admin nodes always return empty lists for peer-related methods
+        """
+        # Mark node as admin node
+        self.node.is_admin_node = True
+        
+        # Test info_peers returns empty list for admin node
+        peers = await self.node.info_peers()
+        self.assertEqual(peers, [], "Admin node info_peers should return empty list")
+        
+        # Test info_peers_alumni returns empty list for admin node
+        alumni = await self.node.info_peers_alumni()
+        self.assertEqual(alumni, [], "Admin node info_peers_alumni should return empty list")
+        
+        # Test info_peers_alt returns empty list for admin node
+        alt_peers = await self.node.info_peers_alt()
+        self.assertEqual(alt_peers, [], "Admin node info_peers_alt should return empty list")
+        
+        # Test info_peers_list returns empty list for admin node
+        peers_list = await self.node.info_peers_list()
+        self.assertEqual(peers_list, [], "Admin node info_peers_list should return empty list")
+        
+        # Verify no info calls were made (peer discovery disabled)
+        self.info_mock.assert_not_called()
+
+    def test_is_admin_port_enabled(self):
+        """
+        Test the _is_admin_port_enabled method with various response types
+        """
+        # Test with admin=true in info response format
+        self.assertTrue(self.node._is_admin_port_enabled("admin=true"))
+        
+        # Test with admin=false in info response format
+        self.assertFalse(self.node._is_admin_port_enabled("admin=false"))
+        
+        # Test with admin=TRUE (case sensitive, should work)
+        self.assertFalse(self.node._is_admin_port_enabled("admin=TRUE"))
+        
+        # Test with no admin key in response (should default to false)
+        self.assertFalse(self.node._is_admin_port_enabled("other=value"))
+        
+        # Test with empty string (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled(""))
+        
+        # Test with None (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled(None))
+        
+        # Test with Exception (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled(Exception("test error")))
+        
+        # Test with malformed response (should be False)
+        self.assertFalse(self.node._is_admin_port_enabled("malformed"))
+        
+        # Test with multiple key-value pairs including admin=true
+        self.assertTrue(self.node._is_admin_port_enabled("version=1.0;admin=true;port=3000"))
+        
+        # Test with multiple key-value pairs including admin=false
+        self.assertFalse(self.node._is_admin_port_enabled("version=1.0;admin=false;port=3000"))
 
     async def test_info_service_list(self):
         self.info_mock.return_value = "172.17.0.1:3000,172.17.1.1:3000"
@@ -3422,7 +3499,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_called_with("sindex", self.ip)
+        self.info_mock.assert_called_with("sindex-list", self.ip)
         self.assertListEqual(actual, expected)
 
     async def test_info_sindex_statistics(self):
@@ -3468,6 +3545,57 @@ class NodeTest(asynctest.TestCase):
 
         self.assertEqual(actual.message, "Failed to create sindex iname")
         self.assertEqual(actual.response, "Invalid indexdata")
+
+    async def test_info_sindex_create_with_ctx_base64(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=ctx-idx;ns=test;context=dGVzdA==;indexdata=mybin,string"
+
+        actual = await self.node.info_sindex_create(
+            "ctx-idx", "test", "mybin", "string", cdt_ctx_base64="dGVzdA=="
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_exp_base64(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=exp-idx;ns=test;exp=dGVzdA==;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "exp-idx", "test", None, "string", exp_base64="dGVzdA=="
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_supports_sindex_type_syntax(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=new-idx;ns=test;bin=mybin;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "new-idx", "test", "mybin", "string", supports_sindex_type_syntax=True
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_with_all_new_params(self):
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=full-idx;indextype=mapkeys;ns=test;set=myset;context=dGVzdA==;bin=mybin;type=string"
+
+        actual = await self.node.info_sindex_create(
+            "full-idx",
+            "test", 
+            "mybin",
+            "string",
+            index_type="mapkeys",
+            set_="myset",
+            cdt_ctx_base64="dGVzdA==",
+            supports_sindex_type_syntax=True
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_delete_success(self):
         self.info_mock.return_value = "OK"
@@ -4050,6 +4178,39 @@ class NodeTest(asynctest.TestCase):
             admin_cadmin_mock.assert_called_with(
                 tc.assocket_func, tc.args, self.node.ip
             )
+
+    async def test_info_user_agents_success(self):
+        """Test successful user agents retrieval"""
+        # Mock response with base64 encoded user agents
+        mock_response = "user-agent=dGVzdA==:count=5;user-agent=YXNhZG0=:count=3"
+        self.info_mock.return_value = mock_response
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["user-agent"], "dGVzdA==")
+        self.assertEqual(result[0]["count"], "5")
+        self.assertEqual(result[1]["user-agent"], "YXNhZG0=")
+        self.assertEqual(result[1]["count"], "3")
+
+    async def test_info_user_agents_empty(self):
+        """Test when no user agents are present"""
+        self.info_mock.return_value = ""
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertEqual(result, [])
+
+    async def test_info_user_agents_error(self):
+        """Test error handling"""
+        self.info_mock.return_value = ASInfoResponseError("error", "Test error")
+        
+        result = await self.node.info_user_agents()
+        
+        self.info_mock.assert_called_with("user-agents", self.ip)
+        self.assertIsInstance(result, ASInfoResponseError)
 
 
 class SyscmdTest(unittest.TestCase):

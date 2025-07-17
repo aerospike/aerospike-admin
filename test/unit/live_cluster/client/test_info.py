@@ -46,6 +46,7 @@ from lib.live_cluster.client.info import (
     set_password,
     set_quotas,
     set_whitelist,
+    _receive_data,
 )
 
 
@@ -913,3 +914,37 @@ class SecurityTest(asynctest.TestCase):
         await self.assertAsyncRaises(
             IOError, query_roles(self.reader_mock, self.writer_mock)
         )
+
+class DummyReader:
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.index = 0
+    async def read(self, n):
+        if self.index < len(self.chunks):
+            chunk = self.chunks[self.index][:n]
+            self.chunks[self.index] = self.chunks[self.index][n:]
+            if not self.chunks[self.index]:
+                self.index += 1
+            return chunk
+        return b""
+
+class ReceiveDataTest(asynctest.TestCase):
+    async def test_receive_data_success(self):
+        reader = DummyReader([b"hello", b"world"])
+        data = await _receive_data(reader, 10)
+        self.assertEqual(data, b"helloworld")
+
+    async def test_receive_data_connection_closed_early(self):
+        reader = DummyReader([b"hello", b""])
+        with self.assertRaises(ConnectionResetError):
+            await _receive_data(reader, 10)
+
+    async def test_receive_data_empty_response(self):
+        reader = DummyReader([])
+        data = await _receive_data(reader, 0)
+        self.assertEqual(data, b"")
+
+    async def test_receive_data_connection_closed_immediately(self):
+        reader = DummyReader([b""])
+        with self.assertRaises(ConnectionResetError):
+            await _receive_data(reader, 5)

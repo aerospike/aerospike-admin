@@ -181,6 +181,7 @@ class Node(AsyncObject):
         ssl_context: SSL.Context | None = None,
         consider_alumni=False,
         use_services_alt=False,
+        user_agent=None,
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -210,11 +211,13 @@ class Node(AsyncObject):
         self.consider_alumni = consider_alumni
         self.use_services_alt = use_services_alt
         self.peers: list[tuple[Addr_Port_TLSName]] = []
+        self.is_admin_node = False  # Track if this is an admin node
 
         # session token
         self.session_token: bytes | None = None
         self.session_expiration = 0
         self.perform_login = True
+        self.user_agent = user_agent
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -389,14 +392,30 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
+        # Get node id, features and admin port
+        commands = ["node", "features", "connection"]
+        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+        node_id = results["node"]
+        features = results["features"]
+        
+        # Check if the node is an admin node
+        if self._is_admin_port_enabled(results["connection"]): 
+            logger.debug("admin port is enabled for node %s", node_id)
+            self.is_admin_node = True
+
+            admin_info_call = self._get_admin_info_call()
+            admin_info_response = await self._info_cinfo(admin_info_call, self.ip, disable_cache=True)
+            admin_addresses = self._info_service_helper(admin_info_response)
+            logger.debug("admin address discovered for node %s: %s", node_id, admin_addresses)
+            # disable peer discovery for admin node
+            return node_id, admin_addresses, features, []
+        
         peers_info_calls = self._get_info_peers_list_calls()
         service_info_call = self._get_service_info_call()
-        commands = ["node", service_info_call, "features"] + peers_info_calls
-        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
 
-        node_id = results["node"]
+        commands = [service_info_call] + peers_info_calls
+        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
         service_addresses = self._info_service_helper(results[service_info_call])
-        features = results["features"]
         peers = self._aggregate_peers([results[call] for call in peers_info_calls])
         return node_id, service_addresses, features, peers
 
@@ -473,6 +492,8 @@ class Node(AsyncObject):
             self._service_IP_port = self.create_key(self.ip, self.port)
             self._key = hash(self._service_IP_port)
             self.new_histogram_version = await self._is_new_histogram_version()
+            # Set the user agent for this node
+            await self._set_user_agent()
             self.alive = True
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
@@ -489,6 +510,7 @@ class Node(AsyncObject):
             self.service_addresses = [(self.ip, self.port, self.tls_name)]
             self.features = ""
             self.peers = []
+            self.is_admin_node = False
             self.use_new_histogram_format = False
             self.alive = False
 
@@ -631,6 +653,10 @@ class Node(AsyncObject):
         return feature in self.features
 
     async def has_peers_changed(self):
+        # Admin nodes don't track peer changes
+        if getattr(self, 'is_admin_node', False):
+            return False
+            
         try:
             new_generation = await self._info("peers-generation")
             if self.peers_generation != new_generation:
@@ -647,6 +673,14 @@ class Node(AsyncObject):
             return False
 
         return common.is_new_histogram_version(as_version)
+    
+    async def _set_user_agent(self):
+        """
+        Sets user agent on the Aerospike connection socket.
+        """
+        if self.user_agent is not None:
+            user_agent_b64 = base64.b64encode(self.user_agent.encode()).decode()
+            await self._info(f"user-agent-set:value={user_agent_b64}")
 
     async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
@@ -693,6 +727,7 @@ class Node(AsyncObject):
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
+                    
                     return sock
                 elif (
                     e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
@@ -705,6 +740,7 @@ class Node(AsyncObject):
                     await self.login()
                     if await sock.authenticate(self.session_token):
                         logger.debug("sock auth successful on second try %s", id(sock))
+                        
                         return sock
 
                 await sock.close()
@@ -920,6 +956,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(await self._info(self._get_info_peers_call()))
 
     def _get_info_peers_alumni_call(self):
@@ -938,6 +978,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alumni_call())
         )
@@ -956,6 +1000,10 @@ class Node(AsyncObject):
         Returns:
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alt_call())
         )
@@ -979,6 +1027,10 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_peers_list(self) -> list[Addr_Port_TLSName]:
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         results = await asyncio.gather(
             *[self._info(call) for call in self._get_info_peers_list_calls()]
         )
@@ -986,6 +1038,10 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_peers_flat_list(self):
+        # Admin nodes don't have peers
+        if getattr(self, 'is_admin_node', False):
+            return []
+            
         return client_util.flatten(await self.info_peers_list())
 
     ###### Services End ######
@@ -1020,6 +1076,32 @@ class Node(AsyncObject):
             return "service-tls-std"
 
         return "service-clear-std"
+    
+    def _get_admin_info_call(self):
+        if self.enable_tls:
+            return "admin-tls-std"
+
+        return "admin-clear-std"
+    
+    def _is_admin_port_enabled(self, connection_info_response: str) -> bool:
+        """
+        Check if admin port is enabled on this node.
+        Returns:
+            bool: true if admin port is enabled, false otherwise.
+        """
+        
+        if not connection_info_response or isinstance(connection_info_response, Exception):
+            logger.debug("admin port not enabled, connection info response is: %s", connection_info_response)
+            return False
+        
+        connection_info = client_util.info_to_dict(connection_info_response)
+        
+        # Safely check if admin key exists and equals 'true'
+        if connection_info.get('admin', 'false') == 'true':
+            return True
+        
+        logger.debug("admin port not enabled for node %s, connection info response is: %s", self.ip, connection_info_response)
+        return False
 
     @async_return_exceptions
     async def info_service_list(self):
@@ -2542,7 +2624,23 @@ class Node(AsyncObject):
     async def info_sindex(self):
         return [
             client_util.info_to_dict(v, ":")
-            for v in client_util.info_to_list(await self._info("sindex"))
+            for v in client_util.info_to_list(await self._info("sindex-list"))
+            if v != ""
+        ]
+        
+    
+    @async_return_exceptions
+    async def info_user_agents(self):
+        """
+        Get a list of user agents for this node. 
+        """
+        response = await self._info("user-agents")
+        if isinstance(response, Exception):
+            return response
+        
+        return [
+            client_util.info_to_dict(v, ":")
+            for v in client_util.info_to_list(response)
             if v != ""
         ]
 
@@ -2568,6 +2666,9 @@ class Node(AsyncObject):
         index_type: Optional[str] = None,
         set_: Optional[str] = None,
         ctx: Optional[CDTContext] = None,
+        cdt_ctx_base64: Optional[str] = None,
+        exp_base64: Optional[str] = None,
+        supports_sindex_type_syntax: bool = False,
     ):
         """
         Create a new secondary index. index_type and set are optional.
@@ -2592,8 +2693,21 @@ class Node(AsyncObject):
             ctx_b64 = util.bytes_to_str(ctx_b64)
 
             command += "context={};".format(ctx_b64)
+        elif cdt_ctx_base64:
+            # Use pre-encoded base64 context string directly
+            command += "context={};".format(cdt_ctx_base64)
 
-        command += "indexdata={},{}".format(bin_name, bin_type)
+        if exp_base64:
+            command += "exp={};".format(exp_base64)
+
+            # if expression is passed, use type instead of indexdata
+            command += "type={}".format(bin_type)
+
+        else:
+            if supports_sindex_type_syntax:
+                command += "bin={};type={}".format(bin_name, bin_type)
+            else:
+                command += "indexdata={},{}".format(bin_name, bin_type)
 
         resp = await self._info(command)
 

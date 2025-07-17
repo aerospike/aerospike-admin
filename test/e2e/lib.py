@@ -351,13 +351,22 @@ def start_server(
 
     NODES[index - 1] = container
     container.reload()
-    return container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
+    
+    # For local development, use localhost since ports are mapped to host
+    # For CI/CD environments, you might want to use the container IP
+    # Check if we should use localhost or container IP
+    use_localhost = os.environ.get("E2E_TEST_USE_LOCALHOST", "true").lower() == "true"
+    
+    if use_localhost:
+        return "127.0.0.1"
+    else:
+        return container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
 
 
 def start(
     do_reset=True,
     num_nodes=DEFAULT_N_NODES,
-    docker_tag="latest",
+    docker_tag="8.1", # Change this to the desired latest Docker tag
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,

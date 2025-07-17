@@ -134,16 +134,14 @@ def _unpack_protocol_header(buf, offset=0):
 
 async def _receive_data(reader: asyncio.StreamReader, sz):
     pos = 0
-    data = None
+    data = []
     while pos < sz:
         chunk = await reader.read(sz - pos)
-        if pos == 0:
-            data = chunk
-        else:
-            data += chunk
+        if chunk == b"":
+            raise ConnectionResetError("Connection closed by server.")
+        data.append(chunk)
         pos += len(chunk)
-
-    return data
+    return b"".join(data)
 
 
 ####### Password hashing ######
@@ -716,6 +714,7 @@ async def _query_users(
                 read_info = None
                 write_info = None
                 connections = None
+                auth_mode = None
 
                 for _ in range(field_count):
                     field_len, field_type, offset = _unpack_admin_field_header(
@@ -732,6 +731,9 @@ async def _query_users(
                     elif field_type == ASField.ROLES:
                         roles, offset = _unpack_admin_roles(rsp_buf, offset)
                         user_roles.extend(roles)
+
+                    elif field_type == ASField.AUTH_MODE:
+                        auth_mode, offset = _unpack_string(rsp_buf, offset, field_len)
 
                     elif field_type == ASField.READ_INFO:
                         read_info, offset = _unpack_admin_read_write_info(
@@ -763,6 +765,9 @@ async def _query_users(
 
                     for name, value in zip(READ_WRITE_INFO_VALUES, write_info):
                         users_dict[user_name]["write-info"][name] = value
+
+                if auth_mode:
+                    users_dict[user_name]["auth-mode"] = auth_mode
 
                 if connections:
                     users_dict[user_name]["connections"] = connections
