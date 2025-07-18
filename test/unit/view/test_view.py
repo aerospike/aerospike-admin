@@ -976,3 +976,305 @@ class CliViewTest(unittest.TestCase):
             actual_str.extend(lines)
 
         self.assertListEqual(actual_str, expected.split("\n"))
+
+    def test_info_namespace_usage_server_7_0_with_mounts(self):
+        """Test namespace usage view for server 7.0+ with mounts-budget metrics"""
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "index-type.mounts-budget": "2000000",
+                    "indexes-memory-budget": "1000000",
+                    "index-type.mounts-size-limit": "4000000",
+                    "index_used_bytes": "1500000",
+                    "index_mounts_used_pct": "75",
+                    "sindex-type.mounts-budget": "1000000",
+                    "sindex_used_bytes": "600000",
+                    "sindex_mounts_used_pct": "60",
+                    "storage-engine": "device",
+                    "index-type": "flash",
+                    "sindex-type": "flash"
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+            "service_stats": service_stats
+        }
+        common = {"principal": principal}
+
+        CliView.info_namespace_usage(
+            ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_with(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information (test-stamp)",
+            sources,
+            common=common,
+        )
+
+    def test_info_namespace_usage_server_7_1_memory_only(self):
+        """Test namespace usage view for server 7.1 memory-only configuration"""
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "indexes-memory-budget": "1000000",
+                    "index-type.mounts-size-limit": "4000000",
+                    "index_used_bytes": "800000",
+                    "sindex_used_bytes": "200000",
+                    "storage-engine": "memory",
+                    "index-type": "shmem",
+                    "sindex-type": "shmem"
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+            "service_stats": service_stats
+        }
+        common = {"principal": principal}
+
+        CliView.info_namespace_usage(
+            ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_with(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information (test-stamp)",
+            sources,
+            common=common,
+        )
+
+    def test_info_namespace_usage_server_pre_7_0_legacy(self):
+        """Test namespace usage view for pre-7.0 servers with legacy metrics only"""
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "index-type.mounts-size-limit": "2000000",
+                    "sindex-type.mounts-size-limit": "1000000",
+                    "memory_used_index_bytes": "600000",
+                    "memory_used_sindex_bytes": "300000",
+                    "storage-engine": "memory",
+                    "index-type": "shmem",
+                    "sindex-type": "shmem"
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+            "service_stats": service_stats
+        }
+        common = {"principal": principal}
+
+        CliView.info_namespace_usage(
+            ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_with(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information (test-stamp)",
+            sources,
+            common=common,
+        )
+
+    def test_info_namespace_usage_mixed_metrics_priority(self):
+        """Test namespace usage view with mixed metrics to verify template handles priority"""
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "index-type.mounts-budget": "1500000",
+                    "indexes-memory-budget": "1000000",
+                    "index-type.mounts-size-limit": "2000000",
+                    "sindex-type.mounts-budget": "800000",
+                    "sindex-type.mounts-size-limit": "1200000",
+                    "index_used_bytes": "1125000",
+                    "sindex_used_bytes": "480000",
+                    "index_mounts_used_pct": "75",
+                    "sindex_mounts_used_pct": "60",
+                    "memory_used_index_bytes": "900000",
+                    "memory_used_sindex_bytes": "400000",
+                    "storage-engine": "device",
+                    "index-type": "flash",
+                    "sindex-type": "flash"
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+            "service_stats": service_stats
+        }
+        common = {"principal": principal}
+
+        CliView.info_namespace_usage(
+            ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_with(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information (test-stamp)",
+            sources,
+            common=common,
+        )
+
+    def test_info_namespace_usage_partial_metrics(self):
+        """Test namespace usage view with partial metrics (some missing)"""
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "index_used_bytes": "500000",
+                    "sindex_used_bytes": "200000",
+                    "storage-engine": "memory",
+                    "index-type": "shmem",
+                    "sindex-type": "shmem"
+                    # Missing budget metrics
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+            "service_stats": service_stats
+        }
+        common = {"principal": principal}
+
+        CliView.info_namespace_usage(
+            ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_with(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information (test-stamp)",
+            sources,
+            common=common,
+        )
+
+    def test_info_namespace_usage_server_8_1_enhanced(self):
+        """Test namespace usage view for hypothetical server 8.1+ with enhanced metrics"""
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "index-type.mounts-budget": "3000000",
+                    "indexes-memory-budget": "2000000",
+                    "index_used_bytes": "2250000",
+                    "index_mounts_used_pct": "75",
+                    "sindex-type.mounts-budget": "1500000",
+                    "sindex_used_bytes": "900000",
+                    "sindex_mounts_used_pct": "60",
+                    "storage-engine": "device",
+                    "index-type": "pmem",
+                    "sindex-type": "pmem"
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+            "service_stats": service_stats
+        }
+        common = {"principal": principal}
+
+        CliView.info_namespace_usage(
+            ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_with(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information (test-stamp)",
+            sources,
+            common=common,
+        )
+
+    def test_info_namespace_usage_empty_namespace_data(self):
+        """Test namespace usage view with empty namespace data"""
+        ns_stats = {"1.1.1.1": {}}
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+            "service_stats": service_stats
+        }
+        common = {"principal": principal}
+
+        CliView.info_namespace_usage(
+            ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_with(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information (test-stamp)",
+            sources,
+            common=common,
+        )
