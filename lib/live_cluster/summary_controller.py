@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @CommandHelp(
     "Displays summary of Aerospike cluster.",
-    usage=f"[-l] [{SSH_MODIFIER_USAGE}] [--agent-host <host> --agent-port <port> [--agent-unstable]]",
+    usage=f"[-l] [{SSH_MODIFIER_USAGE}]",
     modifiers=(
         ModifierHelp(
             "-l",
@@ -38,15 +38,6 @@ logger = logging.getLogger(__name__)
             default="table view",
         ),
         *SSH_MODIFIER_HELP,
-        ModifierHelp(
-            "--agent-host",
-            "Host IP of the Unique-Data-Agent (UDA) to collect license data usage.",
-        ),
-        ModifierHelp("--agent-port", "Port of the UDA.", default="8080"),
-        ModifierHelp(
-            "--agent-unstable",
-            "When processing UDA entries allow instances where the cluster is unstable.",
-        ),
     ),
 )
 class SummaryController(LiveClusterCommandController):
@@ -111,32 +102,6 @@ class SummaryController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        agent_host = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="--agent-host",
-            return_type=str,
-            default=None,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        agent_port = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="--agent-port",
-            return_type=str,
-            default="8080",
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
-        agent_unstable = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="--agent-unstable",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-
         server_version = asyncio.create_task(
             self.cluster.info("build", nodes=self.nodes)
         )
@@ -166,15 +131,6 @@ class SummaryController(LiveClusterCommandController):
             commands=["uname"],
             enable_ssh=enable_ssh,
         )
-
-        license_usage_future = None
-
-        if agent_host is not None:
-            # needs to be ensure_future because async_cache returns an awaitable, not
-            # a coroutine.
-            license_usage_future = asyncio.ensure_future(
-                common.request_license_usage(agent_host, agent_port)
-            )
 
         service_stats = asyncio.create_task(
             self.cluster.info_statistics(nodes=self.nodes)
@@ -268,14 +224,6 @@ class SummaryController(LiveClusterCommandController):
             pass
 
         metadata["os_version"] = os_version
-        license_usage: Union[common.UDAResponsesDict, None] = None
-        error = None
-
-        if license_usage_future is not None:
-            try:
-                license_usage = await license_usage_future
-            except Exception as e:
-                error = "Failed to retrieve license usage information : {}".format(e)
 
         service_stats = await service_stats
         namespace_stats = await namespace_stats
@@ -293,11 +241,6 @@ class SummaryController(LiveClusterCommandController):
                 service_configs=service_configs,
                 ns_configs=namespace_configs,
                 security_configs=security_configs,
-                license_data_usage=license_usage,
-                license_allow_unstable=agent_unstable,
             ),
             list_view=enable_list_view,
         )
-
-        if error is not None:
-            logger.error(error)
