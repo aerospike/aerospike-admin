@@ -2978,21 +2978,21 @@ def get_system_commands(port=3000) -> list[list[str]]:
         ["uptime"],
         netstat_cmds,
         [
-            "ss -ant state time-wait sport = :%d or dport = :%d | wc -l" % (port, port),
+            "ss -ant state time-wait '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l" % (port, port),
             "netstat -ant | grep %d | grep TIME_WAIT | wc -l" % (port),
         ],
         [
-            "ss -ant state close-wait sport = :%d or dport = :%d | wc -l"
+            "ss -ant state close-wait '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l"
             % (port, port),
             "netstat -ant | grep %d | grep CLOSE_WAIT | wc -l" % (port),
         ],
         [
-            "ss -ant state established sport = :%d or dport = :%d | wc -l"
+            "ss -ant state established '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l"
             % (port, port),
             "netstat -ant | grep %d | grep ESTABLISHED | wc -l" % (port),
         ],
         [
-            "ss -ant state listening sport = :%d or dport = :%d |  wc -l" % (port, port),
+            "ss -ant state listening '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l" % (port, port),
             "netstat -ant | grep %d | grep LISTEN | wc -l" % (port),
         ],
         ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c'],
