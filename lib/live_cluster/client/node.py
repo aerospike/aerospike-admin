@@ -381,7 +381,7 @@ class Node(AsyncObject):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
         self.socket_pool: dict[int, set[ASSocket]] = {}
         self.socket_pool[self.port] = set()
-        self.socket_pool_max_size = 3
+        self.socket_pool_max_size = 16
 
     def _is_any_my_ip(self, ips):
         if not ips:
