@@ -296,9 +296,9 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats",
                         "index_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
-                        "index_flash_used_bytes",
-                        "index_pmem_used_bytes",
-                        "memory_used_index_bytes",
+                        "index_flash_used_bytes", # pre 7.0
+                        "index_pmem_used_bytes", # pre 7.0
+                        "memory_used_index_bytes", # pre 7.0
                     ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
@@ -310,20 +310,16 @@ info_namespace_usage_sheet = Sheet(
                         Projectors.Func(
                             FieldType.number,
                             lambda pct: pct / 100.0,  # Convert percentage (0-100) to ratio (0-1)
-                            Projectors.Number("ns_stats", "index_mounts_used_pct"),  # Direct percentage field
+                            Projectors.Number("ns_stats", "index_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
                         ),
-                        Projectors.Div(
+                        Projectors.Div( # pre 7.0
                             Projectors.Number(
                                 "ns_stats",
-                                "index_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
                                 "index_flash_used_bytes",
                                 "index_pmem_used_bytes",
-                                "memory_used_index_bytes",
                             ),
                             Projectors.Number(
                                 "ns_stats",
-                                "index-type.mounts-budget",  # Meant to be used with index_used_bytes. Both added in 7.0
-                                "indexes-memory-budget",  # Added in 7.1 for memory only
                                 "index-type.mounts-size-limit",
                             ),
                         ),
@@ -372,9 +368,9 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats",
                         "sindex_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
-                        "sindex_flash_used_bytes",
-                        "sindex_pmem_used_bytes",
-                        "memory_used_sindex_bytes",
+                        "sindex_flash_used_bytes", # pre 7.0
+                        "sindex_pmem_used_bytes", # pre 7.0
+                        "memory_used_sindex_bytes", # pre 7.0
                     ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
@@ -386,20 +382,16 @@ info_namespace_usage_sheet = Sheet(
                         Projectors.Func(
                             FieldType.number,
                             lambda pct: pct / 100.0,  # Convert percentage (0-100) to ratio (0-1)
-                            Projectors.Number("ns_stats", "sindex_mounts_used_pct"),  # Direct percentage field
+                            Projectors.Number("ns_stats", "sindex_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
                         ),
-                        Projectors.Div(
+                        Projectors.Div( # pre 7.0
                             Projectors.Number(
                                 "ns_stats",
-                                "sindex_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
                                 "sindex_flash_used_bytes",
                                 "sindex_pmem_used_bytes",
-                                "memory_used_sindex_bytes",
                             ),
                             Projectors.Number(
                                 "ns_stats",
-                                "sindex-type.mounts-budget",  # Meant to be used with index_used_bytes. Both added in 7.0
-                                "indexes-memory-budget",  # Added in 7.1 for memory only, accounts for sindex also for in memory
                                 "sindex-type.mounts-size-limit",
                             ),
                         ),
