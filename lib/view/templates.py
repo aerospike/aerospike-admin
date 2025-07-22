@@ -2574,16 +2574,15 @@ info_transactions_monitors_sheet = Sheet(
             Projectors.Number("ns_stats", "mrt_monitors"),
             converter=Converters.scientific_units,
             aggregator=Aggregators.sum(),
-            formatters=(
-                Formatters.yellow_alert(lambda edata: edata.value > 1000),
-                Formatters.red_alert(lambda edata: edata.value > 10000),
-            ),
         ),
         Field(
             "Active",
             Projectors.Number("ns_stats", "mrt_monitors_active"),
             converter=Converters.scientific_units,
             aggregator=Aggregators.sum(),
+            formatters=(
+                Formatters.yellow_alert(lambda edata: edata.value > 0),
+            ),
         ),
         Field(
             "Tombstones",
@@ -2593,7 +2592,7 @@ info_transactions_monitors_sheet = Sheet(
         ),
         Field(
             "Storage",
-            Projectors.Number("ns_stats", "mrt_data_used_bytes"),
+            Projectors.Number("ns_stats", "pseudo_mrt_monitor_used_bytes"),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
         ),
@@ -2612,18 +2611,12 @@ info_transactions_monitors_sheet = Sheet(
                     Projectors.Number("ns_stats", "mrt_monitor_roll_back_error"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.red_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
                 Field(
                     "Timeout",
                     Projectors.Number("ns_stats", "mrt_monitor_roll_back_timeout"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.yellow_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
             ),
         ),
@@ -2642,18 +2635,12 @@ info_transactions_monitors_sheet = Sheet(
                     Projectors.Number("ns_stats", "mrt_monitor_roll_forward_error"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.red_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
                 Field(
                     "Timeout",
                     Projectors.Number("ns_stats", "mrt_monitor_roll_forward_timeout"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.yellow_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
             ),
         ),
@@ -2683,20 +2670,12 @@ info_transactions_provisionals_sheet = Sheet(
             Projectors.Number("ns_stats", "fail_mrt_blocked"),
             converter=Converters.scientific_units,
             aggregator=Aggregators.sum(),
-            formatters=(
-                Formatters.red_alert(lambda edata: edata.value > 100),
-                Formatters.yellow_alert(lambda edata: edata.value > 10),
-            ),
         ),
         Field(
             "Version Mismatch",
             Projectors.Number("ns_stats", "fail_mrt_version_mismatch"),
             converter=Converters.scientific_units,
             aggregator=Aggregators.sum(),
-            formatters=(
-                Formatters.red_alert(lambda edata: edata.value > 100),
-                Formatters.yellow_alert(lambda edata: edata.value > 10),
-            ),
         ),
         # Verify Read Metrics
         Subgroup(
@@ -2713,18 +2692,12 @@ info_transactions_provisionals_sheet = Sheet(
                     Projectors.Number("ns_stats", "mrt_verify_read_error"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.red_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
                 Field(
                     "Timeout",
                     Projectors.Number("ns_stats", "mrt_verify_read_timeout"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.yellow_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
             ),
         ),
@@ -2743,18 +2716,12 @@ info_transactions_provisionals_sheet = Sheet(
                     Projectors.Number("ns_stats", "mrt_roll_back_error"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.red_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
                 Field(
                     "Timeout",
                     Projectors.Number("ns_stats", "mrt_roll_back_timeout"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.yellow_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
             ),
         ),
@@ -2773,18 +2740,12 @@ info_transactions_provisionals_sheet = Sheet(
                     Projectors.Number("ns_stats", "mrt_roll_forward_error"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.red_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
                 Field(
                     "Timeout",
                     Projectors.Number("ns_stats", "mrt_roll_forward_timeout"),
                     converter=Converters.scientific_units,
                     aggregator=Aggregators.sum(),
-                    formatters=(
-                        Formatters.yellow_alert(lambda edata: edata.value > 0),
-                    ),
                 ),
             ),
         ),
