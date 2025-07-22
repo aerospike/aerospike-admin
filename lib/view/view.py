@@ -236,7 +236,7 @@ class CliView(object):
                     for (ns, set_name), set_data in sets_dict.items():
                         if set_name == "<ERO~MRT" and ns in ns_stats[node]:
                             # Add set metrics to namespace stats with prefixed names
-                            ns_stats[node][ns]["mrt_data_used_bytes"] = int(set_data.get("data_used_bytes", 0))
+                            ns_stats[node][ns]["pseudo_mrt_monitor_used_bytes"] = int(set_data.get("data_used_bytes", 0))
         
         sources = dict(
             node_ids=node_ids,
