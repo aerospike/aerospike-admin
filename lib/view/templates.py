@@ -2574,6 +2574,9 @@ info_transactions_monitors_sheet = Sheet(
             Projectors.Number("ns_stats", "mrt_monitors"),
             converter=Converters.scientific_units,
             aggregator=Aggregators.sum(),
+            formatters=(
+                Formatters.red_alert(lambda edata: edata.value > edata.record["stop-writes-count"] and edata.record["stop-writes-count"] > 0),
+            ),
         ),
         Field(
             "Active",
@@ -2595,6 +2598,20 @@ info_transactions_monitors_sheet = Sheet(
             Projectors.Number("ns_stats", "pseudo_mrt_monitor_used_bytes"),
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
+            formatters=(
+                Formatters.red_alert(lambda edata: edata.value > edata.record["stop-writes-size"] and edata.record["stop-writes-size"] > 0),
+            ),
+        ),
+        # For Color Alerts at Count and Storage
+        Field(
+            "stop-writes-count",
+            Projectors.Number("ns_stats", "stop-writes-count"),
+            hidden=True,
+        ),
+        Field(
+            "stop-writes-size",
+            Projectors.Number("ns_stats", "stop-writes-size"),
+            hidden=True,
         ),
         # Monitor Roll Back Metrics
         Subgroup(
