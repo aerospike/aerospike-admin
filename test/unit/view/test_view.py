@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
+from contextlib import redirect_stdout
 import datetime
 import unittest
 from mock import MagicMock, call, patch
 from lib.utils.common import SummaryClusterDict, SummaryNamespacesDict
-
 from lib.view import templates, terminal
 from lib.view.view import CliView
 from lib.view.sheet.const import SheetStyle
@@ -1278,3 +1279,138 @@ class CliViewTest(unittest.TestCase):
             sources,
             common=common,
         )
+
+    def test_info_namespace_usage_actual_output_pre_7_0(self):
+        """End-to-end test: verify actual output of info_namespace_usage for pre-7.0 (division) case."""
+
+        ns_stats_pre = {
+            "1.1.1.1": {
+                "test": {
+                    "index_flash_used_bytes": "250000", 
+                    "sindex_flash_used_bytes": "500000",
+                    "index-type.mounts-size-limit": "1000000",
+                    "memory_used_index_bytes": "300000",
+                    "sindex-type.mounts-size-limit": "1000000",
+                    "memory_used_sindex_bytes": "100000",
+                    "storage-engine": "memory",
+                    "index-type": "shmem",
+                    "sindex-type": "shmem"
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        patch.stopall()
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            CliView.info_namespace_usage(
+                ns_stats_pre, service_stats, self.cluster_mock, timestamp="test-stamp"
+            )
+        output = f.getvalue()
+
+        self.assertIn("Namespace Usage Information (test-stamp)", output)
+        self.assertIn("test", output)
+        self.assertIn("node1", output)
+        self.assertIn("244.141 KB", output) # index used bytes
+        self.assertIn("488.281 KB", output) # sindex used bytes
+        self.assertIn("25.0 %", output) # index used %
+        self.assertIn("50.0 %", output) # sindex used %
+
+    def test_info_namespace_usage_actual_output_post_7_0(self):
+        """End-to-end test: verify actual output of info_namespace_usage for post-7.0 (percentage) case."""
+        
+        ns_stats_post = {
+            "2.2.2.2": {
+                "test": {
+                    "index-type.mounts-budget": "1000000",
+                    "index_used_bytes": "300000",
+                    "index_mounts_used_pct": "38.46", # flash, pmem, and memory metrics were consolidated in 7.0
+                    "sindex-type.mounts-budget": "500000",
+                    "sindex_used_bytes": "100000",
+                    "sindex_mounts_used_pct": "46.15", # flash, pmem, and memory metrics were consolidated in 7.0
+                    "storage-engine": "device",
+                    "index-type": "flash",
+                    "sindex-type": "flash"
+                }
+            }
+        }
+        service_stats_post = {"2.2.2.2": {}}
+        node_names_post = {"2.2.2.2": "node2"}
+        node_ids_post = {"2.2.2.2": "NODE2"}
+        principal_post = "test-principal"
+
+        # Re-mock for new node
+        self.cluster_mock = MagicMock()
+        self.cluster_mock.get_node_names.return_value = node_names_post
+        self.cluster_mock.get_node_ids.return_value = node_ids_post
+        self.cluster_mock.get_expected_principal.return_value = principal_post
+
+        patch.stopall()
+
+        f2 = io.StringIO()
+        with redirect_stdout(f2):
+            CliView.info_namespace_usage(
+                ns_stats_post, service_stats_post, self.cluster_mock, timestamp="test-stamp"
+            )
+        output = f2.getvalue()
+
+        self.assertIn("Namespace Usage Information (test-stamp)", output)
+        self.assertIn("test", output)
+        self.assertIn("node2", output)
+        self.assertIn("292.969 KB", output) # index used bytes
+        self.assertIn("97.656 KB", output) # sindex used bytes
+        self.assertIn("38.46 %", output) # index used %
+        self.assertIn("46.15 %", output) # sindex used %
+
+    def test_info_namespace_usage_in_memory_no_used_pct(self):
+        """Test that for in-memory namespaces, if index-type.mounts-size-limit is not present, the Used% column is not rendered for index."""
+
+        ns_stats = {
+            "2.2.2.2": {
+                "test": {
+                    "index-type.mounts-budget": "1000000",
+                    "index_used_bytes": "300000",
+                    # 'index_mounts_used_pct' is intentionally missing
+                    # 'sindex-type.mounts-size-limit' is intentionally missing
+                    "sindex_used_bytes": "100000",
+                    "storage-engine": "memory",  # explicitly in-memory
+                    "index-type": "shmem",
+                    "sindex-type": "shmem"
+                }
+            }
+        }
+        service_stats = {"2.2.2.2": {}}
+        node_names = {"2.2.2.2": "node2"}
+        node_ids = {"2.2.2.2": "NODE2"}
+        principal = "test-principal"
+
+        self.cluster_mock = MagicMock()
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        patch.stopall()
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            CliView.info_namespace_usage(
+                ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+            )
+        output = f.getvalue()
+
+        self.assertIn("Namespace Usage Information (test-stamp)", output)
+        self.assertIn("test", output)
+        self.assertIn("node2", output)
+        self.assertIn("292.969 KB", output) # index used bytes
+        self.assertIn("97.656 KB", output) # sindex used bytes
+        # Should not have a Used% column for sindex
+        self.assertNotIn("Used%", output)
+        self.assertNotIn("SIndex Used%", output)
