@@ -1003,12 +1003,16 @@ class CliViewTest(unittest.TestCase):
         set_stats = {
             "1.1.1.1": {
                 ("test", "<ERO~MRT"): {
-                    "data_used_bytes": 1024
+                    "data_used_bytes": 1024,
+                    "stop-writes-count": 100,
+                    "stop-writes-size": 1024,
                 }
             },
             "2.2.2.2": {
                 ("test", "<ERO~MRT"): {
-                    "data_used_bytes": 2048
+                    "data_used_bytes": 2048,
+                    "stop-writes-count": 100,
+                    "stop-writes-size": 1024,
                 }
             }
         }
@@ -1021,7 +1025,9 @@ class CliViewTest(unittest.TestCase):
                     "mrt_monitor_roll_back_error": 2,
                     "mrt_monitor_roll_forward_success": 8,
                     "mrt_monitor_roll_forward_error": 1,
-                    "mrt_data_used_bytes": 1024
+                    "pseudo_mrt_monitor_used_bytes": 1024,
+                    "stop-writes-count": 100,
+                    "stop-writes-size": 1024,
                 }
             },
             "2.2.2.2": {
@@ -1032,7 +1038,9 @@ class CliViewTest(unittest.TestCase):
                     "mrt_monitor_roll_back_error": 3,
                     "mrt_monitor_roll_forward_success": 12,
                     "mrt_monitor_roll_forward_error": 2,
-                    "mrt_data_used_bytes": 2048
+                    "pseudo_mrt_monitor_used_bytes": 2048,
+                    "stop-writes-count": 100,
+                    "stop-writes-size": 1024,
                 }
             }
         }
@@ -1182,7 +1190,7 @@ class CliViewTest(unittest.TestCase):
         
         # Verify the ns_stats structure - should only merge set data for valid nodes
         self.assertEqual(sources["ns_stats"]["1.1.1.1"]["test"]["mrt_monitors"], 100)
-        self.assertEqual(sources["ns_stats"]["1.1.1.1"]["test"]["mrt_data_used_bytes"], 1024)
+        self.assertEqual(sources["ns_stats"]["1.1.1.1"]["test"]["pseudo_mrt_monitor_used_bytes"], 1024)
         self.assertIsInstance(sources["ns_stats"]["2.2.2.2"], Exception)
         self.assertEqual(str(sources["ns_stats"]["2.2.2.2"]), "Node error")
 
