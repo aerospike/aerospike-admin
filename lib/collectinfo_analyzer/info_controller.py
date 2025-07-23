@@ -20,6 +20,7 @@ from lib.collectinfo_analyzer.get_controller import (
 from lib.utils import constants, util, version
 
 from .collectinfo_command_controller import CollectinfoCommandController
+from lib.base_controller import ShellException
 
 Modifiers = constants.Modifiers
 ModifierUsageHelp = constants.ModifierUsage
@@ -38,6 +39,11 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
     async def _do_default(self, line):
+        if line:
+            raise ShellException(
+                f"info: '{line[0]}' is not a valid subcommand. See 'help info' for available subcommands."
+            )
+
         self.do_network(line)
         # needs to be awaited since the base class is async
         await self.controller_map["namespace"]()(line[:])

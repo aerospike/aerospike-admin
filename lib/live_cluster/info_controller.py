@@ -20,6 +20,7 @@ from lib.live_cluster.get_controller import (
 from lib.utils import util, version, constants
 from lib.base_controller import CommandHelp, ModifierHelp
 from .live_cluster_command_controller import LiveClusterCommandController
+from lib.base_controller import ShellException
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,11 @@ class InfoController(LiveClusterCommandController):
         # 'info namespace object', but since it is not correct command it should print output for partial correct
         # command, in this case it should print data for 'info'. To keep consistent output format, we are passing empty
         # list as line.
+        if line:
+            raise ShellException(
+                f"info: '{line[0]}' is not a valid subcommand. See 'help info' for available subcommands."
+            )
+        
         results = await asyncio.gather(
             self.do_network(line),
             self.controller_map["namespace"](get_futures=True)([]),
