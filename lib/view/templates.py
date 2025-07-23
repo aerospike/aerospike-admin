@@ -310,7 +310,7 @@ info_namespace_usage_sheet = Sheet(
                         Projectors.Func(
                             FieldType.number,
                             lambda pct: pct / 100.0,  # Convert percentage (0-100) to ratio (0-1)
-                            Projectors.Number("ns_stats", "index_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
+                            Projectors.Float("ns_stats", "index_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
                         ),
                         Projectors.Div( # pre 7.0
                             Projectors.Number(
@@ -382,7 +382,7 @@ info_namespace_usage_sheet = Sheet(
                         Projectors.Func(
                             FieldType.number,
                             lambda pct: pct / 100.0,  # Convert percentage (0-100) to ratio (0-1)
-                            Projectors.Number("ns_stats", "sindex_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
+                            Projectors.Float("ns_stats", "sindex_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
                         ),
                         Projectors.Div( # pre 7.0
                             Projectors.Number(
