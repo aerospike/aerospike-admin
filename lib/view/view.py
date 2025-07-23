@@ -235,16 +235,11 @@ class CliView(object):
                     # sets_dict contains (namespace, set_name) tuples as keys
                     for (ns, set_name), set_data in sets_dict.items():
                         if set_name == "<ERO~MRT" and ns in ns_stats[node]:
-                            print("set data")
-                            print_dict(set_data)
                             # Add set metrics to namespace stats with prefixed names
                             ns_stats[node][ns]["pseudo_mrt_monitor_used_bytes"] = int(set_data.get("data_used_bytes", 0))
                             ns_stats[node][ns]["stop-writes-count"] = int(set_data.get("stop-writes-count", 0))
                             ns_stats[node][ns]["stop-writes-size"] = int(set_data.get("stop-writes-size", 0))
 
-        # beauti print ns_stats
-        print("wow")
-        print_dict(ns_stats)
         sources = dict(
             node_ids=node_ids,
             node_names=node_names,

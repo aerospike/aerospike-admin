@@ -2575,7 +2575,8 @@ info_transactions_monitors_sheet = Sheet(
             converter=Converters.scientific_units,
             aggregator=Aggregators.sum(),
             formatters=(
-                Formatters.red_alert(lambda edata: edata.value > edata.record["stop-writes-count"] and edata.record["stop-writes-count"] > 0),
+                Formatters.red_alert(lambda edata: edata.value > 0.9 * edata.record["stop-writes-count"] and edata.record["stop-writes-count"] > 0),
+                Formatters.yellow_alert(lambda edata: edata.value > 0.7 * edata.record["stop-writes-count"] and edata.record["stop-writes-count"] > 0),
             ),
         ),
         Field(
@@ -2599,7 +2600,8 @@ info_transactions_monitors_sheet = Sheet(
             converter=Converters.byte,
             aggregator=Aggregators.sum(),
             formatters=(
-                Formatters.red_alert(lambda edata: edata.value > edata.record["stop-writes-size"] and edata.record["stop-writes-size"] > 0),
+                Formatters.red_alert(lambda edata: edata.value > 0.9 * edata.record["stop-writes-size"] and edata.record["stop-writes-size"] > 0),
+                Formatters.yellow_alert(lambda edata: edata.value > 0.7 * edata.record["stop-writes-size"] and edata.record["stop-writes-size"] > 0),
             ),
         ),
         # For Color Alerts at Count and Storage
