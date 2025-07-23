@@ -226,6 +226,17 @@ class TestInfo(asynctest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
 
+    async def test_info_unknown_subcommand(self):
+        """
+        This test asserts that an unknown subcommand to 'info' returns a clear error.
+        """
+        with self.assertRaises(Exception) as context:
+            await test_util.capture_separate_and_parse_output(self.rc, ["info", "random"])
+        self.assertIn(
+            "info: 'random' is not a valid subcommand. See 'help info' for available subcommands.",
+            str(context.exception)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
