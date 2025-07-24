@@ -25,7 +25,7 @@ logger.setLevel(logging.CRITICAL)
 
 
 def parse_collectinfo_files(
-    file_paths, parsed_map, license_usage_map, ignore_exception=False
+    file_paths, parsed_map, ignore_exception=False
 ):
     """
     Parses on files in the collectinfo.tgz to run in collectinfo (-cf) mode.
@@ -57,19 +57,6 @@ def parse_collectinfo_files(
                 logger.info("File is already pasred_json: " + cinfo_path_name)
                 parsed_map.update(cinfo_map)
                 json_parsed_timestamps = list(cinfo_map.keys())
-
-        if cinfo_path_name.endswith("aslicenseusage.json"):
-            license_map = {}
-
-            try:
-                with open(cinfo_path_name) as unique_json:
-                    license_map = json.load(unique_json, object_hook=_stringify)
-            except IOError as e:
-                if not ignore_exception:
-                    logger.error(str(e))
-                    raise
-
-            license_usage_map.update(license_map)
 
     parsed_conf_map = {}
     for cinfo_path in file_paths:
