@@ -13,6 +13,7 @@
 # limitations under the License.
 import asyncio
 import logging
+from lib.health.util import print_dict
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -336,16 +337,39 @@ class InfoTransactionsController(LiveClusterCommandController):
     )
     async def do_monitors(self, line):
         # Get namespace statistics which contain MRT metrics
-        # Also get set statistics to include <ERO~MRT internal set data
-        ns_stats, set_stats = await asyncio.gather(
-            self.stats_getter.get_namespace(nodes=self.nodes),
-            self.cluster.info_all_set_statistics(nodes=self.nodes),
-        )
+        ns_stats = await self.stats_getter.get_namespace(nodes=self.nodes)
+        
+        # Collect all namespaces from all nodes
+        namespaces = set()
+        for node_id, node_stats in ns_stats.items():
+            if isinstance(node_stats, Exception):
+                continue
+            namespaces.update(node_stats.keys())
+        
+        # For each namespace, get <ERO~MRT set statistics and merge directly into namespace stats
+        for namespace in namespaces:
+            # Get <ERO~MRT set statistics for this namespace from all nodes
+            set_data = await self.cluster.info_set_statistics(namespace, constants.MRT_SET, nodes=self.nodes)
+            
+            # Merge the set data directly into the namespace statistics
+            for node_id, set_stats in set_data.items():
+                if (
+                    isinstance(set_stats, Exception) 
+                    or not set_stats 
+                    or node_id not in ns_stats 
+                    or isinstance(ns_stats[node_id], Exception) 
+                    or namespace not in ns_stats[node_id]
+                ):
+                    continue
+                
+                # Add set metrics to namespace stats with prefixed names
+                ns_stats[node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0))
+                ns_stats[node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0))
+                ns_stats[node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0))
         
         return util.callable(
             self.view.info_transactions_monitors,
             ns_stats,
-            set_stats,
             self.cluster,
             **self.mods,
         )

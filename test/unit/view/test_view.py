@@ -1435,16 +1435,15 @@ class CliViewTest(unittest.TestCase):
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = principal
         
-        CliView.info_transactions_monitors(ns_stats, set_stats, self.cluster_mock, with_=["node1"])
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock, with_=["node1"])
         
         self.cluster_mock.get_node_names.assert_called_once_with(["node1"])
         self.cluster_mock.get_node_ids.assert_called_once_with(["node1"])
 
     def test_info_transactions_monitors_empty_stats(self):
         ns_stats = None
-        set_stats = None
         
-        CliView.info_transactions_monitors(ns_stats, set_stats, self.cluster_mock)
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock)
         
         # Should not call any cluster methods or render when stats are empty
         self.cluster_mock.get_node_names.assert_not_called()
@@ -1461,7 +1460,6 @@ class CliViewTest(unittest.TestCase):
                 "test": {"mrt_monitors": 100}
             }
         }
-        set_stats = None
         
         node_names = {"1.1.1.1": "node1"}
         node_ids = {"1.1.1.1": "ABCD"}
@@ -1478,7 +1476,7 @@ class CliViewTest(unittest.TestCase):
         }
         common = {"principal": principal}
         
-        CliView.info_transactions_monitors(ns_stats, set_stats, self.cluster_mock)
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock)
         
         # Should still render but without set data merged
         self.render_mock.assert_called_once_with(
@@ -1494,17 +1492,14 @@ class CliViewTest(unittest.TestCase):
         
         ns_stats = {
             "1.1.1.1": {
-                "test": {"mrt_monitors": 100}
+                "test": {
+                    "mrt_monitors": 100,
+                    "pseudo_mrt_monitor_used_bytes": 1024,  # Already merged from set stats
+                    "stop-writes-count": 0,
+                    "stop-writes-size": 0
+                }
             },
             "2.2.2.2": Exception("Node error")
-        }
-        set_stats = {
-            "1.1.1.1": {
-                ("test", "<ERO~MRT"): {"data_used_bytes": 1024}
-            },
-            "2.2.2.2": {
-                ("test", "<ERO~MRT"): {"data_used_bytes": 2048}
-            }
         }
         
         node_names = {"1.1.1.1": "node1", "2.2.2.2": "node2"}
@@ -1515,7 +1510,7 @@ class CliViewTest(unittest.TestCase):
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = principal
         
-        CliView.info_transactions_monitors(ns_stats, set_stats, self.cluster_mock)
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock)
         
         # Check that render was called with the expected arguments
         self.render_mock.assert_called_once()

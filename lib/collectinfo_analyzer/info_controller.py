@@ -329,10 +329,21 @@ class InfoTransactionsController(CollectinfoCommandController):
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 continue
+                
+            # Merge <ERO~MRT set statistics into ns_stats before passing to view
+            if timestamp in set_stats and set_stats[timestamp]:
+                for node, sets_dict in set_stats[timestamp].items():
+                    if node in ns_stats[timestamp] and not isinstance(ns_stats[timestamp][node], Exception):
+                        # sets_dict contains (namespace, set_name) tuples as keys
+                        for (ns, set_name), set_data in sets_dict.items():
+                            if set_name == constants.MRT_SET and ns in ns_stats[timestamp][node]:
+                                # Add set metrics to namespace stats with prefixed names
+                                ns_stats[timestamp][node][ns]["pseudo_mrt_monitor_used_bytes"] = int(set_data.get("data_used_bytes", 0))
+                                ns_stats[timestamp][node][ns]["stop-writes-count"] = int(set_data.get("stop-writes-count", 0))
+                                ns_stats[timestamp][node][ns]["stop-writes-size"] = int(set_data.get("stop-writes-size", 0))
 
             self.view.info_transactions_monitors(
                 ns_stats[timestamp],
-                set_stats.get(timestamp, {}),
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods,
