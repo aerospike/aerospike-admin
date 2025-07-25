@@ -20,6 +20,7 @@ from lib.live_cluster.get_controller import (
 from lib.utils import util, version, constants
 from lib.base_controller import CommandHelp, ModifierHelp
 from .live_cluster_command_controller import LiveClusterCommandController
+from lib.base_controller import ShellException
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +52,18 @@ class InfoController(LiveClusterCommandController):
 
     @CommandHelp("Displays network, namespace, and xdr summary information")
     async def _do_default(self, line):
-        # We are not using line for any of subcommand, but if user enters 'info object' or 'info usage' then it will
-        # give error for unexpected format. We can catch this inside InfoNamespaceController but in that case
-        # it will show incomplete output, for ex. 'info object' will print output of 'info network', 'info xdr' and
-        # 'info namespace object', but since it is not correct command it should print output for partial correct
-        # command, in this case it should print data for 'info'. To keep consistent output format, we are passing empty
-        # list as line.
+        # If no subcommand is provided, show the default info summary with network, namespace, and xdr information
+        # For unknown subcommands (e.g., 'info random'), we explicitly reject them rather than falling back to
+        # the default info summary because:
+        #  1. It's confusing for users - they expect either a valid result or a clear error
+        #  2. It can mislead users into thinking their command was valid when it wasn't
+        #  3. It produces inconsistent output - sometimes partial info would be shown
+        #  4. It makes debugging harder - typos wouldn't be caught and reported
+        if line:
+            raise ShellException(
+                f"info: '{line[0]}' is not a valid subcommand. See 'help info' for available subcommands."
+            )
+       
         results = await asyncio.gather(
             self.do_network(line),
             self.controller_map["namespace"](get_futures=True)([]),

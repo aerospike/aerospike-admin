@@ -16,7 +16,6 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
 #############################################################################################################
 
-import asyncio
 import datetime
 import json
 import logging
@@ -25,18 +24,14 @@ import os
 import platform
 from typing import (
     Any,
-    Literal,
-    Optional,
-    TypedDict,
-    Union,
     Callable,
+    TypedDict
 )
 from typing_extensions import NotRequired, Required
 import distro
 import socket
 import time
 from urllib import request
-import aiohttp
 import zipfile
 from collections import OrderedDict
 from dateutil import parser as date_parser
@@ -603,139 +598,6 @@ def find_nodewise_features(
 ########## Summary ##########
 
 
-class UDAEntryNamespaceDict(TypedDict):
-    master_objects: int
-    unique_data_bytes: int
-
-
-UDAEntryNamespacesDict = NamespaceDict[UDAEntryNamespaceDict]
-
-
-class UDAEntryDict(TypedDict):
-    cluster_name: str
-    cluster_generation: int
-    node_count: int
-    hours_since_start: int
-    time: str
-    level: Union[Literal["info"], Literal["error"]]
-    master_objects: int
-    unique_data_bytes: int
-    namespaces: UDAEntryNamespacesDict
-    cluster_stable: bool
-    errors: list[str]
-
-
-class UDAEntriesRespDict(TypedDict):
-    count: int
-    entries: list[UDAEntryDict]
-
-
-class UDAResponsesRequiredDict(TypedDict):
-    license_usage: UDAEntriesRespDict
-    health: dict
-
-
-class UDAResponsesOptionalDict(TypedDict, total=False):
-    raw_store: str
-
-
-class UDAResponsesDict(UDAResponsesRequiredDict, UDAResponsesOptionalDict):
-    pass
-
-
-async def _fetch_url(session, url, func, **kwargs):
-    async with session.get(url, **kwargs) as resp:
-        resp.raise_for_status()
-        resp = await func(resp)
-    return resp
-
-
-async def _fetch_url_json(session, url, **kwargs):
-    async def json_func(resp):
-        return await resp.json()
-
-    return await _fetch_url(session, url, json_func, **kwargs)
-
-
-async def _fetch_url_text(session, url, **kwargs):
-    async def text_func(resp):
-        return await resp.text()
-
-    return await _fetch_url(session, url, text_func, **kwargs)
-
-
-async def _request_license_usage(
-    agent_host: str, agent_port: str, get_store: bool = False
-) -> UDAResponsesDict:
-    json_data: UDAResponsesDict = {
-        "license_usage": {"count": 0, "entries": []},
-        "health": {},
-    }
-
-    a_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-        days=365
-    )
-    a_year_ago = a_year_ago.isoformat()
-    timeout = aiohttp.ClientTimeout(total=5)
-
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            entries_params = {"start": a_year_ago}
-            agent_req_base = "http://" + agent_host + ":" + str(agent_port) + "/v1/"
-            requests = [
-                _fetch_url_json(
-                    session,
-                    agent_req_base + "entries/range/time",
-                    params=entries_params,
-                ),
-                _fetch_url_json(session, agent_req_base + "health"),
-            ]
-
-            entries_json: UDAEntriesRespDict
-            health_json: dict
-            store_txt: Optional[str] = None
-
-            if get_store:
-                requests.append(_fetch_url_text(session, agent_req_base + "raw-store"))
-                (
-                    entries_json,
-                    health_json,
-                    store_txt,
-                ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
-                    *requests
-                )
-            else:
-                (
-                    entries_json,
-                    health_json,
-                ) = await asyncio.gather(  # pyright: ignore[reportGeneralTypeIssues]
-                    *requests
-                )
-
-                json_data["health"] = health_json
-
-                json_data["license_usage"] = entries_json
-
-            if store_txt is not None:
-                json_data["raw_store"] = store_txt
-
-    except asyncio.TimeoutError as e:
-        raise TimeoutError("Unable to connect to agent. Connection timed out.")
-    except aiohttp.ClientConnectorError as e:
-        raise OSError("Unable to connect to agent : {}".format(e.os_error))
-    except aiohttp.ClientResponseError as e:
-        raise OSError(
-            "Incorrect response from agent : {} {}".format(e.status, e.message)
-        )
-    except Exception as e:
-        raise OSError("Unknown error : {}".format(e))
-
-    return json_data
-
-
-request_license_usage = util.async_cached(_request_license_usage, ttl=30)
-
-
 def _set_migration_status(namespace_stats, cluster_dict, ns_dict):
     """
     Function takes dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
@@ -912,75 +774,17 @@ class AggregateLicenseUsage:
         return d
 
 
-def _parse_agent_response(
-    license_usage: UDAEntriesRespDict,
+def compute_license_data_size(
+    namespace_stats,
+    server_builds: dict[str, str],
     summary_dict: SummaryDict,
-    allow_unstable: bool,
-) -> bool:
-    """
-    license_usage - a combination of responses from the unique-data-agent.
-    cluster_dict - A dictionary in which to store the result.
-    filter_cluster_stable - Ignore entries where the cluster is unstable because
-                              the computation may not be accurate. Default=True
-    """
-    entries = license_usage["entries"]
-    cluster_result = AggregateLicenseUsage()
-    namespaces_result: dict[str, AggregateLicenseUsage] = {}
-
-    for entry in entries:
-        if entry["level"] == "info":
-            # Pre-release v. of uda did not have cluster-stable
-            if not allow_unstable and not entry["cluster_stable"]:
-                continue
-
-            time_ = entry["time"]
-
-            total_data_bytes = entry["unique_data_bytes"]
-            cluster_result.update(total_data_bytes, time_)
-
-            if "namespaces" in entry:
-                for ns, usage in entry["namespaces"].items():
-                    ns_data_bytes = usage["unique_data_bytes"]
-                    if ns not in namespaces_result:
-                        namespaces_result[ns] = AggregateLicenseUsage()
-
-                    namespaces_result[ns].update(ns_data_bytes, time_)
-
-    if cluster_result.count != 0:
-        summary_dict["CLUSTER"][
-            "license_data"
-        ] = (
-            cluster_result.__dict__()
-        )  # allows type checker to view type rather than generic dict
-    else:
-        return False
-
-    for ns, ns_result in namespaces_result.items():
-        if ns_result.count != 0:
-            if ns in summary_dict["NAMESPACES"]:
-                summary_dict["NAMESPACES"][ns][
-                    "license_data"
-                ] = (
-                    ns_result.__dict__()
-                )  # allows type checker to view type rather than generic dict
-            else:
-                logger.warning(
-                    "Namespace %s found in UDA response but not in current cluster.", ns
-                )
-
-    return True
-
-
-def _manually_compute_license_data_size(
-    namespace_stats, server_builds, summary_dict: SummaryDict
 ):
     """
-    Function takes dictionary of set stats, dictionary of namespace stats, cluster output dictionary and namespace output dictionary.
-    Function finds license data size per namespace, and per cluster and updates output dictionaries.
+    Function takes dictionary of namespace stats and server builds.
+    Computes license data size per namespace and per cluster and updates output dictionaries.
     Please check formulae at https://aerospike.atlassian.net/wiki/spaces/SUP/pages/198344706/License+Data+Formulae.
     For more detail please see https://www.aerospike.com/docs/operations/plan/capacity/index.html.
     """
-
     if not namespace_stats:
         return
 
@@ -1106,45 +910,14 @@ def _manually_compute_license_data_size(
     summary_dict["CLUSTER"]["license_data"]["latest"] = int(round(cl_unique_data))
 
 
-def compute_license_data_size(
-    namespace_stats,
-    license_data_usage: Optional[UDAResponsesDict],
-    server_builds: dict[str, str],
-    allow_unstable: bool,
-    summary_dict: SummaryDict,
-):
-    if not license_data_usage:
-        _manually_compute_license_data_size(
-            namespace_stats, server_builds, summary_dict
-        )
-    else:
-        try:
-            license_usage = license_data_usage["license_usage"]
-            if not _parse_agent_response(license_usage, summary_dict, allow_unstable):
-                logger.warning("Zero entries found in uda response")
-                _manually_compute_license_data_size(
-                    namespace_stats, server_builds, summary_dict
-                )
-
-        #  an error was returned from request
-        except (TypeError, ValueError, KeyError) as e:
-            logger.error("Issue parsing agent response: %s", e)
-            _manually_compute_license_data_size(
-                namespace_stats, server_builds, summary_dict
-            )
-            return
-
-
 def create_summary(
     service_stats,
     namespace_stats,
     xdr_dc_stats,
     metadata,
-    license_allow_unstable: bool,
     service_configs={},
     ns_configs={},
     security_configs={},
-    license_data_usage: UDAResponsesDict | None = None,
 ) -> SummaryDict:
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
@@ -1198,9 +971,7 @@ def create_summary(
 
     compute_license_data_size(
         namespace_stats,
-        license_data_usage,
         metadata["server_build"],
-        license_allow_unstable,
         summary_dict,
     )
     _set_migration_status(
@@ -2978,21 +2749,21 @@ def get_system_commands(port=3000) -> list[list[str]]:
         ["uptime"],
         netstat_cmds,
         [
-            "ss -ant state time-wait sport = :%d or dport = :%d | wc -l" % (port, port),
+            "ss -ant state time-wait '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l" % (port, port),
             "netstat -ant | grep %d | grep TIME_WAIT | wc -l" % (port),
         ],
         [
-            "ss -ant state close-wait sport = :%d or dport = :%d | wc -l"
+            "ss -ant state close-wait '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l"
             % (port, port),
             "netstat -ant | grep %d | grep CLOSE_WAIT | wc -l" % (port),
         ],
         [
-            "ss -ant state established sport = :%d or dport = :%d | wc -l"
+            "ss -ant state established '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l"
             % (port, port),
             "netstat -ant | grep %d | grep ESTABLISHED | wc -l" % (port),
         ],
         [
-            "ss -ant state listening sport = :%d or dport = :%d |  wc -l" % (port, port),
+            "ss -ant state listening '( sport = :%d or dport = :%d )' | tail -n +2 | wc -l" % (port, port),
             "netstat -ant | grep %d | grep LISTEN | wc -l" % (port),
         ],
         ['arp -n|grep ether|tr -s [:blank:] | cut -d" " -f5 |sort|uniq -c'],
