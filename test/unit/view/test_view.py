@@ -1414,3 +1414,208 @@ class CliViewTest(unittest.TestCase):
         # Should not have a Used% column for sindex
         self.assertNotIn("Used%", output)
         self.assertNotIn("SIndex Used%", output)
+
+    def test_info_transactions_monitors_with_with_modifier(self):
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {"mrt_monitors": 100}
+            }
+        }
+        set_stats = {
+            "1.1.1.1": {
+                ("test", "<ERO~MRT"): {"data_used_bytes": 1024}
+            }
+        }
+        
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "ABCD"}
+        principal = "test-principal"
+        
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+        
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock, with_=["node1"])
+        
+        self.cluster_mock.get_node_names.assert_called_once_with(["node1"])
+        self.cluster_mock.get_node_ids.assert_called_once_with(["node1"])
+
+    def test_info_transactions_monitors_empty_stats(self):
+        ns_stats = None
+        
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock)
+        
+        # Should not call any cluster methods or render when stats are empty
+        self.cluster_mock.get_node_names.assert_not_called()
+        self.cluster_mock.get_node_ids.assert_not_called()
+        self.cluster_mock.get_expected_principal.assert_not_called()
+        self.render_mock.assert_not_called()
+
+    @patch('lib.view.view.CliView._get_timestamp_suffix')
+    def test_info_transactions_monitors_no_set_stats(self, mock_timestamp):
+        mock_timestamp.return_value = " (test-timestamp)"
+        
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {"mrt_monitors": 100}
+            }
+        }
+        
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "ABCD"}
+        principal = "test-principal"
+        
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+        
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+        }
+        common = {"principal": principal}
+        
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock)
+        
+        # Should still render but without set data merged
+        self.render_mock.assert_called_once_with(
+            templates.info_transactions_monitors_sheet,
+            "MRT Monitor Metrics (test-timestamp)",
+            sources,
+            common=common
+        )
+
+    @patch('lib.view.view.CliView._get_timestamp_suffix')
+    def test_info_transactions_monitors_node_exception(self, mock_timestamp):
+        mock_timestamp.return_value = " (test-timestamp)"
+        
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "mrt_monitors": 100,
+                    "pseudo_mrt_monitor_used_bytes": 1024,  # Already merged from set stats
+                    "stop-writes-count": 0,
+                    "stop-writes-size": 0
+                }
+            },
+            "2.2.2.2": Exception("Node error")
+        }
+        
+        node_names = {"1.1.1.1": "node1", "2.2.2.2": "node2"}
+        node_ids = {"1.1.1.1": "ABCD", "2.2.2.2": "EFGH"}
+        principal = "test-principal"
+        
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+        
+        CliView.info_transactions_monitors(ns_stats, self.cluster_mock)
+        
+        # Check that render was called with the expected arguments
+        self.render_mock.assert_called_once()
+        args, kwargs = self.render_mock.call_args
+        
+        # Verify the title and common data
+        self.assertEqual(args[1], "MRT Monitor Metrics (test-timestamp)")
+        self.assertEqual(kwargs.get('common'), {"principal": principal})
+        
+        # Verify the sources structure
+        sources = args[2]
+        self.assertEqual(sources["node_ids"], node_ids)
+        self.assertEqual(sources["node_names"], node_names)
+        
+        # Verify the ns_stats structure - should only merge set data for valid nodes
+        self.assertEqual(sources["ns_stats"]["1.1.1.1"]["test"]["mrt_monitors"], 100)
+        self.assertEqual(sources["ns_stats"]["1.1.1.1"]["test"]["pseudo_mrt_monitor_used_bytes"], 1024)
+        self.assertIsInstance(sources["ns_stats"]["2.2.2.2"], Exception)
+        self.assertEqual(str(sources["ns_stats"]["2.2.2.2"]), "Node error")
+
+    def test_info_transactions_provisionals(self):
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "mrt_provisionals": 50,
+                    "fail_mrt_blocked": 5,
+                    "fail_mrt_version_mismatch": 2,
+                    "mrt_verify_read_success": 40,
+                    "mrt_verify_read_error": 1,
+                    "mrt_roll_back_success": 30,
+                    "mrt_roll_back_error": 2,
+                    "mrt_roll_forward_success": 35,
+                    "mrt_roll_forward_error": 1,
+                }
+            },
+            "2.2.2.2": {
+                "test": {
+                    "mrt_provisionals": 75,
+                    "fail_mrt_blocked": 8,
+                    "fail_mrt_version_mismatch": 3,
+                    "mrt_verify_read_success": 60,
+                    "mrt_verify_read_error": 2,
+                    "mrt_roll_back_success": 45,
+                    "mrt_roll_back_error": 3,
+                    "mrt_roll_forward_success": 50,
+                    "mrt_roll_forward_error": 2,
+                }
+            }
+        }
+        
+        node_names = {"1.1.1.1": "node1", "2.2.2.2": "node2"}
+        node_ids = {"1.1.1.1": "ABCD", "2.2.2.2": "EFGH"}
+        principal = "test-principal"
+        
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+        
+        sources = {
+            "node_ids": node_ids,
+            "node_names": node_names,
+            "ns_stats": ns_stats,
+        }
+        common = {"principal": principal}
+        
+        CliView.info_transactions_provisionals(ns_stats, self.cluster_mock, timestamp="test-stamp")
+        
+        self.cluster_mock.get_node_names.assert_called_once_with(None)
+        self.cluster_mock.get_node_ids.assert_called_once_with(None)
+        self.cluster_mock.get_expected_principal.assert_called_once()
+        
+        self.render_mock.assert_called_once_with(
+            templates.info_transactions_provisionals_sheet,
+            "MRT Provisionals Metrics (test-stamp)",
+            sources,
+            common=common
+        )
+
+    def test_info_transactions_provisionals_with_with_modifier(self):
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {"mrt_provisionals": 50}
+            }
+        }
+        
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "ABCD"}
+        principal = "test-principal"
+        
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+        
+        CliView.info_transactions_provisionals(ns_stats, self.cluster_mock, with_=["node1"])
+        
+        self.cluster_mock.get_node_names.assert_called_once_with(["node1"])
+        self.cluster_mock.get_node_ids.assert_called_once_with(["node1"])
+
+    def test_info_transactions_provisionals_empty_stats(self):
+        ns_stats = None
+        
+        CliView.info_transactions_provisionals(ns_stats, self.cluster_mock)
+        
+        # Should not call any cluster methods or render when stats are empty
+        self.cluster_mock.get_node_names.assert_not_called()
+        self.cluster_mock.get_node_ids.assert_not_called()
+        self.cluster_mock.get_expected_principal.assert_not_called()
+        self.render_mock.assert_not_called()

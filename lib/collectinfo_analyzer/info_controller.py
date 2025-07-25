@@ -35,7 +35,10 @@ class InfoController(CollectinfoCommandController):
         self.modifiers = set(["for"])
         self.stats_getter = GetStatisticsController(self.log_handler)
         self.config_getter = GetConfigController(self.log_handler)
-        self.controller_map = dict(namespace=InfoNamespaceController)
+        self.controller_map = dict(
+            namespace=InfoNamespaceController,
+            transactions=InfoTransactionsController
+        )
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
     async def _do_default(self, line):
@@ -293,6 +296,72 @@ class InfoNamespaceController(CollectinfoCommandController):
             self.view.info_namespace_object(
                 ns_stats[timestamp],
                 rack_ids.get(timestamp, {}),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+
+@CommandHelp(
+    "Displays MRT (Multi-Record Transaction) metrics for each namespace",
+)
+class InfoTransactionsController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set()
+        self.stats_getter = GetStatisticsController(self.log_handler)
+
+    @CommandHelp(
+        "Displays monitors and provisionals information for MRT transactions",
+    )
+    def _do_default(self, line):
+        self.do_monitors(line)
+        self.do_provisionals(line)
+
+    @CommandHelp(
+        "Displays monitor-related MRT metrics for each namespace",
+    )
+    def do_monitors(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = self.stats_getter.get_namespace()
+        # Get set statistics to include <ERO~MRT internal set data
+        set_stats = self.stats_getter.get_sets()
+
+        for timestamp in sorted(ns_stats.keys()):
+            if not ns_stats[timestamp]:
+                continue
+                
+            # Merge <ERO~MRT set statistics into ns_stats before passing to view
+            if timestamp in set_stats and set_stats[timestamp]:
+                for node, sets_dict in set_stats[timestamp].items():
+                    if node in ns_stats[timestamp] and not isinstance(ns_stats[timestamp][node], Exception):
+                        # sets_dict contains (namespace, set_name) tuples as keys
+                        for (ns, set_name), set_data in sets_dict.items():
+                            if set_name == constants.MRT_SET and ns in ns_stats[timestamp][node]:
+                                # Add set metrics to namespace stats with prefixed names
+                                ns_stats[timestamp][node][ns]["pseudo_mrt_monitor_used_bytes"] = int(set_data.get("data_used_bytes", 0))
+                                ns_stats[timestamp][node][ns]["stop-writes-count"] = int(set_data.get("stop-writes-count", 0))
+                                ns_stats[timestamp][node][ns]["stop-writes-size"] = int(set_data.get("stop-writes-size", 0))
+
+            self.view.info_transactions_monitors(
+                ns_stats[timestamp],
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays provisional-related MRT metrics for each namespace",
+    )
+    def do_provisionals(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = self.stats_getter.get_namespace()
+
+        for timestamp in sorted(ns_stats.keys()):
+            if not ns_stats[timestamp]:
+                continue
+
+            self.view.info_transactions_provisionals(
+                ns_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods,

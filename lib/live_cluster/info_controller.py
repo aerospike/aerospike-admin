@@ -13,6 +13,7 @@
 # limitations under the License.
 import asyncio
 import logging
+from lib.health.util import print_dict
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
@@ -43,7 +44,10 @@ with_modifier_help = ModifierHelp(
 class InfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "for"])
-        self.controller_map = dict(namespace=InfoNamespaceController)
+        self.controller_map = dict(
+            namespace=InfoNamespaceController,
+            transactions=InfoTransactionsController
+        )
         self.config_getter = GetConfigController(self.cluster)
         self.stat_getter = GetStatisticsController(self.cluster)
 
@@ -298,4 +302,90 @@ class InfoNamespaceController(LiveClusterCommandController):
 
         return util.callable(
             self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods
+        )
+
+
+@CommandHelp(
+    "Displays MRT (Multi-Record Transaction) metrics for each namespace",
+    usage=f"[{ModifierUsageHelp.WITH}]",
+    modifiers=(with_modifier_help,),
+)
+class InfoTransactionsController(LiveClusterCommandController):
+    def __init__(self, get_futures=False):
+        self.modifiers = set(["with"])
+        self.get_futures = get_futures
+        self.stats_getter = GetStatisticsController(self.cluster)
+
+    @CommandHelp(
+        "Displays monitors and provisionals information for MRT transactions",
+    )
+    async def _do_default(self, line):
+        tasks = await asyncio.gather(
+            self.do_monitors(line),
+            self.do_provisionals(line),
+        )
+        if self.get_futures:
+            # Wrapped to prevent base class from calling result.
+            return dict(futures=tasks)
+
+        return tasks
+
+    @CommandHelp(
+        "Displays monitor-related MRT metrics for each namespace",
+        usage=f"[{ModifierUsageHelp.WITH}]",
+        modifiers=(with_modifier_help,),
+    )
+    async def do_monitors(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = await self.stats_getter.get_namespace(nodes=self.nodes)
+        
+        # Collect all namespaces from all nodes
+        namespaces = set()
+        for node_id, node_stats in ns_stats.items():
+            if isinstance(node_stats, Exception):
+                continue
+            namespaces.update(node_stats.keys())
+        
+        # For each namespace, get <ERO~MRT set statistics and merge directly into namespace stats
+        for namespace in namespaces:
+            # Get <ERO~MRT set statistics for this namespace from all nodes
+            set_data = await self.cluster.info_set_statistics(namespace, constants.MRT_SET, nodes=self.nodes)
+            
+            # Merge the set data directly into the namespace statistics
+            for node_id, set_stats in set_data.items():
+                if (
+                    isinstance(set_stats, Exception) 
+                    or not set_stats 
+                    or node_id not in ns_stats 
+                    or isinstance(ns_stats[node_id], Exception) 
+                    or namespace not in ns_stats[node_id]
+                ):
+                    continue
+                
+                # Add set metrics to namespace stats with prefixed names
+                ns_stats[node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0))
+                ns_stats[node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0))
+                ns_stats[node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0))
+        
+        return util.callable(
+            self.view.info_transactions_monitors,
+            ns_stats,
+            self.cluster,
+            **self.mods,
+        )
+
+    @CommandHelp(
+        "Displays provisional-related MRT metrics for each namespace",
+        usage=f"[{ModifierUsageHelp.WITH}]",
+        modifiers=(with_modifier_help,),
+    )
+    async def do_provisionals(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = await self.stats_getter.get_namespace(nodes=self.nodes)
+        
+        return util.callable(
+            self.view.info_transactions_provisionals,
+            ns_stats,
+            self.cluster,
+            **self.mods,
         )
