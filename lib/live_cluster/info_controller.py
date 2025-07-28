@@ -348,13 +348,17 @@ class InfoTransactionsController(LiveClusterCommandController):
             logger.debug("No namespaces with strong consistency enabled were found for do_monitors")
             return
 
-        # For each namespace, get <ERO~MRT set statistics and merge directly into namespace stats
-        for namespace in namespaces:
+        # Get <ERO~MRT set statistics for all namespaces from all nodes concurrently
+        set_stats_futures = [
+            asyncio.create_task(
+                self.cluster.info_set_statistics(namespace, constants.MRT_SET, nodes=self.nodes)
+            )
+            for namespace in namespaces
+        ]
+        all_set_data = await asyncio.gather(*set_stats_futures)
 
-            # Get <ERO~MRT set statistics for this namespace from all nodes
-            set_data = await self.cluster.info_set_statistics(namespace, constants.MRT_SET, nodes=self.nodes)
-
-            # Merge the set data directly into the namespace statistics
+        # Map the results back to their namespaces and merge into ns_stats
+        for namespace, set_data in zip(namespaces, all_set_data):
             for node_id, set_stats in set_data.items():
                 if (
                     isinstance(set_stats, Exception)
