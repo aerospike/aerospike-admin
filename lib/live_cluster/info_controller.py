@@ -358,16 +358,15 @@ class InfoTransactionsController(LiveClusterCommandController):
             for node_id, set_stats in set_data.items():
                 if (
                     isinstance(set_stats, Exception)
-                    or not set_stats
                     or node_id not in ns_stats
                     or namespace not in ns_stats[node_id]
                 ):
                     continue
 
                 # Add set metrics to namespace stats with prefixed names
-                ns_stats[node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0))
-                ns_stats[node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0))
-                ns_stats[node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0))
+                ns_stats[node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0) if set_stats else 0)
+                ns_stats[node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0) if set_stats else 0)
+                ns_stats[node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0) if set_stats else 0)
         
         return util.callable(
             self.view.info_transactions_monitors,

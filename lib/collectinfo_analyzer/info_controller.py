@@ -347,11 +347,10 @@ class InfoTransactionsController(CollectinfoCommandController):
                         if node_id not in ns_stats[timestamp] or namespace not in ns_stats[timestamp][node_id]:
                             continue
                         set_stats = sets_dict.get((namespace, constants.MRT_SET))
-                        if set_stats:
-                            # Add set metrics to namespace stats with prefixed names
-                            ns_stats[timestamp][node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0))
-                            ns_stats[timestamp][node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0))
-                            ns_stats[timestamp][node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0))
+                        # Always add set metrics to namespace stats, defaulting to 0 if not present
+                        ns_stats[timestamp][node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0) if set_stats else 0)
+                        ns_stats[timestamp][node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0) if set_stats else 0)
+                        ns_stats[timestamp][node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0) if set_stats else 0)
 
             self.view.info_transactions_monitors(
                 ns_stats[timestamp],
