@@ -1481,7 +1481,7 @@ class CliViewTest(unittest.TestCase):
         # Should still render but without set data merged
         self.render_mock.assert_called_once_with(
             templates.info_transactions_monitors_sheet,
-            "MRT Monitor Metrics (test-timestamp)",
+            "Transaction Monitor Metrics (test-timestamp)",
             sources,
             common=common
         )
@@ -1517,7 +1517,7 @@ class CliViewTest(unittest.TestCase):
         args, kwargs = self.render_mock.call_args
         
         # Verify the title and common data
-        self.assertEqual(args[1], "MRT Monitor Metrics (test-timestamp)")
+        self.assertEqual(args[1], "Transaction Monitor Metrics (test-timestamp)")
         self.assertEqual(kwargs.get('common'), {"principal": principal})
         
         # Verify the sources structure
@@ -1584,7 +1584,7 @@ class CliViewTest(unittest.TestCase):
         
         self.render_mock.assert_called_once_with(
             templates.info_transactions_provisionals_sheet,
-            "MRT Provisionals Metrics (test-stamp)",
+            "Transaction Provisionals Metrics (test-stamp)",
             sources,
             common=common
         )
