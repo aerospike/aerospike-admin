@@ -1341,10 +1341,15 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 )
 
         # Validate mutually exclusive modifiers - ctx (including ctx_base64) and exp_base64
-        if (ctx_list or cdt_ctx_base64) and exp_base64 is not None:
-            raise ShellException(
-                "Cannot use both 'ctx' and 'exp_base64' modifiers together. Use either 'ctx' to specify how to index into a CDT, or 'exp_base64' to specify an expression to be evaluated."
-            )
+        if exp_base64 is not None:
+            if ctx_list:
+                raise ShellException(
+                    "Cannot use both 'ctx' and 'exp_base64' modifiers together. Use either 'ctx' to specify how to index into a CDT, or 'exp_base64' to specify an expression to be evaluated."
+                )
+            elif cdt_ctx_base64:
+                raise ShellException(
+                    "Cannot use both 'ctx_base64' and 'exp_base64' modifiers together. Use either 'ctx_base64' to specify how to index into a CDT, or 'exp_base64' to specify an expression to be evaluated."
+                )
         
         # Validate required modifiers - exactly one of 'bin' or 'exp_base64' is required
         if not exp_base64 and not bin_name:
