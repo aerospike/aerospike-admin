@@ -620,6 +620,49 @@ class GetStatisticsController:
 
         return ns_stats
 
+    async def get_strong_consistency_namespace(self, flip=False, nodes="all", for_mods: list[str] | None = None):
+        """
+        Get statistics for namespaces with strong consistency enabled.
+        
+        Args:
+            flip: Whether to flip the output structure (default: False)
+            nodes: Nodes to query (default: "all")
+            for_mods: Optional list of namespace filters (default: None)
+            
+        Returns:
+            Dictionary of namespace statistics for strong consistency namespaces
+        """
+        namespace_set = set(await _get_all_namespaces(self.cluster, nodes))
+        namespace_list = list(util.filter_list(namespace_set, for_mods))
+        tasks = [
+            asyncio.create_task(
+                self.cluster.info_namespace_statistics(namespace, nodes=nodes)
+            )
+            for namespace in namespace_list
+        ]
+        ns_stats = {}
+        for namespace, stat_task in zip(namespace_list, tasks):
+            ns_stats[namespace] = await stat_task
+
+            if isinstance(ns_stats[namespace], Exception):
+                continue
+
+            for node in list(ns_stats[namespace].keys()):
+                if not ns_stats[namespace][node] or isinstance(
+                    ns_stats[namespace][node], Exception
+                ):
+                    ns_stats[namespace].pop(node)
+                    continue
+
+                strong_consistency = ns_stats[namespace][node].get("strong-consistency", "false").lower() == 'true'
+                if not strong_consistency:
+                    ns_stats[namespace].pop(node)
+
+        if not flip:
+            return util.flip_keys(ns_stats)
+
+        return ns_stats
+
     async def get_sindex(
         self, flip=False, nodes="all", for_mods: list[str] | None = None
     ):
