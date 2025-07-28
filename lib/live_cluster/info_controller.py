@@ -13,7 +13,6 @@
 # limitations under the License.
 import asyncio
 import logging
-from lib.health.util import print_dict
 from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
