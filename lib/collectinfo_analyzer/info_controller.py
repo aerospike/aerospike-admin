@@ -305,7 +305,7 @@ class InfoNamespaceController(CollectinfoCommandController):
 
 
 @CommandHelp(
-    "Displays MRT (Multi-Record Transaction) metrics for each namespace",
+    "Displays transaction metrics for each 'strong-consistency' enabled namespace.",
 )
 class InfoTransactionsController(CollectinfoCommandController):
     def __init__(self):
@@ -313,14 +313,14 @@ class InfoTransactionsController(CollectinfoCommandController):
         self.stats_getter = GetStatisticsController(self.log_handler)
 
     @CommandHelp(
-        "Displays monitors and provisionals information for MRT transactions",
+        "Displays monitors and provisionals information for transactions in each 'strong-consistency' enabled namespace.",
     )
     def _do_default(self, line):
         self.do_monitors(line)
         self.do_provisionals(line)
 
     @CommandHelp(
-        "Displays monitor-related MRT metrics for each namespace",
+        "Displays monitor-related transaction metrics for each 'strong-consistency' enabled namespace.",
     )
     def do_monitors(self, line):
         # Get namespace statistics which contain MRT metrics
@@ -361,7 +361,7 @@ class InfoTransactionsController(CollectinfoCommandController):
             )
 
     @CommandHelp(
-        "Displays provisional-related MRT metrics for each namespace",
+        "Displays provisional-related transaction metrics for each 'strong-consistency' enabled namespace.",
     )
     def do_provisionals(self, line):
         # Get namespace statistics which contain MRT metrics
