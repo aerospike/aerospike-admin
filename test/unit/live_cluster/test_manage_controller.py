@@ -1878,7 +1878,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
 
         await self.assertAsyncRaisesRegex(
             ShellException,
-            "Cannot use both 'ctx' and 'exp_base64' modifiers together",
+            "Cannot use both 'ctx_base64' and 'exp_base64' modifiers together",
             self.controller.execute(line),
         )
 
