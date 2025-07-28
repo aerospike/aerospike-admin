@@ -226,7 +226,7 @@ class CliView(object):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "MRT Monitor Metrics" + title_suffix
+        title = "Transaction Monitor Metrics" + title_suffix
         
         # No need to merge set stats as they're already merged into ns_stats in the controller
         
@@ -254,7 +254,7 @@ class CliView(object):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "MRT Provisionals Metrics" + title_suffix
+        title = "Transaction Provisionals Metrics" + title_suffix
         
         sources = dict(
             node_ids=node_ids,
