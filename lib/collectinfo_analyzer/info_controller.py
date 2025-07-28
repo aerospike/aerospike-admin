@@ -18,6 +18,8 @@ from lib.collectinfo_analyzer.get_controller import (
     GetStatisticsController,
 )
 from lib.utils import constants, util, version
+import logging
+logger = logging.getLogger(__name__)
 
 from .collectinfo_command_controller import CollectinfoCommandController
 from lib.base_controller import ShellException
@@ -322,25 +324,34 @@ class InfoTransactionsController(CollectinfoCommandController):
     )
     def do_monitors(self, line):
         # Get namespace statistics which contain MRT metrics
-        ns_stats = self.stats_getter.get_namespace()
-        # Get set statistics to include <ERO~MRT internal set data
-        set_stats = self.stats_getter.get_sets()
+        ns_stats = self.stats_getter.get_strong_consistency_namespace()
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 continue
+
+            namespaces = set()
+            for _, node_stats in ns_stats[timestamp].items():
+                namespaces.update(node_stats.keys())
+
+             # Check if any strong consistency namespaces were found
+            if not namespaces:
+                logger.debug("No namespaces with strong consistency enabled were found at %s", timestamp)
+                continue
                 
-            # Merge <ERO~MRT set statistics into ns_stats before passing to view
-            if timestamp in set_stats and set_stats[timestamp]:
-                for node, sets_dict in set_stats[timestamp].items():
-                    if node in ns_stats[timestamp] and not isinstance(ns_stats[timestamp][node], Exception):
-                        # sets_dict contains (namespace, set_name) tuples as keys
-                        for (ns, set_name), set_data in sets_dict.items():
-                            if set_name == constants.MRT_SET and ns in ns_stats[timestamp][node]:
-                                # Add set metrics to namespace stats with prefixed names
-                                ns_stats[timestamp][node][ns]["pseudo_mrt_monitor_used_bytes"] = int(set_data.get("data_used_bytes", 0))
-                                ns_stats[timestamp][node][ns]["stop-writes-count"] = int(set_data.get("stop-writes-count", 0))
-                                ns_stats[timestamp][node][ns]["stop-writes-size"] = int(set_data.get("stop-writes-size", 0))
+            for namespace in namespaces:
+                set_data = self.stats_getter.get_sets(for_mods=[namespace, constants.MRT_SET])
+
+                if timestamp in set_data:
+                    for node_id, sets_dict in set_data[timestamp].items():
+                        if node_id not in ns_stats[timestamp] or namespace not in ns_stats[timestamp][node_id]:
+                            continue
+                        set_stats = sets_dict.get((namespace, constants.MRT_SET))
+                        if set_stats:
+                            # Add set metrics to namespace stats with prefixed names
+                            ns_stats[timestamp][node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0))
+                            ns_stats[timestamp][node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0))
+                            ns_stats[timestamp][node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0))
 
             self.view.info_transactions_monitors(
                 ns_stats[timestamp],
@@ -354,10 +365,18 @@ class InfoTransactionsController(CollectinfoCommandController):
     )
     def do_provisionals(self, line):
         # Get namespace statistics which contain MRT metrics
-        ns_stats = self.stats_getter.get_namespace()
+        ns_stats = self.stats_getter.get_strong_consistency_namespace()
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
+                continue
+
+            namespaces = set()
+            for _, node_stats in ns_stats[timestamp].items():
+                namespaces.update(node_stats.keys())
+            
+            if not namespaces:
+                logger.debug("No namespaces with strong consistency enabled were found at %s", timestamp)
                 continue
 
             self.view.info_transactions_provisionals(
