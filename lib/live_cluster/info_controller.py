@@ -43,7 +43,10 @@ with_modifier_help = ModifierHelp(
 class InfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "for"])
-        self.controller_map = dict(namespace=InfoNamespaceController)
+        self.controller_map = dict(
+            namespace=InfoNamespaceController,
+            transactions=InfoTransactionsController
+        )
         self.config_getter = GetConfigController(self.cluster)
         self.stat_getter = GetStatisticsController(self.cluster)
 
@@ -298,4 +301,105 @@ class InfoNamespaceController(LiveClusterCommandController):
 
         return util.callable(
             self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods
+        )
+
+
+@CommandHelp(
+    "Displays transaction metrics for each 'strong-consistency' enabled namespace.",
+    usage=f"[{ModifierUsageHelp.WITH}]",
+    modifiers=(with_modifier_help,),
+)
+class InfoTransactionsController(LiveClusterCommandController):
+    def __init__(self, get_futures=False):
+        self.modifiers = set(["with"])
+        self.get_futures = get_futures
+        self.stats_getter = GetStatisticsController(self.cluster)
+
+    @CommandHelp(
+        "Displays monitors and provisionals information for transactions in each 'strong-consistency' enabled namespace.",
+    )
+    async def _do_default(self, line):
+        tasks = await asyncio.gather(
+            self.do_monitors(line),
+            self.do_provisionals(line),
+        )
+        if self.get_futures:
+            # Wrapped to prevent base class from calling result.
+            return dict(futures=tasks)
+
+        return tasks
+
+    @CommandHelp(
+        "Displays monitor-related transaction metrics for each 'strong-consistency' enabled namespace.",
+        usage=f"[{ModifierUsageHelp.WITH}]",
+        modifiers=(with_modifier_help,),
+    )
+    async def do_monitors(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = await self.stats_getter.get_strong_consistency_namespace(nodes=self.nodes)
+
+        # Collect all namespaces from all nodes
+        namespaces = set()
+        for node_id, node_stats in ns_stats.items():
+            namespaces.update(node_stats.keys())
+        
+        # If no namespaces with strong consistency enabled were found, return
+        if not namespaces:
+            logger.debug("No namespaces with strong consistency enabled were found for do_monitors")
+            return
+
+        # Get <ERO~MRT set statistics for all namespaces from all nodes concurrently
+        set_stats_futures = [
+            asyncio.create_task(
+                self.cluster.info_set_statistics(namespace, constants.MRT_SET, nodes=self.nodes)
+            )
+            for namespace in namespaces
+        ]
+        all_set_data = await asyncio.gather(*set_stats_futures)
+
+        # Map the results back to their namespaces and merge into ns_stats
+        for namespace, set_data in zip(namespaces, all_set_data):
+            for node_id, set_stats in set_data.items():
+                if (
+                    isinstance(set_stats, Exception)
+                    or node_id not in ns_stats
+                    or namespace not in ns_stats[node_id]
+                ):
+                    continue
+
+                # Add set metrics to namespace stats with prefixed names
+                ns_stats[node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0) if set_stats else 0)
+                ns_stats[node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0) if set_stats else 0)
+                ns_stats[node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0) if set_stats else 0)
+        
+        return util.callable(
+            self.view.info_transactions_monitors,
+            ns_stats,
+            self.cluster,
+            **self.mods,
+        )
+
+    @CommandHelp(
+        "Displays provisional-related transaction metrics for each 'strong-consistency' enabled namespace.",
+        usage=f"[{ModifierUsageHelp.WITH}]",
+        modifiers=(with_modifier_help,),
+    )
+    async def do_provisionals(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = await self.stats_getter.get_strong_consistency_namespace(nodes=self.nodes)
+
+        # Check if any strong consistency namespaces were found
+        namespaces = set()
+        for _, node_stats in ns_stats.items():
+            namespaces.update(node_stats.keys())
+        
+        if not namespaces:
+            logger.debug("No namespaces with strong consistency enabled were found for do_provisionals")
+            return
+        
+        return util.callable(
+            self.view.info_transactions_provisionals,
+            ns_stats,
+            self.cluster,
+            **self.mods,
         )

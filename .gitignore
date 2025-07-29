@@ -149,3 +149,6 @@ tramp
 
 # vscode user settings
 .vscode
+
+# cursor
+.cursor

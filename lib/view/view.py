@@ -217,6 +217,60 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
+    def info_transactions_monitors(
+        ns_stats, cluster, timestamp="", with_=None, **ignore
+    ):
+        if not ns_stats:
+            return
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "Transaction Monitor Metrics" + title_suffix
+        
+        # No need to merge set stats as they're already merged into ns_stats in the controller
+        
+        sources = dict(
+            node_ids=node_ids,
+            node_names=node_names,
+            ns_stats=ns_stats,
+        )
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(
+                templates.info_transactions_monitors_sheet, title, sources, common=common
+            )
+        )
+
+    @staticmethod
+    @reserved_modifiers
+    def info_transactions_provisionals(
+        ns_stats, cluster, timestamp="", with_=None, **ignore
+    ):
+        if not ns_stats:
+            return
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "Transaction Provisionals Metrics" + title_suffix
+        
+        sources = dict(
+            node_ids=node_ids,
+            node_names=node_names,
+            ns_stats=ns_stats,
+        )
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(
+                templates.info_transactions_provisionals_sheet, title, sources, common=common
+            )
+        )
+
+    @staticmethod
+    @reserved_modifiers
     def info_set(stats, cluster, timestamp="", with_=None, **ignore):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)

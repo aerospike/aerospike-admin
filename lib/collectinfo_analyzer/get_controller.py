@@ -232,6 +232,23 @@ class GetStatisticsController:
         ] = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
         return filter_3rd_level_keys(stats, for_mods)
 
+
+    def get_strong_consistency_namespace(self, for_mods=None):
+        stats: TimestampDict[
+            NodeDict[NamespaceDict[dict[str, str]]]
+        ] = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        filtered_stats =  filter_3rd_level_keys(stats, for_mods)
+        
+        for _, nodes_data in filtered_stats.items():
+            for _, namespaces in nodes_data.items():
+                for namespace in list(namespaces.keys()):
+                    # Skip if namespace data is missing or doesn't have strong consistency
+                    if (not namespaces[namespace] or
+                        namespaces[namespace].get("strong-consistency", "false").lower() != 'true'):
+                        del namespaces[namespace]
+        
+        return filtered_stats
+
     def get_sets(self, for_mods=None, flip=False):
         set_filter: list[str] | None = None
         namespaces_filter: list[str] | None = None

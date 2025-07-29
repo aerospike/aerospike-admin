@@ -18,6 +18,8 @@ from lib.collectinfo_analyzer.get_controller import (
     GetStatisticsController,
 )
 from lib.utils import constants, util, version
+import logging
+logger = logging.getLogger(__name__)
 
 from .collectinfo_command_controller import CollectinfoCommandController
 from lib.base_controller import ShellException
@@ -35,7 +37,10 @@ class InfoController(CollectinfoCommandController):
         self.modifiers = set(["for"])
         self.stats_getter = GetStatisticsController(self.log_handler)
         self.config_getter = GetConfigController(self.log_handler)
-        self.controller_map = dict(namespace=InfoNamespaceController)
+        self.controller_map = dict(
+            namespace=InfoNamespaceController,
+            transactions=InfoTransactionsController
+        )
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
     async def _do_default(self, line):
@@ -293,6 +298,88 @@ class InfoNamespaceController(CollectinfoCommandController):
             self.view.info_namespace_object(
                 ns_stats[timestamp],
                 rack_ids.get(timestamp, {}),
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+
+@CommandHelp(
+    "Displays transaction metrics for each 'strong-consistency' enabled namespace.",
+)
+class InfoTransactionsController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set()
+        self.stats_getter = GetStatisticsController(self.log_handler)
+
+    @CommandHelp(
+        "Displays monitors and provisionals information for transactions in each 'strong-consistency' enabled namespace.",
+    )
+    def _do_default(self, line):
+        self.do_monitors(line)
+        self.do_provisionals(line)
+
+    @CommandHelp(
+        "Displays monitor-related transaction metrics for each 'strong-consistency' enabled namespace.",
+    )
+    def do_monitors(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = self.stats_getter.get_strong_consistency_namespace()
+
+        for timestamp in sorted(ns_stats.keys()):
+            if not ns_stats[timestamp]:
+                continue
+
+            namespaces = set()
+            for _, node_stats in ns_stats[timestamp].items():
+                namespaces.update(node_stats.keys())
+
+             # Check if any strong consistency namespaces were found
+            if not namespaces:
+                logger.debug("No namespaces with strong consistency enabled were found at %s", timestamp)
+                continue
+                
+            for namespace in namespaces:
+                set_data = self.stats_getter.get_sets(for_mods=[namespace, constants.MRT_SET])
+
+                if timestamp in set_data:
+                    for node_id, sets_dict in set_data[timestamp].items():
+                        if node_id not in ns_stats[timestamp] or namespace not in ns_stats[timestamp][node_id]:
+                            continue
+                        set_stats = sets_dict.get((namespace, constants.MRT_SET))
+                        # Always add set metrics to namespace stats, defaulting to 0 if not present
+                        ns_stats[timestamp][node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0) if set_stats else 0)
+                        ns_stats[timestamp][node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0) if set_stats else 0)
+                        ns_stats[timestamp][node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0) if set_stats else 0)
+
+            self.view.info_transactions_monitors(
+                ns_stats[timestamp],
+                self.log_handler.get_cinfo_log_at(timestamp=timestamp),
+                timestamp=timestamp,
+                **self.mods,
+            )
+
+    @CommandHelp(
+        "Displays provisional-related transaction metrics for each 'strong-consistency' enabled namespace.",
+    )
+    def do_provisionals(self, line):
+        # Get namespace statistics which contain MRT metrics
+        ns_stats = self.stats_getter.get_strong_consistency_namespace()
+
+        for timestamp in sorted(ns_stats.keys()):
+            if not ns_stats[timestamp]:
+                continue
+
+            namespaces = set()
+            for _, node_stats in ns_stats[timestamp].items():
+                namespaces.update(node_stats.keys())
+            
+            if not namespaces:
+                logger.debug("No namespaces with strong consistency enabled were found at %s", timestamp)
+                continue
+
+            self.view.info_transactions_provisionals(
+                ns_stats[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
                 **self.mods,
