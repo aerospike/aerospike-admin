@@ -14,14 +14,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+          submodules: true
     - name: Get Python version from Pipfile
-      id: get_python_version
-      run: echo "python_version=$(grep 'python_version' Pipfile | cut -d '=" -f 2 | tr -d ' "')" >> $GITHUB_OUTPUT
+      run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
 
-    - name: Set up Python
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ steps.get_python_version.outputs.python_version }}
+        python-version: ${{ env.PYTHON_VERSION }}
 
     - name: Install pipenv
       run: |
