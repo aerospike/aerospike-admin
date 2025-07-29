@@ -19,7 +19,6 @@ DEFAULT_TIMEOUT = 5.0
 
 
 class TimeoutException(Exception):
-
     """A timeout has occurred."""
 
     pass

@@ -211,9 +211,9 @@ def create_conf_file_from_template(
     """
 
     params = {
-        "security_stanza": ""
-        if not enable_security
-        else "security {\n enable-quotas true\n}",
+        "security_stanza": (
+            "" if not enable_security else "security {\n enable-quotas true\n}"
+        ),
         "feature_path": "env-b64:FEATURES",
         "state_directory": CONTAINER_DIR + "/state-" + str(index),
         "udf_directory": CONTAINER_DIR + "/udf-" + str(index),
@@ -223,9 +223,11 @@ def create_conf_file_from_template(
         "heartbeat_port": str(port_base + 2),
         "info_port": str(port_base + 3),
         "access_address": access_address,
-        "peer_connection": "# no peer connection"
-        if not peer_addr
-        else "mesh-seed-address-port " + peer_addr[0] + " " + str(peer_addr[1] + 2),
+        "peer_connection": (
+            "# no peer connection"
+            if not peer_addr
+            else "mesh-seed-address-port " + peer_addr[0] + " " + str(peer_addr[1] + 2)
+        ),
         "namespace": NAMESPACE,
     }
 
@@ -351,12 +353,12 @@ def start_server(
 
     NODES[index - 1] = container
     container.reload()
-    
+
     # For local development, use localhost since ports are mapped to host
     # For CI/CD environments, you might want to use the container IP
     # Check if we should use localhost or container IP
     use_localhost = os.environ.get("E2E_TEST_USE_LOCALHOST", "true").lower() == "true"
-    
+
     if use_localhost:
         return "127.0.0.1"
     else:
@@ -366,7 +368,7 @@ def start_server(
 def start(
     do_reset=True,
     num_nodes=DEFAULT_N_NODES,
-    docker_tag="8.1", # Change this to the desired latest Docker tag
+    docker_tag="8.1",  # Change this to the desired latest Docker tag
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,

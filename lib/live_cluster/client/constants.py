@@ -12,7 +12,7 @@ class ErrorsMsgs:
     DC_NODE_ADD_FAIL = "Failed to add node to XDR datacenter"
     DC_NODE_REMOVE_FAIL = "Failed to remove node from XDR datacenter"
     INVALID_REWIND = 'Invalid rewind. Must be int or "all"'
-    INFO_SERVER_ERROR_RESPONSE = 'Server returned an error response for info command'
+    INFO_SERVER_ERROR_RESPONSE = "Server returned an error response for info command"
 
 
 DEFAULT_CONFIG_PATH = "/etc/aerospike/aerospike.conf"

@@ -409,7 +409,6 @@ def vector_to_vector_sd_anomaly_operation(kv, op, a, save_param):
 
 
 class BinaryOperation:
-
     """
     Passed In Two Similar Vectors or Vector and Value
 
@@ -524,7 +523,6 @@ class BinaryOperation:
 
 
 class ApplyOperation:
-
     """
     Passed In Two Vectors or Vector and Value
 
@@ -630,7 +628,6 @@ class ApplyOperation:
 
 
 class SimpleOperation:
-
     """
     Passed In a Vector/Value and optional parameter
 
@@ -815,7 +812,6 @@ class ComplexOperation:
 
 
 class AssertDetailOperation:
-
     """
     Takes vector as input and checks for assertion failure. In case of
     failure populates map with user passed message and vector of field
@@ -1037,9 +1033,9 @@ def select_keys_from_dict(
                         )
 
                         if new_name:
-                            result_dict[
-                                (new_name, "KEY")
-                            ] = create_health_internal_tuple(data[_key], val_to_save)
+                            result_dict[(new_name, "KEY")] = (
+                                create_health_internal_tuple(data[_key], val_to_save)
+                            )
 
                         else:
                             result_dict[_key] = create_health_internal_tuple(
@@ -1188,9 +1184,11 @@ def find_kv_vector(key, data, recurse=False, update_saved_list=False):
             v.append(
                 make_map(
                     k,
-                    add_prefix_to_saved_keys(_k, data[_key])
-                    if update_saved_list
-                    else data[_key],
+                    (
+                        add_prefix_to_saved_keys(_k, data[_key])
+                        if update_saved_list
+                        else data[_key]
+                    ),
                 )
             )
             # v.append(make_map(k, data[_key]))

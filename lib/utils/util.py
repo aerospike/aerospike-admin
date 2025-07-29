@@ -691,14 +691,14 @@ def find_delimiter_in(value):
 def convert_edition_to_shortform(edition: str) -> str:
     """Convert edition to shortform: Enterprise, Community, Federal, or N/E"""
     edition_lower = edition.lower()
-    
+
     if "enterprise" in edition_lower:
         return "Enterprise"
     elif "community" in edition_lower:
         return "Community"
     elif "federal" in edition_lower:
         return "Federal"
-    
+
     return "N/E"
 
 
@@ -892,16 +892,16 @@ class async_cached(Generic[AwaitableType]):
 def is_valid_base64(data: Union[str, bytes]) -> None:
     """
     Validates if the given data is valid base64 encoding.
-    
+
     Args:
         data: String or bytes to validate as base64
-        
+
     Raises:
         ValueError: If the data is not valid base64 encoding.
     """
     if not data:
         raise ValueError("Invalid base64 encoding: empty data")
-    
+
     try:
         if isinstance(data, str):
             data = data.encode("utf-8")

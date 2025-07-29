@@ -1853,7 +1853,9 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         )
 
     async def test_ctx_and_ctx_base64_conflict(self):
-        line = "string idx ns test bin mybin ctx list_index(0) ctx_base64 dGVzdA==".split()
+        line = (
+            "string idx ns test bin mybin ctx list_index(0) ctx_base64 dGVzdA==".split()
+        )
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
         await self.assertAsyncRaisesRegex(
@@ -1863,7 +1865,9 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         )
 
     async def test_ctx_and_exp_base64_conflict(self):
-        line = "string idx ns test bin mybin ctx list_index(0) exp_base64 dGVzdA==".split()
+        line = (
+            "string idx ns test bin mybin ctx list_index(0) exp_base64 dGVzdA==".split()
+        )
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
         await self.assertAsyncRaisesRegex(
@@ -2858,14 +2862,16 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 self.logger_mock.warning.assert_called_with(
                     "It is advised that you do not manage the roster. Run 'info network' for more information."
                 )
-                
+
         self.assertEqual(
             False,
-            self.controller._check_and_log_cluster_stable({
-                "1.1.1.1": "ABC",
-                "2.2.2.2": "ABC",
-                "3.3.3.3": ASInfoResponseError("", "foo"),
-            })
+            self.controller._check_and_log_cluster_stable(
+                {
+                    "1.1.1.1": "ABC",
+                    "2.2.2.2": "ABC",
+                    "3.3.3.3": ASInfoResponseError("", "foo"),
+                }
+            ),
         )
 
     def test_check_and_log_nodes_in_observed(self):
@@ -2940,8 +2946,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
 
         await self.controller.execute(line.split())
@@ -2959,8 +2965,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
     async def test_logs_error_from_roster(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         error = ASInfoResponseError("blah", "error::foo")
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
@@ -2974,8 +2980,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
     async def test_logs_error_from_roster_set(self):
         error = ASInfoResponseError("blah", "error::foo")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
@@ -2988,21 +2994,21 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_called_once()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.view_mock.print_result.assert_not_called()
-        
+
     async def test_raises_warn_from_none_ns(self):
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_namespace_statistics.return_value = None
 
         await self.controller.execute(line.split())
-        
+
         self.logger_mock.error.assert_called()
         self.cluster_mock.info_namespace_statistics.assert_called()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
-        
+
     async def test_raises_warn_from_invalid_ns(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3010,34 +3016,34 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": {}}
 
         await self.controller.execute(line.split())
-        
+
         self.logger_mock.error.assert_called()
         self.cluster_mock.info_namespace_statistics.assert_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
-    
+
     async def test_raises_warn_from_ap_ns(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": {}}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "false" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "false"}
         }
 
         await self.controller.execute(line.split())
-        
+
         self.logger_mock.error.assert_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test is not in strong consistency mode'
+            "namespace test is not in strong consistency mode"
         )
-        
+
     async def test_raises_error_from_ns_stats(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3056,8 +3062,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
 
         await test_util.assert_exception_async(
@@ -3073,8 +3079,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": []}
         }
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
@@ -3091,8 +3097,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": ["foo"]}
@@ -3120,8 +3126,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"pending_roster": ["GHI"], "observed_nodes": ["bar"]}
         }
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
@@ -3165,8 +3171,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
             "1.1.1.1": {"pending_roster": ["ABC", "DEF"], "observed_nodes": []}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
 
         await self.controller.execute(line.split())
@@ -3186,8 +3192,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         line = "nodes ABC@rack1 DEF@rack2 ns test  --no-warn"
         error = ASInfoResponseError("blah", "error::foo")
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
 
         await self.controller.execute(line.split())
@@ -3206,8 +3212,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
                 "observed_nodes": [],
             }
         }
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
@@ -3224,8 +3230,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
             "1.1.1.1": {"pending_roster": ["ABC", "DEF"], "observed_nodes": []}
         }
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "CDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.prompt_mock.return_value = False
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
@@ -3246,8 +3252,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
 
         await test_util.assert_exception_async(
@@ -3261,8 +3267,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
     async def test_raises_error_from_roster_set(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -3279,7 +3285,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_called_once()
         self.view_mock.print_result.assert_not_called()
-        
+
     async def test_raises_warn_from_none_ns(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3293,14 +3299,14 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
-        
+
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
-        
+
     async def test_raises_warn_from_invalid_ns(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3313,21 +3319,21 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": {}}
 
         await self.controller.execute(line.split())
-        
+
         self.logger_mock.error.assert_called()
         self.cluster_mock.info_namespace_statistics.assert_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
-    
+
     async def test_raises_warn_from_ap_ns(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "false" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "false"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -3338,14 +3344,14 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
-        
+
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test is not in strong consistency mode'
+            "namespace test is not in strong consistency mode"
         )
-        
+
     async def test_raises_error_from_ns_stats(self):
         error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3359,12 +3365,12 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
         await self.controller.execute(line.split())
-        
+
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
 
     async def test_warn_returns_false(self):
@@ -3372,8 +3378,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -3398,8 +3404,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = True
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -3449,8 +3455,8 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
     async def test_success(self):
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
 
         await self.controller.execute(line.split())
@@ -3467,8 +3473,8 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
     async def test_logs_error_from_roster_set(self):
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
         error = ASInfoResponseError("blah", "error::foo")
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
@@ -3485,8 +3491,8 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
     async def test_raises_error_from_roster_set(self):
         error = Exception("test exception")
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
         self.cluster_mock.info_roster.return_value = {
@@ -3506,7 +3512,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
-        
+
     async def test_raises_warn_from_none_ns(self):
         error = Exception("test exception")
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3525,9 +3531,9 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
-        
+
     async def test_raises_warn_from_invalid_ns(self):
         error = Exception("test exception")
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3546,14 +3552,14 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
-        
+
     async def test_raises_warn_from_ap_ns(self):
         error = Exception("test exception")
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "false" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "false"}
         }
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDF"}
         self.cluster_mock.info_roster.return_value = {
@@ -3569,9 +3575,9 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_any_call(
-            'namespace test is not in strong consistency mode'
+            "namespace test is not in strong consistency mode"
         )
-        
+
     async def test_raises_error_from_ns_stats(self):
         error = Exception("test exception")
         line = "ABC@rack1 DEF@rack2 ns test --no-warn"
@@ -3590,7 +3596,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_any_call(
-            'namespace test does not exist on this node'
+            "namespace test does not exist on this node"
         )
 
     async def test_warn_returns_false(self):
@@ -3598,8 +3604,8 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -3626,8 +3632,8 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = True
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {
@@ -3678,8 +3684,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["ABC", "DEF"]}
         }
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": ASINFO_RESPONSE_OK}
 
@@ -3698,8 +3704,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
     async def test_logs_error_from_roster(self):
         line = "ns test"
         error = ASInfoResponseError("blah", "error::foo")
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
@@ -3713,8 +3719,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
     async def test_logs_error_from_roster_set(self):
         line = "ns test"
         error = ASInfoResponseError("blah", "error::foo")
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["ABC", "DEF"]}
@@ -3733,8 +3739,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
     async def test_raises_error_from_roster(self):
         error = Exception("test exception")
         line = "ns test"
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": error}
 
@@ -3752,8 +3758,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["GHI", "ABC@rack1", "DEF@rack2"]}
         }
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster_set.return_value = {"1.1.1.1": error}
 
@@ -3769,8 +3775,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["GHI", "ABC@rack1", "DEF@rack2"]}
@@ -3792,8 +3798,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = True
         self.cluster_mock.info_cluster_stable.return_value = {"1.1.1.1": "ABCDEF"}
-        self.cluster_mock.info_namespace_statistics.return_value = { 
-            "1.1.1.1": { "strong-consistency": "true" }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"strong-consistency": "true"}
         }
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {"observed_nodes": ["GHI", "ABC@rack1", "DEF@rack2"]}
@@ -3810,4 +3816,3 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_called_once()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
-        
