@@ -1,4 +1,4 @@
-name: Black Formatting Check
+name: Format Check
 
 on:
   push:
@@ -30,6 +30,6 @@ jobs:
         python -m pip install pipenv
         pipenv install --dev
 
-    - name: Run Black Check
+    - name: Run Format Check
       run: |
-        pipenv run black --check . 
+        make format-check
