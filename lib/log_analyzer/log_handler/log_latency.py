@@ -667,9 +667,9 @@ class LogLatency(object):
                     for i in range(max_bucket):
                         if i % arg_every_nth:
                             continue
-                        latency[labels[i]][
-                            key_dt.strftime(constants.DT_FMT)
-                        ] = "%.2f" % (overs[i])
+                        latency[labels[i]][key_dt.strftime(constants.DT_FMT)] = (
+                            "%.2f" % (overs[i])
+                        )
 
                     latency[tps_key][key_dt.strftime(constants.DT_FMT)] = "%.1f" % (
                         rate

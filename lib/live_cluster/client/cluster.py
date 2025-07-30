@@ -738,9 +738,7 @@ class Cluster(AsyncObject):
 
         return ip_map
 
-    def __getattr__(
-        self, name
-    ) -> Union[
+    def __getattr__(self, name) -> Union[
         Callable[[Any, Any], Coroutine[Any, Any, dict[str, Any]]],
         Callable[[Any, Any], dict[str, Any]],
     ]:

@@ -406,9 +406,9 @@ class GetConfigController(BaseGetConfigController):
         all_dcs = await _get_all_dcs(self.cluster, nodes)
         filtered_dcs = list(util.filter_list(all_dcs, for_mods))
 
-        result: NodeDict[
-            DatacenterDict[dict[str, str]] | Exception
-        ] = await self.cluster.info_xdr_dcs_config(nodes=nodes, dcs=filtered_dcs)
+        result: NodeDict[DatacenterDict[dict[str, str]] | Exception] = (
+            await self.cluster.info_xdr_dcs_config(nodes=nodes, dcs=filtered_dcs)
+        )
 
         for node, node_config in result.items():
             if isinstance(node_config, Exception) or not node_config:
@@ -483,9 +483,9 @@ class GetConfigController(BaseGetConfigController):
             all_dcs = await _get_all_dcs(self.cluster, nodes)
             filtered_dcs = list(util.filter_list(list(all_dcs), dcs_filter))
 
-        result: NodeDict[
-            DatacenterDict[NamespaceDict[dict[str, str]]]
-        ] = await self.cluster.info_get_xdr_filter(dcs=filtered_dcs, nodes=nodes)
+        result: NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]] = (
+            await self.cluster.info_get_xdr_filter(dcs=filtered_dcs, nodes=nodes)
+        )
 
         for host, host_filters in result.items():
             if isinstance(host_filters, Exception) or host_filters is None:
@@ -620,15 +620,17 @@ class GetStatisticsController:
 
         return ns_stats
 
-    async def get_strong_consistency_namespace(self, flip=False, nodes="all", for_mods: list[str] | None = None):
+    async def get_strong_consistency_namespace(
+        self, flip=False, nodes="all", for_mods: list[str] | None = None
+    ):
         """
         Get statistics for namespaces with strong consistency enabled.
-        
+
         Args:
             flip: Whether to flip the output structure (default: False)
             nodes: Nodes to query (default: "all")
             for_mods: Optional list of namespace filters (default: None)
-            
+
         Returns:
             Dictionary of namespace statistics for strong consistency namespaces
         """
@@ -654,7 +656,10 @@ class GetStatisticsController:
                     ns_stats[namespace].pop(node)
                     continue
 
-                strong_consistency = ns_stats[namespace][node].get("strong-consistency", "false").lower() == 'true'
+                strong_consistency = (
+                    ns_stats[namespace][node].get("strong-consistency", "false").lower()
+                    == "true"
+                )
                 if not strong_consistency:
                     ns_stats[namespace].pop(node)
 
@@ -820,10 +825,10 @@ class GetStatisticsController:
 
         # Not all dcs have all namespaces but that is OK. This function checks that
         # a particular namespace is apart of a dc before making a request.
-        result: NodeDict[
-            DatacenterDict[NamespaceDict[dict[str, str]]]
-        ] = await self.cluster.info_all_xdr_namespaces_statistics(
-            namespaces=filtered_namespaces, dcs=filtered_dcs, nodes=nodes
+        result: NodeDict[DatacenterDict[NamespaceDict[dict[str, str]]]] = (
+            await self.cluster.info_all_xdr_namespaces_statistics(
+                namespaces=filtered_namespaces, dcs=filtered_dcs, nodes=nodes
+            )
         )
 
         for host, host_stats in result.items():
@@ -1141,7 +1146,7 @@ class GetSIndexController:
 
     async def get_sindexs(self, nodes="all"):
         return await self.cluster.info_sindex(nodes=nodes)
-    
+
 
 class GetUserAgentsController:
     def __init__(self, cluster):

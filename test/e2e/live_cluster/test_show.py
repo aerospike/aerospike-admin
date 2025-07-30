@@ -654,13 +654,7 @@ class TestShowUsers(asynctest.TestCase):
 
     async def test_show_users(self):
         exp_title = "Users"
-        exp_header = [
-            "User",
-            "Roles",
-            "Read Quota",
-            "Write Quota",
-            "Auth Mode"
-        ]
+        exp_header = ["User", "Roles", "Read Quota", "Write Quota", "Auth Mode"]
 
         (
             actual_title,
@@ -677,20 +671,9 @@ class TestShowUsers(asynctest.TestCase):
 
     async def test_create_user_with_no_roles(self):
         exp_user = "foo"
-        exp_data = [
-            "--",
-            "0",
-            "0",
-            "password,PKI"
-        ]
+        exp_data = ["--", "0", "0", "password,PKI"]
         exp_title = "Users"
-        exp_header = [
-            "User",
-            "Roles",
-            "Read Quota",
-            "Write Quota",
-            "Auth Mode"
-        ]
+        exp_header = ["User", "Roles", "Read Quota", "Write Quota", "Auth Mode"]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
             self.rc, ["show", "users"]
@@ -723,20 +706,9 @@ class TestShowUsers(asynctest.TestCase):
     async def test_create_user_with_roles(self):
         exp_user = "foo"
         exp_roles = ["sys-admin", "user-admin"]
-        exp_data = [
-            ",".join(exp_roles),
-            "0",
-            "0",
-            "password,PKI"
-        ]
+        exp_data = [",".join(exp_roles), "0", "0", "password,PKI"]
         exp_title = "Users"
-        exp_header = [
-            "User",
-            "Roles",
-            "Read Quota",
-            "Write Quota",
-            "Auth Mode"
-        ]
+        exp_header = ["User", "Roles", "Read Quota", "Write Quota", "Auth Mode"]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
             self.rc, ["show", "users"]
@@ -782,13 +754,7 @@ class TestShowUsers(asynctest.TestCase):
         exp_user = "foo"
         exp_roles = ["sys-admin", "user-admin"]
         exp_title = "Users"
-        exp_header = [
-            "User",
-            "Roles",
-            "Read Quota",
-            "Write Quota",
-            "Auth Mode"
-        ]
+        exp_header = ["User", "Roles", "Read Quota", "Write Quota", "Auth Mode"]
 
         _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
             self.rc, ["show", "users"]
@@ -843,13 +809,7 @@ class TestShowUsers(asynctest.TestCase):
         exp_user = "foo"
         exp_roles = ["sys-admin", "user-admin"]
         exp_title = "Users"
-        exp_header = [
-            "User",
-            "Roles",
-            "Read Quota",
-            "Write Quota",
-            "Auth Mode"
-        ]
+        exp_header = ["User", "Roles", "Read Quota", "Write Quota", "Auth Mode"]
 
         await util.capture_stdout(
             self.rc.execute,

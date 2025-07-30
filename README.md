@@ -49,22 +49,53 @@ bundled with asadm version 2.6 and later.
 
 ## Running Aerospike Admin in Live Cluster Mode.
 ```
-asadm -h <Aerospike Server Address\>
+asadm -h <Aerospike Server Address>
 Admin> help
 ```
 
 ## Running Aerospike Admin in Log-analyser Mode.
 ```
-asadm -l [-f <location of logs\>]
+asadm -l [-f <location of logs>]
 Admin> help
 ```
 
 ## Running Aerospike Admin in Collectinfo Mode.
 ```
-asadm -c [-f <location of collectinfo\>]
+asadm -c [-f <location of collectinfo>]
 Admin> help
 ```
 
+## Contributing
+
+To contribute to Aerospike Admin, please follow the code style and quality guidelines outlined below.
+
+### Code Style and Quality
+
+To maintain consistent code style and quality, Aerospike Admin uses [Black](https://black.readthedocs.io/en/stable/) and [Flake8](https://flake8.pycqa.org/en/latest/).
+
+**Checking Code Style and Linting Issues:**
+
+To check if your code adheres to the defined style and to identify potential linting issues without making any changes to the files:
+
+```bash
+make format-check
+```
+
+This command will use Black to check formatting (and show diffs for any non-compliant files) and Flake8 to report on style guide violations and potential bugs.
+
+**Automatically Fixing Code Style:**
+
+To automatically reformat your code according to project standards:
+
+```bash
+make format
+```
+
+This command will format your code using Black.
+
+**Automated Checks in Pull Requests:**
+
+A GitHub Actions workflow is configured to automatically run `make format-check` on every push to any branch and on pull requests targeting the `master` branch. This ensures that all submitted code adheres to the project's style guidelines.
 
 ## Tests
 Asadm has unit, integration, and e2e tests. Tests also support code coverage reporting.

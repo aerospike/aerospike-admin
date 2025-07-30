@@ -915,10 +915,12 @@ class SecurityTest(asynctest.TestCase):
             IOError, query_roles(self.reader_mock, self.writer_mock)
         )
 
+
 class DummyReader:
     def __init__(self, chunks):
         self.chunks = chunks
         self.index = 0
+
     async def read(self, n):
         if self.index < len(self.chunks):
             chunk = self.chunks[self.index][:n]
@@ -927,6 +929,7 @@ class DummyReader:
                 self.index += 1
             return chunk
         return b""
+
 
 class ReceiveDataTest(asynctest.TestCase):
     async def test_receive_data_success(self):

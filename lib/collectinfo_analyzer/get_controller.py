@@ -75,9 +75,9 @@ class GetConfigController:
         return self.log_handler.info_getconfig(stanza=constants.CONFIG_SERVICE)
 
     def get_namespace(self, for_mods: list[str] | None = None):
-        stats: TimestampDict[
-            NodeDict[NamespaceDict[dict[str, str]]]
-        ] = self.log_handler.info_getconfig(stanza=constants.CONFIG_NAMESPACE)
+        stats: TimestampDict[NodeDict[NamespaceDict[dict[str, str]]]] = (
+            self.log_handler.info_getconfig(stanza=constants.CONFIG_NAMESPACE)
+        )
         return filter_3rd_level_keys(stats, for_mods)
 
     def get_sets(self, for_mods: list[str] | None = None, flip=False):
@@ -107,9 +107,9 @@ class GetConfigController:
         return self.log_handler.info_getconfig(stanza=constants.CONFIG_XDR)
 
     def get_xdr_dcs(self, flip=False, for_mods: list[str] | None = None):
-        configs: TimestampDict[
-            NodeDict[DatacenterDict[dict[str, str]]]
-        ] = self.log_handler.info_getconfig(stanza=constants.CONFIG_DC)
+        configs: TimestampDict[NodeDict[DatacenterDict[dict[str, str]]]] = (
+            self.log_handler.info_getconfig(stanza=constants.CONFIG_DC)
+        )
 
         for nodes_confgs in configs.values():
             for dc_configs in nodes_confgs.values():
@@ -227,26 +227,30 @@ class GetStatisticsController:
         return self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
 
     def get_namespace(self, for_mods=None):
-        stats: TimestampDict[
-            NodeDict[NamespaceDict[dict[str, str]]]
-        ] = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        stats: TimestampDict[NodeDict[NamespaceDict[dict[str, str]]]] = (
+            self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        )
         return filter_3rd_level_keys(stats, for_mods)
 
-
     def get_strong_consistency_namespace(self, for_mods=None):
-        stats: TimestampDict[
-            NodeDict[NamespaceDict[dict[str, str]]]
-        ] = self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
-        filtered_stats =  filter_3rd_level_keys(stats, for_mods)
-        
+        stats: TimestampDict[NodeDict[NamespaceDict[dict[str, str]]]] = (
+            self.log_handler.info_statistics(stanza=constants.STAT_NAMESPACE)
+        )
+        filtered_stats = filter_3rd_level_keys(stats, for_mods)
+
         for _, nodes_data in filtered_stats.items():
             for _, namespaces in nodes_data.items():
                 for namespace in list(namespaces.keys()):
                     # Skip if namespace data is missing or doesn't have strong consistency
-                    if (not namespaces[namespace] or
-                        namespaces[namespace].get("strong-consistency", "false").lower() != 'true'):
+                    if (
+                        not namespaces[namespace]
+                        or namespaces[namespace]
+                        .get("strong-consistency", "false")
+                        .lower()
+                        != "true"
+                    ):
                         del namespaces[namespace]
-        
+
         return filtered_stats
 
     def get_sets(self, for_mods=None, flip=False):
@@ -280,9 +284,9 @@ class GetStatisticsController:
         return self.log_handler.info_statistics(stanza=constants.STAT_XDR)
 
     def get_xdr_dcs(self, for_mods: list[str] | None = None):
-        stats: TimestampDict[
-            NodeDict[DatacenterDict[dict[str, str]]]
-        ] = self.log_handler.info_statistics(stanza=constants.STAT_DC)
+        stats: TimestampDict[NodeDict[DatacenterDict[dict[str, str]]]] = (
+            self.log_handler.info_statistics(stanza=constants.STAT_DC)
+        )
         stats = filter_3rd_level_keys(stats, for_mods)
 
         return stats
@@ -353,9 +357,9 @@ class GetAclController:
         username: str,
         nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
     ):
-        data: TimestampDict[
-            NodeDict[UsersDict[dict[str, str | int]]]
-        ] = self.log_handler.admin_acl(stanza=constants.ADMIN_USERS, nodes=nodes)
+        data: TimestampDict[NodeDict[UsersDict[dict[str, str | int]]]] = (
+            self.log_handler.admin_acl(stanza=constants.ADMIN_USERS, nodes=nodes)
+        )
 
         return GetAclController.new_dict_with_key(data, username)
 
@@ -369,9 +373,9 @@ class GetAclController:
         role_name,
         nodes: constants.NodeSelectionType = constants.NodeSelection.ALL,
     ):
-        data: TimestampDict[
-            NodeDict[UsersDict[dict[str, str | int]]]
-        ] = self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES, nodes=nodes)
+        data: TimestampDict[NodeDict[UsersDict[dict[str, str | int]]]] = (
+            self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES, nodes=nodes)
+        )
 
         return GetAclController.new_dict_with_key(data, role_name)
 

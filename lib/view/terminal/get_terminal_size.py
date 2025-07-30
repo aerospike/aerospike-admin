@@ -41,7 +41,6 @@ try:
         else:
             raise WinError()
 
-
 except ImportError:
     import fcntl
     import termios

@@ -19,6 +19,7 @@ import shutil
 from mock import patch
 from lib.utils import log_util
 
+
 class LogUtilTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
@@ -30,11 +31,11 @@ class LogUtilTest(unittest.TestCase):
     def test_get_all_files_on_darwin(self, mock_system):
         # Simulate macOS platform
         mock_system.return_value = "Darwin"
-        
+
         # Create test files
         regular_file = os.path.join(self.temp_dir, "test.log")
         resource_fork_file = os.path.join(self.temp_dir, "._test.log")
-        
+
         with open(regular_file, "w") as f:
             f.write("log content")
         with open(resource_fork_file, "w") as f:
@@ -42,7 +43,7 @@ class LogUtilTest(unittest.TestCase):
 
         # Test get_all_files method
         files = log_util.get_all_files(self.temp_dir)
-        
+
         # Assert resource fork file is excluded on Darwin
         self.assertIn("test.log", [os.path.basename(f) for f in files])
         self.assertNotIn("._test.log", [os.path.basename(f) for f in files])
@@ -51,11 +52,11 @@ class LogUtilTest(unittest.TestCase):
     def test_get_all_files_on_linux(self, mock_system):
         # Simulate Linux platform
         mock_system.return_value = "Linux"
-        
+
         # Create test files
         regular_file = os.path.join(self.temp_dir, "test.log")
         resource_fork_file = os.path.join(self.temp_dir, "._test.log")
-        
+
         with open(regular_file, "w") as f:
             f.write("log content")
         with open(resource_fork_file, "w") as f:
@@ -63,7 +64,7 @@ class LogUtilTest(unittest.TestCase):
 
         # Test get_all_files method
         files = log_util.get_all_files(self.temp_dir)
-        
+
         # Assert both files are included on Linux
         self.assertIn("test.log", [os.path.basename(f) for f in files])
-        self.assertIn("._test.log", [os.path.basename(f) for f in files]) 
+        self.assertIn("._test.log", [os.path.basename(f) for f in files])

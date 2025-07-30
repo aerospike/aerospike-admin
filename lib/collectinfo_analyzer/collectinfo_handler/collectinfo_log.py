@@ -493,9 +493,7 @@ class CollectinfoLog(object):
         self.files = files
         self.snapshots: dict[str, _CollectinfoSnapshot] = {}
         self.data = {}
-        collectinfo_parser.parse_collectinfo_files(
-            files, self.data, True
-        )
+        collectinfo_parser.parse_collectinfo_files(files, self.data, True)
 
         if self.data:
             for ts in sorted(self.data.keys(), reverse=True):

@@ -19,6 +19,7 @@ from lib.collectinfo_analyzer.get_controller import (
 )
 from lib.utils import constants, util, version
 import logging
+
 logger = logging.getLogger(__name__)
 
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -38,8 +39,7 @@ class InfoController(CollectinfoCommandController):
         self.stats_getter = GetStatisticsController(self.log_handler)
         self.config_getter = GetConfigController(self.log_handler)
         self.controller_map = dict(
-            namespace=InfoNamespaceController,
-            transactions=InfoTransactionsController
+            namespace=InfoNamespaceController, transactions=InfoTransactionsController
         )
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")
@@ -334,23 +334,43 @@ class InfoTransactionsController(CollectinfoCommandController):
             for _, node_stats in ns_stats[timestamp].items():
                 namespaces.update(node_stats.keys())
 
-             # Check if any strong consistency namespaces were found
+            # Check if any strong consistency namespaces were found
             if not namespaces:
-                logger.debug("No namespaces with strong consistency enabled were found at %s", timestamp)
+                logger.debug(
+                    "No namespaces with strong consistency enabled were found at %s",
+                    timestamp,
+                )
                 continue
-                
+
             for namespace in namespaces:
-                set_data = self.stats_getter.get_sets(for_mods=[namespace, constants.MRT_SET])
+                set_data = self.stats_getter.get_sets(
+                    for_mods=[namespace, constants.MRT_SET]
+                )
 
                 if timestamp in set_data:
                     for node_id, sets_dict in set_data[timestamp].items():
-                        if node_id not in ns_stats[timestamp] or namespace not in ns_stats[timestamp][node_id]:
+                        if (
+                            node_id not in ns_stats[timestamp]
+                            or namespace not in ns_stats[timestamp][node_id]
+                        ):
                             continue
                         set_stats = sets_dict.get((namespace, constants.MRT_SET))
                         # Always add set metrics to namespace stats, defaulting to 0 if not present
-                        ns_stats[timestamp][node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0) if set_stats else 0)
-                        ns_stats[timestamp][node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0) if set_stats else 0)
-                        ns_stats[timestamp][node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0) if set_stats else 0)
+                        ns_stats[timestamp][node_id][namespace][
+                            "pseudo_mrt_monitor_used_bytes"
+                        ] = int(set_stats.get("data_used_bytes", 0) if set_stats else 0)
+                        ns_stats[timestamp][node_id][namespace]["stop-writes-count"] = (
+                            int(
+                                set_stats.get("stop-writes-count", 0)
+                                if set_stats
+                                else 0
+                            )
+                        )
+                        ns_stats[timestamp][node_id][namespace]["stop-writes-size"] = (
+                            int(
+                                set_stats.get("stop-writes-size", 0) if set_stats else 0
+                            )
+                        )
 
             self.view.info_transactions_monitors(
                 ns_stats[timestamp],
@@ -373,9 +393,12 @@ class InfoTransactionsController(CollectinfoCommandController):
             namespaces = set()
             for _, node_stats in ns_stats[timestamp].items():
                 namespaces.update(node_stats.keys())
-            
+
             if not namespaces:
-                logger.debug("No namespaces with strong consistency enabled were found at %s", timestamp)
+                logger.debug(
+                    "No namespaces with strong consistency enabled were found at %s",
+                    timestamp,
+                )
                 continue
 
             self.view.info_transactions_provisionals(

@@ -363,7 +363,7 @@ class LogFileDownloader:
             )
 
         try:
-            async with (await self.ssh_factory.create_connection(node.ip)) as conn:
+            async with await self.ssh_factory.create_connection(node.ip) as conn:
                 try:
                     log_file_info: list[_RemoteLogInfo] = []
                     logs = await node.info_logs_ids()

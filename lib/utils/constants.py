@@ -77,6 +77,7 @@ COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress..."
 
 MRT_SET = "<ERO~MRT"
 
+
 class Enumeration(set):
     def __getattr__(self, name):
         if name in self:

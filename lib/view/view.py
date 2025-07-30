@@ -227,9 +227,9 @@ class CliView(object):
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Transaction Monitor Metrics" + title_suffix
-        
+
         # No need to merge set stats as they're already merged into ns_stats in the controller
-        
+
         sources = dict(
             node_ids=node_ids,
             node_names=node_names,
@@ -239,7 +239,10 @@ class CliView(object):
 
         CliView.print_result(
             sheet.render(
-                templates.info_transactions_monitors_sheet, title, sources, common=common
+                templates.info_transactions_monitors_sheet,
+                title,
+                sources,
+                common=common,
             )
         )
 
@@ -255,7 +258,7 @@ class CliView(object):
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Transaction Provisionals Metrics" + title_suffix
-        
+
         sources = dict(
             node_ids=node_ids,
             node_names=node_names,
@@ -265,7 +268,10 @@ class CliView(object):
 
         CliView.print_result(
             sheet.render(
-                templates.info_transactions_provisionals_sheet, title, sources, common=common
+                templates.info_transactions_provisionals_sheet,
+                title,
+                sources,
+                common=common,
             )
         )
 
@@ -1411,7 +1417,7 @@ class CliView(object):
                 print("\n")
             else:
                 if isinstance(value, str):
-                    value = value.strip(';')
+                    value = value.strip(";")
                     delimiter = util.find_delimiter_in(value)
                     value = value.split(delimiter)
 
@@ -2276,9 +2282,11 @@ class CliView(object):
                 % (
                     cluster_dict["device_count"],
                     cluster_dict["device_count_per_node"],
-                    " (number differs across nodes)"
-                    if not cluster_dict["device_count_same_across_nodes"]
-                    else "",
+                    (
+                        " (number differs across nodes)"
+                        if not cluster_dict["device_count_same_across_nodes"]
+                        else ""
+                    ),
                 ),
             )
         )
@@ -2396,9 +2404,11 @@ class CliView(object):
                     % (
                         ns_stats["devices_total"],
                         ns_stats["devices_per_node"],
-                        " (number differs across nodes)"
-                        if not ns_stats["device_count_same_across_nodes"]
-                        else "",
+                        (
+                            " (number differs across nodes)"
+                            if not ns_stats["device_count_same_across_nodes"]
+                            else ""
+                        ),
                     ),
                 )
             )
@@ -2533,7 +2543,7 @@ class CliView(object):
     @reserved_modifiers
     def show_user_agents(cluster, user_agents_data, with_=None, timestamp="", **ignore):
         """Display user agent information in a tabular format.
-        
+
         Args:
             cluster: Cluster object (or cinfo_log in collectinfo mode)
             user_agents_data: Dictionary mapping node IDs to lists of user agent info
@@ -2546,10 +2556,10 @@ class CliView(object):
 
         # Flatten user agents data for sheet rendering - similar to show_sindex pattern
         flattened_data = []
-        
+
         # Get filtered node names if with_ is specified and cluster supports it
         filtered_node_names = None
-        if with_ and hasattr(cluster, 'get_node_names'):
+        if with_ and hasattr(cluster, "get_node_names"):
             try:
                 filtered_node_names = cluster.get_node_names(with_)
             except Exception:
@@ -2560,25 +2570,25 @@ class CliView(object):
             # Apply node filtering if available
             if filtered_node_names is not None and node_id not in filtered_node_names:
                 continue
-                
+
             if not agents or isinstance(agents, Exception):
                 continue
-                
+
             # Use the node_id directly (which is the IP:port) instead of resolved name
             node_display = node_id
-                
+
             # Create a flattened entry for each user agent
             for agent in agents:
-                flattened_data.append({
-                    'node': node_display,
-                    'client_version': agent['client_version'],
-                    'app_id': agent['app_id'],
-                    'count': agent['count']
-                })
+                flattened_data.append(
+                    {
+                        "node": node_display,
+                        "client_version": agent["client_version"],
+                        "app_id": agent["app_id"],
+                        "count": agent["count"],
+                    }
+                )
 
         # Prepare data for sheet - similar to show_sindex
         sources = dict(data=flattened_data)
 
-        CliView.print_result(
-            sheet.render(templates.user_agents_sheet, title, sources)
-        )
+        CliView.print_result(sheet.render(templates.user_agents_sheet, title, sources))

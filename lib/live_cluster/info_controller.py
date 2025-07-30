@@ -44,8 +44,7 @@ class InfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "for"])
         self.controller_map = dict(
-            namespace=InfoNamespaceController,
-            transactions=InfoTransactionsController
+            namespace=InfoNamespaceController, transactions=InfoTransactionsController
         )
         self.config_getter = GetConfigController(self.cluster)
         self.stat_getter = GetStatisticsController(self.cluster)
@@ -63,7 +62,7 @@ class InfoController(LiveClusterCommandController):
             raise ShellException(
                 f"info: '{line[0]}' is not a valid subcommand. See 'help info' for available subcommands."
             )
-       
+
         results = await asyncio.gather(
             self.do_network(line),
             self.controller_map["namespace"](get_futures=True)([]),
@@ -336,22 +335,28 @@ class InfoTransactionsController(LiveClusterCommandController):
     )
     async def do_monitors(self, line):
         # Get namespace statistics which contain MRT metrics
-        ns_stats = await self.stats_getter.get_strong_consistency_namespace(nodes=self.nodes)
+        ns_stats = await self.stats_getter.get_strong_consistency_namespace(
+            nodes=self.nodes
+        )
 
         # Collect all namespaces from all nodes
         namespaces = set()
         for node_id, node_stats in ns_stats.items():
             namespaces.update(node_stats.keys())
-        
+
         # If no namespaces with strong consistency enabled were found, return
         if not namespaces:
-            logger.debug("No namespaces with strong consistency enabled were found for do_monitors")
+            logger.debug(
+                "No namespaces with strong consistency enabled were found for do_monitors"
+            )
             return
 
         # Get <ERO~MRT set statistics for all namespaces from all nodes concurrently
         set_stats_futures = [
             asyncio.create_task(
-                self.cluster.info_set_statistics(namespace, constants.MRT_SET, nodes=self.nodes)
+                self.cluster.info_set_statistics(
+                    namespace, constants.MRT_SET, nodes=self.nodes
+                )
             )
             for namespace in namespaces
         ]
@@ -368,10 +373,16 @@ class InfoTransactionsController(LiveClusterCommandController):
                     continue
 
                 # Add set metrics to namespace stats with prefixed names
-                ns_stats[node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(set_stats.get("data_used_bytes", 0) if set_stats else 0)
-                ns_stats[node_id][namespace]["stop-writes-count"] = int(set_stats.get("stop-writes-count", 0) if set_stats else 0)
-                ns_stats[node_id][namespace]["stop-writes-size"] = int(set_stats.get("stop-writes-size", 0) if set_stats else 0)
-        
+                ns_stats[node_id][namespace]["pseudo_mrt_monitor_used_bytes"] = int(
+                    set_stats.get("data_used_bytes", 0) if set_stats else 0
+                )
+                ns_stats[node_id][namespace]["stop-writes-count"] = int(
+                    set_stats.get("stop-writes-count", 0) if set_stats else 0
+                )
+                ns_stats[node_id][namespace]["stop-writes-size"] = int(
+                    set_stats.get("stop-writes-size", 0) if set_stats else 0
+                )
+
         return util.callable(
             self.view.info_transactions_monitors,
             ns_stats,
@@ -386,17 +397,21 @@ class InfoTransactionsController(LiveClusterCommandController):
     )
     async def do_provisionals(self, line):
         # Get namespace statistics which contain MRT metrics
-        ns_stats = await self.stats_getter.get_strong_consistency_namespace(nodes=self.nodes)
+        ns_stats = await self.stats_getter.get_strong_consistency_namespace(
+            nodes=self.nodes
+        )
 
         # Check if any strong consistency namespaces were found
         namespaces = set()
         for _, node_stats in ns_stats.items():
             namespaces.update(node_stats.keys())
-        
+
         if not namespaces:
-            logger.debug("No namespaces with strong consistency enabled were found for do_provisionals")
+            logger.debug(
+                "No namespaces with strong consistency enabled were found for do_provisionals"
+            )
             return
-        
+
         return util.callable(
             self.view.info_transactions_provisionals,
             ns_stats,
