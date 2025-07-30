@@ -131,3 +131,12 @@ clean:
 	rm -rf $(BUILD_ROOT)bin/*
 	rm -f `find . -type f -name '*.pyc' | xargs`
 	pipenv clean
+
+
+.PHONY: format-check
+format-check:
+	pipenv run black . --check --diff
+
+.PHONY: format
+format:
+	pipenv run black .
