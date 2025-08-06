@@ -814,10 +814,12 @@ class ShowConfigXDRController(LiveClusterCommandController):
 
         fully_supported = all(
             [
-                True
-                if version.LooseVersion(v)
-                >= version.LooseVersion(constants.SERVER_XDR_FILTER_FIRST_VERSION)
-                else False
+                (
+                    True
+                    if version.LooseVersion(v)
+                    >= version.LooseVersion(constants.SERVER_XDR_FILTER_FIRST_VERSION)
+                    else False
+                )
                 for v in builds.values()
             ]
         )
@@ -1685,12 +1687,14 @@ class ShowBestPracticesController(LiveClusterCommandController):
 
         fully_supported = all(
             [
-                True
-                if version.LooseVersion(v)
-                >= version.LooseVersion(
-                    constants.SERVER_SHOW_BEST_PRACTICES_FIRST_VERSION
+                (
+                    True
+                    if version.LooseVersion(v)
+                    >= version.LooseVersion(
+                        constants.SERVER_SHOW_BEST_PRACTICES_FIRST_VERSION
+                    )
+                    else False
                 )
-                else False
                 for v in versions.values()
             ]
         )
@@ -1901,25 +1905,25 @@ class ShowUserAgentsController(LiveClusterCommandController):
         for node, agents in user_agents_data.items():
             if isinstance(agents, Exception):
                 raise ShellException(
-                        f"Error processing user agent data from {node}: {agents}"
-                    )
-                
+                    f"Error processing user agent data from {node}: {agents}"
+                )
+
             processed_data[node] = []
             if not agents:
                 continue
-                
+
             for agent in agents:
                 try:
                     # Get user-agent and count from the agent dict
-                    user_agent = agent['user-agent']
-                    count = agent['count']
-                    
+                    user_agent = agent["user-agent"]
+                    count = agent["count"]
+
                     # Decode base64 user agent
-                    decoded_ua = b64decode(user_agent).decode('utf-8')
+                    decoded_ua = b64decode(user_agent).decode("utf-8")
                     logger.debug(f"Decoded user agent for {node}: {decoded_ua}")
                     # Split by comma to get format-version, client-version, and app-id
-                    ua_parts = decoded_ua.split(',')
-                    
+                    ua_parts = decoded_ua.split(",")
+
                     if len(ua_parts) < 3:
                         # If we don't have enough parts, mark as unknown
                         version = "unknown"
@@ -1930,15 +1934,17 @@ class ShowUserAgentsController(LiveClusterCommandController):
                         version = ua_parts[1].strip()
                         # Last part is app-id
                         app_id = ua_parts[-1].strip()
-                    
-                    processed_data[node].append({
-                        'client_version': version,
-                        'app_id': app_id,
-                        'count': int(count)
-                    })
+
+                    processed_data[node].append(
+                        {
+                            "client_version": version,
+                            "app_id": app_id,
+                            "count": int(count),
+                        }
+                    )
                 except Exception as e:
                     raise ShellException(
                         f"Error processing user agent data from {node}: {e}"
                     )
-                
+
         return self.view.show_user_agents(self.cluster, processed_data, **self.mods)

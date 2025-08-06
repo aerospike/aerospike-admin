@@ -24,9 +24,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
 
 
-def parse_collectinfo_files(
-    file_paths, parsed_map, ignore_exception=False
-):
+def parse_collectinfo_files(file_paths, parsed_map, ignore_exception=False):
     """
     Parses on files in the collectinfo.tgz to run in collectinfo (-cf) mode.
     """

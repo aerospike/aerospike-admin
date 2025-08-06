@@ -448,9 +448,11 @@ class SheetTest(unittest.TestCase):
                 Field(
                     "F",
                     Projectors.String("d", "f"),
-                    converter=lambda edata: "success"
-                    if edata.value == edata.common["expected"]
-                    else "failure",
+                    converter=lambda edata: (
+                        "success"
+                        if edata.value == edata.common["expected"]
+                        else "failure"
+                    ),
                 ),
             ),
             from_source="d",

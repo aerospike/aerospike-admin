@@ -231,10 +231,12 @@ class TestInfo(asynctest.TestCase):
         This test asserts that an unknown subcommand to 'info' returns a clear error.
         """
         with self.assertRaises(Exception) as context:
-            await test_util.capture_separate_and_parse_output(self.rc, ["info", "random"])
+            await test_util.capture_separate_and_parse_output(
+                self.rc, ["info", "random"]
+            )
         self.assertIn(
             "info: 'random' is not a valid subcommand. See 'help info' for available subcommands.",
-            str(context.exception)
+            str(context.exception),
         )
 
 

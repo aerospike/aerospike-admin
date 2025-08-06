@@ -519,23 +519,19 @@ class GetUserAgentsControllerTest(unittest.TestCase):
             "timestamp": {
                 "192.168.1.1:3000": [
                     {"user-agent": "dGVzdA==", "count": "5"},
-                    {"user-agent": "YXNhZG0=", "count": "3"}
+                    {"user-agent": "YXNhZG0=", "count": "3"},
                 ],
-                "192.168.1.2:3000": [
-                    {"user-agent": "Y2xpZW50", "count": "2"}
-                ]
+                "192.168.1.2:3000": [{"user-agent": "Y2xpZW50", "count": "2"}],
             }
         }
-        
+
         expected = {
             "timestamp": {
                 "192.168.1.1:3000": [
                     {"user-agent": "dGVzdA==", "count": "5"},
-                    {"user-agent": "YXNhZG0=", "count": "3"}
+                    {"user-agent": "YXNhZG0=", "count": "3"},
                 ],
-                "192.168.1.2:3000": [
-                    {"user-agent": "Y2xpZW50", "count": "2"}
-                ]
+                "192.168.1.2:3000": [{"user-agent": "Y2xpZW50", "count": "2"}],
             }
         }
 
@@ -547,7 +543,7 @@ class GetUserAgentsControllerTest(unittest.TestCase):
     def test_get_user_agents_empty(self):
         """Test handling of empty user agents data"""
         self.log_handler.info_user_agents.return_value = {}
-        
+
         actual = self.controller.get_user_agents()
 
         self.log_handler.info_user_agents.assert_called_once()

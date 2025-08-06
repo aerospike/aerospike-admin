@@ -397,19 +397,23 @@ class Node(AsyncObject):
         results = await self._info_cinfo(commands, self.ip, disable_cache=True)
         node_id = results["node"]
         features = results["features"]
-        
+
         # Check if the node is an admin node
-        if self._is_admin_port_enabled(results["connection"]): 
+        if self._is_admin_port_enabled(results["connection"]):
             logger.debug("admin port is enabled for node %s", node_id)
             self.is_admin_node = True
 
             admin_info_call = self._get_admin_info_call()
-            admin_info_response = await self._info_cinfo(admin_info_call, self.ip, disable_cache=True)
+            admin_info_response = await self._info_cinfo(
+                admin_info_call, self.ip, disable_cache=True
+            )
             admin_addresses = self._info_service_helper(admin_info_response)
-            logger.debug("admin address discovered for node %s: %s", node_id, admin_addresses)
+            logger.debug(
+                "admin address discovered for node %s: %s", node_id, admin_addresses
+            )
             # disable peer discovery for admin node
             return node_id, admin_addresses, features, []
-        
+
         peers_info_calls = self._get_info_peers_list_calls()
         service_info_call = self._get_service_info_call()
 
@@ -654,9 +658,9 @@ class Node(AsyncObject):
 
     async def has_peers_changed(self):
         # Admin nodes don't track peer changes
-        if getattr(self, 'is_admin_node', False):
+        if getattr(self, "is_admin_node", False):
             return False
-            
+
         try:
             new_generation = await self._info("peers-generation")
             if self.peers_generation != new_generation:
@@ -673,7 +677,7 @@ class Node(AsyncObject):
             return False
 
         return common.is_new_histogram_version(as_version)
-    
+
     async def _set_user_agent(self):
         """
         Sets user agent on the Aerospike connection socket.
@@ -727,7 +731,7 @@ class Node(AsyncObject):
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
-                    
+
                     return sock
                 elif (
                     e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
@@ -740,7 +744,7 @@ class Node(AsyncObject):
                     await self.login()
                     if await sock.authenticate(self.session_token):
                         logger.debug("sock auth successful on second try %s", id(sock))
-                        
+
                         return sock
 
                 await sock.close()
@@ -957,9 +961,9 @@ class Node(AsyncObject):
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
         # Admin nodes don't have peers
-        if getattr(self, 'is_admin_node', False):
+        if getattr(self, "is_admin_node", False):
             return []
-            
+
         return self._info_peers_helper(await self._info(self._get_info_peers_call()))
 
     def _get_info_peers_alumni_call(self):
@@ -985,9 +989,9 @@ class Node(AsyncObject):
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
         # Admin nodes don't have peers
-        if getattr(self, 'is_admin_node', False):
+        if getattr(self, "is_admin_node", False):
             return []
-            
+
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alumni_call())
         )
@@ -1025,9 +1029,9 @@ class Node(AsyncObject):
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
         # Admin nodes don't have peers
-        if getattr(self, 'is_admin_node', False):
+        if getattr(self, "is_admin_node", False):
             return []
-            
+
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alt_call())
         )
@@ -1055,9 +1059,9 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_peers_list(self) -> list[Addr_Port_TLSName]:
         # Admin nodes don't have peers
-        if getattr(self, 'is_admin_node', False):
+        if getattr(self, "is_admin_node", False):
             return []
-            
+
         results = await asyncio.gather(
             *[self._info(call) for call in self._get_info_peers_list_calls()]
         )
@@ -1066,9 +1070,9 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_peers_flat_list(self):
         # Admin nodes don't have peers
-        if getattr(self, 'is_admin_node', False):
+        if getattr(self, "is_admin_node", False):
             return []
-            
+
         return client_util.flatten(await self.info_peers_list())
 
     ###### Services End ######
@@ -1103,31 +1107,40 @@ class Node(AsyncObject):
             return "service-tls-std"
 
         return "service-clear-std"
-    
+
     def _get_admin_info_call(self):
         if self.enable_tls:
             return "admin-tls-std"
 
         return "admin-clear-std"
-    
+
     def _is_admin_port_enabled(self, connection_info_response: str) -> bool:
         """
         Check if admin port is enabled on this node.
         Returns:
             bool: true if admin port is enabled, false otherwise.
         """
-        
-        if not connection_info_response or isinstance(connection_info_response, Exception):
-            logger.debug("admin port not enabled, connection info response is: %s", connection_info_response)
+
+        if not connection_info_response or isinstance(
+            connection_info_response, Exception
+        ):
+            logger.debug(
+                "admin port not enabled, connection info response is: %s",
+                connection_info_response,
+            )
             return False
-        
+
         connection_info = client_util.info_to_dict(connection_info_response)
-        
+
         # Safely check if admin key exists and equals 'true'
-        if connection_info.get('admin', 'false') == 'true':
+        if connection_info.get("admin", "false") == "true":
             return True
-        
-        logger.debug("admin port not enabled for node %s, connection info response is: %s", self.ip, connection_info_response)
+
+        logger.debug(
+            "admin port not enabled for node %s, connection info response is: %s",
+            self.ip,
+            connection_info_response,
+        )
         return False
 
     @async_return_exceptions
@@ -2188,7 +2201,7 @@ class Node(AsyncObject):
                 for ns in namespaces
                 for optional in micro_benchmarks
             ]
-            
+
             # TOOLS-2984: benchmarks-fabric is not at namespace-level
             cmd_latencies.append("latencies:hist=benchmarks-fabric")
 
@@ -2510,9 +2523,7 @@ class Node(AsyncObject):
         resp = await self._info(req)
 
         if "error" in resp.lower():
-            raise ASInfoResponseError(
-                ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp
-            )
+            raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp)
 
         return resp
 
@@ -2654,17 +2665,16 @@ class Node(AsyncObject):
             for v in client_util.info_to_list(await self._info("sindex-list"))
             if v != ""
         ]
-        
-    
+
     @async_return_exceptions
     async def info_user_agents(self):
         """
-        Get a list of user agents for this node. 
+        Get a list of user agents for this node.
         """
         response = await self._info("user-agents")
         if isinstance(response, Exception):
             return response
-        
+
         return [
             client_util.info_to_dict(v, ":")
             for v in client_util.info_to_list(response)

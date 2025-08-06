@@ -710,23 +710,29 @@ class NodeTest(asynctest.TestCase):
         """
         # Mark node as admin node
         self.node.is_admin_node = True
-        
+
         # Test info_peers returns empty list for admin node
         peers = await self.node.info_peers()
         self.assertEqual(peers, [], "Admin node info_peers should return empty list")
-        
+
         # Test info_peers_alumni returns empty list for admin node
         alumni = await self.node.info_peers_alumni()
-        self.assertEqual(alumni, [], "Admin node info_peers_alumni should return empty list")
-        
+        self.assertEqual(
+            alumni, [], "Admin node info_peers_alumni should return empty list"
+        )
+
         # Test info_peers_alt returns empty list for admin node
         alt_peers = await self.node.info_peers_alt()
-        self.assertEqual(alt_peers, [], "Admin node info_peers_alt should return empty list")
-        
+        self.assertEqual(
+            alt_peers, [], "Admin node info_peers_alt should return empty list"
+        )
+
         # Test info_peers_list returns empty list for admin node
         peers_list = await self.node.info_peers_list()
-        self.assertEqual(peers_list, [], "Admin node info_peers_list should return empty list")
-        
+        self.assertEqual(
+            peers_list, [], "Admin node info_peers_list should return empty list"
+        )
+
         # Verify no info calls were made (peer discovery disabled)
         self.info_mock.assert_not_called()
 
@@ -736,33 +742,37 @@ class NodeTest(asynctest.TestCase):
         """
         # Test with admin=true in info response format
         self.assertTrue(self.node._is_admin_port_enabled("admin=true"))
-        
+
         # Test with admin=false in info response format
         self.assertFalse(self.node._is_admin_port_enabled("admin=false"))
-        
+
         # Test with admin=TRUE (case sensitive, should work)
         self.assertFalse(self.node._is_admin_port_enabled("admin=TRUE"))
-        
+
         # Test with no admin key in response (should default to false)
         self.assertFalse(self.node._is_admin_port_enabled("other=value"))
-        
+
         # Test with empty string (should be False)
         self.assertFalse(self.node._is_admin_port_enabled(""))
-        
+
         # Test with None (should be False)
         self.assertFalse(self.node._is_admin_port_enabled(None))
-        
+
         # Test with Exception (should be False)
         self.assertFalse(self.node._is_admin_port_enabled(Exception("test error")))
-        
+
         # Test with malformed response (should be False)
         self.assertFalse(self.node._is_admin_port_enabled("malformed"))
-        
+
         # Test with multiple key-value pairs including admin=true
-        self.assertTrue(self.node._is_admin_port_enabled("version=1.0;admin=true;port=3000"))
-        
+        self.assertTrue(
+            self.node._is_admin_port_enabled("version=1.0;admin=true;port=3000")
+        )
+
         # Test with multiple key-value pairs including admin=false
-        self.assertFalse(self.node._is_admin_port_enabled("version=1.0;admin=false;port=3000"))
+        self.assertFalse(
+            self.node._is_admin_port_enabled("version=1.0;admin=false;port=3000")
+        )
 
     async def test_info_service_list(self):
         self.info_mock.return_value = "172.17.0.1:3000,172.17.1.1:3000"
@@ -1846,9 +1856,7 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(self.info_mock.call_count, 10)
         self.info_mock.assert_any_call("latencies:", self.ip)
         self.info_mock.assert_any_call("latencies:hist={test}-proxy", self.ip)
-        self.info_mock.assert_any_call(
-            "latencies:hist=benchmarks-fabric", self.ip
-        )
+        self.info_mock.assert_any_call("latencies:hist=benchmarks-fabric", self.ip)
         self.info_mock.assert_any_call(
             "latencies:hist={test}-benchmarks-ops-sub", self.ip
         )
@@ -2154,7 +2162,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_cluster_stable_with_errors(self):
         self.info_mock.return_value = "ERROR::foo"
         expected = ASInfoResponseError(
-           ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, "ERROR::foo"
+            ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, "ERROR::foo"
         )
 
         actual = await self.node.info_cluster_stable(namespace="bar")
@@ -3581,7 +3589,9 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_sindex_create_with_exp_base64(self):
         self.info_mock.return_value = "OK"
-        expected_call = "sindex-create:indexname=exp-idx;ns=test;exp=dGVzdA==;type=string"
+        expected_call = (
+            "sindex-create:indexname=exp-idx;ns=test;exp=dGVzdA==;type=string"
+        )
 
         actual = await self.node.info_sindex_create(
             "exp-idx", "test", None, "string", exp_base64="dGVzdA=="
@@ -3607,13 +3617,13 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_sindex_create(
             "full-idx",
-            "test", 
+            "test",
             "mybin",
             "string",
             index_type="mapkeys",
             set_="myset",
             cdt_ctx_base64="dGVzdA==",
-            supports_sindex_type_syntax=True
+            supports_sindex_type_syntax=True,
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -4206,9 +4216,9 @@ class NodeTest(asynctest.TestCase):
         # Mock response with base64 encoded user agents
         mock_response = "user-agent=dGVzdA==:count=5;user-agent=YXNhZG0=:count=3"
         self.info_mock.return_value = mock_response
-        
+
         result = await self.node.info_user_agents()
-        
+
         self.info_mock.assert_called_with("user-agents", self.ip)
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["user-agent"], "dGVzdA==")
@@ -4219,18 +4229,18 @@ class NodeTest(asynctest.TestCase):
     async def test_info_user_agents_empty(self):
         """Test when no user agents are present"""
         self.info_mock.return_value = ""
-        
+
         result = await self.node.info_user_agents()
-        
+
         self.info_mock.assert_called_with("user-agents", self.ip)
         self.assertEqual(result, [])
 
     async def test_info_user_agents_error(self):
         """Test error handling"""
         self.info_mock.return_value = ASInfoResponseError("error", "Test error")
-        
+
         result = await self.node.info_user_agents()
-        
+
         self.info_mock.assert_called_with("user-agents", self.ip)
         self.assertIsInstance(result, ASInfoResponseError)
 
