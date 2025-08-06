@@ -970,10 +970,10 @@ class GetUserAgentsControllerTest(asynctest.TestCase):
     def setUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
-        
+
         self.cluster_mock = MagicMock()
         self.controller = GetUserAgentsController(self.cluster_mock)
-        
+
         self.addCleanup(patch.stopall)
 
     async def test_get_user_agents_success(self):
@@ -981,15 +981,15 @@ class GetUserAgentsControllerTest(asynctest.TestCase):
         expected = {
             "192.168.1.1:3000": [
                 {"user-agent": "dGVzdA==", "count": "5"},
-                {"user-agent": "YXNhZG0=", "count": "3"}
+                {"user-agent": "YXNhZG0=", "count": "3"},
             ],
-            "192.168.1.2:3000": [
-                {"user-agent": "Y2xpZW50", "count": "2"}
-            ]
+            "192.168.1.2:3000": [{"user-agent": "Y2xpZW50", "count": "2"}],
         }
+
         # Mock the async method properly
         async def mock_info_user_agents(**kwargs):
             return expected
+
         self.cluster_mock.info_user_agents = mock_info_user_agents
 
         actual = await self.controller.get_user_agents(nodes="all")
@@ -998,14 +998,12 @@ class GetUserAgentsControllerTest(asynctest.TestCase):
 
     async def test_get_user_agents_with_node_filtering(self):
         """Test with node filtering (specific nodes)"""
-        expected = {
-            "192.168.1.1:3000": [
-                {"user-agent": "dGVzdA==", "count": "5"}
-            ]
-        }
+        expected = {"192.168.1.1:3000": [{"user-agent": "dGVzdA==", "count": "5"}]}
+
         # Mock the async method properly
         async def mock_info_user_agents(**kwargs):
             return expected
+
         self.cluster_mock.info_user_agents = mock_info_user_agents
 
         actual = await self.controller.get_user_agents(nodes=["192.168.1.1:3000"])
@@ -1016,11 +1014,13 @@ class GetUserAgentsControllerTest(asynctest.TestCase):
         """Test error propagation from node level"""
         expected = {
             "192.168.1.1:3000": Exception("Node connection failed"),
-            "192.168.1.2:3000": [{"user-agent": "dGVzdA==", "count": "5"}]
+            "192.168.1.2:3000": [{"user-agent": "dGVzdA==", "count": "5"}],
         }
-        # Mock the async method properly  
+
+        # Mock the async method properly
         async def mock_info_user_agents(**kwargs):
             return expected
+
         self.cluster_mock.info_user_agents = mock_info_user_agents
 
         actual = await self.controller.get_user_agents(nodes="all")

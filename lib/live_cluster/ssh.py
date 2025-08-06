@@ -111,11 +111,11 @@ class SSHConnectionFactory:
 
     async def create_connection(self, ip) -> SSHConnection:
         if ip not in SSHConnectionFactory.semaphore_host_dict:
-            SSHConnectionFactory.semaphore_host_dict[
-                ip
-            ] = SSHConnectionFactory.SemaphoreCountValue(
-                asyncio.Semaphore(self.max_startups),
-                1,
+            SSHConnectionFactory.semaphore_host_dict[ip] = (
+                SSHConnectionFactory.SemaphoreCountValue(
+                    asyncio.Semaphore(self.max_startups),
+                    1,
+                )
             )
         else:
             SSHConnectionFactory.semaphore_host_dict[ip].count += 1

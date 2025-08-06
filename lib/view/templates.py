@@ -296,9 +296,9 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats",
                         "index_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
-                        "index_flash_used_bytes", # pre 7.0
-                        "index_pmem_used_bytes", # pre 7.0
-                        "memory_used_index_bytes", # pre 7.0
+                        "index_flash_used_bytes",  # pre 7.0
+                        "index_pmem_used_bytes",  # pre 7.0
+                        "memory_used_index_bytes",  # pre 7.0
                     ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
@@ -309,10 +309,13 @@ info_namespace_usage_sheet = Sheet(
                         FieldType.number,
                         Projectors.Func(
                             FieldType.number,
-                            lambda pct: pct / 100.0,  # Convert percentage (0-100) to ratio (0-1)
-                            Projectors.Float("ns_stats", "index_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
+                            lambda pct: pct
+                            / 100.0,  # Convert percentage (0-100) to ratio (0-1)
+                            Projectors.Float(
+                                "ns_stats", "index_mounts_used_pct"
+                            ),  # flash, pmem, and memory metrics were consolidated in 7.0
                         ),
-                        Projectors.Div( # pre 7.0
+                        Projectors.Div(  # pre 7.0
                             Projectors.Number(
                                 "ns_stats",
                                 "index_flash_used_bytes",
@@ -368,9 +371,9 @@ info_namespace_usage_sheet = Sheet(
                     Projectors.Number(
                         "ns_stats",
                         "sindex_used_bytes",  # flash, pmem, and memory metrics were consolidated in 7.0
-                        "sindex_flash_used_bytes", # pre 7.0
-                        "sindex_pmem_used_bytes", # pre 7.0
-                        "memory_used_sindex_bytes", # pre 7.0
+                        "sindex_flash_used_bytes",  # pre 7.0
+                        "sindex_pmem_used_bytes",  # pre 7.0
+                        "memory_used_sindex_bytes",  # pre 7.0
                     ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
@@ -381,10 +384,13 @@ info_namespace_usage_sheet = Sheet(
                         FieldType.number,
                         Projectors.Func(
                             FieldType.number,
-                            lambda pct: pct / 100.0,  # Convert percentage (0-100) to ratio (0-1)
-                            Projectors.Float("ns_stats", "sindex_mounts_used_pct"),  # flash, pmem, and memory metrics were consolidated in 7.0
+                            lambda pct: pct
+                            / 100.0,  # Convert percentage (0-100) to ratio (0-1)
+                            Projectors.Float(
+                                "ns_stats", "sindex_mounts_used_pct"
+                            ),  # flash, pmem, and memory metrics were consolidated in 7.0
                         ),
-                        Projectors.Div( # pre 7.0
+                        Projectors.Div(  # pre 7.0
                             Projectors.Number(
                                 "ns_stats",
                                 "sindex_flash_used_bytes",
@@ -2290,9 +2296,7 @@ show_sindex = Sheet(
         ),
         Field(
             "Expression",
-            Projectors.Func(
-                "string", _ignore_null, Projectors.String("data", "exp")
-            ),
+            Projectors.Func("string", _ignore_null, Projectors.String("data", "exp")),
         ),
     ),
     from_source=("data"),
@@ -2562,9 +2566,9 @@ user_agents_sheet = Sheet(
     (
         Field("Node", Projectors.String("data", "node")),
         Field("Client Version", Projectors.String("data", "client_version")),
-        Field("App ID", Projectors.String("data", "app_id")), 
+        Field("App ID", Projectors.String("data", "app_id")),
         Field(
-            "Count", 
+            "Count",
             Projectors.Number("data", "count"),
         ),
     ),
@@ -2584,17 +2588,21 @@ info_transactions_monitors_sheet = Sheet(
             Projectors.Number("ns_stats", "mrt_monitors"),
             converter=Converters.scientific_units,
             formatters=(
-                Formatters.red_alert(lambda edata: edata.value > 0.9 * edata.record["stop-writes-count"] and edata.record["stop-writes-count"] > 0),
-                Formatters.yellow_alert(lambda edata: edata.value > 0.7 * edata.record["stop-writes-count"] and edata.record["stop-writes-count"] > 0),
+                Formatters.red_alert(
+                    lambda edata: edata.value > 0.9 * edata.record["stop-writes-count"]
+                    and edata.record["stop-writes-count"] > 0
+                ),
+                Formatters.yellow_alert(
+                    lambda edata: edata.value > 0.7 * edata.record["stop-writes-count"]
+                    and edata.record["stop-writes-count"] > 0
+                ),
             ),
         ),
         Field(
             "Active",
             Projectors.Number("ns_stats", "mrt_monitors_active"),
             converter=Converters.scientific_units,
-            formatters=(
-                Formatters.yellow_alert(lambda edata: edata.value > 0),
-            ),
+            formatters=(Formatters.yellow_alert(lambda edata: edata.value > 0),),
         ),
         Field(
             "Tombstones",
@@ -2606,8 +2614,14 @@ info_transactions_monitors_sheet = Sheet(
             Projectors.Number("ns_stats", "pseudo_mrt_monitor_used_bytes"),
             converter=Converters.byte,
             formatters=(
-                Formatters.red_alert(lambda edata: edata.value > 0.9 * edata.record["stop-writes-size"] and edata.record["stop-writes-size"] > 0),
-                Formatters.yellow_alert(lambda edata: edata.value > 0.7 * edata.record["stop-writes-size"] and edata.record["stop-writes-size"] > 0),
+                Formatters.red_alert(
+                    lambda edata: edata.value > 0.9 * edata.record["stop-writes-size"]
+                    and edata.record["stop-writes-size"] > 0
+                ),
+                Formatters.yellow_alert(
+                    lambda edata: edata.value > 0.7 * edata.record["stop-writes-size"]
+                    and edata.record["stop-writes-size"] > 0
+                ),
             ),
         ),
         # For Color Alerts at Count and Storage

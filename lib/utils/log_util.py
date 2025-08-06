@@ -87,10 +87,14 @@ def get_dirs(path=""):
     except Exception:
         return []
 
+
 def _is_macos_resource_fork(filename):
     """Check if a file is a macOS resource fork file (starts with '._')"""
     # skip processing Apple resource fork files https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats
-    return "darwin" in platform.system().lower() and os.path.basename(filename).startswith('._')
+    return "darwin" in platform.system().lower() and os.path.basename(
+        filename
+    ).startswith("._")
+
 
 def get_all_files(dir_path=""):
     fname_list = []

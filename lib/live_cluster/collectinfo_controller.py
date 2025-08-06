@@ -404,7 +404,9 @@ class CollectinfoController(LiveClusterCommandController):
             if node not in user_agents_map:
                 user_agents_map[node] = []
 
-            if not user_agents_data[node] or isinstance(user_agents_data[node], Exception):
+            if not user_agents_data[node] or isinstance(
+                user_agents_data[node], Exception
+            ):
                 continue
 
             user_agents_map[node] = user_agents_data[node]
