@@ -995,7 +995,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_peers_alumni_alt(self) -> list[Addr_Port_TLSName]:
         """
-        Get peers this node has ever know of
+        Get peers this node has ever known of
         Note: info_peers_alumni for server version prior to 4.3.1 gives only old nodes
         which are not part of current cluster.
 
