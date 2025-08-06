@@ -949,7 +949,7 @@ class Node(AsyncObject):
     def _get_info_peers_call(self):
         if self.enable_tls:
             return "peers-tls-std"
-            
+
         return "peers-clear-std"
 
     @async_return_exceptions
@@ -969,13 +969,13 @@ class Node(AsyncObject):
     def _get_info_peers_alumni_call(self):
         if self.enable_tls:
             return "alumni-tls-std"
-        
+
         return "alumni-clear-std"
 
     def _get_info_peers_alumni_alt_call(self):
         if self.enable_tls:
             return "alumni-tls-alt"
-        
+
         return "alumni-clear-alt"
 
     @async_return_exceptions
@@ -1007,9 +1007,9 @@ class Node(AsyncObject):
         list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
         """
         # Admin nodes don't have peers
-        if getattr(self, 'is_admin_node', False):
+        if getattr(self, "is_admin_node", False):
             return []
-            
+
         return self._info_peers_helper(
             await self._info(self._get_info_peers_alumni_alt_call())
         )
@@ -1017,7 +1017,7 @@ class Node(AsyncObject):
     def _get_info_peers_alt_call(self):
         if self.enable_tls:
             return "peers-tls-alt"
-        
+
         return "peers-clear-alt"
 
     @async_return_exceptions

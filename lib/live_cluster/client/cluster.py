@@ -256,13 +256,20 @@ class Cluster(AsyncObject):
                     continue
 
                 alumni_peers, alumni_alt_peers, peers, alt_peers = await asyncio.gather(
-                    node.info_peers_alumni(), node.info_peers_alumni_alt(), node.info_peers(), node.info_peers_alt()
+                    node.info_peers_alumni(),
+                    node.info_peers_alumni_alt(),
+                    node.info_peers(),
+                    node.info_peers_alt(),
                 )
                 alumni_peers = client_util.flatten(alumni_peers)
                 alumni_alt_peers = client_util.flatten(alumni_alt_peers)
                 peers = client_util.flatten(peers)
                 alt_peers = client_util.flatten(alt_peers)
-                not_visible = set(alumni_peers).union(set(alumni_alt_peers)) - set(peers) - set(alt_peers)
+                not_visible = (
+                    set(alumni_peers).union(set(alumni_alt_peers))
+                    - set(peers)
+                    - set(alt_peers)
+                )
 
                 if len(not_visible) >= 1:
                     for n in not_visible:
