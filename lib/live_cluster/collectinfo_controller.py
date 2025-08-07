@@ -597,6 +597,8 @@ class CollectinfoController(LiveClusterCommandController):
                 "peers-tls-alt",
                 "alumni-clear-std",
                 "alumni-tls-std",
+                "alumni-clear-alt",
+                "alumni-tls-alt",
                 "peers-generation",
                 "roster:",
             ]
