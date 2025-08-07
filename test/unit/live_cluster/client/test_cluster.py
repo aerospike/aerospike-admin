@@ -158,6 +158,12 @@ class ClusterTest(asynctest.TestCase):
             if cmd == "alumni-clear-std":
                 return "0,3000,[[BB9050011AC4202,,[172.17.0.3]]]"
 
+            if cmd == "alumni-clear-alt":
+                return "0,3000,[[BB9050011AC4202,,[172.17.0.3]]]"
+
+            if cmd == "alumni-tls-alt":
+                return "0,4333,[[BB9050011AC4202,peers-alumni,[172.17.0.3]]]"
+
             if cmd == "alumni-tls-std":
                 return "0,4333,[[BB9050011AC4202,peers-alumni,[172.17.0.3]]]"
 

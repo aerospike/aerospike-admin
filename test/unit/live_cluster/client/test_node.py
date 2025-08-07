@@ -648,7 +648,7 @@ class NodeTest(asynctest.TestCase):
         peers_list = await self.node.info_peers_list()
 
         self.assertEqual(self.info_mock.call_count, 2)
-        self.info_mock.assert_any_call("alumni-clear-std", "192.1.1.1")
+        self.info_mock.assert_any_call("alumni-clear-alt", "192.1.1.1")
         self.info_mock.assert_any_call("peers-clear-alt", "192.1.1.1")
 
         self.assertEqual(
@@ -671,7 +671,7 @@ class NodeTest(asynctest.TestCase):
         peers_list = await self.node.info_peers_list()
 
         self.assertEqual(self.info_mock.call_count, 2)
-        self.info_mock.assert_any_call("alumni-tls-std", "192.1.1.1")
+        self.info_mock.assert_any_call("alumni-tls-alt", "192.1.1.1")
         self.info_mock.assert_any_call("peers-tls-alt", "192.1.1.1")
         self.assertEqual(
             sorted(peers_list),
@@ -681,6 +681,28 @@ class NodeTest(asynctest.TestCase):
 
         self.node.enable_tls = False
         self.node.consider_alumni = False
+
+        self.info_mock.reset_mock()
+        self.node.enable_tls = False
+        self.info_mock.side_effect = [
+            "0,3000,[[BB9050011AC4202,,[172.17.0.3]]]",
+            "0,3000,[[BB9050011AC4202,,[172.17.0.2]]]",
+        ]
+        self.node.use_services_alt = False
+        self.node.consider_alumni = True
+        expected = [(("172.17.0.3", 3000, None),), (("172.17.0.2", 3000, None),)]
+
+        peers_list = await self.node.info_peers_list()
+
+        self.assertEqual(self.info_mock.call_count, 2)
+        self.info_mock.assert_any_call("alumni-clear-std", "192.1.1.1")
+        self.info_mock.assert_any_call("peers-clear-std", "192.1.1.1")
+
+        self.assertEqual(
+            sorted(peers_list),
+            sorted(expected),
+            "info_peers_list(peers-alumni with use_services_alt=False) did not return the expected result",
+        )
 
     async def test_info_peers_admin_node_returns_empty_list(self):
         """

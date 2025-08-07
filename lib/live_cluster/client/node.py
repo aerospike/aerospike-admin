@@ -949,8 +949,8 @@ class Node(AsyncObject):
     def _get_info_peers_call(self):
         if self.enable_tls:
             return "peers-tls-std"
-        else:
-            return "peers-clear-std"
+
+        return "peers-clear-std"
 
     @async_return_exceptions
     async def info_peers(self) -> list[Addr_Port_TLSName]:
@@ -969,8 +969,14 @@ class Node(AsyncObject):
     def _get_info_peers_alumni_call(self):
         if self.enable_tls:
             return "alumni-tls-std"
-        else:
-            return "alumni-clear-std"
+
+        return "alumni-clear-std"
+
+    def _get_info_peers_alumni_alt_call(self):
+        if self.enable_tls:
+            return "alumni-tls-alt"
+
+        return "alumni-clear-alt"
 
     @async_return_exceptions
     async def info_peers_alumni(self) -> list[Addr_Port_TLSName]:
@@ -990,11 +996,29 @@ class Node(AsyncObject):
             await self._info(self._get_info_peers_alumni_call())
         )
 
+    @async_return_exceptions
+    async def info_peers_alumni_alt(self) -> list[Addr_Port_TLSName]:
+        """
+        Get peers this node has ever known of
+        Note: info_peers_alumni for server version prior to 4.3.1 gives only old nodes
+        which are not part of current cluster.
+
+        Returns:
+        list -- [(p1_ip,p1_port,p1_tls_name),((p2_ip1,p2_port1,p2_tls_name),(p2_ip2,p2_port2,p2_tls_name))...]
+        """
+        # Admin nodes don't have peers
+        if getattr(self, "is_admin_node", False):
+            return []
+
+        return self._info_peers_helper(
+            await self._info(self._get_info_peers_alumni_alt_call())
+        )
+
     def _get_info_peers_alt_call(self):
         if self.enable_tls:
             return "peers-tls-alt"
-        else:
-            return "peers-clear-alt"
+
+        return "peers-clear-alt"
 
     @async_return_exceptions
     async def info_peers_alt(self) -> list[Addr_Port_TLSName]:
@@ -1016,7 +1040,10 @@ class Node(AsyncObject):
         calls = []
         # at most 2 calls will be needed
         if self.consider_alumni:
-            calls.append(self._get_info_peers_alumni_call())
+            if self.use_services_alt:
+                calls.append(self._get_info_peers_alumni_alt_call())
+            else:
+                calls.append(self._get_info_peers_alumni_call())
 
         if self.use_services_alt:
             calls.append(self._get_info_peers_alt_call())

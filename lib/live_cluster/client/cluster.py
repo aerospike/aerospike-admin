@@ -231,8 +231,7 @@ class Cluster(AsyncObject):
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
 
-        for k in self.nodes.keys():
-            node = self.nodes[k]
+        for node in self.nodes.values():
             if not node.alive:
                 # in case of using alumni services, we might have offline nodes
                 # which can't detect online nodes
@@ -249,21 +248,28 @@ class Cluster(AsyncObject):
 
     async def get_down_nodes(self) -> list[str]:
         cluster_down_nodes = []
-        for k in self.nodes.keys():
+        for node in self.nodes.values():
             try:
-                node = self.nodes[k]
                 if not node.alive:
                     # in case of using alumni services, we might have offline
                     # nodes which can't detect online nodes
                     continue
 
-                alumni_peers, peers, alt_peers = await asyncio.gather(
-                    node.info_peers_alumni(), node.info_peers(), node.info_peers_alt()
+                alumni_peers, alumni_alt_peers, peers, alt_peers = await asyncio.gather(
+                    node.info_peers_alumni(),
+                    node.info_peers_alumni_alt(),
+                    node.info_peers(),
+                    node.info_peers_alt(),
                 )
                 alumni_peers = client_util.flatten(alumni_peers)
+                alumni_alt_peers = client_util.flatten(alumni_alt_peers)
                 peers = client_util.flatten(peers)
                 alt_peers = client_util.flatten(alt_peers)
-                not_visible = set(alumni_peers) - set(peers) - set(alt_peers)
+                not_visible = (
+                    set(alumni_peers).union(set(alumni_alt_peers))
+                    - set(peers)
+                    - set(alt_peers)
+                )
 
                 if len(not_visible) >= 1:
                     for n in not_visible:
