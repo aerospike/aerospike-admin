@@ -434,7 +434,6 @@ def start(
         CLIENT.close()
         connect_client()
 
-
         # Add roster management for strong consistency namespace if using latest config
         if template_file == "aerospike_latest.conf":
             print("Setting up roster for strong consistency namespace")

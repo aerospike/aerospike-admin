@@ -169,14 +169,14 @@ class TestCollectinfo(asynctest.TestCase):
                     brace_count = 0
                     end_pos = 0
                     for i, char in enumerate(content):
-                        if char == '{':
+                        if char == "{":
                             brace_count += 1
-                        elif char == '}':
+                        elif char == "}":
                             brace_count -= 1
                             if brace_count == 0:
                                 end_pos = i + 1
                                 break
-                    
+
                     if end_pos > 0:
                         try:
                             first_json = content[:end_pos]
