@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import socket
+from collections import deque
 from OpenSSL import SSL
 import threading
 import time
@@ -34,7 +35,7 @@ from lib.live_cluster.ssh import (
 from lib.utils import common, constants, util, version, conf_parser
 from lib.utils.async_object import AsyncObject
 
-from .constants import ErrorsMsgs
+from .constants import ErrorsMsgs, MAX_SOCKET_POOL_SIZE
 from .ctx import CDTContext
 from .msgpack import ASPacker
 from .assocket import ASSocket
@@ -379,9 +380,8 @@ class Node(AsyncObject):
 
     def _initialize_socket_pool(self):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
-        self.socket_pool: dict[int, set[ASSocket]] = {}
-        self.socket_pool[self.port] = set()
-        self.socket_pool_max_size = 16
+        self.socket_pool: dict[int, deque[ASSocket]] = {}
+        self.socket_pool[self.port] = deque(maxlen=MAX_SOCKET_POOL_SIZE)
 
     def _is_any_my_ip(self, ips):
         if not ips:
@@ -474,7 +474,7 @@ class Node(AsyncObject):
                         break
 
                     # IP address have changed. Not common.
-                    self.node_id, update_ip, self.peers = await asyncio.gather(
+                    self.node_id, _, self.peers = await asyncio.gather(
                         self.info_node(),
                         self._update_IP(self.ip, self.port),
                         self.info_peers_list(),
@@ -521,6 +521,83 @@ class Node(AsyncObject):
     async def refresh_connection(self):
         await self.connect(self.ip, self.port)
 
+    async def needs_refresh(self) -> bool:
+        """
+        Check if node needs refresh based on its service addresses changes.
+        Returns True only if node IP, port, or service addresses have changed.
+        """
+        # If node is not alive, definitely need refresh
+        if not self.alive:
+            logger.debug("Node %s:%s not alive, need refresh", self.ip, self.port)
+            return True
+
+        # If no socket pool, need refresh
+        if not self.socket_pool or self.port not in self.socket_pool:
+            logger.debug("Node %s:%s no socket pool, need refresh", self.ip, self.port)
+            return True
+
+        try:
+            # Get current node info using existing socket
+            temp_sock = await self._get_connection(self.ip, self.port)
+            if not temp_sock:
+                logger.debug("Node %s:%s no socket, need refresh", self.ip, self.port)
+                return True
+
+            # Get current service addresses
+            service_info_call = self._get_service_info_call()
+            current_service_response = await self._info_cinfo(
+                [service_info_call], self.ip, disable_cache=True
+            )
+            current_service_addresses = self._info_service_helper(
+                current_service_response[service_info_call]
+            )
+
+            # Compare with existing service addresses
+            if not self._service_addresses_compatible(
+                current_service_addresses, self.service_addresses
+            ):
+                logger.debug(
+                    "Node %s:%s service addresses changed, need refresh",
+                    self.ip,
+                    self.port,
+                )
+                return True
+
+            # No service address changes detected
+            logger.debug(
+                "Node %s:%s no service address changes detected", self.ip, self.port
+            )
+            return False
+
+        except Exception as e:
+            logger.debug(
+                "Error checking service addresses for %s:%s: %s", self.ip, self.port, e
+            )
+            # If we can't check, assume refresh is needed
+            return True
+
+    def _service_addresses_compatible(self, current, stored):
+        """Check if current addresses are compatible with stored addresses"""
+        current_set = set(current)
+        stored_set = set(stored)
+
+        # Get the address we're currently connected to
+        current_connection = (self.ip, self.port, self.tls_name)
+
+        # If we're connected to an address that's not in current service addresses,
+        # and current service addresses are not empty, then we need refresh
+        if current_connection not in current_set and current_set:
+            logger.debug(
+                "Node %s:%s connected to an address that's not in existing service addresses, need refresh",
+                self.ip,
+                self.port,
+            )
+            return False
+
+        # Current addresses should be a subset of stored addresses
+        # (stored might have additional seed addresses)
+        return current_set.issubset(stored_set)
+
     async def login(self):
         """
         Creates a new socket and gets the session token for authentication. No login
@@ -549,7 +626,10 @@ class Node(AsyncObject):
 
         if not await sock.connect():
             logger.debug(
-                "%s:%s failed to connect to socket %s", self.ip, self.port, sock
+                "%s:%s failed to connect to socket %s, closing sock at login",
+                self.ip,
+                self.port,
+                sock,
             )
             await sock.close()
             return False
@@ -557,7 +637,10 @@ class Node(AsyncObject):
         try:
             if not await sock.login():
                 logger.debug(
-                    "%s:%s failed to login to socket %s", self.ip, self.port, sock
+                    "%s:%s failed to login to socket %s, closing sock at login",
+                    self.ip,
+                    self.port,
+                    sock,
                 )
                 await sock.close()
                 return False
@@ -574,7 +657,7 @@ class Node(AsyncObject):
                     Node.security_disabled_warning = True
             else:
                 logger.debug(
-                    "%s:%s failed to login to socket %s, exc: %s",
+                    "%s:%s failed to login to socket %s, exc: %s, closing sock at login",
                     self.ip,
                     self.port,
                     sock,
@@ -583,7 +666,7 @@ class Node(AsyncObject):
                 await sock.close()
                 raise
 
-        self.socket_pool[self.port].add(sock)
+        self.socket_pool[self.port].append(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
         logger.debug("%s:%s successful login to socket %s", self.ip, self.port, sock)
@@ -690,15 +773,13 @@ class Node(AsyncObject):
         sock = None
 
         try:
-            while True:
-                if port not in self.socket_pool or len(self.socket_pool[port]) == 0:
-                    break
-
-                sock = self.socket_pool[port].pop()
+            while self.socket_pool.get(port) and len(self.socket_pool[port]) > 0:
+                sock = self.socket_pool[port].popleft()  # FIFO: get oldest socket
 
                 if await sock.is_connected():
                     break
 
+                logger.debug("closing sock %s as it is not connected", id(sock))
                 await sock.close()
                 sock = None
 
@@ -747,6 +828,7 @@ class Node(AsyncObject):
 
                         return sock
 
+                logger.debug("closing sock %s as auth failed", id(sock))
                 await sock.close()
                 raise
 
@@ -755,9 +837,12 @@ class Node(AsyncObject):
 
     async def close(self):
         try:
-            while True:
-                sock = self.socket_pool[self.port].pop()
+            while (
+                self.socket_pool.get(self.port) and len(self.socket_pool[self.port]) > 0
+            ):
+                sock = self.socket_pool[self.port].popleft()
                 await sock.close()
+            logger.debug("closed all socks for port %s", self.port)
         except Exception:
             pass
 
@@ -795,13 +880,15 @@ class Node(AsyncObject):
                 try:
                     # TODO: same code is in _admin_cadmin. management of socket_pool should
                     # be abstracted.
-                    if len(self.socket_pool[port]) < self.socket_pool_max_size:
-                        self.socket_pool[port].add(sock)
+                    # Deque automatically handles maxlen, so we can always append
+                    self.socket_pool[port].append(
+                        sock
+                    )  # FIFO: add to end (most recently used)
 
-                    else:
-                        await sock.close()
-
-                except Exception:
+                except Exception as e:
+                    logger.debug(
+                        "error adding sock %s to pool %s, closing sock", id(sock), e
+                    )
                     await sock.close()
 
             if result is not None:
@@ -820,6 +907,11 @@ class Node(AsyncObject):
 
         except Exception as ex:
             if sock:
+                logger.debug(
+                    "closing sock %s as exception was raised in _info_cinfo %s",
+                    id(sock),
+                    ex,
+                )
                 await sock.close()
 
             logger.debug(
@@ -3106,14 +3198,16 @@ class Node(AsyncObject):
         try:
             result = await admin_func(sock, *args)
 
-            # Either restore the socket in the pool or close it if it is full.
-            if len(self.socket_pool[port]) < self.socket_pool_max_size:
-                self.socket_pool[port].add(sock)
-            else:
-                await sock.close()
+            # Deque automatically handles maxlen, so we can always append
+            self.socket_pool[port].append(sock)
 
-        except Exception:
+        except Exception as e:
             if sock:
+                logger.debug(
+                    "closing sock %s as exception was raised in _admin_cadmin %s",
+                    id(sock),
+                    e,
+                )
                 await sock.close()
 
             # Re-raise the last exception
