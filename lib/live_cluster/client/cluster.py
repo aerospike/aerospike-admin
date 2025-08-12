@@ -309,7 +309,9 @@ class Cluster(AsyncObject):
         if self.nodes:
             for node_key in list(self.nodes.keys()):
                 node = self.nodes[node_key]
-                await node.refresh_connection()
+                if await node.needs_refresh():
+                    logger.debug("Node %s:%s needs refresh", node.ip, node.port)
+                    await node.refresh_connection()
                 if node.key != node_key:
                     # change in service list
                     self.nodes.pop(node_key)
