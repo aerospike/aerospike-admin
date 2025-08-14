@@ -53,7 +53,7 @@ class ClusterTest(asynctest.TestCase):
             cmd = args[0]
 
             # First call - admin port detection
-            if cmd == "connection": 
+            if cmd == "connection":
                 return "admin:false"
 
             if cmd == ["node", "features", "service-clear-std", "peers-clear-std"]:

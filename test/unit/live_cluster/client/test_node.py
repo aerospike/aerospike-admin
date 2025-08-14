@@ -213,7 +213,12 @@ class NodeInitTest(asynctest.TestCase):
             # First call - admin port detection
             if args[0] == "connection":
                 return "admin=false"
-            elif args[0] == ["node", "features", "service-clear-std", "peers-clear-std"]:
+            elif args[0] == [
+                "node",
+                "features",
+                "service-clear-std",
+                "peers-clear-std",
+            ]:
                 return {
                     "node": "A0",
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",

@@ -394,9 +394,16 @@ class Node(AsyncObject):
     async def _node_connect(self):
         connection_info_call = "connection"
         try:
-            connection_info = await self._info_cinfo(connection_info_call, self.ip, self.port, disable_cache=True)
+            connection_info = await self._info_cinfo(
+                connection_info_call, self.ip, self.port, disable_cache=True
+            )
         except ASInfoError as e:
-            logger.debug("Connection info command not available for node %s:%s %s", self.ip, self.port, e)
+            logger.debug(
+                "Connection info command not available for node %s:%s %s",
+                self.ip,
+                self.port,
+                e,
+            )
             connection_info = None
 
         # Info calls for node id, features
@@ -418,7 +425,11 @@ class Node(AsyncObject):
         commands += [info_address_call] + peers_info_calls
         results = await self._info_cinfo(commands, self.ip, disable_cache=True)
         service_addresses = self._info_service_helper(results[info_address_call])
-        peers = self._aggregate_peers([results[call] for call in peers_info_calls]) if peers_info_calls else []
+        peers = (
+            self._aggregate_peers([results[call] for call in peers_info_calls])
+            if peers_info_calls
+            else []
+        )
         return results["node"], service_addresses, results["features"], peers
 
     async def connect(self, address, port):
@@ -681,13 +692,24 @@ class Node(AsyncObject):
         Sets user agent on the Aerospike connection socket.
         """
         if self.user_agent is None:
-            logger.debug("user agent is available thus is not setting it for node %s:%s", self.ip, self.port)
+            logger.debug(
+                "user agent is available thus is not setting it for node %s:%s",
+                self.ip,
+                self.port,
+            )
             return
         try:
             user_agent_b64 = base64.b64encode(self.user_agent.encode()).decode()
-            await self._info_cinfo(f"user-agent-set:value={user_agent_b64}", disable_cache=True)
+            await self._info_cinfo(
+                f"user-agent-set:value={user_agent_b64}", disable_cache=True
+            )
         except ASInfoError as e:
-            logger.debug("user agent set command not available for node %s:%s got error %s", self.ip, self.port, e)
+            logger.debug(
+                "user agent set command not available for node %s:%s got error %s",
+                self.ip,
+                self.port,
+                e,
+            )
 
     async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
@@ -832,7 +854,7 @@ class Node(AsyncObject):
                 command,
                 id(sock),
                 ex,
-                command
+                command,
             )
             raise ex
 
