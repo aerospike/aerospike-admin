@@ -218,6 +218,8 @@ def flatten(list1):
     Format: [((node1 endpoint1 tuple), (node1 endpoint2 tuple), ..., (node1 endpointm tuple)), ....]
     Example: [(("172.17.0.1",3000,None),), (("2001:db8:85a3::8a2e",6666,None), ("172.17.0.3",3004,None))]
     """
+    if isinstance(list1, Exception):
+        return []
 
     f_list = []
     for i in list1:
