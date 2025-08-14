@@ -693,7 +693,7 @@ class Node(AsyncObject):
         """
         if self.user_agent is None:
             logger.debug(
-                "user agent is available thus is not setting it for node %s:%s",
+                "user agent string not set for node %s:%s",
                 self.ip,
                 self.port,
             )
