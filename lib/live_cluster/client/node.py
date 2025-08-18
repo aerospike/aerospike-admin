@@ -399,7 +399,7 @@ class Node(AsyncObject):
             )
         except ASInfoError as e:
             logger.debug(
-                "Connection info command not available for node %s:%s %s",
+                "unable to get connection info for node %s:%s error:%s",
                 self.ip,
                 self.port,
                 e,
@@ -693,7 +693,7 @@ class Node(AsyncObject):
         """
         if self.user_agent is None:
             logger.debug(
-                "user agent string not set for node %s:%s",
+                "user agent string not available for node %s:%s",
                 self.ip,
                 self.port,
             )
@@ -705,7 +705,7 @@ class Node(AsyncObject):
             )
         except ASInfoError as e:
             logger.debug(
-                "user agent set command not available for node %s:%s got error %s",
+                "unable to set user agent for node %s:%s got error %s",
                 self.ip,
                 self.port,
                 e,
