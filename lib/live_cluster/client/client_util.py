@@ -15,6 +15,9 @@
 import re
 import itertools
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def info_to_dict(
@@ -30,6 +33,7 @@ def info_to_dict(
         return {}
 
     if isinstance(value, Exception):
+        logger.debug(value, exc_info=True)
         return value  # TODO: Should not need to handle exception after we switch from info to _info
 
     stat_dict = {}
@@ -68,7 +72,8 @@ def info_to_dict(
             value = [v[1] for v in g[1]]
             value = ",".join(sorted(value)) if len(value) > 1 else value[0]
             stat_dict[g[0]] = value
-        except Exception:
+        except Exception as e:
+            logger.debug(e, exc_info=True)
             # NOTE: 3.0 had a bug in stats at least prior to 3.0.44. This will
             # ignore that bug.
 
@@ -127,6 +132,7 @@ def info_colon_to_dict(value):
 
 def info_to_list(value, delimiter=";", max_split=0):
     if isinstance(value, Exception):
+        logger.debug(value, exc_info=True)
         return []
     return re.split(delimiter, value, maxsplit=max_split)
 
@@ -218,6 +224,9 @@ def flatten(list1):
     Format: [((node1 endpoint1 tuple), (node1 endpoint2 tuple), ..., (node1 endpointm tuple)), ....]
     Example: [(("172.17.0.1",3000,None),), (("2001:db8:85a3::8a2e",6666,None), ("172.17.0.3",3004,None))]
     """
+    if isinstance(list1, Exception):
+        logger.debug("could not flatten list: %s", list1)
+        return []
 
     f_list = []
     for i in list1:
@@ -239,5 +248,6 @@ def remove_suffix(input_string, suffix):
         if not input_string.endswith(suffix):
             return input_string
         return input_string[0 : input_string.rfind(suffix)]
-    except Exception:
+    except Exception as e:
+        logger.debug(e, exc_info=True)
         return input_string

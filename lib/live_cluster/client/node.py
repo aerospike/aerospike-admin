@@ -392,36 +392,45 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
-        # Get node id, features and admin port
-        commands = ["node", "features", "connection"]
-        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
-        node_id = results["node"]
-        features = results["features"]
+        connection_info_call = "connection"
+        try:
+            connection_info = await self._info_cinfo(
+                connection_info_call, self.ip, self.port, disable_cache=True
+            )
+        except ASInfoError as e:
+            logger.debug(
+                "unable to get connection info for node %s:%s error:%s",
+                self.ip,
+                self.port,
+                e,
+            )
+            connection_info = None
+
+        # Info calls for node id, features
+        commands = ["node", "features"]
 
         # Check if the node is an admin node
-        if self._is_admin_port_enabled(results["connection"]):
-            logger.debug("admin port is enabled for node %s", node_id)
+        if self._is_admin_port_enabled(connection_info):
+            logger.debug("admin port is enabled for ip %s", self.ip)
             self.is_admin_node = True
-
-            admin_info_call = self._get_admin_info_call()
-            admin_info_response = await self._info_cinfo(
-                admin_info_call, self.ip, disable_cache=True
-            )
-            admin_addresses = self._info_service_helper(admin_info_response)
-            logger.debug(
-                "admin address discovered for node %s: %s", node_id, admin_addresses
-            )
+            # use admin info call instead of service info call
+            info_address_call = self._get_admin_info_call()
             # disable peer discovery for admin node
-            return node_id, admin_addresses, features, []
+            peers_info_calls = []
+        else:
+            # Get service addresses and peers info calls for non-admin node
+            info_address_call = self._get_service_info_call()
+            peers_info_calls = self._get_info_peers_list_calls()
 
-        peers_info_calls = self._get_info_peers_list_calls()
-        service_info_call = self._get_service_info_call()
-
-        commands = [service_info_call] + peers_info_calls
+        commands += [info_address_call] + peers_info_calls
         results = await self._info_cinfo(commands, self.ip, disable_cache=True)
-        service_addresses = self._info_service_helper(results[service_info_call])
-        peers = self._aggregate_peers([results[call] for call in peers_info_calls])
-        return node_id, service_addresses, features, peers
+        service_addresses = self._info_service_helper(results[info_address_call])
+        peers = (
+            self._aggregate_peers([results[call] for call in peers_info_calls])
+            if peers_info_calls
+            else []
+        )
+        return results["node"], service_addresses, results["features"], peers
 
     async def connect(self, address, port):
         try:
@@ -682,9 +691,25 @@ class Node(AsyncObject):
         """
         Sets user agent on the Aerospike connection socket.
         """
-        if self.user_agent is not None:
+        if self.user_agent is None:
+            logger.debug(
+                "user agent string not available for node %s:%s",
+                self.ip,
+                self.port,
+            )
+            return
+        try:
             user_agent_b64 = base64.b64encode(self.user_agent.encode()).decode()
-            await self._info(f"user-agent-set:value={user_agent_b64}")
+            await self._info_cinfo(
+                f"user-agent-set:value={user_agent_b64}", disable_cache=True
+            )
+        except ASInfoError as e:
+            logger.debug(
+                "unable to set user agent for node %s:%s got error %s",
+                self.ip,
+                self.port,
+                e,
+            )
 
     async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
@@ -823,12 +848,13 @@ class Node(AsyncObject):
                 await sock.close()
 
             logger.debug(
-                "%s:%s info cmd '%s' and sock %s raised %s for",
+                "%s:%s info cmd '%s' and sock %s raised %s for %s",
                 self.ip,
                 self.port,
                 command,
                 id(sock),
                 ex,
+                command,
             )
             raise ex
 
