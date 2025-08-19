@@ -565,9 +565,7 @@ def populate_db(set_name: str, namespace: str = "test"):
 
 def create_sindex(name, type_, ns, bin, set_: str | None = None):
     global CLIENT
-    req = "sindex-create:ns={};indexname={};bin={};type={}".format(
-        ns, name, bin, type_
-    )
+    req = "sindex-create:ns={};indexname={};bin={};type={}".format(ns, name, bin, type_)
 
     if set_:
         req += ";set=" + set_
