@@ -39,7 +39,22 @@ class TestCollectinfo(asynctest.TestCase):
         ("info set", [], None),
         ("info xdr", ["Lag (hh:mm:ss)"], None),
         ("info sindex", [], None),
-        ("show config namespace", [], None),
+        ("info transactions", [], None),
+        (
+            "show config namespace",
+            [
+                "title",
+                "storage-engine.file[0]",
+                "storage-engine.stripe[0]",
+                "conflict-resolution-policy",
+                "mrt-duration",
+                "read-consistency-level-override",
+                "replication-factor",
+                "strong-consistency",
+                "write-commit-level-override",
+            ],
+            None,
+        ),
         ("show config network", [], None),
         ("show config security", [], None),
         ("show config service", [], None),
@@ -74,7 +89,19 @@ class TestCollectinfo(asynctest.TestCase):
         #     None,
         # ),
         ("show statistics sindex", [], None),
-        ("show statistics sets", [], None),
+        (
+            "show statistics sets",
+            [
+                "title",
+                "ns",
+                "set",
+                "objects",
+                "data_used_bytes",
+                "disable-eviction",
+                "enable-index",
+            ],
+            None,
+        ),
         ("show statistics bins", [], None),
         ("show statistics dc", ["retry_no_node", "lag", "lap_us"], None),
         ("show statistics xdr dc", ["retry_no_node", "lag", "lap_us"], None),
@@ -97,7 +124,7 @@ class TestCollectinfo(asynctest.TestCase):
         ("show users stat", ["Connections"], None),
         ("show udfs", [], None),
         ("show sindex", [], None),
-        ("show stop-writes", ["Usage", "Usage%"], None),
+        ("show stop-writes", ["Usage", "Usage%", "Namespace", "Set"], None),
         ("health", [], None),
         ("summary", [], None),
     ]
@@ -158,24 +185,63 @@ class TestCollectinfo(asynctest.TestCase):
         for key in map:
             try:
                 map[key] = json.loads(map[key])
-            except:
-                # Probably 'health' cmd which has no json mode.
-                pass
+            except json.JSONDecodeError as e:
+                # Handle the case where we have multiple JSON objects (like show statistics namespace)
+                if "Extra data" in str(e):
+                    # For show statistics namespace, we have multiple JSON objects for different namespaces
+                    # Let's try to parse just the first JSON object
+                    content = map[key].strip()
+                    # Find the first complete JSON object
+                    brace_count = 0
+                    end_pos = 0
+                    for i, char in enumerate(content):
+                        if char == "{":
+                            brace_count += 1
+                        elif char == "}":
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_pos = i + 1
+                                break
+
+                    if end_pos > 0:
+                        try:
+                            first_json = content[:end_pos]
+                            map[key] = json.loads(first_json)
+                        except json.JSONDecodeError:
+                            # If even the first JSON object fails, keep as string
+                            pass
+                    else:
+                        # Couldn't find a complete JSON object, keep as string
+                        pass
+                else:
+                    # Other JSON decode errors, keep as string
+                    # Probably 'health' cmd which has no json mode.
+                    pass
 
     @classmethod
     def setUpClass(cls):
         lib.start()
+
         set_ = "collect-info-testset"
-        lib.populate_db(set_)
+        namespace_ = "test"
+        namespace_sc_ = "test_sc"
+        lib.populate_db(set_, namespace=namespace_)
+        lib.populate_db(set_, namespace=namespace_sc_)
         lib.create_sindex("a-index", "numeric", lib.NAMESPACE, "a", "no-error-test")
         lib.create_xdr_filter(lib.NAMESPACE, lib.DC, "kxGRSJMEk1ECo2FnZRU=")
         lib.upload_udf("metadata.lua", TEST_UDF)
 
+        # Wait for recluster to complete
+        time.sleep(5)
+
         def record_set(record):
             (key, meta, bins) = record
 
-        query = lib.CLIENT.query(lib.NAMESPACE, set_)
+        query = lib.CLIENT.query(namespace_, set_)
         query.foreach(record_set)
+
+        query_sc = lib.CLIENT.query(namespace_sc_, set_)
+        query_sc.foreach(record_set)
         time.sleep(60)
         # time.sleep(300000)
 

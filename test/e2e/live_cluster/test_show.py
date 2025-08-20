@@ -1262,3 +1262,47 @@ end
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_num_rows, actual_num_rows)
+
+
+class TestShowUserAgents(asynctest.TestCase):
+    async def setUp(self):
+        lib.start()
+        time.sleep(5)  # Wait for cluster to be ready
+
+    def tearDown(self):
+        lib.stop()
+
+    async def test_show_user_agents(self):
+        """
+        Asserts <b> show user-agents </b> output with heading, header & no of user agents displayed.
+        """
+        exp_heading = "User Agent Information"
+        exp_header = [
+            "Node",
+            "Client Version",
+            "App ID",
+            "Count",
+        ]
+
+        rc = await controller.LiveClusterRootController(
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
+        )  # type: ignore
+
+        actual_out = await util.capture_stdout(rc.execute, ["show", "user-agents"])
+        output_list = test_util.get_separate_output(actual_out)
+
+        (
+            actual_heading,
+            _,
+            actual_header,
+            _,
+            actual_no_of_rows,
+        ) = test_util.parse_output(output_list[0])
+
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertEqual(exp_header, actual_header)
+
+        # Since user agents depend on client connections, we just verify the structure
+        # The actual number of rows will depend on connected clients
+        self.assertIsInstance(actual_no_of_rows, int)
+        self.assertGreaterEqual(actual_no_of_rows, 1)

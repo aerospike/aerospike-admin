@@ -23,6 +23,9 @@ import atexit
 import shutil
 import signal
 import time
+from test.e2e import util
+
+from test.e2e import util
 
 # the port to use for one of the cluster nodes
 PORT = 10000
@@ -332,8 +335,17 @@ def start_server(
     except:
         pass
 
+    image_name = f"aerospike/aerospike-server-enterprise:{docker_tag}"
+
+    try:
+        print(f"Pulling latest image: {image_name}")
+        DOCKER_CLIENT.images.pull(image_name)
+        print(f"Pulled latest image: {image_name}")
+    except:
+        pass
+
     container = DOCKER_CLIENT.containers.run(
-        f"aerospike/aerospike-server-enterprise:{docker_tag}",
+        image_name,
         command=cmd,
         ports={
             str(base) + "/tcp": str(base),
@@ -424,6 +436,21 @@ def start(
         CLIENT.close()
         connect_client()
 
+        # Add roster management for strong consistency namespace if using latest config
+        if template_file == "aerospike_latest.conf":
+            print("Setting up roster for strong consistency namespace")
+            roster_cmd = "manage roster stage observed ns test_sc; manage recluster;"
+
+            util.run_asadm(
+                f"-h {SERVER_IP}:{PORT} --enable -e '{roster_cmd}' -Uadmin -Padmin"
+            )
+
+            print("Roster setup completed")
+
+            # Reconnect to ensure proper connectivity
+            CLIENT.close()
+            connect_client()
+
     else:
         if do_reset:
             # if the cluster is already up and running, reset it
@@ -509,14 +536,14 @@ def stop_silent():
         raise
 
 
-def populate_db(set_name: str):
+def populate_db(set_name: str, namespace: str = "test"):
     global CLIENT
     write_policy = {"key": aerospike.POLICY_KEY_SEND}
     keys = []
 
     try:
         for idx in range(100):
-            key = ("test", set_name, "key" + str(idx))
+            key = (namespace, set_name, "key" + str(idx))
             bins = {
                 "str": str(idx),
                 "a-str": str(idx % 10),
@@ -538,9 +565,7 @@ def populate_db(set_name: str):
 
 def create_sindex(name, type_, ns, bin, set_: str | None = None):
     global CLIENT
-    req = "sindex-create:ns={};indexname={};indexdata={},{}".format(
-        ns, name, bin, type_
-    )
+    req = "sindex-create:ns={};indexname={};bin={};type={}".format(ns, name, bin, type_)
 
     if set_:
         req += ";set=" + set_
