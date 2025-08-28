@@ -406,7 +406,7 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         if not current_user:
             logger.error("No user is currently authenticated.")
             return
-            
+
         result = await self.cluster.admin_change_password(
             current_user, old_password, new_password, nodes="principal"
         )
@@ -418,9 +418,7 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
 
-        self.view.print_result(
-            "Successfully changed password."
-        )
+        self.view.print_result("Successfully changed password.")
 
 
 @CommandHelp(
