@@ -60,6 +60,7 @@ class ClusterTest(asynctest.TestCase):
                 return {
                     "node": return_value,
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "build": return_key_value.get("build", "4.9.0.0"),
                     "service-clear-std": (
                         str(ip)
                         + ":"
@@ -87,6 +88,7 @@ class ClusterTest(asynctest.TestCase):
                     ),
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "build": return_key_value.get("build", "4.9.0.0"),
                 }
 
             if cmd == "service":
@@ -148,6 +150,24 @@ class ClusterTest(asynctest.TestCase):
 
             if cmd == "peers-clear-std":
                 return "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]"
+
+            # Handle the new command structure with build as separate command
+            if cmd == ["node", "features", "build", "service-clear-std", "peers-clear-std"]:
+                return {
+                    "node": return_value,
+                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "build": return_key_value.get("build", "4.9.0.0"),
+                    "service-clear-std": (
+                        str(ip)
+                        + ":"
+                        + str(port)
+                        + ",172.17.0.1:"
+                        + str(port)
+                        + ",172.17.1.1:"
+                        + str(port)
+                    ),
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                }
 
             if cmd == "peers-tls-std":
                 return "10,4333,[[BB9050011AC4202,peers,[172.17.0.1]],[BB9070011AC4202,peers,[[2001:db8:85a3::8a2e]]]]"
@@ -637,10 +657,11 @@ class ClusterTest(asynctest.TestCase):
             # First call - admin port detection (enabled for this test)
             if cmd == "connection":
                 return "admin=true"
-            if cmd == ["node", "features", "admin-clear-std"]:
+            if cmd == ["node", "features", "build", "admin-clear-std"]:
                 return {
                     "node": "ADMIN000000000",
                     "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
+                    "build": "4.9.0.0",
                     "admin-clear-std": "127.0.0.1:3003",
                 }
             if cmd == "node":

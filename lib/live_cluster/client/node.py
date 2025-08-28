@@ -218,6 +218,7 @@ class Node(AsyncObject):
         self.session_expiration = 0
         self.perform_login = True
         self.user_agent = user_agent
+        self.build = ""
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -407,7 +408,7 @@ class Node(AsyncObject):
             connection_info = None
 
         # Info calls for node id, features
-        commands = ["node", "features"]
+        commands = ["node", "features", "build"]
 
         # Check if the node is an admin node
         if self._is_admin_port_enabled(connection_info):
@@ -430,7 +431,7 @@ class Node(AsyncObject):
             if peers_info_calls
             else []
         )
-        return results["node"], service_addresses, results["features"], peers
+        return results["node"], service_addresses, results["features"], results["build"], peers
 
     async def connect(self, address, port):
         try:
@@ -447,6 +448,7 @@ class Node(AsyncObject):
                 self.node_id,
                 service_addresses,
                 self.features,
+                self.build,
                 self.peers,
             ) = await self._node_connect()
 
@@ -483,10 +485,11 @@ class Node(AsyncObject):
                         break
 
                     # IP address have changed. Not common.
-                    self.node_id, update_ip, self.peers = await asyncio.gather(
+                    self.node_id, update_ip, self.peers, self.build = await asyncio.gather(
                         self.info_node(),
                         self._update_IP(self.ip, self.port),
                         self.info_peers_list(),
+                        self.info_build(),
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -1715,8 +1718,13 @@ class Node(AsyncObject):
 
             new_param = delimiter.join([subcontext, param])
 
-        req = "set-config:context=namespace;id={};{}={}".format(
-            namespace, new_param, value
+        namespace_info_selector = "id"
+
+        if version.LooseVersion(self.build) >= version.LooseVersion(constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION):
+            namespace_info_selector = "namespace"
+
+        req = "set-config:context=namespace;{}={};{}={}".format(
+            namespace_info_selector, namespace, new_param, value
         )
 
         if set_:
@@ -1839,19 +1847,27 @@ class Node(AsyncObject):
         return config
 
     @async_return_exceptions
-    async def info_single_namespace_config(self, namespace):
+    async def info_single_namespace_config(self, getconfig_namespace_command, namespace):
         return client_util.info_to_dict(
-            await self._info("get-config:context=namespace;id=%s" % namespace)
+            await self._info(f"{getconfig_namespace_command}{namespace}")
         )
 
     @async_return_exceptions
     async def info_namespace_config(self, namespace=""):
+        build = await self.info_build()
+
+        namespace_info_selector = "id"
+        if version.LooseVersion(build) >= version.LooseVersion(constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION):
+            namespace_info_selector = "namespace"
+
+        getconfig_namespace_command = "get-config:context=namespace;{}=".format(namespace_info_selector)
+
         if namespace != "":
-            return {namespace: await self.info_single_namespace_config(namespace)}
+            return {namespace: await self.info_single_namespace_config(getconfig_namespace_command, namespace)}
         else:
             namespaces = await self.info_namespaces()
             config_list = await client_util.concurrent_map(
-                lambda ns: self.info_single_namespace_config(ns),
+                lambda ns: self.info_single_namespace_config(getconfig_namespace_command, ns),
                 namespaces,
             )
 
@@ -2731,7 +2747,7 @@ class Node(AsyncObject):
         ctx: Optional[CDTContext] = None,
         cdt_ctx_base64: Optional[str] = None,
         exp_base64: Optional[str] = None,
-        supports_sindex_type_syntax: bool = False,
+        feature_support: dict[str, bool] = {},
     ):
         """
         Create a new secondary index. index_type and set are optional.
@@ -2743,7 +2759,12 @@ class Node(AsyncObject):
         if index_type:
             command += "indextype={};".format(index_type)
 
-        command += "ns={};".format(namespace)
+        namespace_info_selector = "ns"
+
+        if feature_support['namespace_query_selector_support']:
+            namespace_info_selector = "namespace"
+
+        command += "{}={};".format(namespace_info_selector, namespace)
 
         if set_:
             command += "set={};".format(set_)
@@ -2767,7 +2788,7 @@ class Node(AsyncObject):
             command += "type={}".format(bin_type)
 
         else:
-            if supports_sindex_type_syntax:
+            if feature_support['expression_indexing']:
                 command += "bin={};type={}".format(bin_name, bin_type)
             else:
                 command += "indexdata={},{}".format(bin_name, bin_type)
@@ -2782,19 +2803,23 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_sindex_delete(self, index_name, namespace, set_=None):
+    async def info_sindex_delete(self, index_name, namespace, set_=None, feature_support: dict[str, bool] = {}):
         """
         Delete a secondary index. set_ must be provided if sindex is created on a set.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        command = ""
+        namespace_info_selector = "ns"
 
-        if set_ is None:
-            command = "sindex-delete:ns={};indexname={}".format(namespace, index_name)
-        else:
-            command = "sindex-delete:ns={};set={};indexname={}".format(
-                namespace, set_, index_name
+        if feature_support['namespace_query_selector_support']:
+            namespace_info_selector = "namespace"
+
+       
+        command = "sindex-delete:{}={};indexname={}".format(namespace_info_selector, namespace, index_name)
+        
+        if set_ is not None:
+            command = "sindex-delete:{}={};set={};indexname={}".format(
+                namespace_info_selector, namespace, set_, index_name
             )
 
         resp = await self._info(command)

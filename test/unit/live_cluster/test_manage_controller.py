@@ -1731,7 +1731,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
             None,
             None,
-            False,
+            {'cdt_indexing': True, 'expression_indexing': False, 'namespace_query_selector_support': False},
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1798,7 +1798,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             None,
             None,
             "dGVzdA==",
-            True,
+            {'cdt_indexing': True, 'expression_indexing': True, 'namespace_query_selector_support': True},
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1824,7 +1824,7 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             None,
             "dGVzdA==",
             None,
-            False,
+            {'cdt_indexing': True, 'expression_indexing': False, 'namespace_query_selector_support': False},
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1972,6 +1972,7 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
             "a-index",
             "test",
             "testset",
+            {'namespace_query_selector_support': False},
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(

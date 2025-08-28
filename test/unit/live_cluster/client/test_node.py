@@ -94,10 +94,11 @@ class NodeInitTest(asynctest.TestCase):
             # First call - admin port detection
             if cmd == "connection":
                 return "admin=false"
-            if cmd == ["node", "features", "service-clear-std", "peers-clear-std"]:
+            if cmd == ["node", "features", "build", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": "A00000000000000",
                     "features": "features",
+                    "build": "4.9.0.0",
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -144,10 +145,11 @@ class NodeInitTest(asynctest.TestCase):
             # First call - admin port detection
             if cmd == "connection":
                 return "admin=false"
-            if cmd == ["node", "features", "service-clear-std", "peers-clear-std"]:
+            if cmd == ["node", "features", "build", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": "A00000000000000",
                     "features": "features",
+                    "build": "4.9.0.0",
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -236,7 +238,7 @@ class NodeInitTest(asynctest.TestCase):
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
                 call("connection"),
-                call(["node", "features", "service-clear-std", "peers-clear-std"]),
+                call(["node", "features", "build", "service-clear-std", "peers-clear-std"]),
             ],
         )
 
@@ -274,6 +276,8 @@ class NodeTest(asynctest.TestCase):
         ).start()
         self.logger_mock = patch("lib.live_cluster.client.node.logger").start()
         self.node.conf_schema_handler = MagicMock()
+        # Ensure build attribute is set for version comparison tests
+        self.node.build = "5.0.0.11"
         self.addCleanup(patch.stopall)
 
     async def test_login_returns_true_if_user_is_none(self):
@@ -3545,7 +3549,7 @@ class NodeTest(asynctest.TestCase):
             "sindex-create:indexname=iname;ns=ns;indexdata=data1,data2".format()
         )
 
-        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
+        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2", feature_support={'namespace_query_selector_support': False, 'expression_indexing': False})
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -3561,6 +3565,7 @@ class NodeTest(asynctest.TestCase):
             index_type="itype",
             set_="set",
             ctx=CDTContext([CTXItems.ListIndex(1)]),
+            feature_support={'namespace_query_selector_support': False, 'expression_indexing': False}
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3569,7 +3574,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_sindex_create_fail(self):
         self.info_mock.return_value = "FAIL:4: Invalid indexdata"
 
-        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
+        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2", feature_support={'namespace_query_selector_support': False, 'expression_indexing': False})
 
         self.assertEqual(actual.message, "Failed to create sindex iname")
         self.assertEqual(actual.response, "Invalid indexdata")
@@ -3579,7 +3584,7 @@ class NodeTest(asynctest.TestCase):
         expected_call = "sindex-create:indexname=ctx-idx;ns=test;context=dGVzdA==;indexdata=mybin,string"
 
         actual = await self.node.info_sindex_create(
-            "ctx-idx", "test", "mybin", "string", cdt_ctx_base64="dGVzdA=="
+            "ctx-idx", "test", "mybin", "string", cdt_ctx_base64="dGVzdA==", feature_support={'namespace_query_selector_support': False, 'expression_indexing': False}
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3592,7 +3597,7 @@ class NodeTest(asynctest.TestCase):
         )
 
         actual = await self.node.info_sindex_create(
-            "exp-idx", "test", None, "string", exp_base64="dGVzdA=="
+            "exp-idx", "test", None, "string", exp_base64="dGVzdA==", feature_support={'namespace_query_selector_support': False, 'expression_indexing': False}
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3603,7 +3608,7 @@ class NodeTest(asynctest.TestCase):
         expected_call = "sindex-create:indexname=new-idx;ns=test;bin=mybin;type=string"
 
         actual = await self.node.info_sindex_create(
-            "new-idx", "test", "mybin", "string", supports_sindex_type_syntax=True
+            "new-idx", "test", "mybin", "string", feature_support={'namespace_query_selector_support': False, 'expression_indexing': True}
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3621,7 +3626,7 @@ class NodeTest(asynctest.TestCase):
             index_type="mapkeys",
             set_="myset",
             cdt_ctx_base64="dGVzdA==",
-            supports_sindex_type_syntax=True,
+            feature_support={'namespace_query_selector_support': False, 'expression_indexing': True}
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3634,7 +3639,7 @@ class NodeTest(asynctest.TestCase):
             "iname",
         )
 
-        actual = await self.node.info_sindex_delete("iname", "ns")
+        actual = await self.node.info_sindex_delete("iname", "ns", feature_support={'namespace_query_selector_support': False})
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -3646,7 +3651,7 @@ class NodeTest(asynctest.TestCase):
             "iname",
         )
 
-        actual = await self.node.info_sindex_delete("iname", "ns", set_="set")
+        actual = await self.node.info_sindex_delete("iname", "ns", set_="set", feature_support={'namespace_query_selector_support': False})
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -3654,7 +3659,7 @@ class NodeTest(asynctest.TestCase):
     async def test_info_sindex_delete_fail(self):
         self.info_mock.return_value = "FAIL:4: Invalid indexname"
 
-        actual = await self.node.info_sindex_delete("iname", "ns")
+        actual = await self.node.info_sindex_delete("iname", "ns", feature_support={'namespace_query_selector_support': False})
 
         self.assertEqual(actual.message, "Failed to delete sindex iname")
         self.assertEqual(actual.response, "Invalid indexname")
