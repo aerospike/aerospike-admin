@@ -94,11 +94,9 @@ class NodeInitTest(asynctest.TestCase):
             # First call - admin port detection
             if cmd == "connection":
                 return "admin=false"
-            if cmd == ["node", "features", "build", "service-clear-std", "peers-clear-std"]:
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": "A00000000000000",
-                    "features": "features",
-                    "build": "4.9.0.0",
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -145,11 +143,9 @@ class NodeInitTest(asynctest.TestCase):
             # First call - admin port detection
             if cmd == "connection":
                 return "admin=false"
-            if cmd == ["node", "features", "build", "service-clear-std", "peers-clear-std"]:
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": "A00000000000000",
-                    "features": "features",
-                    "build": "4.9.0.0",
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -217,13 +213,11 @@ class NodeInitTest(asynctest.TestCase):
                 return "admin=false"
             elif args[0] == [
                 "node",
-                "features",
                 "service-clear-std",
                 "peers-clear-std",
             ]:
                 return {
                     "node": "A0",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
                     "service-clear-std": "1.1.1.1:3000;172.17.0.1:3000;172.17.1.1:3000",
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
                 }
@@ -238,7 +232,7 @@ class NodeInitTest(asynctest.TestCase):
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
                 call("connection"),
-                call(["node", "features", "build", "service-clear-std", "peers-clear-std"]),
+                call(["node", "service-clear-std", "peers-clear-std"]),
             ],
         )
 
@@ -1012,7 +1006,6 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.reset_mock()
         lib.live_cluster.client.node.Node.info_build.return_value = "2.5.6"
         self.info_mock.side_effect = ["a=b;c=1;2=z"]
-        self.node.features = "xdr"
         expected = {"a": "b", "c": "1", "2": "z"}
 
         actual = await self.node.info_XDR_statistics()
@@ -1026,7 +1019,7 @@ class NodeTest(asynctest.TestCase):
         lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.1"
         actual = await self.node.info_XDR_statistics()
 
-        self.assertEqual(lib.live_cluster.client.node.Node.info_build.call_count, 1)
+        lib.live_cluster.client.node.Node.info_build.assert_called_once()
         self.assertEqual(actual, {})
 
     @patch("lib.live_cluster.client.node.Node.info_dcs")
@@ -1884,7 +1877,6 @@ class NodeTest(asynctest.TestCase):
         self.assertListEqual(actual, expected)
 
         self.info_mock.return_value = "a=b;c=d;e=f;dcs=DC1,DC2,DC3"
-        self.node.features = "xdr"
 
         actual = await self.node.info_dcs()
 
@@ -2301,8 +2293,6 @@ class NodeTest(asynctest.TestCase):
                 "dc-type": "aerospike",
             }
         }
-
-        self.node.features = ["xdr"]
 
         xdr_dc_confg = await self.node.info_xdr_dcs_config()
 
@@ -3908,7 +3898,7 @@ class NodeTest(asynctest.TestCase):
         self.assertDictEqual(actual, expected)
 
     async def test_jobs_helper_uses_new(self):
-        self.node.features = ["query-show"]
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0.0"
         self.info_mock.return_value = "foo"
         old = "old"
         new = "new"
@@ -3919,6 +3909,7 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, "foo")
 
     async def test_jobs_helper_uses_old(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"  # Version < 6.3, should use old command
         self.info_mock.return_value = "foo"
         old = "old"
         new = "new"
@@ -4028,7 +4019,6 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, expected)
 
     async def test_info_scan_abort_all_with_feature_present(self):
-        self.node.features = ["query-show"]
         self.info_mock.return_value = "OK - number of scans killed: 7"
         expected = "ok - number of scans killed: 7"
 
@@ -4038,7 +4028,6 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, expected)
 
     async def test_info_scan_abort_all_with_feature_present_and_error(self):
-        self.node.features = ["query-show"]
         self.info_mock.return_value = "error"
         expected = ASInfoResponseError("Failed to abort all scans", "error")
 

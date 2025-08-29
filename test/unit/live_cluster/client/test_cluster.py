@@ -56,25 +56,7 @@ class ClusterTest(asynctest.TestCase):
             if cmd == "connection":
                 return "admin:false"
 
-            if cmd == ["node", "features", "service-clear-std", "peers-clear-std"]:
-                return {
-                    "node": return_value,
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "build": return_key_value.get("build", "4.9.0.0"),
-                    "service-clear-std": (
-                        str(ip)
-                        + ":"
-                        + str(port)
-                        + ",172.17.0.1:"
-                        + str(port)
-                        + ",172.17.1.1:"
-                        + str(port)
-                    ),
-                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
-                }
-
-            # Legacy single command support for backward compatibility
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": return_value,
                     "service-clear-std": (
@@ -87,8 +69,6 @@ class ClusterTest(asynctest.TestCase):
                         + str(port)
                     ),
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "build": return_key_value.get("build", "4.9.0.0"),
                 }
 
             if cmd == "service":
@@ -152,11 +132,9 @@ class ClusterTest(asynctest.TestCase):
                 return "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]"
 
             # Handle the new command structure with build as separate command
-            if cmd == ["node", "features", "build", "service-clear-std", "peers-clear-std"]:
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": return_value,
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "build": return_key_value.get("build", "4.9.0.0"),
                     "service-clear-std": (
                         str(ip)
                         + ":"
@@ -569,31 +547,6 @@ class ClusterTest(asynctest.TestCase):
             "is_XDR_enabled did not return the expected result",
         )
 
-    async def test_is_feature_present(self):
-        cl = await self.get_cluster_mock(
-            2,
-        )
-        expected = {"127.0.0.1:3000": True, "127.0.0.0:3000": True}
-        self.assertEqual(
-            await cl.is_feature_present("cdt-map"),
-            expected,
-            "is_feature_present(nodes=all) did not return the expected result",
-        )
-
-        cl = await self.get_cluster_mock(
-            2,
-            return_key_value={
-                "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;"
-            },
-        )
-        key = "127.0.0.1:3000"
-        expected = {key: False}
-        self.assertEqual(
-            await cl.is_feature_present("wrongFeature", nodes=[key]),
-            expected,
-            "is_feature_present did not return the expected result",
-        )
-
     async def test_get_IP_to_node_map(self):
         cl = await self.get_cluster_mock(3)
         aliases = cl.aliases
@@ -657,15 +610,15 @@ class ClusterTest(asynctest.TestCase):
             # First call - admin port detection (enabled for this test)
             if cmd == "connection":
                 return "admin=true"
-            if cmd == ["node", "features", "build", "admin-clear-std"]:
+            if cmd == ["node", "admin-clear-std"]:
                 return {
                     "node": "ADMIN000000000",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "build": "4.9.0.0",
                     "admin-clear-std": "127.0.0.1:3003",
                 }
             if cmd == "node":
                 return "ADMIN000000000"
+            if cmd == "build":
+                return "4.9.0.0"
             # Second call - admin service info for admin nodes
             elif cmd == ["service-clear-admin"]:
                 return {

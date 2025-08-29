@@ -218,7 +218,6 @@ class Node(AsyncObject):
         self.session_expiration = 0
         self.perform_login = True
         self.user_agent = user_agent
-        self.build = ""
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -408,7 +407,7 @@ class Node(AsyncObject):
             connection_info = None
 
         # Info calls for node id, features
-        commands = ["node", "features", "build"]
+        commands = ["node"]
 
         # Check if the node is an admin node
         if self._is_admin_port_enabled(connection_info):
@@ -431,7 +430,7 @@ class Node(AsyncObject):
             if peers_info_calls
             else []
         )
-        return results["node"], service_addresses, results["features"], results["build"], peers
+        return results["node"], service_addresses, peers
 
     async def connect(self, address, port):
         try:
@@ -447,8 +446,6 @@ class Node(AsyncObject):
             (
                 self.node_id,
                 service_addresses,
-                self.features,
-                self.build,
                 self.peers,
             ) = await self._node_connect()
 
@@ -485,11 +482,10 @@ class Node(AsyncObject):
                         break
 
                     # IP address have changed. Not common.
-                    self.node_id, update_ip, self.peers, self.build = await asyncio.gather(
+                    self.node_id, update_ip, self.peers = await asyncio.gather(
                         self.info_node(),
                         self._update_IP(self.ip, self.port),
                         self.info_peers_list(),
-                        self.info_build(),
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -524,7 +520,6 @@ class Node(AsyncObject):
 
             self.node_id = "000000000000000"
             self.service_addresses = [(self.ip, self.port, self.tls_name)]
-            self.features = ""
             self.peers = []
             self.is_admin_node = False
             self.use_new_histogram_format = False
@@ -662,11 +657,6 @@ class Node(AsyncObject):
             return True
 
         return False
-
-    def is_feature_present(self, feature):
-        if not self.features or isinstance(self.features, Exception):
-            return False
-        return feature in self.features
 
     async def has_peers_changed(self):
         # Admin nodes don't track peer changes
@@ -1720,7 +1710,13 @@ class Node(AsyncObject):
 
         namespace_info_selector = "id"
 
-        if version.LooseVersion(self.build) >= version.LooseVersion(constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION):
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        if version.LooseVersion(build) >= version.LooseVersion(constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION):
             namespace_info_selector = "namespace"
 
         req = "set-config:context=namespace;{}={};{}={}".format(
@@ -1855,6 +1851,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_namespace_config(self, namespace=""):
         build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
 
         namespace_info_selector = "id"
         if version.LooseVersion(build) >= version.LooseVersion(constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION):
@@ -3002,7 +3002,13 @@ class Node(AsyncObject):
     async def _jobs_helper(self, old_req, new_req):
         req = None
 
-        if self.is_feature_present("query-show"):
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        if version.LooseVersion(build) >= version.LooseVersion("6.3"):
             req = new_req
         else:
             req = old_req
