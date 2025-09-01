@@ -159,7 +159,9 @@ class TestManageACLUsers(TestManage):
 
     def test_successful_password_change_for_user(self):
         exp_password = "test"
-        exp_stdout_resp = "Successfully changed password."
+        exp_stdout_resp = "Successfully changed password for user {}.".format(
+            self.exp_user
+        )
         exp_stderr_resp = ""
 
         test_util.run_asadm(
@@ -171,7 +173,11 @@ class TestManageACLUsers(TestManage):
         )
         time.sleep(0.5)
         actual = test_util.run_asadm(
-            self.get_args("manage acl change-password old admin new test")
+            self.get_args(
+                "manage acl change-password user {} old {} new {}".format(
+                    self.exp_user, exp_password, "new_password"
+                )
+            )
         )
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
@@ -179,7 +185,33 @@ class TestManageACLUsers(TestManage):
 
         # revert
         test_util.run_asadm(
-            self.get_args("manage acl change-password old test new admin")
+            self.get_args(
+                "manage acl change-password user {} old {} new {}".format(
+                    self.exp_user, "new_password", exp_password
+                )
+            )
+        )
+
+    def test_successful_password_change_for_current_user(self):
+        exp_password = "test"
+        exp_stdout_resp = "Successfully changed password for user {}.".format("admin")
+        exp_stderr_resp = ""
+
+        # Change password
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage acl change-password old {} new {}".format("admin", exp_password)
+            )
+        )
+
+        self.assertEqual(exp_stdout_resp, actual.stdout)
+        self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
+
+        # Revert password
+        test_util.run_asadm(
+            self.get_args(
+                "manage acl change-password old {} new {}".format(exp_password, "admin")
+            )
         )
 
     def test_fails_to_change_user_password_with_wrong_old_password(self):
@@ -204,8 +236,8 @@ class TestManageACLUsers(TestManage):
         # Attempt to change the user's password with the wrong old password and check that the error message matches the expected value
         actual = test_util.run_asadm(
             self.get_args(
-                "manage acl change-password old {} new {}".format(  # Removed username parameter
-                    wrong_password, right_password
+                "manage acl change-password user {} old {} new {}".format(  # Removed username parameter
+                    self.exp_user, wrong_password, right_password
                 ),
             )
         )

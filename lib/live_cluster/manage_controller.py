@@ -380,11 +380,19 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
 )
 class ManageACLChangePasswordUserController(ManageLeafCommandController):
     def __init__(self):
-        self.modifiers = set(["old", "new"])
+        self.modifiers = set(["user", "old", "new"])
         self.required_modifiers = set([])
         self.controller_map = {}
 
     async def _do_default(self, line):
+        username = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="user",
+            return_type=str,
+            default=None,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
         old_password = None
         new_password = None
 
@@ -401,14 +409,15 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         if self.warn and not self.prompt_challenge():
             return
 
-        # Get the current user from the cluster connection
-        current_user = self.cluster.user
-        if not current_user:
-            logger.error("No user is currently authenticated.")
-            return
+        if username is None:
+            # Get the current user from the cluster connection
+            username = self.cluster.user
+            if not username:
+                logger.error("No user is currently authenticated.")
+                return
 
         result = await self.cluster.admin_change_password(
-            current_user, old_password, new_password, nodes="principal"
+            username, old_password, new_password, nodes="principal"
         )
         result = list(result.values())[0]
 
@@ -418,7 +427,9 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         elif isinstance(result, Exception):
             raise result
 
-        self.view.print_result("Successfully changed password.")
+        self.view.print_result(
+            "Successfully changed password for user {}.".format(username)
+        )
 
 
 @CommandHelp(
