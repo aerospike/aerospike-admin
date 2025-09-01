@@ -915,24 +915,23 @@ def is_valid_base64(data: Union[str, bytes]) -> None:
 
 
 async def check_version_support(
-    feature_versions: dict[str, str],
-    builds: dict[str, str]
+    feature_versions: dict[str, str], builds: dict[str, str]
 ) -> dict[str, bool]:
     """
     Check which features are supported across all nodes in the cluster.
     Single pass optimization.
-    
+
     Args:
         feature_versions: Dictionary mapping feature names to their minimum required versions
         builds: Dictionary mapping node identifiers to their build versions
-    
+
     Returns:
         Dictionary mapping feature names to boolean support status (True if supported, False if not)
-    
+
     Example:
         feature_versions = {
             "cdt_indexing": "5.6.0",
-            "expression_indexing": "5.7.0", 
+            "expression_indexing": "5.7.0",
             "blob_indexing": "6.0.0"
         }
         builds = {

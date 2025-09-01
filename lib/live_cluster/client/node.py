@@ -1716,7 +1716,9 @@ class Node(AsyncObject):
             logger.error(build)
             return build
 
-        if version.LooseVersion(build) >= version.LooseVersion(constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION):
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
+        ):
             namespace_info_selector = "namespace"
 
         req = "set-config:context=namespace;{}={};{}={}".format(
@@ -1843,7 +1845,9 @@ class Node(AsyncObject):
         return config
 
     @async_return_exceptions
-    async def info_single_namespace_config(self, getconfig_namespace_command, namespace):
+    async def info_single_namespace_config(
+        self, getconfig_namespace_command, namespace
+    ):
         return client_util.info_to_dict(
             await self._info(f"{getconfig_namespace_command}{namespace}")
         )
@@ -1857,17 +1861,27 @@ class Node(AsyncObject):
             return build
 
         namespace_info_selector = "id"
-        if version.LooseVersion(build) >= version.LooseVersion(constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION):
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
+        ):
             namespace_info_selector = "namespace"
 
-        getconfig_namespace_command = "get-config:context=namespace;{}=".format(namespace_info_selector)
+        getconfig_namespace_command = "get-config:context=namespace;{}=".format(
+            namespace_info_selector
+        )
 
         if namespace != "":
-            return {namespace: await self.info_single_namespace_config(getconfig_namespace_command, namespace)}
+            return {
+                namespace: await self.info_single_namespace_config(
+                    getconfig_namespace_command, namespace
+                )
+            }
         else:
             namespaces = await self.info_namespaces()
             config_list = await client_util.concurrent_map(
-                lambda ns: self.info_single_namespace_config(getconfig_namespace_command, ns),
+                lambda ns: self.info_single_namespace_config(
+                    getconfig_namespace_command, ns
+                ),
                 namespaces,
             )
 
@@ -2732,7 +2746,9 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         return client_util.info_to_dict(
-            await self._info("sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname))
+            await self._info(
+                "sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname)
+            )
         )
 
     @async_return_exceptions
@@ -2761,7 +2777,7 @@ class Node(AsyncObject):
 
         namespace_info_selector = "ns"
 
-        if feature_support['namespace_query_selector_support']:
+        if feature_support["namespace_query_selector_support"]:
             namespace_info_selector = "namespace"
 
         command += "{}={};".format(namespace_info_selector, namespace)
@@ -2788,7 +2804,7 @@ class Node(AsyncObject):
             command += "type={}".format(bin_type)
 
         else:
-            if feature_support['expression_indexing']:
+            if feature_support["expression_indexing"]:
                 command += "bin={};type={}".format(bin_name, bin_type)
             else:
                 command += "indexdata={},{}".format(bin_name, bin_type)
@@ -2803,7 +2819,9 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_sindex_delete(self, index_name, namespace, set_=None, feature_support: dict[str, bool] = {}):
+    async def info_sindex_delete(
+        self, index_name, namespace, set_=None, feature_support: dict[str, bool] = {}
+    ):
         """
         Delete a secondary index. set_ must be provided if sindex is created on a set.
 
@@ -2811,12 +2829,13 @@ class Node(AsyncObject):
         """
         namespace_info_selector = "ns"
 
-        if feature_support['namespace_query_selector_support']:
+        if feature_support["namespace_query_selector_support"]:
             namespace_info_selector = "namespace"
 
-       
-        command = "sindex-delete:{}={};indexname={}".format(namespace_info_selector, namespace, index_name)
-        
+        command = "sindex-delete:{}={};indexname={}".format(
+            namespace_info_selector, namespace, index_name
+        )
+
         if set_ is not None:
             command = "sindex-delete:{}={};set={};indexname={}".format(
                 namespace_info_selector, namespace, set_, index_name

@@ -176,29 +176,24 @@ class UtilTest(asynctest.TestCase):
         with self.assertRaises(ValueError):
             util.is_valid_base64("dGVzd@#$%A==")
 
-
     async def test_check_version_support_all_features_supported(self):
         """Test when all features are supported across all nodes."""
         feature_versions = {
             "cdt_indexing": "5.6.0",
             "expression_indexing": "5.7.0",
-            "blob_indexing": "6.0.0"
+            "blob_indexing": "6.0.0",
         }
-        
-        builds = {
-            "node1": "6.1.0",
-            "node2": "6.2.0",
-            "node3": "6.0.1"
-        }
-        
+
+        builds = {"node1": "6.1.0", "node2": "6.2.0", "node3": "6.0.1"}
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "cdt_indexing": True,        # 6.0.1 >= 5.6.0
-            "expression_indexing": True, # 6.0.1 >= 5.7.0
-            "blob_indexing": True        # 6.0.1 >= 6.0.0
+            "cdt_indexing": True,  # 6.0.1 >= 5.6.0
+            "expression_indexing": True,  # 6.0.1 >= 5.7.0
+            "blob_indexing": True,  # 6.0.1 >= 6.0.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_mixed_support(self):
@@ -206,23 +201,19 @@ class UtilTest(asynctest.TestCase):
         feature_versions = {
             "cdt_indexing": "5.6.0",
             "expression_indexing": "5.7.0",
-            "blob_indexing": "6.0.0"
+            "blob_indexing": "6.0.0",
         }
-        
-        builds = {
-            "node1": "6.1.0",
-            "node2": "5.8.0",  # Oldest node
-            "node3": "6.2.0"
-        }
-        
+
+        builds = {"node1": "6.1.0", "node2": "5.8.0", "node3": "6.2.0"}  # Oldest node
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "cdt_indexing": True,        # 5.8.0 >= 5.6.0
-            "expression_indexing": True, # 5.8.0 >= 5.7.0
-            "blob_indexing": False       # 5.8.0 < 6.0.0
+            "cdt_indexing": True,  # 5.8.0 >= 5.6.0
+            "expression_indexing": True,  # 5.8.0 >= 5.7.0
+            "blob_indexing": False,  # 5.8.0 < 6.0.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_no_features_supported(self):
@@ -230,83 +221,72 @@ class UtilTest(asynctest.TestCase):
         feature_versions = {
             "cdt_indexing": "5.6.0",
             "expression_indexing": "5.7.0",
-            "blob_indexing": "6.0.0"
+            "blob_indexing": "6.0.0",
         }
-        
+
         builds = {
             "node1": "5.5.0",  # Very old node
             "node2": "5.4.0",  # Even older
-            "node3": "5.6.0"   # Just at the edge
+            "node3": "5.6.0",  # Just at the edge
         }
-        
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "cdt_indexing": False,       # 5.4.0 < 5.6.0
-            "expression_indexing": False, # 5.4.0 < 5.7.0
-            "blob_indexing": False       # 5.4.0 < 6.0.0
+            "cdt_indexing": False,  # 5.4.0 < 5.6.0
+            "expression_indexing": False,  # 5.4.0 < 5.7.0
+            "blob_indexing": False,  # 5.4.0 < 6.0.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_empty_builds(self):
         """Test when no builds are provided (empty cluster)."""
-        feature_versions = {
-            "cdt_indexing": "5.6.0",
-            "expression_indexing": "5.7.0"
-        }
-        
+        feature_versions = {"cdt_indexing": "5.6.0", "expression_indexing": "5.7.0"}
+
         builds = {}
-        
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "cdt_indexing": False,       # No nodes = no support
-            "expression_indexing": False  # No nodes = no support
+            "cdt_indexing": False,  # No nodes = no support
+            "expression_indexing": False,  # No nodes = no support
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_single_node(self):
         """Test with a single node cluster."""
-        feature_versions = {
-            "cdt_indexing": "5.6.0",
-            "expression_indexing": "5.7.0"
-        }
-        
-        builds = {
-            "node1": "5.8.0"
-        }
-        
+        feature_versions = {"cdt_indexing": "5.6.0", "expression_indexing": "5.7.0"}
+
+        builds = {"node1": "5.8.0"}
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "cdt_indexing": True,        # 5.8.0 >= 5.6.0
-            "expression_indexing": True  # 5.8.0 >= 5.7.0
+            "cdt_indexing": True,  # 5.8.0 >= 5.6.0
+            "expression_indexing": True,  # 5.8.0 >= 5.7.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_exact_version_match(self):
         """Test when node version exactly matches feature requirement."""
-        feature_versions = {
-            "cdt_indexing": "5.6.0",
-            "expression_indexing": "5.7.0"
-        }
-        
+        feature_versions = {"cdt_indexing": "5.6.0", "expression_indexing": "5.7.0"}
+
         builds = {
             "node1": "5.6.0",  # Exact match for cdt_indexing
-            "node2": "5.7.0"   # Exact match for expression_indexing
+            "node2": "5.7.0",  # Exact match for expression_indexing
         }
-        
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         # Minimum build version is 5.6.0
         expected = {
-            "cdt_indexing": True,        # 5.6.0 >= 5.6.0
-            "expression_indexing": False # 5.6.0 < 5.7.0
+            "cdt_indexing": True,  # 5.6.0 >= 5.6.0
+            "expression_indexing": False,  # 5.6.0 < 5.7.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_complex_version_strings(self):
@@ -314,69 +294,60 @@ class UtilTest(asynctest.TestCase):
         feature_versions = {
             "feature_a": "5.6.0",
             "feature_b": "5.7.0",
-            "feature_c": "6.0.0"
+            "feature_c": "6.0.0",
         }
-        
+
         builds = {
             "node1": "5.6.0a1",  # Pre-release version
             "node2": "5.7.0b2",  # Beta version
-            "node3": "6.0.0rc1"  # Release candidate
+            "node3": "6.0.0rc1",  # Release candidate
         }
-        
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         # Minimum build version is 5.6.0a1
         # LooseVersion handles pre-release versions correctly
         expected = {
-            "feature_a": True,   # 5.6.0a1 >= 5.6.0
+            "feature_a": True,  # 5.6.0a1 >= 5.6.0
             "feature_b": False,  # 5.6.0a1 < 5.7.0
-            "feature_c": False   # 5.6.0a1 < 6.0.0
+            "feature_c": False,  # 5.6.0a1 < 6.0.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_edge_case_versions(self):
         """Test edge cases with unusual version formats."""
-        feature_versions = {
-            "feature_a": "1.0.0",
-            "feature_b": "2.0.0"
-        }
-        
+        feature_versions = {"feature_a": "1.0.0", "feature_b": "2.0.0"}
+
         builds = {
             "node1": "1.0.0.0",  # Extra version component
-            "node2": "2.0",      # Missing patch version
-            "node3": "1.9.9"     # Just below 2.0.0
+            "node2": "2.0",  # Missing patch version
+            "node3": "1.9.9",  # Just below 2.0.0
         }
-        
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "feature_a": True,   # 1.0.0.0 >= 1.0.0
-            "feature_b": False   # 1.9.9 < 2.0.0
+            "feature_a": True,  # 1.0.0.0 >= 1.0.0
+            "feature_b": False,  # 1.9.9 < 2.0.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_empty_feature_versions(self):
         """Test with empty feature versions dictionary."""
         feature_versions = {}
-        builds = {
-            "node1": "6.1.0",
-            "node2": "6.2.0"
-        }
-        
+        builds = {"node1": "6.1.0", "node2": "6.2.0"}
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {}
         self.assertEqual(result, expected)
 
     async def test_check_version_support_large_cluster(self):
         """Test with a large number of nodes."""
-        feature_versions = {
-            "cdt_indexing": "5.6.0",
-            "expression_indexing": "5.7.0"
-        }
-        
+        feature_versions = {"cdt_indexing": "5.6.0", "expression_indexing": "5.7.0"}
+
         # Create a large cluster with mixed versions
         builds = {}
         for i in range(100):
@@ -384,67 +355,47 @@ class UtilTest(asynctest.TestCase):
                 builds[f"node{i}"] = "6.1.0"  # Newer nodes
             else:
                 builds[f"node{i}"] = "5.5.0"  # Older nodes
-        
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "cdt_indexing": False,       # 5.5.0 < 5.6.0
-            "expression_indexing": False  # 5.5.0 < 5.7.0
+            "cdt_indexing": False,  # 5.5.0 < 5.6.0
+            "expression_indexing": False,  # 5.5.0 < 5.7.0
         }
-        
+
         self.assertEqual(result, expected)
 
     async def test_check_version_support_invalid_version_strings(self):
         """Test with invalid version strings - should raise exception."""
-        feature_versions = {
-            "feature_a": "5.6.0",
-            "feature_b": "invalid_version"
-        }
-        
-        builds = {
-            "node1": "5.8.0",
-            "node2": "also_invalid"
-        }
-        
+        feature_versions = {"feature_a": "5.6.0", "feature_b": "invalid_version"}
+
+        builds = {"node1": "5.8.0", "node2": "also_invalid"}
+
         # Should raise TypeError when LooseVersion can't handle invalid strings
         with self.assertRaises(TypeError):
             await util.check_version_support(feature_versions, builds)
 
     async def test_check_version_support_none_values(self):
         """Test with None values in builds - should raise exception."""
-        feature_versions = {
-            "cdt_indexing": "5.6.0"
-        }
-        
-        builds = {
-            "node1": "6.1.0",
-            "node2": None,
-            "node3": "5.8.0"
-        }
-        
+        feature_versions = {"cdt_indexing": "5.6.0"}
+
+        builds = {"node1": "6.1.0", "node2": None, "node3": "5.8.0"}
+
         # Should raise AttributeError when trying to create LooseVersion from None
         with self.assertRaises(AttributeError):
             await util.check_version_support(feature_versions, builds)
 
     async def test_check_version_support_unicode_versions(self):
         """Test with unicode version strings."""
-        feature_versions = {
-            "feature_a": "5.6.0",
-            "feature_b": "6.0.0"
-        }
-        
-        builds = {
-            "node1": "5.8.0",
-            "node2": "6.1.0",
-            "node3": "5.7.0"
-        }
-        
+        feature_versions = {"feature_a": "5.6.0", "feature_b": "6.0.0"}
+
+        builds = {"node1": "5.8.0", "node2": "6.1.0", "node3": "5.7.0"}
+
         result = await util.check_version_support(feature_versions, builds)
-        
+
         expected = {
-            "feature_a": True,   # 5.7.0 >= 5.6.0
-            "feature_b": False   # 5.7.0 < 6.0.0
+            "feature_a": True,  # 5.7.0 >= 5.6.0
+            "feature_b": False,  # 5.7.0 < 6.0.0
         }
-        
+
         self.assertEqual(result, expected)
-    
