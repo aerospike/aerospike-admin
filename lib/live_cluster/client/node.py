@@ -2732,7 +2732,7 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         return client_util.info_to_dict(
-            await self._info("sindex/%s/%s" % (namespace, indexname))
+            await self._info("sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname))
         )
 
     @async_return_exceptions

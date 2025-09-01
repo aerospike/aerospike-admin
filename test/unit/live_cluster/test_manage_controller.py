@@ -1949,8 +1949,8 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.cluster_mock.info_sindex_statistics.return_value = {
-            "1.1.1.1": {"keys": 1111},
-            "2.2.2.2": {"keys": 2222},
+            "1.1.1.1": {"entries": 1111},
+            "2.2.2.2": {"entries": 2222},
         }
 
         await self.controller.execute(line)

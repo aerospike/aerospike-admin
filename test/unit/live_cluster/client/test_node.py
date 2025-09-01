@@ -3530,7 +3530,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_sindex_statistics("foo", "bar")
 
-        self.info_mock.assert_called_with("sindex/{}/{}".format("foo", "bar"), self.ip)
+        self.info_mock.assert_called_with("sindex-stat:namespace={};indexname={}".format("foo", "bar"), self.ip)
         self.assertDictEqual(actual, expected)
 
     async def test_info_sindex_create_success(self):
