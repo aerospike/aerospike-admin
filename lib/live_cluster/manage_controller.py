@@ -1482,8 +1482,10 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
                 ):
                     return
             else:
+                # For backwards compatibility check both old and new stat names
+                # to be safe.
                 key_data = util.get_value_from_second_level_of_dict(
-                    sindex_data, ["entries"], 0, int
+                    sindex_data, ["entries", "keys"], 0, int
                 )
                 num_keys = sum(key_data.values())
 
