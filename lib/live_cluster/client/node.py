@@ -553,23 +553,28 @@ class Node(AsyncObject):
                 return True
 
             # Get current service addresses
-            service_info_call = self._get_service_info_call()
-            current_service_response = await self._info_cinfo(
-                [service_info_call], self.ip, disable_cache=True
+            info_address_call = (
+                self._get_admin_info_call()
+                if self.is_admin_node
+                else self._get_service_info_call()
             )
-            current_service_addresses = self._info_service_helper(
-                current_service_response[service_info_call]
+            commands = ["node", info_address_call]
+            results = await self._info_cinfo(commands, self.ip, disable_cache=True)
+
+            if self.node_id != results["node"]:
+                logger.debug(
+                    "Node %s:%s node id changed, need refresh", self.ip, self.port
+                )
+                return True
+
+            refreshed_service_addresses = self._info_service_helper(
+                results[info_address_call]
             )
 
             # Compare with existing service addresses
             if not self._service_addresses_compatible(
-                current_service_addresses, self.service_addresses
+                refreshed_service_addresses, info_address_call
             ):
-                logger.debug(
-                    "Node %s:%s service addresses changed, need refresh",
-                    self.ip,
-                    self.port,
-                )
                 return True
 
             # No service address changes detected
@@ -585,27 +590,44 @@ class Node(AsyncObject):
             # If we can't check, assume refresh is needed
             return True
 
-    def _service_addresses_compatible(self, current, stored):
-        """Check if current addresses are compatible with stored addresses"""
-        current_set = set(current)
-        stored_set = set(stored)
+    def _service_addresses_compatible(
+        self, refreshed_service_addresses, info_address_call
+    ):
+        """Check if current address and service addresses are compatible with newly refreshed service addresses"""
+        refreshed_service_addresses_set = set(refreshed_service_addresses)
 
         # Get the address we're currently connected to
         current_connection = (self.ip, self.port, self.tls_name)
 
-        # If we're connected to an address that's not in current service addresses,
-        # and current service addresses are not empty, then we need refresh
-        if current_connection not in current_set and current_set:
+        if not refreshed_service_addresses_set:
             logger.debug(
-                "Node %s:%s connected to an address that's not in existing service addresses, need refresh",
+                "Node %s:%s has no refreshed service addresses, need refresh",
                 self.ip,
                 self.port,
             )
             return False
 
-        # Current addresses should be a subset of stored addresses
-        # (stored might have additional seed addresses)
-        return current_set.issubset(stored_set)
+        # If connected via LB: LB won't be in refreshed service addresses → triggers refresh → attempts direct connections
+        # If connected directly: Direct address will be in refreshed service addresses → no unnecessary refresh
+        # If node removed: Current address won't be in refreshed addresses → triggers refresh to find new connection
+        if current_connection not in refreshed_service_addresses_set:
+            logger.debug(
+                "Node %s:%s connected to an address that's not in %s info call, need refresh",
+                self.ip,
+                self.port,
+                info_address_call,
+            )
+            return False
+
+        # current addresses are a subset of refreshed service addresses
+        # no need to refresh
+        logger.debug(
+            "Node %s:%s current address is present in %s info call, no need to refresh",
+            self.ip,
+            self.port,
+            info_address_call,
+        )
+        return True
 
     async def login(self):
         """
@@ -1239,8 +1261,10 @@ class Node(AsyncObject):
             bool: true if admin port is enabled, false otherwise.
         """
 
-        if not connection_info_response or isinstance(
-            connection_info_response, Exception
+        if (
+            not connection_info_response
+            or isinstance(connection_info_response, Exception)
+            or "unrecognized command" in connection_info_response
         ):
             logger.debug(
                 "admin port not enabled, connection info response is: %s",
