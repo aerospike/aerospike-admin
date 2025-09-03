@@ -933,3 +933,105 @@ class ClusterRefreshTest(asynctest.TestCase):
         self.assertIn(
             ("192.1.1.3", 3000, None), result
         )  # Not in service addresses, so returned
+
+    async def test_load_balancer_integration_scenario(self):
+        """Test integration scenario: cluster with load balancer nodes"""
+        cluster = await Cluster([("load-balancer.com", 3000, None)])
+
+        # Create a node connected via load balancer
+        lb_node = await Node("load-balancer.com", 3000)
+        lb_node.needs_refresh = AsyncMock(
+            return_value=True
+        )  # Should refresh to try direct
+        lb_node.refresh_connection = AsyncMock()
+        lb_node.service_addresses = [
+            ("192.1.1.1", 3000, None),
+            ("192.1.1.2", 3000, None),
+            ("load-balancer.com", 3000, None),  # LB also in addresses
+        ]
+        lb_node.peers = [("192.1.1.3", 3000, None)]
+
+        cluster.nodes = {"load-balancer.com:3000": lb_node}
+
+        result = await cluster.find_new_nodes()
+
+        # Should call refresh to attempt direct connection optimization
+        lb_node.refresh_connection.assert_called_once()
+
+        # Should return peer addresses for discovery
+        self.assertIn(("192.1.1.3", 3000, None), result)
+
+    async def test_mixed_cluster_lb_and_direct_connections(self):
+        """Test cluster with mix of load balancer and direct connections"""
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+
+        # Node 1: Direct connection (no refresh needed)
+        direct_node = await Node("192.1.1.1", 3000)
+        direct_node.needs_refresh = AsyncMock(return_value=False)
+        direct_node.refresh_connection = AsyncMock()
+        direct_node.service_addresses = [("192.1.1.1", 3000, None)]
+        direct_node.peers = [("192.1.1.2", 3000, None)]
+
+        # Node 2: Load balancer connection (needs refresh)
+        lb_node = await Node("load-balancer.com", 3000)
+        lb_node.needs_refresh = AsyncMock(return_value=True)
+        lb_node.refresh_connection = AsyncMock()
+        lb_node.service_addresses = [("192.1.1.2", 3000, None)]
+        lb_node.peers = [("192.1.1.3", 3000, None)]
+
+        cluster.nodes = {
+            "192.1.1.1:3000": direct_node,
+            "load-balancer.com:3000": lb_node,
+        }
+
+        result = await cluster.find_new_nodes()
+
+        # Direct node should not be refreshed
+        direct_node.refresh_connection.assert_not_called()
+
+        # LB node should be refreshed
+        lb_node.refresh_connection.assert_called_once()
+
+        # Should return new peer addresses
+        self.assertIn(("192.1.1.3", 3000, None), result)
+
+    async def test_cluster_refresh_optimization_performance(self):
+        """Test that cluster refresh optimization improves performance"""
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+
+        # Create multiple nodes with different refresh needs
+        nodes = {}
+        refresh_call_count = 0
+
+        for i in range(5):
+            ip = f"192.1.1.{i+1}"
+            node = await Node(ip, 3000)
+
+            # Only odd-numbered nodes need refresh
+            needs_refresh = i % 2 == 1
+            node.needs_refresh = AsyncMock(return_value=needs_refresh)
+
+            def make_refresh_mock():
+                nonlocal refresh_call_count
+
+                async def refresh_mock():
+                    nonlocal refresh_call_count
+                    refresh_call_count += 1
+
+                return refresh_mock
+
+            node.refresh_connection = AsyncMock(side_effect=make_refresh_mock())
+            node.service_addresses = [(ip, 3000, None)]
+            node.peers = []
+
+            nodes[f"{ip}:3000"] = node
+
+        cluster.nodes = nodes
+
+        await cluster.find_new_nodes()
+
+        # Should only refresh nodes that need it (indices 1 and 3, so 2 out of 5)
+        total_refresh_calls = sum(
+            node.refresh_connection.call_count for node in nodes.values()
+        )
+        self.assertEqual(total_refresh_calls, 2)  # Only odd-numbered indices (1, 3)
