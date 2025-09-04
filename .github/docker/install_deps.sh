@@ -15,7 +15,7 @@ function install_deps_debian11() {
 
 
 function install_deps_ubuntu20.04() {
-  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync
+  apt -y install ruby make rpm git snapd curl binutils python3 python3-pip rsync
   pip3 install pipenv
   gem install fpm
 }
