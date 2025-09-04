@@ -14,7 +14,10 @@ function install_deps_debian11() {
 
 
 function install_deps_ubuntu20.04() {
-  apt -y install ruby make rpm git snapd curl binutils python3 python3-pip rsync pipenv python3-asdf
+  apt -y install software-properties-common
+  add-apt-repository -y ppa:deadsnakes/ppa
+  apt -y install python3.10
+  apt -y install ruby make rpm git snapd curl binutils python3-pip rsync pipenv python3-asdf
   gem install fpm
 }
 
