@@ -4,22 +4,16 @@ function build_packages(){
     echo "ENV_DISTRO is not set"
     return
   fi
-#  # build
-#  cd "$GIT_DIR"
-#  make clean
-#  make
-#
-#  # package
-#  cd $PKG_DIR
-#  make clean
+  cd "$GIT_DIR"
   make one-file
+  cd $PKG_DIR
   echo "building package for $BUILD_DISTRO"
 
   if [[ $ENV_DISTRO == *"ubuntu"* ]]; then
     make deb
   elif [[ $ENV_DISTRO == *"debian"* ]]; then
     make deb
-  elif [[ $ENV_DISTRO == *"redhat"* ]]; then
+  elif [[ $ENV_DISTRO == *"ubi"* ]]; then
     make rpm
   else
     make tar
