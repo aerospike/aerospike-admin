@@ -1,5 +1,5 @@
 FROM ubuntu:22.04
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+SHELL ["/bin/bash", "-euox", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
 ARG DEBUG=0

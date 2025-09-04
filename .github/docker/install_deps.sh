@@ -27,8 +27,7 @@ function install_deps_ubuntu22.04() {
 }
 
 function install_deps_ubuntu24.04() {
-  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync
-  pip3 install pipenv
+  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync pipenv
   gem install fpm
 }
 

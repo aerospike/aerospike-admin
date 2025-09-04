@@ -1,5 +1,5 @@
 FROM ubuntu:20.04
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+SHELL ["/bin/bash", "-euox", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 ARG DEBUG=0
 ENV DEBUG=${DEBUG}
