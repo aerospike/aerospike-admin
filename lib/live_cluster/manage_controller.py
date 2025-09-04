@@ -385,6 +385,8 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
         self.controller_map = {}
 
     async def _do_default(self, line):
+        # the username modifier is for backward compatibility and can be provided as a modifier or as an argument
+        # this is not documented as a modifier in the help text and should be removed in the future
         username = util.get_arg_and_delete_from_mods(
             line=line,
             arg="user",
