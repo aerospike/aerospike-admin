@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 function install_deps_debian12() {
-  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync
-  pip3 install pipenv
+  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync pipenv
   gem install fpm
 }
 
