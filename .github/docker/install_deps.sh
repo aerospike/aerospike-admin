@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+VERSION=$(git rev-parse HEAD | cut -c -8)
 function install_deps_debian11() {
   apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev lzma \
                  lzma-dev  libffi-dev

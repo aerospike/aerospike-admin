@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 env
+VERSION=$(git rev-parse HEAD | cut -c -8)
+
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source $SCRIPT_DIR/build_package.sh
 
@@ -12,13 +14,13 @@ fi
 
 
 function build_container() {
-  docker build -t asadmin-pkg-builder-$1 -f .github/docker/Dockerfile-$1 .
+  docker build -t asadmin-pkg-builder-"$1"-"$VERSION" -f .github/docker/Dockerfile-"$1" .
 }
 
 
 function execute_build_image() {
   export BUILD_DISTRO="$1"
-  docker run -e BUILD_DISTRO -v $(realpath ../dist):/tmp/output "asadmin-pkg-builder-$BUILD_DISTRO"
+  docker run -e BUILD_DISTRO -v $(realpath ../dist):/tmp/output asadmin-pkg-builder-"$BUILD_DISTRO"-"$VERSION"
   ls -laht ../dist
 }
 
