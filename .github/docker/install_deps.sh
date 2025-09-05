@@ -7,7 +7,13 @@ function install_deps_debian12() {
 
 
 function install_deps_debian11() {
-  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync
+  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev lzma lzma-dev  libffi-dev
+  curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+  mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+  install /root/go/bin/asdf /usr/local/bin/asdf
+  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  asdf install python 3.10.18
   pip3 install pipenv
   gem install fpm
 }
