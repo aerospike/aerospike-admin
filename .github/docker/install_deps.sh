@@ -34,5 +34,14 @@ function install_deps_ubuntu24.04() {
 
 function install_deps_ubi9() {
   microdnf -y install ruby rpmdevtools make git python3 python3-pip rsync
+  curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+  mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+  install /root/go/bin/asdf /usr/local/bin/asdf
+  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  microdnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+                      sqlite sqlite-devel sqlite-libs
+  asdf install python 3.10.18
+  pip install pipenv
   gem install fpm
 }
