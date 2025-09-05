@@ -12,8 +12,8 @@ RUN source /tmp/install_deps.sh && install_deps_debian11
 
 RUN if [[ $DEBUG -ne 0 ]]; then apt -y clean && rm -rf /var/lib/apt/lists/*; fi
 
-ADD . /opt/asadm
-WORKDIR /opt/asadm
+ADD . /opt/asadmin
+WORKDIR /opt/asadmin
 
 ENTRYPOINT ["/opt/asadmin/.github/docker/entrypoint.sh"]
 CMD ["-b"]
