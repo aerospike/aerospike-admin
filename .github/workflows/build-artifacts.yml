@@ -48,7 +48,7 @@ jobs:
     with:
       project: test
       build-name: asconfig
-      version: ${{ matrix.distro }}
+      version: ${{ github.ref_name }}
       artifactory-url: https://aerospike.jfrog.io
       artifactory-oidc-provider-name: gh-dev-test
       artifactory-oidc-audience: aerospike/testing
