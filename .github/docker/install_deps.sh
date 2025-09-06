@@ -82,6 +82,6 @@ function install_deps_redhat-ubi9() {
                       sqlite sqlite-devel sqlite-libs
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install --break-system-packages pipenv
+  asdf exec pip install pipenv
   gem install fpm
 }
