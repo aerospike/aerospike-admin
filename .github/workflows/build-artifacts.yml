@@ -29,6 +29,7 @@ jobs:
     needs: build-artifacts
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@main # vn.n.n
     with:
+      artifact-name: signed-artifacts-${{ github.ref_name }}
       unsigned-artifacts: unsigned-artifacts-${{ github.ref_name }}
       # artifact-name: signed-artifacts  # optional, defaults to signed-artifacts
       # retention-days: 7               # optional, defaults to 7
@@ -48,6 +49,6 @@ jobs:
       artifactory-url: https://aerospike.jfrog.io
       artifactory-oidc-provider-name: gh-dev-test
       artifactory-oidc-audience: aerospike/testing
-      artifact-name: signed-artifacts
+      artifact-name: signed-artifacts-${{ github.ref_name }}
       retention-days: 1
       dry-run: false
