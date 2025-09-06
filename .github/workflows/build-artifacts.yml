@@ -14,7 +14,7 @@ jobs:
       project: asconfig
       build-name: asconfig
       build-version: v1.0.0
-      build-script: set -x && cd local && git checkout ${{ github.ref_name }} && git submodule update --init && ls -laht && .github/docker/entrypoint.sh -c && .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} && ls -laht ../dist
+      build-script: set -x && cd local && git checkout ${{ github.ref_name }} && git submodule update --init && ls -laht && .github/docker/entrypoint.sh -c -d ${{ matrix.distro }} && .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} && ls -laht ../dist
       artifact-directory: dist
       artifact-name: unsigned-artifacts
       retention-days: 7
