@@ -12,7 +12,7 @@ jobs:
     uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@main
     with:
       project: database
-      build-name: asconfig
+      build-name: aerospike-admin
       build-version: v1.0.0
       build-script: set -x && cd local && git checkout ${{ github.ref_name }} && git submodule update --init && ls -laht && .github/docker/entrypoint.sh -c -d ${{ matrix.distro }} && .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} && ls -laht ../dist
       artifact-directory: dist
@@ -47,7 +47,7 @@ jobs:
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@main # vn.n.n
     with:
       project: database
-      build-name: asconfig
+      build-name: aerospike-admin
       version: ${{ github.ref_name }}
       artifactory-url: https://aerospike.jfrog.io
       artifactory-oidc-provider-name: database-gh-aerospike
