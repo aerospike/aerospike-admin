@@ -256,7 +256,11 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             try:
                 readline.read_history_file(self.admin_history)
             except Exception:
-                readline.write_history_file(self.admin_history)
+                try:
+                    readline.write_history_file(self.admin_history)
+                except (OSError, PermissionError):
+                    # Cannot write history file on read-only filesystem, continue without it
+                    pass
 
         self.commands = set()
 
@@ -559,7 +563,11 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
     async def do_exit(self, line):
         await self.close()
         if not self.execute_only_mode and readline.get_current_history_length() > 0:
-            readline.write_history_file(self.admin_history)
+            try:
+                readline.write_history_file(self.admin_history)
+            except (OSError, PermissionError):
+                # Cannot save history on read-only filesystem, continue silently
+                pass
 
         return True
 
@@ -752,13 +760,17 @@ async def main():
     if cli_args.json:
         output_json()
 
-    if not os.path.isdir(ADMIN_HOME):
-        os.makedirs(ADMIN_HOME)
-
     execute_only_mode = False
 
     if cli_args.execute is not None:
         execute_only_mode = True
+
+    # Only create ADMIN_HOME if not in execute mode (avoids issues on read-only filesystems)
+    if not execute_only_mode and not os.path.isdir(ADMIN_HOME):
+        try:
+            os.makedirs(ADMIN_HOME)
+        except (OSError, PermissionError) as e:
+            logger.warning("Cannot create history directory %s: %s", ADMIN_HOME, e)
 
     cli_args, seeds = conf.loadconfig(cli_args)
 
