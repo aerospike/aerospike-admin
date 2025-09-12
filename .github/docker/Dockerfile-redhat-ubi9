@@ -1,0 +1,11 @@
+FROM redhat/ubi9-minimal
+SHELL ["/bin/bash", "-euox", "pipefail", "-c"]
+
+ADD .github/docker/entrypoint.sh /tmp/entrypoint.sh
+ADD .github/docker/install_deps.sh /tmp/install_deps.sh
+
+RUN source /tmp/install_deps.sh && install_deps_redhat-ubi9
+ADD . /opt/asadmin
+WORKDIR /opt/asadmin
+ENTRYPOINT ["/opt/asadmin/.github/docker/entrypoint.sh"]
+CMD ["-b"]
