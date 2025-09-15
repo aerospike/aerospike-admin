@@ -79,7 +79,11 @@ RUNNING = False
 CONTAINER_DIR = "/opt/work"
 
 # Enable docker log dumping via environment variable
-DUMP_DOCKER_LOGS = os.environ.get("DUMP_DOCKER_LOGS", "false").lower() in ("true", "1", "yes")
+DUMP_DOCKER_LOGS = os.environ.get("DUMP_DOCKER_LOGS", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 
 def graceful_exit(handler):
@@ -466,27 +470,35 @@ def dump_docker_logs():
     """
     if not DUMP_DOCKER_LOGS:
         return
-        
+
     for i in range(0, NODE_CAPACITY):
         if NODES[i] is not None:
             try:
                 container = NODES[i]
                 # Use actual container name and ID for unique identification
-                container_name = container.name if hasattr(container, 'name') else f"container-{i+1}"
-                container_id = container.short_id if hasattr(container, 'short_id') else container.id[:12]
-                
+                container_name = (
+                    container.name if hasattr(container, "name") else f"container-{i+1}"
+                )
+                container_id = (
+                    container.short_id
+                    if hasattr(container, "short_id")
+                    else container.id[:12]
+                )
+
                 logs = container.logs(timestamps=True, tail=1000)
-                
+
                 # Create docker_logs directory if it doesn't exist
                 log_dir = "docker_logs"
                 if not os.path.exists(log_dir):
                     os.makedirs(log_dir)
-                
+
                 # Use container name and ID for unique filename
-                log_file = os.path.join(log_dir, f"{container_name}_{container_id}_logs.txt")
-                with open(log_file, 'wb') as f:
+                log_file = os.path.join(
+                    log_dir, f"{container_name}_{container_id}_logs.txt"
+                )
+                with open(log_file, "wb") as f:
                     f.write(logs)
-                
+
             except Exception as e:
                 # Silent failure - don't spam output during tests
                 pass

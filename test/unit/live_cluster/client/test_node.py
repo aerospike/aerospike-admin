@@ -1093,18 +1093,18 @@ class NodeTest(asynctest.TestCase):
         """Test info_jobs with server version < 6.3 - should call jobs command"""
         lib.live_cluster.client.node.Node.info_build.return_value = "6.2.0"
         self.info_mock.return_value = "trid=123:module=scan;trid=456:module=query;"
-        
+
         actual = await self.node.info_jobs("scan")
-        
+
         self.info_mock.assert_called_with("jobs:module=scan", self.ip)
         self.assertIsInstance(actual, dict)
 
     async def test_info_jobs_6_3_and_later(self):
         """Test info_jobs with server version >= 6.3 - should return empty dict"""
         lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0"
-        
+
         actual = await self.node.info_jobs("scan")
-        
+
         self.info_mock.assert_not_called()
         self.assertDictEqual(actual, {})
 
@@ -1112,9 +1112,9 @@ class NodeTest(asynctest.TestCase):
         """Test info_scan_show with server version < 6.3 - should use jobs command"""
         lib.live_cluster.client.node.Node.info_build.return_value = "6.2.0"
         self.info_mock.return_value = "trid=123:module=scan;"
-        
+
         actual = await self.node.info_scan_show()
-        
+
         self.info_mock.assert_called_with("jobs:module=scan", self.ip)
         self.assertIsInstance(actual, dict)
 
@@ -1122,18 +1122,18 @@ class NodeTest(asynctest.TestCase):
         """Test info_scan_show with server version 6.3 - should use scan-show command"""
         lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0"
         self.info_mock.return_value = "trid=123:status=running;"
-        
+
         actual = await self.node.info_scan_show()
-        
+
         self.info_mock.assert_called_with("scan-show", self.ip)
         self.assertIsInstance(actual, dict)
 
     async def test_info_scan_show_6_4_and_later(self):
         """Test info_scan_show with server version >= 6.4 - should return empty dict"""
         lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0"
-        
+
         actual = await self.node.info_scan_show()
-        
+
         self.info_mock.assert_not_called()
         self.assertDictEqual(actual, {})
 
@@ -1141,9 +1141,9 @@ class NodeTest(asynctest.TestCase):
         """Test info_query_show with server version < 6.3 - should use jobs command"""
         lib.live_cluster.client.node.Node.info_build.return_value = "6.2.0"
         self.info_mock.return_value = "trid=123:module=query;"
-        
+
         actual = await self.node.info_query_show()
-        
+
         self.info_mock.assert_called_with("jobs:module=query", self.ip)
         self.assertIsInstance(actual, dict)
 
@@ -1151,9 +1151,9 @@ class NodeTest(asynctest.TestCase):
         """Test info_query_show with server version >= 6.3 - should use query-show command"""
         lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0"
         self.info_mock.return_value = "trid=123:status=running;"
-        
+
         actual = await self.node.info_query_show()
-        
+
         self.info_mock.assert_called_with("query-show", self.ip)
         self.assertIsInstance(actual, dict)
 
@@ -1161,9 +1161,9 @@ class NodeTest(asynctest.TestCase):
         """Test info_jobs when info_build() returns an exception"""
         expected_exception = Exception("Network error")
         lib.live_cluster.client.node.Node.info_build.return_value = expected_exception
-        
+
         actual = await self.node.info_jobs("scan")
-        
+
         self.assertEqual(actual, expected_exception)
         self.info_mock.assert_not_called()
 

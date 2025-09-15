@@ -3031,7 +3031,9 @@ class Node(AsyncObject):
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_JOBS_REMOVAL_VERSION
         ):
-            logger.debug("jobs command was removed in %s+", constants.SERVER_JOBS_REMOVAL_VERSION)
+            logger.debug(
+                "jobs command was removed in %s+", constants.SERVER_JOBS_REMOVAL_VERSION
+            )
             return {}
 
         resp = await self._info("jobs:module={}".format(module))
@@ -3053,7 +3055,9 @@ class Node(AsyncObject):
             logger.error(build)
             return build
 
-        if version.LooseVersion(build) >= version.LooseVersion(constants.SERVER_JOBS_REMOVAL_VERSION):
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_JOBS_REMOVAL_VERSION
+        ):
             req = new_req
         else:
             req = old_req
@@ -3093,7 +3097,10 @@ class Node(AsyncObject):
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_SCAN_SHOW_REMOVAL_VERSION
         ):
-            logger.debug("scan jobs commands were removed in %s+", constants.SERVER_SCAN_SHOW_REMOVAL_VERSION)
+            logger.debug(
+                "scan jobs commands were removed in %s+",
+                constants.SERVER_SCAN_SHOW_REMOVAL_VERSION,
+            )
             return {}
 
         old_req = "jobs:module=scan"
