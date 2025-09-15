@@ -124,6 +124,12 @@ ASADM_TEST_BUNDLE=true FEATKEY=(base64 -i path/to/features.conf) make integratio
 E2E_TEST_USE_LOCALHOST=true FEATKEY=(base64 -i path/to/features.conf) make integration
 ```
 
+**Debugging with Docker logs**: To capture and save Docker container logs during e2e tests for debugging:
+```
+DUMP_DOCKER_LOGS=true FEATKEY=(base64 -i path/to/features.conf) make integration
+```
+This will save container logs to the `docker_logs/` directory when containers are stopped.
+
 ### Running all tests with coverage
 ```
 FEATKEY=(base64 -i path/to/features.conf) make coverage
