@@ -981,7 +981,9 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with("best-practices", self.ip)
         self.assertListEqual(actual, expected)
 
-    async def test_info_bin_statistics(self):
+    async def test_info_bin_statistics_pre_7_0(self):
+        """Test info_bin_statistics with server version < 7.0 - should call bins command"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0.1"
         self.info_mock.return_value = (
             "test:bin_names=1,bin_names_quota=2,3,name,"
             "age;bar:bin_names=5,bin_names_quota=6,age;"
@@ -1001,6 +1003,91 @@ class NodeTest(asynctest.TestCase):
 
         self.info_mock.assert_called_with("bins", self.ip)
         self.assertDictEqual(actual, expected)
+
+    async def test_info_bin_statistics_7_0_exact(self):
+        """Test info_bin_statistics with server version exactly 7.0 - should return empty dict"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "7.0.0"
+
+        actual = await self.node.info_bin_statistics()
+
+        # Verify bins command was NOT called
+        self.info_mock.assert_not_called()
+        # Verify empty dict returned
+        self.assertDictEqual(actual, {})
+
+    async def test_info_bin_statistics_post_7_0(self):
+        """Test info_bin_statistics with server version > 7.0 - should return empty dict"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "8.1.0.5"
+
+        actual = await self.node.info_bin_statistics()
+
+        # Verify bins command was NOT called
+        self.info_mock.assert_not_called()
+        # Verify empty dict returned
+        self.assertDictEqual(actual, {})
+
+    async def test_info_bin_statistics_info_build_exception(self):
+        """Test info_bin_statistics when info_build() returns an exception"""
+        expected_exception = Exception("Network error")
+        lib.live_cluster.client.node.Node.info_build.return_value = expected_exception
+
+        actual = await self.node.info_bin_statistics()
+
+        # Verify the exception is returned
+        self.assertEqual(actual, expected_exception)
+        # Verify bins command was NOT called
+        self.info_mock.assert_not_called()
+        # Verify logger.error was called
+        self.logger_mock.error.assert_called_once_with(expected_exception)
+
+    async def test_info_bin_statistics_various_pre_7_0_versions(self):
+        """Test info_bin_statistics with various server versions < 7.0"""
+        test_versions = ["6.9.9", "6.4.0.1", "5.7.0.8", "4.9.0.1"]
+
+        for version in test_versions:
+            with self.subTest(version=version):
+                # Reset mocks for each iteration
+                self.info_mock.reset_mock()
+                lib.live_cluster.client.node.Node.info_build.return_value = version
+                self.info_mock.return_value = "test:bin_names=1;"
+
+                actual = await self.node.info_bin_statistics()
+
+                # Verify bins command was called
+                self.info_mock.assert_called_with("bins", self.ip)
+                # Verify result is processed (not empty)
+                self.assertIsInstance(actual, dict)
+
+    async def test_info_bin_statistics_various_post_7_0_versions(self):
+        """Test info_bin_statistics with various server versions >= 7.0"""
+        test_versions = ["7.0.0", "7.1.0", "8.0.0", "9.5.2.1"]
+
+        for version in test_versions:
+            with self.subTest(version=version):
+                # Reset mocks for each iteration
+                self.info_mock.reset_mock()
+                lib.live_cluster.client.node.Node.info_build.return_value = version
+
+                actual = await self.node.info_bin_statistics()
+
+                # Verify bins command was NOT called
+                self.info_mock.assert_not_called()
+                # Verify empty dict returned
+                self.assertDictEqual(actual, {})
+
+    async def test_info_bin_statistics_empty_response_pre_7_0(self):
+        """Test info_bin_statistics with empty response for pre-7.0 versions"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0.1"
+        self.info_mock.return_value = ""
+
+        actual = await self.node.info_bin_statistics()
+
+        self.info_mock.assert_called_with("bins", self.ip)
+        self.assertDictEqual(actual, {})
+
+    def test_server_bins_removed_version_constant(self):
+        """Test that SERVER_INFO_BINS_REMOVAL_VERSION constant is properly defined"""
+        self.assertEqual(constants.SERVER_INFO_BINS_REMOVAL_VERSION, "7.0")
 
     async def test_info_XDR_statistics_with_server_pre_xdr5(self):
         self.info_mock.reset_mock()

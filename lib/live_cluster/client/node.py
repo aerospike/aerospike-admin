@@ -1303,6 +1303,19 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_bin_statistics(self):
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # bins removed in 7.0
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_INFO_BINS_REMOVAL_VERSION
+        ):
+            logger.debug("bin stats were removed in 7.0")
+            return {}
+
         stats = client_util.info_to_list(await self._info("bins"))
         if not stats:
             return {}
