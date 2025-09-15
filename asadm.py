@@ -258,9 +258,13 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             except Exception:
                 try:
                     readline.write_history_file(self.admin_history)
-                except (OSError, PermissionError):
-                    # Cannot write history file on read-only filesystem, continue without it
-                    pass
+                except (OSError, PermissionError) as e:
+                    # Cannot write history file, continue without it
+                    logger.debug(
+                        "Cannot write to history file %s: %s",
+                        self.admin_history,
+                        e,
+                    )
 
         self.commands = set()
 
@@ -565,9 +569,13 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         if not self.execute_only_mode and readline.get_current_history_length() > 0:
             try:
                 readline.write_history_file(self.admin_history)
-            except (OSError, PermissionError):
-                # Cannot save history on read-only filesystem, continue silently
-                pass
+            except (OSError, PermissionError) as e:
+                # Cannot save history, continue without it
+                logger.debug(
+                    "Cannot write to history file %s: %s",
+                    self.admin_history,
+                    e,
+                )
 
         return True
 
