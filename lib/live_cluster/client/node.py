@@ -3016,11 +3016,24 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_jobs(self, module):
         """
-        Get all jobs from a particular module. Exceptable values are scan, query, and
-        sindex-builder.
+        Get all jobs from a particular module. Acceptable values are scan, query, and
+        sindex-builder. Jobs command was removed in 6.3.
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}},
         """
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # jobs command removed in 6.3.0
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_JOBS_REMOVAL_VERSION
+        ):
+            logger.debug("jobs command was removed in %s+", constants.SERVER_JOBS_REMOVAL_VERSION)
+            return {}
+
         resp = await self._info("jobs:module={}".format(module))
 
         if resp.startswith("ERROR"):
@@ -3040,7 +3053,7 @@ class Node(AsyncObject):
             logger.error(build)
             return build
 
-        if version.LooseVersion(build) >= version.LooseVersion("6.3"):
+        if version.LooseVersion(build) >= version.LooseVersion(constants.SERVER_JOBS_REMOVAL_VERSION):
             req = new_req
         else:
             req = old_req
@@ -3050,7 +3063,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_query_show(self):
         """
-        Get all query jobs. Calls "query-show" if supported (5.7).  Calls "jobs" if not.
+        Get all query jobs. Calls "query-show" if supported (5.7+). Calls "jobs" if not.
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
         """
@@ -3065,10 +3078,24 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_scan_show(self):
         """
-        Get all scan jobs. Calls "scan-show" if supported (5.7).  Calls "jobs" if not.
+        Get all scan jobs. Calls "scan-show" if supported (5.7-6.4).  Calls "jobs" if supported (<6.3).
+        Both commands were removed in later versions.
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
         """
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # scan-show removed in 6.4, jobs removed in 6.3
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_SCAN_SHOW_REMOVAL_VERSION
+        ):
+            logger.debug("scan jobs commands were removed in %s+", constants.SERVER_SCAN_SHOW_REMOVAL_VERSION)
+            return {}
+
         old_req = "jobs:module=scan"
         new_req = "scan-show"
 
