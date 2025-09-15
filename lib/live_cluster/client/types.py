@@ -282,6 +282,14 @@ class ASInfoConfigError(ASInfoResponseError):
             self.response = "Invalid subcontext {}".format(invalid_context)
             return
 
+        # Check if the server response contains a specific error first
+        # This ensures actual server errors (like role violations) are shown
+        # instead of being overridden by generic validation errors
+        if resp and resp.lower() not in {ASINFO_RESPONSE_OK, ""}:
+            # Use the parent class to process the server response
+            super().__init__(message, resp)
+            return
+
         config_type = node.config_type(context[:], param)
 
         logger.debug("Found config type %s for param %s", str(config_type), param)

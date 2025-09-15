@@ -128,7 +128,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
 
         actual = ASInfoConfigError(
             self.test_message,
-            "irrelevant",
+            "ok",
             self.node_mock,
             ["foo2", "blah1", "bar3"],
             "bad-param",
@@ -148,7 +148,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
 
         actual = ASInfoConfigError(
             self.test_message,
-            "irrelevant",
+            "ok",
             self.node_mock,
             ["foo2", "blah1", "bar3"],
             "bad-param",
@@ -172,7 +172,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
 
         actual = ASInfoConfigError(
             self.test_message,
-            "irrelevant",
+            "ok",
             self.node_mock,
             ["foo2", "blah1", "bar3"],
             "good-param",
@@ -235,6 +235,164 @@ class ASInfoConfigErrorTest(unittest.TestCase):
             5,
         )
 
+        self.assertEqual(str(actual), expected)
+
+    def test_role_violation_error_takes_precedence(self):
+        """
+        Test that role violation errors are shown instead of validation errors.
+        This tests the fix for the issue where role violations were incorrectly
+        displayed as "Parameter is not dynamically configurable".
+        """
+        self.node_mock.config_subcontext.side_effect = [
+            ["namespace"],
+        ]
+        # Configure a non-dynamic parameter to trigger the old behavior
+        self.node_mock.config_type.return_value = BoolConfigType(False)  # non-dynamic
+        
+        # Server response indicates role violation
+        role_violation_resp = "ERROR:81:role violation - requires permission 'set-config'"
+        expected = "this is a test message : role violation - requires permission 'set-config'."
+
+        actual = ASInfoConfigError(
+            self.test_message,
+            role_violation_resp,
+            self.node_mock,
+            ["namespace"],
+            "replication-factor",
+            "2",
+        )
+
+        # Should show the role violation error, not "Parameter is not dynamically configurable"
+        self.assertEqual(str(actual), expected)
+
+    def test_authentication_error_takes_precedence(self):
+        """
+        Test that authentication errors are shown instead of validation errors.
+        """
+        self.node_mock.config_subcontext.side_effect = [
+            ["service"],
+        ]
+        # Configure an invalid parameter to trigger validation error
+        self.node_mock.config_type.return_value = None
+        
+        # Server response indicates authentication failure
+        auth_error_resp = "ERROR:80:authentication failed"
+        expected = "this is a test message : authentication failed."
+
+        actual = ASInfoConfigError(
+            self.test_message,
+            auth_error_resp,
+            self.node_mock,
+            ["service"],
+            "bad-param",
+            "some-value",
+        )
+
+        # Should show the authentication error, not "Invalid parameter"
+        self.assertEqual(str(actual), expected)
+
+    def test_permission_denied_error_takes_precedence(self):
+        """
+        Test that permission denied errors are shown instead of validation errors.
+        """
+        self.node_mock.config_subcontext.side_effect = [
+            ["security"],
+        ]
+        # Configure an invalid value to trigger validation error
+        self.node_mock.config_type.return_value = IntConfigType(0, 10, True)
+        
+        # Server response indicates permission denied
+        permission_error_resp = "ERROR:82:permission denied"
+        expected = "this is a test message : permission denied."
+
+        actual = ASInfoConfigError(
+            self.test_message,
+            permission_error_resp,
+            self.node_mock,
+            ["security"],
+            "good-param",
+            -5,  # Invalid value
+        )
+
+        # Should show the permission error, not "Invalid value for Int(min: 0, max: 10)"
+        self.assertEqual(str(actual), expected)
+
+    def test_server_error_with_different_format_takes_precedence(self):
+        """
+        Test that server errors with different formats are handled correctly.
+        """
+        self.node_mock.config_subcontext.side_effect = [
+            ["network"],
+        ]
+        # Configure a non-dynamic parameter
+        self.node_mock.config_type.return_value = BoolConfigType(False)
+        
+        # Server response with different error format
+        server_error_resp = "FAIL:100:cluster unstable"
+        expected = "this is a test message : cluster unstable."
+
+        actual = ASInfoConfigError(
+            self.test_message,
+            server_error_resp,
+            self.node_mock,
+            ["network"],
+            "some-param",
+            "some-value",
+        )
+
+        # Should show the server error, not validation error
+        self.assertEqual(str(actual), expected)
+
+    def test_validation_errors_still_work_when_no_server_error(self):
+        """
+        Test that validation errors still work normally when there's no server error.
+        This ensures backward compatibility.
+        """
+        self.node_mock.config_subcontext.side_effect = [
+            ["namespace"],
+        ]
+        # Configure a non-dynamic parameter
+        self.node_mock.config_type.return_value = BoolConfigType(False)
+        
+        # No meaningful server response (like "ok" or empty)
+        ok_resp = "ok"
+        expected = "this is a test message : Parameter is not dynamically configurable."
+
+        actual = ASInfoConfigError(
+            self.test_message,
+            ok_resp,
+            self.node_mock,
+            ["namespace"],
+            "some-param",
+            "some-value",
+        )
+
+        # Should fall back to validation error as before
+        self.assertEqual(str(actual), expected)
+
+    def test_empty_response_falls_back_to_validation(self):
+        """
+        Test that empty responses fall back to validation errors.
+        """
+        self.node_mock.config_subcontext.side_effect = [
+            ["service"],
+        ]
+        self.node_mock.config_type.return_value = None
+        
+        # Empty server response
+        empty_resp = ""
+        expected = "this is a test message : Invalid parameter."
+
+        actual = ASInfoConfigError(
+            self.test_message,
+            empty_resp,
+            self.node_mock,
+            ["service"],
+            "bad-param",
+            "some-value",
+        )
+
+        # Should fall back to validation error
         self.assertEqual(str(actual), expected)
 
 
