@@ -248,9 +248,11 @@ class ASInfoConfigErrorTest(unittest.TestCase):
         ]
         # Configure a non-dynamic parameter to trigger the old behavior
         self.node_mock.config_type.return_value = BoolConfigType(False)  # non-dynamic
-        
+
         # Server response indicates role violation
-        role_violation_resp = "ERROR:81:role violation - requires permission 'set-config'"
+        role_violation_resp = (
+            "ERROR:81:role violation - requires permission 'set-config'"
+        )
         expected = "this is a test message : role violation - requires permission 'set-config'."
 
         actual = ASInfoConfigError(
@@ -274,7 +276,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
         ]
         # Configure an invalid parameter to trigger validation error
         self.node_mock.config_type.return_value = None
-        
+
         # Server response indicates authentication failure
         auth_error_resp = "ERROR:80:authentication failed"
         expected = "this is a test message : authentication failed."
@@ -300,7 +302,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
         ]
         # Configure an invalid value to trigger validation error
         self.node_mock.config_type.return_value = IntConfigType(0, 10, True)
-        
+
         # Server response indicates permission denied
         permission_error_resp = "ERROR:82:permission denied"
         expected = "this is a test message : permission denied."
@@ -326,7 +328,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
         ]
         # Configure a non-dynamic parameter
         self.node_mock.config_type.return_value = BoolConfigType(False)
-        
+
         # Server response with different error format
         server_error_resp = "FAIL:100:cluster unstable"
         expected = "this is a test message : cluster unstable."
@@ -353,7 +355,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
         ]
         # Configure a non-dynamic parameter
         self.node_mock.config_type.return_value = BoolConfigType(False)
-        
+
         # No meaningful server response (like "ok" or empty)
         ok_resp = "ok"
         expected = "this is a test message : Parameter is not dynamically configurable."
@@ -378,7 +380,7 @@ class ASInfoConfigErrorTest(unittest.TestCase):
             ["service"],
         ]
         self.node_mock.config_type.return_value = None
-        
+
         # Empty server response
         empty_resp = ""
         expected = "this is a test message : Invalid parameter."
