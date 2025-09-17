@@ -12,6 +12,6 @@ RUN source /tmp/install_deps.sh && install_deps_debian13
 
 ADD --chown=build:build . /opt/asbench
 WORKDIR /opt/asbench
-USER build
+#USER build
 ENTRYPOINT ["/opt/asbench/.github/docker/entrypoint.sh"]
 CMD ["-b"]

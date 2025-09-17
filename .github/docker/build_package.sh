@@ -4,6 +4,7 @@ function build_packages(){
     echo "ENV_DISTRO is not set"
     return
   fi
+  chown -R root:root .
   cd "$GIT_DIR"
   make one-file
   cd $PKG_DIR
