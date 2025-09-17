@@ -196,7 +196,7 @@ function install_deps_redhat-el9() {
   asdf exec pip install pipenv
   gem install fpm
 }
-function install_deps_redhat-amazon-2023() {
+function install_deps_amazon-2023() {
   dnf -y install ruby rpmdevtools make git python3 python3-pip rsync
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
@@ -218,5 +218,10 @@ function install_deps_redhat-amazon-2023() {
   echo "python 3.10.18" > /.tool-versions
   echo "python 3.10.18" > /root/.tool-versions
   asdf exec pip install pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
   gem install fpm
 }
