@@ -8,7 +8,7 @@ jobs:
   build-artifacts:
     strategy:
       matrix:
-        distro: [ debian11, debian12, ubuntu20.04, ubuntu22.04, ubuntu24.04, redhat-ubi9 ]
+        distro: [ debian11, debian12, debian13, ubuntu20.04, ubuntu22.04, ubuntu24.04, redhat-el8, redhat-el9, amazon-2023 ]
         host: [ ubuntu-24.04-arm, ubuntu-24.04 ]
 
     uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@main
@@ -28,7 +28,7 @@ jobs:
   sign-artifacts:
     strategy:
       matrix:
-        distro: [ debian11, debian12, ubuntu20.04, ubuntu22.04, ubuntu24.04, redhat-ubi9 ]
+        distro: [ debian11, debian12, debian13, ubuntu20.04, ubuntu22.04, ubuntu24.04, redhat-el8, redhat-el9, amazon-2023 ]
         host: [ ubuntu-24.04-arm, ubuntu-24.04 ]
 
     needs: build-artifacts
@@ -47,7 +47,7 @@ jobs:
   upload-artifacts:
     strategy:
       matrix:
-        distro: [ debian11, debian12, ubuntu20.04, ubuntu22.04, ubuntu24.04, redhat-ubi9 ]
+        distro: [ debian11, debian12, debian13, ubuntu20.04, ubuntu22.04, ubuntu24.04, redhat-el8, redhat-el9, amazon-2023 ]
         host: [ ubuntu-24.04-arm, ubuntu-24.04 ]
 
     needs: sign-artifacts

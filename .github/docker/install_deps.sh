@@ -45,6 +45,28 @@ function install_deps_debian12() {
   gem install fpm
 }
 
+function install_deps_debian13() {
+  apt -y install ruby-rubygems make rpm git snapd curl binutils python3 python3-pip rsync libssl3 libssl-dev lzma \
+                 lzma-dev libffi-dev
+  if [ "$(uname -m)" = "x86_64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+  elif [ "$(uname -m)" = "aarch64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-arm64.tar.gz -o /tmp/go1.24.6.linux-arm64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-arm64.tar.gz -C /opt/golang
+  else
+      echo "unknown arch $(uname -m)"
+      exit 1
+  fi
+  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+  install /root/go/bin/asdf /usr/local/bin/asdf
+  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  asdf install python 3.10.18
+  asdf set python 3.10.18
+  asdf exec pip install --break-system-packages pipenv
+  gem install fpm
+}
+
 function install_deps_ubuntu20.04() {
   apt -y install ruby make rpm git snapd curl binutils python3 python3-pip rsync libssl1.1 libssl-dev \
                  lzma lzma-dev libffi-dev
@@ -111,8 +133,52 @@ function install_deps_ubuntu24.04() {
   asdf exec pip install --break-system-packages pipenv
   gem install fpm
 }
+function install_deps_redhat-el8() {
+  microdnf -y install ruby rpmdevtools make git python3 python3-pip rsync
+  if [ "$(uname -m)" = "x86_64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+  elif [ "$(uname -m)" = "aarch64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-arm64.tar.gz -o /tmp/go1.24.6.linux-arm64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-arm64.tar.gz -C /opt/golang
+  else
+      echo "unknown arch $(uname -m)"
+      exit 1
+  fi
+  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+  install /root/go/bin/asdf /usr/local/bin/asdf
+  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  microdnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+                      sqlite sqlite-devel sqlite-libs
+  asdf install python 3.10.18
+  asdf set python 3.10.18
+  asdf exec pip install pipenv
+  gem install fpm
+}
 
-function install_deps_redhat-ubi9() {
+function install_deps_redhat-el9() {
+  microdnf -y install ruby rpmdevtools make git python3 python3-pip rsync
+  if [ "$(uname -m)" = "x86_64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
+  elif [ "$(uname -m)" = "aarch64" ]; then
+      curl -L https://go.dev/dl/go1.24.6.linux-arm64.tar.gz -o /tmp/go1.24.6.linux-arm64.tar.gz
+      mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-arm64.tar.gz -C /opt/golang
+  else
+      echo "unknown arch $(uname -m)"
+      exit 1
+  fi
+  /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
+  install /root/go/bin/asdf /usr/local/bin/asdf
+  asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  microdnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+                      sqlite sqlite-devel sqlite-libs
+  asdf install python 3.10.18
+  asdf set python 3.10.18
+  asdf exec pip install pipenv
+  gem install fpm
+}
+function install_deps_redhat-amazon-2023() {
   microdnf -y install ruby rpmdevtools make git python3 python3-pip rsync
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
