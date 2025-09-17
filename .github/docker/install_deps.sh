@@ -143,7 +143,9 @@ function install_deps_ubuntu24.04() {
   gem install fpm
 }
 function install_deps_redhat-el8() {
-  microdnf -y install ruby rpmdevtools make git python3 python3-pip rsync
+  dnf -y install ruby rpm-build make git python3 python3-pip rsync gcc gcc-c++ \
+                 make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+                 sqlite sqlite-devel sqlite-libs
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
       mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
@@ -157,16 +159,23 @@ function install_deps_redhat-el8() {
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  microdnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
-                      sqlite sqlite-devel sqlite-libs
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install pipenv
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+  asdf exec python -m pip install pipenv
+
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
+
   gem install fpm
 }
 
 function install_deps_redhat-el9() {
-  microdnf -y install ruby rpmdevtools make git python3 python3-pip rsync
+  dnf -y install ruby rpmdevtools make git python3 python3-pip rsync
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
       mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
@@ -180,7 +189,7 @@ function install_deps_redhat-el9() {
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  microdnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
                       sqlite sqlite-devel sqlite-libs
   asdf install python 3.10.18
   asdf set python 3.10.18
@@ -188,7 +197,7 @@ function install_deps_redhat-el9() {
   gem install fpm
 }
 function install_deps_redhat-amazon-2023() {
-  microdnf -y install ruby rpmdevtools make git python3 python3-pip rsync
+  dnf -y install ruby rpmdevtools make git python3 python3-pip rsync
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
       mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
@@ -202,7 +211,7 @@ function install_deps_redhat-amazon-2023() {
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  microdnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
+  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
                       sqlite sqlite-devel sqlite-libs
   asdf install python 3.10.18
   asdf set python 3.10.18
