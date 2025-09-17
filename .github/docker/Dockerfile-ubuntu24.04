@@ -1,0 +1,20 @@
+FROM ubuntu:24.04
+SHELL ["/bin/bash", "-euox", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+ARG DEBUG=0
+ENV DEBUG=${DEBUG}
+
+RUN apt -y update
+ADD .github/docker/entrypoint.sh /tmp/entrypoint.sh
+ADD .github/docker/install_deps.sh /tmp/install_deps.sh
+
+RUN source /tmp/install_deps.sh && install_deps_ubuntu24.04
+
+RUN if [[ $DEBUG -ne 0 ]]; then apt -y clean && rm -rf /var/lib/apt/lists/*; fi
+
+ADD . /opt/asadmin
+WORKDIR /opt/asadmin
+
+ENTRYPOINT ["/opt/asadmin/.github/docker/entrypoint.sh"]
+CMD ["-b"]
