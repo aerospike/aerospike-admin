@@ -113,7 +113,7 @@ jobs:
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@8b68c4e071050d18ecccc5f3e6911a4127b455ae # vn.n.n
     with:
       project: asadmin
-      build-name: asbench
+      build-name: asadmin
       version: ${{ github.ref_name }}
       artifactory-url: https://aerospike.jfrog.io
       artifactory-oidc-provider-name: database-gh-aerospike
