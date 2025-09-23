@@ -94,10 +94,9 @@ class NodeInitTest(asynctest.TestCase):
             # First call - admin port detection
             if cmd == "connection":
                 return "admin=false"
-            if cmd == ["node", "features", "service-clear-std", "peers-clear-std"]:
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": "A00000000000000",
-                    "features": "features",
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -144,10 +143,9 @@ class NodeInitTest(asynctest.TestCase):
             # First call - admin port detection
             if cmd == "connection":
                 return "admin=false"
-            if cmd == ["node", "features", "service-clear-std", "peers-clear-std"]:
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": "A00000000000000",
-                    "features": "features",
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -215,13 +213,11 @@ class NodeInitTest(asynctest.TestCase):
                 return "admin=false"
             elif args[0] == [
                 "node",
-                "features",
                 "service-clear-std",
                 "peers-clear-std",
             ]:
                 return {
                     "node": "A0",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
                     "service-clear-std": "1.1.1.1:3000;172.17.0.1:3000;172.17.1.1:3000",
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
                 }
@@ -236,7 +232,7 @@ class NodeInitTest(asynctest.TestCase):
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
                 call("connection"),
-                call(["node", "features", "service-clear-std", "peers-clear-std"]),
+                call(["node", "service-clear-std", "peers-clear-std"]),
             ],
         )
 
@@ -274,6 +270,8 @@ class NodeTest(asynctest.TestCase):
         ).start()
         self.logger_mock = patch("lib.live_cluster.client.node.logger").start()
         self.node.conf_schema_handler = MagicMock()
+        # Ensure build attribute is set for version comparison tests
+        self.node.build = "5.0.0.11"
         self.addCleanup(patch.stopall)
 
     async def test_login_returns_true_if_user_is_none(self):
@@ -983,7 +981,9 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with("best-practices", self.ip)
         self.assertListEqual(actual, expected)
 
-    async def test_info_bin_statistics(self):
+    async def test_info_bin_statistics_pre_7_0(self):
+        """Test info_bin_statistics with server version < 7.0 - should call bins command"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0.1"
         self.info_mock.return_value = (
             "test:bin_names=1,bin_names_quota=2,3,name,"
             "age;bar:bin_names=5,bin_names_quota=6,age;"
@@ -1004,11 +1004,178 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with("bins", self.ip)
         self.assertDictEqual(actual, expected)
 
+    async def test_info_bin_statistics_7_0_exact(self):
+        """Test info_bin_statistics with server version exactly 7.0 - should return empty dict"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "7.0.0"
+
+        actual = await self.node.info_bin_statistics()
+
+        # Verify bins command was NOT called
+        self.info_mock.assert_not_called()
+        # Verify empty dict returned
+        self.assertDictEqual(actual, {})
+
+    async def test_info_bin_statistics_post_7_0(self):
+        """Test info_bin_statistics with server version > 7.0 - should return empty dict"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "8.1.0.5"
+
+        actual = await self.node.info_bin_statistics()
+
+        # Verify bins command was NOT called
+        self.info_mock.assert_not_called()
+        # Verify empty dict returned
+        self.assertDictEqual(actual, {})
+
+    async def test_info_bin_statistics_info_build_exception(self):
+        """Test info_bin_statistics when info_build() returns an exception"""
+        expected_exception = Exception("Network error")
+        lib.live_cluster.client.node.Node.info_build.return_value = expected_exception
+
+        actual = await self.node.info_bin_statistics()
+
+        # Verify the exception is returned
+        self.assertEqual(actual, expected_exception)
+        # Verify bins command was NOT called
+        self.info_mock.assert_not_called()
+        # Verify logger.error was called
+        self.logger_mock.error.assert_called_once_with(expected_exception)
+
+    async def test_info_bin_statistics_various_pre_7_0_versions(self):
+        """Test info_bin_statistics with various server versions < 7.0"""
+        test_versions = ["6.9.9", "6.4.0.1", "5.7.0.8", "4.9.0.1"]
+
+        for version in test_versions:
+            with self.subTest(version=version):
+                # Reset mocks for each iteration
+                self.info_mock.reset_mock()
+                lib.live_cluster.client.node.Node.info_build.return_value = version
+                self.info_mock.return_value = "test:bin_names=1;"
+
+                actual = await self.node.info_bin_statistics()
+
+                # Verify bins command was called
+                self.info_mock.assert_called_with("bins", self.ip)
+                # Verify result is processed (not empty)
+                self.assertIsInstance(actual, dict)
+
+    async def test_info_bin_statistics_various_post_7_0_versions(self):
+        """Test info_bin_statistics with various server versions >= 7.0"""
+        test_versions = ["7.0.0", "7.1.0", "8.0.0", "9.5.2.1"]
+
+        for version in test_versions:
+            with self.subTest(version=version):
+                # Reset mocks for each iteration
+                self.info_mock.reset_mock()
+                lib.live_cluster.client.node.Node.info_build.return_value = version
+
+                actual = await self.node.info_bin_statistics()
+
+                # Verify bins command was NOT called
+                self.info_mock.assert_not_called()
+                # Verify empty dict returned
+                self.assertDictEqual(actual, {})
+
+    async def test_info_bin_statistics_empty_response_pre_7_0(self):
+        """Test info_bin_statistics with empty response for pre-7.0 versions"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0.1"
+        self.info_mock.return_value = ""
+
+        actual = await self.node.info_bin_statistics()
+
+        self.info_mock.assert_called_with("bins", self.ip)
+        self.assertDictEqual(actual, {})
+
+    def test_server_bins_removed_version_constant(self):
+        """Test that SERVER_INFO_BINS_REMOVAL_VERSION constant is properly defined"""
+        self.assertEqual(constants.SERVER_INFO_BINS_REMOVAL_VERSION, "7.0")
+
+    async def test_info_jobs_pre_6_3(self):
+        """Test info_jobs with server version < 6.3 - should call jobs command"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.2.0"
+        self.info_mock.return_value = "trid=123:module=scan;trid=456:module=query;"
+
+        actual = await self.node.info_jobs("scan")
+
+        self.info_mock.assert_called_with("jobs:module=scan", self.ip)
+        self.assertIsInstance(actual, dict)
+
+    async def test_info_jobs_6_3_and_later(self):
+        """Test info_jobs with server version >= 6.3 - should return empty dict"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0"
+
+        actual = await self.node.info_jobs("scan")
+
+        self.info_mock.assert_not_called()
+        self.assertDictEqual(actual, {})
+
+    async def test_info_scan_show_pre_6_3(self):
+        """Test info_scan_show with server version < 6.3 - should use jobs command"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.2.0"
+        self.info_mock.return_value = "trid=123:module=scan;"
+
+        actual = await self.node.info_scan_show()
+
+        self.info_mock.assert_called_with("jobs:module=scan", self.ip)
+        self.assertIsInstance(actual, dict)
+
+    async def test_info_scan_show_6_3_to_6_3(self):
+        """Test info_scan_show with server version 6.3 - should use scan-show command"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0"
+        self.info_mock.return_value = "trid=123:status=running;"
+
+        actual = await self.node.info_scan_show()
+
+        self.info_mock.assert_called_with("scan-show", self.ip)
+        self.assertIsInstance(actual, dict)
+
+    async def test_info_scan_show_6_4_and_later(self):
+        """Test info_scan_show with server version >= 6.4 - should return empty dict"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0"
+
+        actual = await self.node.info_scan_show()
+
+        self.info_mock.assert_not_called()
+        self.assertDictEqual(actual, {})
+
+    async def test_info_query_show_pre_6_3(self):
+        """Test info_query_show with server version < 6.3 - should use jobs command"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.2.0"
+        self.info_mock.return_value = "trid=123:module=query;"
+
+        actual = await self.node.info_query_show()
+
+        self.info_mock.assert_called_with("jobs:module=query", self.ip)
+        self.assertIsInstance(actual, dict)
+
+    async def test_info_query_show_6_3_and_later(self):
+        """Test info_query_show with server version >= 6.3 - should use query-show command"""
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0"
+        self.info_mock.return_value = "trid=123:status=running;"
+
+        actual = await self.node.info_query_show()
+
+        self.info_mock.assert_called_with("query-show", self.ip)
+        self.assertIsInstance(actual, dict)
+
+    async def test_info_jobs_info_build_exception(self):
+        """Test info_jobs when info_build() returns an exception"""
+        expected_exception = Exception("Network error")
+        lib.live_cluster.client.node.Node.info_build.return_value = expected_exception
+
+        actual = await self.node.info_jobs("scan")
+
+        self.assertEqual(actual, expected_exception)
+        self.info_mock.assert_not_called()
+
+    def test_jobs_version_constants(self):
+        """Test that job-related version constants are properly defined"""
+        self.assertEqual(constants.SERVER_JOBS_REMOVAL_VERSION, "6.3")
+        self.assertEqual(constants.SERVER_SCAN_SHOW_REMOVAL_VERSION, "6.4")
+
     async def test_info_XDR_statistics_with_server_pre_xdr5(self):
         self.info_mock.reset_mock()
         lib.live_cluster.client.node.Node.info_build.return_value = "2.5.6"
         self.info_mock.side_effect = ["a=b;c=1;2=z"]
-        self.node.features = "xdr"
         expected = {"a": "b", "c": "1", "2": "z"}
 
         actual = await self.node.info_XDR_statistics()
@@ -1022,7 +1189,7 @@ class NodeTest(asynctest.TestCase):
         lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.1"
         actual = await self.node.info_XDR_statistics()
 
-        self.assertEqual(lib.live_cluster.client.node.Node.info_build.call_count, 1)
+        lib.live_cluster.client.node.Node.info_build.assert_called_once()
         self.assertEqual(actual, {})
 
     @patch("lib.live_cluster.client.node.Node.info_dcs")
@@ -1880,7 +2047,6 @@ class NodeTest(asynctest.TestCase):
         self.assertListEqual(actual, expected)
 
         self.info_mock.return_value = "a=b;c=d;e=f;dcs=DC1,DC2,DC3"
-        self.node.features = "xdr"
 
         actual = await self.node.info_dcs()
 
@@ -2297,8 +2463,6 @@ class NodeTest(asynctest.TestCase):
                 "dc-type": "aerospike",
             }
         }
-
-        self.node.features = ["xdr"]
 
         xdr_dc_confg = await self.node.info_xdr_dcs_config()
 
@@ -3536,7 +3700,9 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_sindex_statistics("foo", "bar")
 
-        self.info_mock.assert_called_with("sindex/{}/{}".format("foo", "bar"), self.ip)
+        self.info_mock.assert_called_with(
+            "sindex-stat:namespace={};indexname={}".format("foo", "bar"), self.ip
+        )
         self.assertDictEqual(actual, expected)
 
     async def test_info_sindex_create_success(self):
@@ -3545,7 +3711,16 @@ class NodeTest(asynctest.TestCase):
             "sindex-create:indexname=iname;ns=ns;indexdata=data1,data2".format()
         )
 
-        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
+        actual = await self.node.info_sindex_create(
+            "iname",
+            "ns",
+            "data1",
+            "data2",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+            },
+        )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -3561,6 +3736,10 @@ class NodeTest(asynctest.TestCase):
             index_type="itype",
             set_="set",
             ctx=CDTContext([CTXItems.ListIndex(1)]),
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+            },
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3569,7 +3748,16 @@ class NodeTest(asynctest.TestCase):
     async def test_info_sindex_create_fail(self):
         self.info_mock.return_value = "FAIL:4: Invalid indexdata"
 
-        actual = await self.node.info_sindex_create("iname", "ns", "data1", "data2")
+        actual = await self.node.info_sindex_create(
+            "iname",
+            "ns",
+            "data1",
+            "data2",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+            },
+        )
 
         self.assertEqual(actual.message, "Failed to create sindex iname")
         self.assertEqual(actual.response, "Invalid indexdata")
@@ -3579,7 +3767,15 @@ class NodeTest(asynctest.TestCase):
         expected_call = "sindex-create:indexname=ctx-idx;ns=test;context=dGVzdA==;indexdata=mybin,string"
 
         actual = await self.node.info_sindex_create(
-            "ctx-idx", "test", "mybin", "string", cdt_ctx_base64="dGVzdA=="
+            "ctx-idx",
+            "test",
+            "mybin",
+            "string",
+            cdt_ctx_base64="dGVzdA==",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+            },
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3592,7 +3788,15 @@ class NodeTest(asynctest.TestCase):
         )
 
         actual = await self.node.info_sindex_create(
-            "exp-idx", "test", None, "string", exp_base64="dGVzdA=="
+            "exp-idx",
+            "test",
+            None,
+            "string",
+            exp_base64="dGVzdA==",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+            },
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3603,7 +3807,14 @@ class NodeTest(asynctest.TestCase):
         expected_call = "sindex-create:indexname=new-idx;ns=test;bin=mybin;type=string"
 
         actual = await self.node.info_sindex_create(
-            "new-idx", "test", "mybin", "string", supports_sindex_type_syntax=True
+            "new-idx",
+            "test",
+            "mybin",
+            "string",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+            },
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3621,7 +3832,10 @@ class NodeTest(asynctest.TestCase):
             index_type="mapkeys",
             set_="myset",
             cdt_ctx_base64="dGVzdA==",
-            supports_sindex_type_syntax=True,
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+            },
         )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
@@ -3634,7 +3848,9 @@ class NodeTest(asynctest.TestCase):
             "iname",
         )
 
-        actual = await self.node.info_sindex_delete("iname", "ns")
+        actual = await self.node.info_sindex_delete(
+            "iname", "ns", feature_support={"namespace_query_selector_support": False}
+        )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -3646,7 +3862,12 @@ class NodeTest(asynctest.TestCase):
             "iname",
         )
 
-        actual = await self.node.info_sindex_delete("iname", "ns", set_="set")
+        actual = await self.node.info_sindex_delete(
+            "iname",
+            "ns",
+            set_="set",
+            feature_support={"namespace_query_selector_support": False},
+        )
 
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
@@ -3654,7 +3875,9 @@ class NodeTest(asynctest.TestCase):
     async def test_info_sindex_delete_fail(self):
         self.info_mock.return_value = "FAIL:4: Invalid indexname"
 
-        actual = await self.node.info_sindex_delete("iname", "ns")
+        actual = await self.node.info_sindex_delete(
+            "iname", "ns", feature_support={"namespace_query_selector_support": False}
+        )
 
         self.assertEqual(actual.message, "Failed to delete sindex iname")
         self.assertEqual(actual.response, "Invalid indexname")
@@ -3903,7 +4126,7 @@ class NodeTest(asynctest.TestCase):
         self.assertDictEqual(actual, expected)
 
     async def test_jobs_helper_uses_new(self):
-        self.node.features = ["query-show"]
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.3.0.0"
         self.info_mock.return_value = "foo"
         old = "old"
         new = "new"
@@ -3914,6 +4137,9 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, "foo")
 
     async def test_jobs_helper_uses_old(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = (
+            "5.0.0.11"  # Version < 6.3, should use old command
+        )
         self.info_mock.return_value = "foo"
         old = "old"
         new = "new"
@@ -4023,7 +4249,6 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, expected)
 
     async def test_info_scan_abort_all_with_feature_present(self):
-        self.node.features = ["query-show"]
         self.info_mock.return_value = "OK - number of scans killed: 7"
         expected = "ok - number of scans killed: 7"
 
@@ -4033,7 +4258,6 @@ class NodeTest(asynctest.TestCase):
         self.assertEqual(actual, expected)
 
     async def test_info_scan_abort_all_with_feature_present_and_error(self):
-        self.node.features = ["query-show"]
         self.info_mock.return_value = "error"
         expected = ASInfoResponseError("Failed to abort all scans", "error")
 
