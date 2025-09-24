@@ -152,3 +152,4 @@ tramp
 
 # cursor
 .cursor
+test/e2e/work/*
