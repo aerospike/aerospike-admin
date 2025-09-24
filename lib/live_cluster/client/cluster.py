@@ -103,7 +103,7 @@ class Cluster(AsyncObject):
             getattr(node, "is_admin_node", False) for node in self.nodes.values()
         )
 
-    def get_admin_nodes(self) -> list:
+    def get_admin_nodes(self) -> list[Node]:
         """Get list of admin nodes in the cluster."""
         return [
             node
@@ -130,7 +130,7 @@ class Cluster(AsyncObject):
             admin_nodes = self.get_admin_nodes()
             admin_keys = [node.key for node in admin_nodes if node.alive]
             if admin_keys:
-                retval += "\nConnected to admin port"
+                retval += "\nConnected via admin port.\nNote: Cluster discovery is disabled for admin ports."
 
         return retval
 
