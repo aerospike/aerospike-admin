@@ -17,6 +17,11 @@ from typing import Literal
 
 ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 
+# Admin port visual cue message
+ADMIN_PORT_VISUAL_CUE_MSG = (
+    "Connected via admin port.\nNote: Cluster discovery is disabled for admin ports."
+)
+
 # For "manage config". Directory is relative to live_cluster/client
 # This variable should match what is reflected in pyinstaller-build.spec
 CONFIG_SCHEMAS_HOME = "schemas/json/aerospike"

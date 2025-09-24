@@ -20,6 +20,7 @@ import socket
 import lib
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
+from lib.utils import constants
 
 import warnings
 
@@ -761,12 +762,9 @@ class ClusterTest(asynctest.TestCase):
 
         # Test with alive admin nodes - shows admin message
         cluster_str = str(cl)
-        self.assertIn("Connected via admin port", cluster_str)
-        self.assertIn(
-            "Note: Cluster discovery is disabled for admin ports", cluster_str
-        )
+        self.assertIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cluster_str)
 
         # Test with dead admin node - no admin message
         admin_node.alive = False
         cluster_str = str(cl)
-        self.assertNotIn("Connected via admin port", cluster_str)
+        self.assertNotIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cluster_str)

@@ -72,6 +72,7 @@ from lib.utils.constants import (
     DEFAULT_ASADM_VERSION,
     USER_AGENT_FORMAT_VERSION,
     ASADM_APP_ID,
+    ADMIN_PORT_VISUAL_CUE_MSG,
 )
 from lib.view import terminal, view, sheet
 from time import sleep
@@ -913,6 +914,10 @@ async def main():
                 pass
 
         if shell.connected:
+            # Print admin port visual cue message in execute mode
+            if shell._has_admin_nodes():
+                print(ADMIN_PORT_VISUAL_CUE_MSG)
+
             line = await shell.precmd(
                 commands_arg,
                 max_commands_to_print_header=max_commands_to_print_header,

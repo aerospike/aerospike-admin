@@ -20,6 +20,7 @@ from lib.utils import version
 
 from test.e2e import util
 from .. import lib
+from lib.utils import constants
 
 TEST_UDF = """
 function get_digest(rec)
@@ -235,7 +236,7 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         )
 
         # The help command should work, indicating successful admin port connection
-        self.assertIn("Server Version", cp.stdout)
+        self.assertIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cp.stdout)
 
 
 @parameterized_class(

@@ -130,7 +130,7 @@ class Cluster(AsyncObject):
             admin_nodes = self.get_admin_nodes()
             admin_keys = [node.key for node in admin_nodes if node.alive]
             if admin_keys:
-                retval += "\nConnected via admin port.\nNote: Cluster discovery is disabled for admin ports."
+                retval += f"\n{constants.ADMIN_PORT_VISUAL_CUE_MSG}"
 
         return retval
 
