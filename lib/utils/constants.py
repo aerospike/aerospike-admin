@@ -19,7 +19,7 @@ ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 
 # Admin port visual cue message
 ADMIN_PORT_VISUAL_CUE_MSG = (
-    "Connected via admin port.\nNote: Cluster discovery is disabled for admin ports."
+    "Connected via admin port. Note: Cluster discovery is disabled for admin ports."
 )
 
 # For "manage config". Directory is relative to live_cluster/client
