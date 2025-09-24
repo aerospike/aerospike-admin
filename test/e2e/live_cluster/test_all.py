@@ -225,13 +225,15 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         """Sanity check: Test that admin port connection works"""
         admin_port = lib.PORT + 4
         args = f"-h {lib.SERVER_IP}:{admin_port} -e 'summary' -Uadmin -Padmin"
-        
+
         # Run asadm with admin port connection
         cp = util.run_asadm(args)
-        
+
         # Check that the connection was successful
-        self.assertEqual(cp.returncode, 0, f"Failed to connect via admin port: {cp.stderr}")
-        
+        self.assertEqual(
+            cp.returncode, 0, f"Failed to connect via admin port: {cp.stderr}"
+        )
+
         # The help command should work, indicating successful admin port connection
         self.assertIn("Server Version", cp.stdout)
 
