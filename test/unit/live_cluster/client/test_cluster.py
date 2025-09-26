@@ -20,6 +20,7 @@ import socket
 import lib
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
+from lib.utils import constants
 
 import warnings
 
@@ -705,3 +706,65 @@ class ClusterTest(asynctest.TestCase):
 
         # Restore original mock behavior
         Node._info_cinfo.side_effect = original_side_effect
+
+    async def test_has_admin_nodes_visual_cue_functionality(self):
+        """Test has_admin_nodes() method for admin port visual cue functionality"""
+        cl = await self.get_cluster_mock(2)
+
+        # Test with no admin nodes
+        self.assertFalse(cl.has_admin_nodes())
+
+        # Add admin node
+        admin_node = await self.get_info_mock(
+            "ADMIN000000000", ip="127.0.0.1", port=3003
+        )
+        admin_node.is_admin_node = True
+        cl.update_node(admin_node)
+
+        # Test with admin nodes
+        self.assertTrue(cl.has_admin_nodes())
+
+    async def test_get_admin_nodes_visual_cue_functionality(self):
+        """Test get_admin_nodes() method for admin port visual cue functionality"""
+        cl = await self.get_cluster_mock(2)
+
+        # Test empty list initially
+        admin_nodes = cl.get_admin_nodes()
+        self.assertEqual(len(admin_nodes), 0)
+
+        # Add admin node
+        admin_node = await self.get_info_mock(
+            "ADMIN000000000", ip="127.0.0.1", port=3003
+        )
+        admin_node.is_admin_node = True
+        cl.update_node(admin_node)
+
+        # Test returns admin nodes
+        admin_nodes = cl.get_admin_nodes()
+        self.assertEqual(len(admin_nodes), 1)
+        self.assertTrue(getattr(admin_nodes[0], "is_admin_node", False))
+
+    async def test_cluster_str_admin_port_visual_cue(self):
+        """Test cluster string representation shows admin port visual cue"""
+        cl = await self.get_cluster_mock(2)
+
+        # Test without admin nodes - no admin message
+        cluster_str = str(cl)
+        self.assertNotIn("Connected via admin port", cluster_str)
+
+        # Add alive admin node
+        admin_node = await self.get_info_mock(
+            "ADMIN000000000", ip="127.0.0.1", port=3003
+        )
+        admin_node.is_admin_node = True
+        admin_node.alive = True
+        cl.update_node(admin_node)
+
+        # Test with alive admin nodes - shows admin message
+        cluster_str = str(cl)
+        self.assertIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cluster_str)
+
+        # Test with dead admin node - no admin message
+        admin_node.alive = False
+        cluster_str = str(cl)
+        self.assertNotIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cluster_str)

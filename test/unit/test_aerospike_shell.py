@@ -87,6 +87,115 @@ class AerospikeShellTest(asynctest.TestCase):
             "Not able to connect any cluster with [('1.1.1.1', 3000, None)]."
         )
 
+    async def test_admin_port_visual_cue_prompt_switching(self):
+        """Test admin port visual cue functionality - prompt switching based on admin nodes"""
+
+        class ClusterMock:
+            def has_admin_nodes(self):
+                return True
+
+        class MockLiveClusterRootController(async_object.AsyncObject):
+            async def __init__(self, *args, **kwargs):
+                self.cluster = ClusterMock()
+
+        patch(
+            "asadm.LiveClusterRootController",
+            MockLiveClusterRootController,
+        ).start()
+        patch(
+            "asadm.AerospikeShell.active_stop_writes",
+            AsyncMock(),
+        ).start().return_value = False
+        patch("readline.write_history_file", Mock()).start()
+        patch("readline.read_history_file", Mock()).start()
+        self.addCleanup(patch.stopall)
+
+        shell = await AerospikeShell("test-version", seeds=[("1.1.1.1", 3000, None)])
+
+        # Test admin node detection
+        self.assertTrue(shell._has_admin_nodes())
+
+        # Test default prompt uses ADMIN prompt when admin nodes present
+        with patch.object(shell, "set_prompt") as mock_set_prompt:
+            shell.set_default_prompt()
+            mock_set_prompt.assert_called_once_with("ADMIN> ", "green")
+
+        # Test privileged prompt uses ADMIN+ prompt when admin nodes present
+        with patch.object(shell, "set_prompt") as mock_set_prompt:
+            shell.set_privaliged_prompt()
+            mock_set_prompt.assert_called_once_with("ADMIN+> ", "red")
+
+    async def test_admin_port_visual_cue_no_admin_nodes(self):
+        """Test admin port visual cue functionality - regular prompts when no admin nodes"""
+
+        class ClusterMock:
+            def has_admin_nodes(self):
+                return False
+
+        class MockLiveClusterRootController(async_object.AsyncObject):
+            async def __init__(self, *args, **kwargs):
+                self.cluster = ClusterMock()
+
+        patch(
+            "asadm.LiveClusterRootController",
+            MockLiveClusterRootController,
+        ).start()
+        patch(
+            "asadm.AerospikeShell.active_stop_writes",
+            AsyncMock(),
+        ).start().return_value = False
+        patch("readline.write_history_file", Mock()).start()
+        patch("readline.read_history_file", Mock()).start()
+        self.addCleanup(patch.stopall)
+
+        shell = await AerospikeShell("test-version", seeds=[("1.1.1.1", 3000, None)])
+
+        # Test no admin node detection
+        self.assertFalse(shell._has_admin_nodes())
+
+        # Test default prompt uses regular prompt when no admin nodes
+        with patch.object(shell, "set_prompt") as mock_set_prompt:
+            shell.set_default_prompt()
+            mock_set_prompt.assert_called_once_with("Admin> ", "green")
+
+        # Test privileged prompt uses regular prompt when no admin nodes
+        with patch.object(shell, "set_prompt") as mock_set_prompt:
+            shell.set_privaliged_prompt()
+            mock_set_prompt.assert_called_once_with("Admin+> ", "red")
+
+    async def test_admin_port_visual_cue_error_handling(self):
+        """Test admin port visual cue functionality - error handling in _has_admin_nodes"""
+
+        class ClusterMock:
+            def has_admin_nodes(self):
+                raise Exception("Connection error")
+
+        class MockLiveClusterRootController(async_object.AsyncObject):
+            async def __init__(self, *args, **kwargs):
+                self.cluster = ClusterMock()
+
+        patch(
+            "asadm.LiveClusterRootController",
+            MockLiveClusterRootController,
+        ).start()
+        patch(
+            "asadm.AerospikeShell.active_stop_writes",
+            AsyncMock(),
+        ).start().return_value = False
+        patch("readline.write_history_file", Mock()).start()
+        patch("readline.read_history_file", Mock()).start()
+        self.addCleanup(patch.stopall)
+
+        shell = await AerospikeShell("test-version", seeds=[("1.1.1.1", 3000, None)])
+
+        # Test error handling returns False
+        self.assertFalse(shell._has_admin_nodes())
+
+        # Test fallback to regular prompt on error
+        with patch.object(shell, "set_prompt") as mock_set_prompt:
+            shell.set_default_prompt()
+            mock_set_prompt.assert_called_once_with("Admin> ", "green")
+
     async def test_history_file_read_failure_fallback_to_write(self):
         """Test that when history file can't be read, it tries to write and handles write failure gracefully"""
 

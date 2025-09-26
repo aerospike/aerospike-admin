@@ -72,6 +72,7 @@ from lib.utils.constants import (
     DEFAULT_ASADM_VERSION,
     USER_AGENT_FORMAT_VERSION,
     ASADM_APP_ID,
+    ADMIN_PORT_VISUAL_CUE_MSG,
 )
 from lib.view import terminal, view, sheet
 from time import sleep
@@ -94,6 +95,8 @@ MULTILEVEL_COMMANDS = ["show", "info", "manage"]
 
 DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
+ADMIN_DEFAULT_PROMPT = "ADMIN> "
+ADMIN_PRIVILEGED_PROMPT = "ADMIN+> "
 
 
 class AerospikeShell(cmd.Cmd, AsyncObject):
@@ -206,6 +209,8 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         self.ctrl.do_enable([])
                 else:
                     self.intro += str(self.ctrl.cluster) + "\n"
+                    # Update prompt now that cluster is connected and admin nodes are detected
+                    self.set_default_prompt()
                     cluster_visibility_error_nodes = (
                         self.ctrl.cluster.get_visibility_error_nodes()
                     )
@@ -325,11 +330,32 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 + "\002"
             )
 
+    def _has_admin_nodes(self) -> bool:
+        """Check if cluster has admin nodes."""
+        try:
+            if hasattr(self.ctrl, "cluster") and self.ctrl.cluster.has_admin_nodes():
+                logger.debug("Admin nodes detected in cluster")
+                return True
+            return False
+        except Exception as e:
+            logger.debug("Error checking admin nodes: %s", e)
+            return False
+
     def set_default_prompt(self):
-        self.set_prompt(DEFAULT_PROMPT, "green")
+        if self._has_admin_nodes():
+            logger.debug("Setting ADMIN default prompt")
+            self.set_prompt(ADMIN_DEFAULT_PROMPT, "green")
+        else:
+            logger.debug("Setting regular default prompt")
+            self.set_prompt(DEFAULT_PROMPT, "green")
 
     def set_privaliged_prompt(self):
-        self.set_prompt(PRIVILEGED_PROMPT, "red")
+        if self._has_admin_nodes():
+            logger.debug("Setting ADMIN privileged prompt")
+            self.set_prompt(ADMIN_PRIVILEGED_PROMPT, "red")
+        else:
+            logger.debug("Setting regular privileged prompt")
+            self.set_prompt(PRIVILEGED_PROMPT, "red")
 
     def clean_line(self, line):
         # get rid of extra whitespace
@@ -888,6 +914,10 @@ async def main():
                 pass
 
         if shell.connected:
+            # Print admin port visual cue message in execute mode
+            if shell._has_admin_nodes():
+                print(ADMIN_PORT_VISUAL_CUE_MSG)
+
             line = await shell.precmd(
                 commands_arg,
                 max_commands_to_print_header=max_commands_to_print_header,
