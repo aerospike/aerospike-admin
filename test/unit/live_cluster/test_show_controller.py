@@ -1416,6 +1416,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_udfs_list_success(self, mock_get_udf_controller):
         """Test showing UDF list successfully"""
+
         async def async_test():
             line = []
 
@@ -1426,8 +1427,16 @@ class ShowUdfsControllerTest(unittest.TestCase):
 
             udfs_data = {
                 "node1": {
-                    "test.lua": {"filename": "test.lua", "hash": "abc123", "type": "LUA"},
-                    "math.lua": {"filename": "math.lua", "hash": "def456", "type": "LUA"},
+                    "test.lua": {
+                        "filename": "test.lua",
+                        "hash": "abc123",
+                        "type": "LUA",
+                    },
+                    "math.lua": {
+                        "filename": "math.lua",
+                        "hash": "def456",
+                        "type": "LUA",
+                    },
                 }
             }
             mock_getter.get_udfs.return_value = udfs_data
@@ -1442,6 +1451,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_success(self, mock_get_udf_controller):
         """Test showing single UDF content successfully"""
+
         async def async_test():
             line = ["test.lua"]
 
@@ -1459,7 +1469,9 @@ class ShowUdfsControllerTest(unittest.TestCase):
 
             await self.controller._do_default(line)
 
-            mock_getter.get_udf.assert_called_with(nodes="principal", filename="test.lua")
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
             self.view_mock.show_single_udf.assert_called_once()
 
             # Verify the call arguments contain decoded content
@@ -1477,6 +1489,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_exception_error(self, mock_get_udf_controller):
         """Test handling exception when getting single UDF"""
+
         async def async_test():
             line = ["test.lua"]
 
@@ -1503,6 +1516,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_aerospike_error(self, mock_get_udf_controller):
         """Test handling Aerospike error response when getting single UDF"""
+
         async def async_test():
             line = ["nonexistent.lua"]
 
@@ -1518,7 +1532,9 @@ class ShowUdfsControllerTest(unittest.TestCase):
                 await self.controller._do_default(line)
 
                 mock_logger.error.assert_called_with(
-                    "Failed to retrieve UDF '%s' error: %s", "nonexistent.lua", "not_found"
+                    "Failed to retrieve UDF '%s' error: %s",
+                    "nonexistent.lua",
+                    "not_found",
                 )
 
             # View should not be called when there's an error
@@ -1529,6 +1545,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_base64_decode_error(self, mock_get_udf_controller):
         """Test handling base64 decode error"""
+
         async def async_test():
             line = ["test.lua"]
 
@@ -1556,6 +1573,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_with_modifiers(self, mock_get_udf_controller):
         """Test showing single UDF with modifiers (should ignore them)"""
+
         async def async_test():
             line = ["test.lua", "like", "test"]
 
@@ -1574,7 +1592,9 @@ class ShowUdfsControllerTest(unittest.TestCase):
             await self.controller._do_default(line)
 
             # Should still call get_udf with the filename, ignoring modifiers
-            mock_getter.get_udf.assert_called_with(nodes="principal", filename="test.lua")
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
             self.view_mock.show_single_udf.assert_called_once()
 
         asyncio.run(async_test())
@@ -1582,6 +1602,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_empty_content(self, mock_get_udf_controller):
         """Test showing single UDF with empty content"""
+
         async def async_test():
             line = ["empty.lua"]
 
@@ -1595,7 +1616,9 @@ class ShowUdfsControllerTest(unittest.TestCase):
 
             await self.controller._do_default(line)
 
-            mock_getter.get_udf.assert_called_with(nodes="principal", filename="empty.lua")
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="empty.lua"
+            )
             self.view_mock.show_single_udf.assert_called_once()
 
             # Verify the call arguments
@@ -1604,13 +1627,16 @@ class ShowUdfsControllerTest(unittest.TestCase):
             filename = call_args[0][1]
 
             self.assertEqual(filename, "empty.lua")
-            self.assertEqual(udf_info["Content"], "")  # Should be empty string after decode
+            self.assertEqual(
+                udf_info["Content"], ""
+            )  # Should be empty string after decode
 
         asyncio.run(async_test())
 
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_missing_type(self, mock_get_udf_controller):
         """Test showing single UDF when type field is missing"""
+
         async def async_test():
             line = ["test.lua"]
 
@@ -1632,7 +1658,9 @@ class ShowUdfsControllerTest(unittest.TestCase):
 
             await self.controller._do_default(line)
 
-            mock_getter.get_udf.assert_called_with(nodes="principal", filename="test.lua")
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
             self.view_mock.show_single_udf.assert_called_once()
 
             # Verify the call arguments - should default to "Unknown" for missing type
@@ -1647,6 +1675,7 @@ class ShowUdfsControllerTest(unittest.TestCase):
     @patch("lib.live_cluster.show_controller.GetUdfController")
     def test_show_single_udf_missing_content(self, mock_get_udf_controller):
         """Test showing single UDF when content field is missing"""
+
         async def async_test():
             line = ["test.lua"]
 
@@ -1665,7 +1694,9 @@ class ShowUdfsControllerTest(unittest.TestCase):
 
             await self.controller._do_default(line)
 
-            mock_getter.get_udf.assert_called_with(nodes="principal", filename="test.lua")
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
             self.view_mock.show_single_udf.assert_called_once()
 
             # Verify the call arguments - should handle missing content gracefully
