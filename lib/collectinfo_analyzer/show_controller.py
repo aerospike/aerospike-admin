@@ -1525,13 +1525,19 @@ class ShowRolesController(CollectinfoCommandController):
     modifiers=(
         ModifierHelp(Modifiers.LIKE, "Filter UDFs by name using a substring match"),
     ),
-    usage=f"[{ModifierUsage.LIKE}]",
+    usage=f"[<filename>] [{ModifierUsage.LIKE}]",
 )
 class ShowUdfsController(CollectinfoCommandController):
     def __init__(self):
         self.modifiers = set(["like"])
 
     def _do_default(self, line):
+        # Check if a specific UDF filename is provided
+        if line and line[0] not in self.modifiers:
+            filename = line.pop(0)
+            return self._show_single_udf(filename)
+
+        # Show all UDFs
         udf_data = self.log_handler.info_meta_data(stanza=constants.METADATA_UDF)
 
         for timestamp in sorted(udf_data.keys()):
@@ -1551,6 +1557,88 @@ class ShowUdfsController(CollectinfoCommandController):
                 logger.warning(
                     f"No UDF data found for principal node {principal_id}. Using a random node instead."
                 )
+
+    def _show_single_udf(self, filename):
+        """Display the content of a single UDF from collectinfo data."""
+        # Try to get UDF content from collectinfo data
+        udf_content_data = self._get_udf_content_from_collectinfo(filename)
+
+        if udf_content_data is None:
+            logger.error("UDF content for '%s' not found in collectinfo data", filename)
+            logger.info(
+                "Note: Individual UDF content is only available if collectinfo was generated with UDF content collection enabled"
+            )
+            return
+
+        # Extract and decode the content
+        content = udf_content_data.get("content", "")
+        udf_type = udf_content_data.get("type", "Unknown")
+        timestamp = udf_content_data.get("timestamp", "")
+
+        try:
+            # Always attempt to decode base64 content
+            decoded_content = b64decode(content).decode("utf-8")
+        except Exception as e:
+            logger.error("Failed to decode UDF content for '%s': %s", filename, e)
+            return
+
+        # Create a simple dictionary structure
+        udf_info = {"Filename": filename, "Type": udf_type, "Content": decoded_content}
+
+        # Display the UDF information
+        return self.view.show_single_udf(
+            udf_info, filename, timestamp=timestamp, **self.mods
+        )
+
+    def _get_udf_content_from_collectinfo(self, filename):
+        """Retrieve UDF content from collectinfo data if available."""
+        try:
+            # Get UDF content data from collectinfo
+            udf_content_data = self.log_handler.info_meta_data(
+                stanza=constants.METADATA_UDF_CONTENT
+            )
+
+            if not udf_content_data:
+                return None
+
+            # Get the latest timestamp
+            latest_timestamp = max(udf_content_data.keys())
+            timestamp_data = udf_content_data[latest_timestamp]
+
+            if not timestamp_data:
+                return None
+
+            # Get data from principal node or any available node
+            node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(latest_timestamp)
+            principal_id = self.log_handler.get_principal(latest_timestamp)
+
+            try:
+                principal_ip = node_id_to_ip[principal_id]
+                node_data = timestamp_data[principal_ip]
+            except KeyError:
+                # Use first available node if principal not found
+                node_data = list(timestamp_data.values())[0]
+                logger.warning(
+                    "No UDF content data found for principal node %s. Using a random node instead.",
+                    principal_id,
+                )
+
+            # Look for the specific filename in the UDF content data
+            if isinstance(node_data, dict) and filename in node_data:
+                udf_content = node_data[filename]
+                # Add timestamp for display
+                udf_content["timestamp"] = latest_timestamp
+                return udf_content
+
+            return None
+
+        except Exception as e:
+            logger.warning(
+                "Failed to retrieve UDF content for '%s' from collectinfo: %s",
+                filename,
+                e,
+            )
+            return None
 
 
 @CommandHelp(
