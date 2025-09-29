@@ -1198,8 +1198,31 @@ class CliView(object):
             enumerate({k: v} for k, v in udfs_data.items() if k in filtered_keys)
         )
         sources = dict(data=udfs_data)
-
+        
         CliView.print_result(sheet.render(templates.show_udfs, title, sources))
+
+    @staticmethod
+    def show_single_udf(udf_info, filename, timestamp="", **ignore):
+        """Display a single UDF with base64 decoded content in simple format."""
+        
+        # Prepare title with timestamp
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = f"UDF Content: {filename}{title_timestamp}"
+        
+        # Create simple output
+        output_lines = [title, ""]
+        
+        for key, value in udf_info.items():
+            output_lines.append(f"{key}:")
+            if key == "Content":
+                # For content, just display the code as-is
+                for line in str(value).split('\n'):
+                    output_lines.append(line)
+            else:
+                output_lines.append(f"  {value}")
+            output_lines.append("")  # Add blank line between sections
+        
+        return CliView.print_result("\n".join(output_lines))
 
     @staticmethod
     def show_sindex(sindexes_data, like, timestamp="", **ignore):
