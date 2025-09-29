@@ -1138,7 +1138,7 @@ class GetUdfController:
 
     async def get_udfs(self, nodes="all"):
         return await self.cluster.info_udf_list(nodes=nodes)
-    
+
     async def get_udf(self, nodes="all", filename=None):
         return await self.cluster.info_udf_get(nodes=nodes, filename=filename)
 

@@ -1605,46 +1605,42 @@ class ShowUdfsController(LiveClusterCommandController):
         if line and line[0] not in self.modifiers:
             filename = line.pop(0)
             return await self._show_single_udf(filename)
-        
+
         # Show all UDFs
         udfs_data = await self.getter.get_udfs(nodes="principal")
         resp = list(udfs_data.values())[0]
 
         return self.view.show_udfs(resp, **self.mods)
-    
+
     async def _show_single_udf(self, filename):
         """Display the content of a single UDF with base64 decoding."""
         udf_data = await self.getter.get_udf(nodes="principal", filename=filename)
         resp = list(udf_data.values())[0]
-        
+
         if isinstance(resp, Exception):
             logger.error("Failed to retrieve UDF '%s': %s", filename, resp)
             return
-        
+
         # Check if the response contains an error (parsed as dict with "error" key)
         if isinstance(resp, dict) and "error" in resp:
             error_msg = resp["error"]
             logger.error("Failed to retrieve UDF '%s' error: %s", filename, error_msg)
             return
-        
+
         # Extract and decode the content
-        content = resp.get('content', '')
-        udf_type = resp.get('type', 'Unknown')
-        
+        content = resp.get("content", "")
+        udf_type = resp.get("type", "Unknown")
+
         try:
             # Always attempt to decode base64 content
-            decoded_content = b64decode(content).decode('utf-8')
+            decoded_content = b64decode(content).decode("utf-8")
         except Exception as e:
             logger.error("Failed to decode UDF content for '%s': %s", filename, e)
             return
 
         # Create a simple table structure similar to show_udfs format
-        udf_info = {
-            "Filename": filename,
-            "Type": udf_type,
-            "Content": decoded_content
-        }
-        
+        udf_info = {"Filename": filename, "Type": udf_type, "Content": decoded_content}
+
         # Display the UDF information
         return self.view.show_single_udf(udf_info, filename, **self.mods)
 
