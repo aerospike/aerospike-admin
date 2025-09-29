@@ -1293,7 +1293,7 @@ end
     async def test_show_nonexistent_udf(self):
         """Test showing UDF that doesn't exist"""
         nonexistent_udf = "nonexistent.lua"
-        
+
         output = await util.capture_stdout(
             self.rc.execute, ["show", "udfs", nonexistent_udf]
         )
