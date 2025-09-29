@@ -1294,12 +1294,12 @@ end
         """Test showing UDF that doesn't exist"""
         nonexistent_udf = "nonexistent.lua"
 
-        output = await util.capture_stdout(
+        output = await util.capture_stderr(
             self.rc.execute, ["show", "udfs", nonexistent_udf]
         )
 
         # Should contain error message about UDF not found
-        self.assertIn("ERROR", output)
+        self.assertIn("Failed to retrieve UDF", output)
 
 
 class TestShowUserAgents(asynctest.TestCase):
