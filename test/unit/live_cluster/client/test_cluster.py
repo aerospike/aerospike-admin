@@ -1098,4 +1098,3 @@ class ClusterRefreshTest(asynctest.TestCase):
             node.refresh_connection.call_count for node in nodes.values()
         )
         self.assertEqual(total_refresh_calls, 2)  # Only odd-numbered indices (1, 3)
-    
