@@ -1624,7 +1624,6 @@ class ShowSIndexController(LiveClusterCommandController):
     async def _do_default(self, line):
         sindexes_data = await self.getter.get_sindexs(nodes="principal")
         resp = list(sindexes_data.values())[0]
-        print("resp", resp)
 
         self.view.show_sindex(resp, **self.mods)
 

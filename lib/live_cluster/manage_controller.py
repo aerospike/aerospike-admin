@@ -3592,6 +3592,4 @@ class ManageModuleMaskingRemoveController(ManageLeafCommandController):
         if isinstance(resp, Exception):
             raise resp
 
-        self.view.print_result(
-            "Successfully removed datamasking rule."
-        )
+        self.view.print_result("Successfully removed datamasking rule.")
