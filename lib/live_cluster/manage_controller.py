@@ -170,6 +170,7 @@ class ManageController(LiveClusterManageCommandController):
             "sindex": ManageSIndexController,
             "config": ManageConfigController,
             "acl": ManageACLController,
+            "module": ManageModuleController,
         }
 
 
@@ -3408,3 +3409,189 @@ class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController)
         resp = await self.cluster.info_query_abort_all(nodes=self.nodes)
 
         self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Manage modules like datamasking. It should be used",
+    'in conjunction with the "show" commands.',
+    short_msg="Manage modules like datamasking",
+)
+class ManageModuleController(LiveClusterManageCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "masking": ManageModuleMaskingController,
+        }
+
+
+@CommandHelp(
+    "Manage masking rules",
+    short_msg="Manage masking rules",
+)
+class ManageModuleMaskingController(LiveClusterManageCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "add": ManageModuleMaskingAddController,
+            "remove": ManageModuleMaskingRemoveController,
+        }
+
+
+@CommandHelp(
+    "Add masking rules",
+    usage="rule <function> namespace <namespace> set <set> bin <bin> type <bin-type>",
+    modifiers=(
+        ModifierHelp("namespace", "The namespace to apply the rule to"),
+        ModifierHelp("set", "The set to apply the rule to"),
+        ModifierHelp("bin", "The bin to apply the rule to"),
+        ModifierHelp(
+            "type",
+            "The bin type. Must be one of 'numeric', 'string', 'blob', 'geo2dsphere'",
+        ),
+    ),
+)
+class ManageModuleMaskingAddController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = set(["namespace", "set", "bin", "type"])
+
+    async def _do_default(self, line):
+        line.pop(0)  # Remove "rule"
+
+        if not line:
+            raise ShellException("Function is required")
+
+        function = line.pop(0)
+
+        # Parse remaining parameters using standard utility functions
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="namespace",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        set_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        bin_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="bin",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        bin_type = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="type",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        # Validate required parameters
+        if not all([namespace, set_name, bin_name, bin_type]):
+            raise ShellException(
+                "All parameters are required: namespace, set, bin, and type"
+            )
+
+        if self.warn and not self.prompt_challenge(
+            f"You're about to add a masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}' with function '{function}'."
+        ):
+            return
+
+        info_resp = await self.cluster.info_masking_add_rule(
+            namespace, set_name, bin_name, bin_type, function, nodes=self.nodes
+        )
+
+        resp = list(info_resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result(
+            "Successfully added datamasking rule. Use 'show module masking rules' to view the rules."
+        )
+
+
+@CommandHelp(
+    "Remove masking rules",
+    usage="rule namespace <namespace> set <set> bin <bin> type <bin-type>",
+    modifiers=(
+        ModifierHelp("namespace", "The namespace to remove the rule from"),
+        ModifierHelp("set", "The set to remove the rule from"),
+        ModifierHelp("bin", "The bin to remove the rule from"),
+        ModifierHelp(
+            "type",
+            "The bin type. Must be one of 'numeric', 'string', 'blob', 'geo2dsphere'",
+        ),
+    ),
+)
+class ManageModuleMaskingRemoveController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = set(["namespace", "set", "bin", "type"])
+
+    async def _do_default(self, line):
+        line.pop(0)  # Remove "rule"
+
+        # Parse remaining parameters using standard utility functions
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="namespace",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        set_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        bin_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="bin",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        bin_type = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="type",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        # Validate required parameters
+        if not all([namespace, set_name, bin_name, bin_type]):
+            logger.error("All parameters are required: namespace, set, bin, and type")
+            return
+
+        if self.warn and not self.prompt_challenge(
+            f"You're about to remove the masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}'."
+        ):
+            return
+
+        remove_resp = await self.cluster.info_masking_remove_rule(
+            namespace, set_name, bin_name, bin_type, nodes=self.nodes
+        )
+
+        resp = list(remove_resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result(
+            "Successfully removed datamasking rule."
+        )

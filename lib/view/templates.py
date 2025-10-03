@@ -2304,6 +2304,19 @@ show_sindex = Sheet(
     order_by=(FieldSorter("Index Name"), FieldSorter("Namespace"), FieldSorter("Set")),
 )
 
+show_masking_rules = Sheet(
+    (
+        Field("Namespace", Projectors.String("data", "ns")),
+        Field("Set", Projectors.String("data", "set")),
+        Field("Bin", Projectors.String("data", "bin")),
+        Field("Type", Projectors.String("data", "type")),
+        Field("Function", Projectors.String("data", "func")),
+    ),
+    from_source=("data"),
+    group_by=("Namespace", "Set"),
+    order_by=(FieldSorter("Namespace"), FieldSorter("Set"), FieldSorter("Bin")),
+)
+
 
 def roster_null_to_empty_list_converter(edata):
     val = edata.value
