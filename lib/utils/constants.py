@@ -60,6 +60,7 @@ SUMMARY_SINDEX = "sindex"
 METADATA_JOBS = "jobs"
 METADATA_PRACTICES = "best_practices"
 METADATA_UDF = "udf"
+METADATA_UDF_CONTENT = "udf_content"
 
 ADMIN_ROLES = "roles"
 ADMIN_USERS = "users"

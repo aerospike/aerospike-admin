@@ -12,20 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
+import base64
+import unittest
+import warnings
+from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
+
+import asynctest
 from pytest import PytestUnraisableExceptionWarning
+
 from lib.base_controller import ShellException
-from mock import MagicMock, patch, AsyncMock, create_autospec
-from mock.mock import call
+from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.get_controller import (
+    GetAclController,
     GetClusterMetadataController,
     GetConfigController,
     GetJobsController,
     GetStatisticsController,
-    GetAclController,
     GetUserAgentsController,
 )
-
 from lib.live_cluster.show_controller import (
     ShowBestPracticesController,
     ShowConfigController,
@@ -37,16 +43,13 @@ from lib.live_cluster.show_controller import (
     ShowStatisticsController,
     ShowStatisticsXDRController,
     ShowStopWritesController,
+    ShowUdfsController,
     ShowUserAgentsController,
     ShowUsersController,
     ShowUsersStatsController,
 )
-from lib.live_cluster.client import ASProtocolError, ASResponse
-from lib.utils import common
 from lib.view.view import CliView
 from test.unit import util as test_util
-
-import warnings
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -1395,3 +1398,314 @@ class ShowUserAgentsControllerTest(asynctest.TestCase):
 
         self.assertIn("Error processing user agent data from node1", str(cm.exception))
         self.getter_mock.get_user_agents.assert_called_with(nodes="all")
+
+
+class ShowUdfsControllerTest(unittest.TestCase):
+    def setUp(self):
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = MagicMock(spec=Cluster)
+        self.view_mock = MagicMock(spec=CliView)
+        self.controller = ShowUdfsController()
+        self.controller.cluster = self.cluster_mock
+        self.controller.view = self.view_mock
+        self.controller.mods = {}
+
+    def tearDown(self):
+        warnings.resetwarnings()
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_udfs_list_success(self, mock_get_udf_controller):
+        """Test showing UDF list successfully"""
+
+        async def async_test():
+            line = []
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            udfs_data = {
+                "node1": {
+                    "test.lua": {
+                        "filename": "test.lua",
+                        "hash": "abc123",
+                        "type": "LUA",
+                    },
+                    "math.lua": {
+                        "filename": "math.lua",
+                        "hash": "def456",
+                        "type": "LUA",
+                    },
+                }
+            }
+            mock_getter.get_udfs.return_value = udfs_data
+
+            await self.controller._do_default(line)
+
+            mock_getter.get_udfs.assert_called_with(nodes="principal")
+            self.view_mock.show_udfs.assert_called_once()
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_success(self, mock_get_udf_controller):
+        """Test showing single UDF content successfully"""
+
+        async def async_test():
+            line = ["test.lua"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            # Mock base64 encoded content
+            test_content = "function test()\n  return 'hello'\nend"
+            encoded_content = base64.b64encode(test_content.encode()).decode()
+
+            udf_data = {"node1": {"type": "LUA", "content": encoded_content}}
+            mock_getter.get_udf.return_value = udf_data
+
+            await self.controller._do_default(line)
+
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
+            self.view_mock.show_single_udf.assert_called_once()
+
+            # Verify the call arguments contain decoded content
+            call_args = self.view_mock.show_single_udf.call_args
+            udf_info = call_args[0][0]  # First positional argument
+            filename = call_args[0][1]  # Second positional argument
+
+            self.assertEqual(filename, "test.lua")
+            self.assertEqual(udf_info["Type"], "LUA")
+            self.assertEqual(udf_info["Filename"], "test.lua")
+            self.assertEqual(udf_info["Content"], test_content)
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_exception_error(self, mock_get_udf_controller):
+        """Test handling exception when getting single UDF"""
+
+        async def async_test():
+            line = ["test.lua"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            udf_data = {"node1": Exception("Connection failed")}
+            mock_getter.get_udf.return_value = udf_data
+
+            with patch("lib.live_cluster.show_controller.logger") as mock_logger:
+                await self.controller._do_default(line)
+
+                mock_logger.error.assert_called_with(
+                    "Failed to retrieve UDF '%s': %s", "test.lua", udf_data["node1"]
+                )
+
+            # View should not be called when there's an exception
+            self.view_mock.show_single_udf.assert_not_called()
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_aerospike_error(self, mock_get_udf_controller):
+        """Test handling Aerospike error response when getting single UDF"""
+
+        async def async_test():
+            line = ["nonexistent.lua"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            udf_data = {"node1": {"error": "not_found"}}
+            mock_getter.get_udf.return_value = udf_data
+
+            with patch("lib.live_cluster.show_controller.logger") as mock_logger:
+                await self.controller._do_default(line)
+
+                mock_logger.error.assert_called_with(
+                    "Failed to retrieve UDF '%s' error: %s",
+                    "nonexistent.lua",
+                    "not_found",
+                )
+
+            # View should not be called when there's an error
+            self.view_mock.show_single_udf.assert_not_called()
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_base64_decode_error(self, mock_get_udf_controller):
+        """Test handling base64 decode error"""
+
+        async def async_test():
+            line = ["test.lua"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            udf_data = {"node1": {"type": "LUA", "content": "invalid_base64_content!"}}
+            mock_getter.get_udf.return_value = udf_data
+
+            with patch("lib.live_cluster.show_controller.logger") as mock_logger:
+                await self.controller._do_default(line)
+
+                mock_logger.error.assert_called()
+                error_call = mock_logger.error.call_args[0]
+                self.assertIn("Failed to decode UDF content", error_call[0])
+                self.assertEqual(error_call[1], "test.lua")
+
+            # View should not be called when there's a decode error
+            self.view_mock.show_single_udf.assert_not_called()
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_with_modifiers(self, mock_get_udf_controller):
+        """Test showing single UDF with modifiers (should ignore them)"""
+
+        async def async_test():
+            line = ["test.lua", "like", "test"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            # Mock base64 encoded content
+            test_content = "function test()\n  return 'hello'\nend"
+            encoded_content = base64.b64encode(test_content.encode()).decode()
+
+            udf_data = {"node1": {"type": "LUA", "content": encoded_content}}
+            mock_getter.get_udf.return_value = udf_data
+
+            await self.controller._do_default(line)
+
+            # Should still call get_udf with the filename, ignoring modifiers
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
+            self.view_mock.show_single_udf.assert_called_once()
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_empty_content(self, mock_get_udf_controller):
+        """Test showing single UDF with empty content"""
+
+        async def async_test():
+            line = ["empty.lua"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            udf_data = {"node1": {"type": "LUA", "content": ""}}  # Empty base64 content
+            mock_getter.get_udf.return_value = udf_data
+
+            await self.controller._do_default(line)
+
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="empty.lua"
+            )
+            self.view_mock.show_single_udf.assert_called_once()
+
+            # Verify the call arguments
+            call_args = self.view_mock.show_single_udf.call_args
+            udf_info = call_args[0][0]
+            filename = call_args[0][1]
+
+            self.assertEqual(filename, "empty.lua")
+            self.assertEqual(
+                udf_info["Content"], ""
+            )  # Should be empty string after decode
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_missing_type(self, mock_get_udf_controller):
+        """Test showing single UDF when type field is missing"""
+
+        async def async_test():
+            line = ["test.lua"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            test_content = "function test() end"
+            encoded_content = base64.b64encode(test_content.encode()).decode()
+
+            udf_data = {
+                "node1": {
+                    # Missing "type" field
+                    "content": encoded_content
+                }
+            }
+            mock_getter.get_udf.return_value = udf_data
+
+            await self.controller._do_default(line)
+
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
+            self.view_mock.show_single_udf.assert_called_once()
+
+            # Verify the call arguments - should default to "Unknown" for missing type
+            call_args = self.view_mock.show_single_udf.call_args
+            udf_info = call_args[0][0]
+
+            self.assertEqual(udf_info["Type"], "Unknown")
+            self.assertEqual(udf_info["Content"], test_content)
+
+        asyncio.run(async_test())
+
+    @patch("lib.live_cluster.show_controller.GetUdfController")
+    def test_show_single_udf_missing_content(self, mock_get_udf_controller):
+        """Test showing single UDF when content field is missing"""
+
+        async def async_test():
+            line = ["test.lua"]
+
+            # Mock the getter
+            mock_getter = AsyncMock()
+            mock_get_udf_controller.return_value = mock_getter
+            self.controller.getter = mock_getter
+
+            udf_data = {
+                "node1": {
+                    "type": "LUA"
+                    # Missing "content" field
+                }
+            }
+            mock_getter.get_udf.return_value = udf_data
+
+            await self.controller._do_default(line)
+
+            mock_getter.get_udf.assert_called_with(
+                nodes="principal", filename="test.lua"
+            )
+            self.view_mock.show_single_udf.assert_called_once()
+
+            # Verify the call arguments - should handle missing content gracefully
+            call_args = self.view_mock.show_single_udf.call_args
+            udf_info = call_args[0][0]
+
+            self.assertEqual(udf_info["Type"], "LUA")
+            self.assertEqual(
+                udf_info["Content"], ""
+            )  # Should be empty string for missing content
+
+        asyncio.run(async_test())
