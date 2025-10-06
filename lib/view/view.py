@@ -1217,7 +1217,6 @@ class CliView(object):
         else:
             filtered_data = sindexes_data
 
-        print(filtered_data)
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Secondary Indexes{}".format(title_timestamp)
         sources = dict(data=filtered_data)
