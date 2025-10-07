@@ -3113,6 +3113,56 @@ class Node(AsyncObject):
 
         return ASINFO_RESPONSE_OK
 
+    @async_return_exceptions
+    async def info_masking_add_rule(self, namespace, set_, bin_, bin_type_, func):
+        """
+        Add a masking rule.
+        """
+        req = "masking:ns={};set={};bin={};type={};func={}".format(
+            namespace, set_, bin_, bin_type_, func
+        )
+        resp = await self._info(req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoResponseError("Failed to add masking rule", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @async_return_exceptions
+    async def info_masking_remove_rule(self, namespace, set_, bin_, bin_type_):
+        """
+        Remove a masking rule.
+        """
+        req = "masking:ns={};set={};bin={};type={};func={}".format(
+            namespace, set_, bin_, bin_type_, "off"
+        )
+        resp = await self._info(req)
+
+        if resp.lower() != ASINFO_RESPONSE_OK:
+            raise ASInfoResponseError("Failed to remove masking rule", resp)
+
+        return ASINFO_RESPONSE_OK
+
+    @async_return_exceptions
+    async def info_masking_list_rules(self, namespace=None, set_=None):
+        """
+        List masking rules.
+        """
+        # namespace and set are optional
+        masking_show_req = "masking-show:"
+        if namespace is not None:
+            masking_show_req += "ns={};".format(namespace)
+        if set_ is not None:
+            masking_show_req += "set={};".format(set_)
+
+        return [
+            client_util.info_to_dict(v, ";")
+            for v in client_util.info_to_list(
+                await self._info(masking_show_req), delimiter=":"
+            )
+            if v != ""
+        ]
+
     ############################################################################
     #
     #                      Admin (Security Protocol) API
