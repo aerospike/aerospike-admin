@@ -75,8 +75,8 @@ class ASPrivilege(IntEnum):
     WRITE = 13
     TRUNCATE = 14
     MASKING_ADMIN = 15
-    MASKING_READ = 16
-    MASKING_WRITE = 17
+    READ_MASKED = 16
+    WRITE_MASKED = 17
     ERROR = 255
 
     @classmethod
@@ -96,8 +96,8 @@ class ASPrivilege(IntEnum):
             "write": cls.WRITE,
             "truncate": cls.TRUNCATE,
             "masking-admin": cls.MASKING_ADMIN,
-            "masking-read": cls.MASKING_READ,
-            "masking-write": cls.MASKING_WRITE,
+            "read-masked": cls.READ_MASKED,
+            "write-masked": cls.WRITE_MASKED,
         }
 
         if privilege_str in str_to_enum_map:
