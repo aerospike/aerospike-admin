@@ -89,7 +89,7 @@ class ShowController(LiveClusterCommandController):
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
             "user-agents": ShowUserAgentsController,
-            "module": ShowModuleController,
+            "masking": ShowMaskingController,
         }
 
         self.modifiers = set()
@@ -1953,44 +1953,19 @@ class ShowUserAgentsController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "A collection of commands used to display module information",
-    short_msg="Display module information",
-)
-class ShowModuleController(LiveClusterCommandController):
-    def __init__(self):
-        self.controller_map = {
-            "masking": ShowModuleMaskingController,
-        }
-        self.modifiers = set()
-
-
-@CommandHelp(
     "Display masking rules",
-    short_msg="Display masking rules",
-)
-class ShowModuleMaskingController(LiveClusterCommandController):
-    def __init__(self):
-        self.controller_map = {
-            "rules": ShowModuleMaskingRulesController,
-        }
-        self.modifiers = set()
-
-
-@CommandHelp(
-    "Display datamasking rules",
+    "Shows all configured data masking rules. Rules can be filtered by namespace",
+    "and set.",
     modifiers=(
-        ModifierHelp(
-            Modifiers.LIKE,
-            "Filter rules by bin name or function using a substring match",
-        ),
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace>] [set <set>] [{ModifierUsage.LIKE}]",
+    usage=f"[namespace <namespace> [set <set>]]",
+    short_msg="Display masking rules",
 )
-class ShowModuleMaskingRulesController(LiveClusterCommandController):
+class ShowMaskingController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set([Modifiers.LIKE, "namespace", "set"])
+        self.modifiers = set(["namespace", "set"])
         self.getter = GetMaskingRulesController(self.cluster)
 
     async def _do_default(self, line):
@@ -2009,6 +1984,10 @@ class ShowModuleMaskingRulesController(LiveClusterCommandController):
             else:
                 # Unknown argument, skip it
                 line.pop(0)
+
+        # Validate that set is only used with namespace
+        if set_name and not namespace:
+            raise ShellException("Set filter can only be used with namespace filter")
 
         masking_data = await self.getter.get_masking_rules(
             nodes="principal", namespace=namespace, set_=set_name

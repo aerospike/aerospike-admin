@@ -1225,27 +1225,19 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
-    def show_masking_rules(masking_data, like=None, timestamp="", **ignore):
+    def show_masking_rules(masking_data, timestamp="", **ignore):
         CliView._get_timestamp_suffix(timestamp)
         if not masking_data:
             return
 
-        filtered_data = []
-
-        if like:
-            likes = util.compile_likes(like)
-            for rule in masking_data:
-                # Filter by bin name or function name
-                if ("bin" in rule and likes.search(rule["bin"])) or (
-                    "func" in rule and likes.search(rule["func"])
-                ):
-                    filtered_data.append(rule)
-        else:
-            filtered_data = masking_data
+        # Process the data using utility functions
+        processed_data = [
+            util.normalize_masking_rule_data(rule) for rule in masking_data
+        ]
 
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Masking Rules{}".format(title_timestamp)
-        sources = dict(data=filtered_data)
+        sources = dict(data=processed_data)
 
         CliView.print_result(sheet.render(templates.show_masking_rules, title, sources))
 

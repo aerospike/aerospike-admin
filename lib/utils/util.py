@@ -911,3 +911,48 @@ def is_valid_base64(data: Union[str, bytes]) -> None:
     except Exception as e:
         logger.debug("Error validating base64: %s", e)
         raise ValueError("Invalid base64 encoding")
+
+
+def normalize_masking_rule_data(rule):
+    """Normalize masking rule data from API response.
+
+    Args:
+        rule (dict): Raw masking rule data from API
+
+    Returns:
+        dict: Normalized rule data with consistent field names
+    """
+    processed_rule = {}
+
+    # Normalize field names (handle both "ns"/"namespace")
+    processed_rule["ns"] = rule.get("ns") or rule.get("namespace", "")
+    processed_rule["set"] = rule.get("set", "")
+    processed_rule["bin"] = rule.get("bin", "")
+    processed_rule["type"] = rule.get("type", "")
+
+    # Parse the function string to display it properly
+    # Handle both "func" and "function" field names
+    func_name = rule.get("function")
+
+    if func_name:
+        # Build complete function string from rule parameters
+        if func_name == "redact":
+            result = "redact"
+            if "position" in rule:
+                result += f" position {rule['position']}"
+            if "length" in rule:
+                result += f" length {rule['length']}"
+            if "value" in rule:
+                result += f" value {rule['value']}"
+            processed_rule["function"] = result
+        elif func_name == "constant":
+            result = "constant"
+            if "value" in rule:
+                result += f" value {rule['value']}"
+            processed_rule["function"] = result
+        else:
+            processed_rule["function"] = func_name
+    else:
+        processed_rule["function"] = ""
+
+    return processed_rule

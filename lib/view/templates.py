@@ -2310,7 +2310,7 @@ show_masking_rules = Sheet(
         Field("Set", Projectors.String("data", "set")),
         Field("Bin", Projectors.String("data", "bin")),
         Field("Type", Projectors.String("data", "type")),
-        Field("Function", Projectors.String("data", "func")),
+        Field("Function", Projectors.String("data", "function")),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),

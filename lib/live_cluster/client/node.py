@@ -3114,13 +3114,20 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_masking_add_rule(self, namespace, set_, bin_, bin_type_, func):
+    async def info_masking_add_rule(
+        self, namespace, set_, bin_, bin_type, func_name, func_params
+    ):
         """
         Add a masking rule.
         """
-        req = "masking:ns={};set={};bin={};type={};func={}".format(
-            namespace, set_, bin_, bin_type_, func
+        req = "masking:namespace={};set={};bin={};type={};function={}".format(
+            namespace, set_, bin_, bin_type, func_name
         )
+
+        # Add function parameters to the request
+        for param_name, param_value in func_params.items():
+            req += ";{}={}".format(param_name, param_value)
+
         resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
@@ -3129,12 +3136,12 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_masking_remove_rule(self, namespace, set_, bin_, bin_type_):
+    async def info_masking_remove_rule(self, namespace, set_, bin_):
         """
         Remove a masking rule.
         """
-        req = "masking:ns={};set={};bin={};type={};func={}".format(
-            namespace, set_, bin_, bin_type_, "off"
+        req = "masking:namespace={};set={};bin={};type=string;function=off".format(
+            namespace, set_, bin_
         )
         resp = await self._info(req)
 

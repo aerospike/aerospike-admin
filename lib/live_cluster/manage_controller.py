@@ -170,7 +170,7 @@ class ManageController(LiveClusterManageCommandController):
             "sindex": ManageSIndexController,
             "config": ManageConfigController,
             "acl": ManageACLController,
-            "module": ManageModuleController,
+            "masking": ManageMaskingController,
         }
 
 
@@ -3412,43 +3412,48 @@ class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController)
 
 
 @CommandHelp(
-    "Manage modules like datamasking. It should be used",
-    'in conjunction with the "show" commands.',
-    short_msg="Manage modules like datamasking",
-)
-class ManageModuleController(LiveClusterManageCommandController):
-    def __init__(self):
-        self.controller_map = {
-            "masking": ManageModuleMaskingController,
-        }
-
-
-@CommandHelp(
     "Manage masking rules",
+    "Data masking allows you to obscure sensitive data in bins. Use 'add' to create",
+    "masking rules and 'drop' to remove them. View existing rules with 'show masking'.",
     short_msg="Manage masking rules",
 )
-class ManageModuleMaskingController(LiveClusterManageCommandController):
+class ManageMaskingController(LiveClusterManageCommandController):
     def __init__(self):
         self.controller_map = {
-            "add": ManageModuleMaskingAddController,
-            "remove": ManageModuleMaskingRemoveController,
+            "add": ManageMaskingAddController,
+            "drop": ManageMaskingDropController,
         }
 
 
 @CommandHelp(
     "Add masking rules",
-    usage="rule <function> namespace <namespace> set <set> bin <bin> type <bin-type>",
+    "Supported functions:",
+    "",
+    "  redact [position <pos>] [length <len>] [value <char>]",
+    "    position: Position in string to start redaction (0 or greater for start,",
+    "              negative for end, -1 = last character). Default: 0",
+    "    length:   Number of characters to redact from position. Default: to end",
+    "    value:    Character to use for redaction. Default: *",
+    "",
+    "  constant [value <string>]",
+    "    value:    String to use as mask. Default: empty string",
+    "",
+    "Examples:",
+    "  manage masking add rule redact position 0 length 4 namespace test set demo bin ssn type string",
+    "  manage masking add rule redact position 0 length 4 value # namespace test set demo bin ssn type string",
+    "  manage masking add rule constant value REDACTED namespace test set demo bin notes type string",
+    "",
+    "Note: Acceptable values include lower ASCII characters 33-127 excluding =, ; and :",
+    usage="rule <function> [function-args] namespace <namespace> set <set> bin <bin> type <bin-type>",
     modifiers=(
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
         ModifierHelp("bin", "The bin to apply the rule to"),
-        ModifierHelp(
-            "type",
-            "The bin type. Must be one of 'numeric', 'string', 'blob', 'geo2dsphere'",
-        ),
+        ModifierHelp("type", "The bin type. Must be one of 'string'"),
     ),
+    short_msg="Add masking rules with redact or constant functions",
 )
-class ManageModuleMaskingAddController(ManageLeafCommandController):
+class ManageMaskingAddController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["namespace", "set", "bin", "type"])
 
@@ -3458,9 +3463,39 @@ class ManageModuleMaskingAddController(ManageLeafCommandController):
         if not line:
             raise ShellException("Function is required")
 
-        function = line.pop(0)
+        function_name = line.pop(0)
 
-        # Parse remaining parameters using standard utility functions
+        # Parse function-specific parameters
+        function_params = {}
+
+        if function_name == "redact":
+            # Parse redact parameters: position, length, value
+            while line and line[0] not in ["namespace", "set", "bin", "type"]:
+                if line[0] == "position" and len(line) > 1:
+                    line.pop(0)  # Remove "position"
+                    function_params["position"] = line.pop(0)
+                elif line[0] == "length" and len(line) > 1:
+                    line.pop(0)  # Remove "length"
+                    function_params["length"] = line.pop(0)
+                elif line[0] == "value" and len(line) > 1:
+                    line.pop(0)  # Remove "value"
+                    function_params["value"] = line.pop(0)
+                else:
+                    break
+        elif function_name == "constant":
+            # Parse constant parameters: value
+            while line and line[0] not in ["namespace", "set", "bin", "type"]:
+                if line[0] == "value" and len(line) > 1:
+                    line.pop(0)  # Remove "value"
+                    function_params["value"] = line.pop(0)
+                else:
+                    break
+        else:
+            raise ShellException(
+                f"Unsupported function: {function_name}. Supported functions: redact, constant"
+            )
+
+        # Parse required parameters
         namespace = util.get_arg_and_delete_from_mods(
             line=line,
             arg="namespace",
@@ -3497,16 +3532,25 @@ class ManageModuleMaskingAddController(ManageLeafCommandController):
         # Validate required parameters
         if not all([namespace, set_name, bin_name, bin_type]):
             raise ShellException(
-                "All parameters are required: namespace, set, bin, and type"
+                "All parameters are required: namespace, set, bin, type"
             )
 
+        # Build function string for display
+        function_str = self._build_function_string(function_name, function_params)
+
         if self.warn and not self.prompt_challenge(
-            f"You're about to add a masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}' with function '{function}'."
+            f"You're about to add a masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}' with function '{function_str}'."
         ):
             return
 
         info_resp = await self.cluster.info_masking_add_rule(
-            namespace, set_name, bin_name, bin_type, function, nodes=self.nodes
+            namespace,
+            set_name,
+            bin_name,
+            bin_type,
+            function_name,
+            function_params,
+            nodes="principal",
         )
 
         resp = list(info_resp.values())[0]
@@ -3515,31 +3559,52 @@ class ManageModuleMaskingAddController(ManageLeafCommandController):
             raise resp
 
         self.view.print_result(
-            "Successfully added datamasking rule. Use 'show module masking rules' to view the rules."
+            "Successfully added masking rule. Use 'show masking' to view the rules."
         )
+
+    def _build_function_string(self, function_name, params):
+        """Build the function string for the masking rule."""
+        if function_name == "redact":
+            parts = ["redact"]
+            if "position" in params:
+                parts.extend(["position", params["position"]])
+            if "length" in params:
+                parts.extend(["length", params["length"]])
+            if "value" in params:
+                parts.extend(["value", params["value"]])
+            return " ".join(parts)
+        elif function_name == "constant":
+            parts = ["constant"]
+            if "value" in params:
+                parts.extend(["value", params["value"]])
+            return " ".join(parts)
+        else:
+            return function_name
 
 
 @CommandHelp(
-    "Remove masking rules",
-    usage="rule namespace <namespace> set <set> bin <bin> type <bin-type>",
+    "Drop masking rules",
+    "Removes any masking rule applied to the specified bin, regardless of the",
+    "original function type (redact, constant, etc.).",
+    "",
+    "Example:",
+    "  manage masking drop rule namespace test set demo bin ssn",
+    usage="rule namespace <namespace> set <set> bin <bin>",
     modifiers=(
         ModifierHelp("namespace", "The namespace to remove the rule from"),
         ModifierHelp("set", "The set to remove the rule from"),
         ModifierHelp("bin", "The bin to remove the rule from"),
-        ModifierHelp(
-            "type",
-            "The bin type. Must be one of 'numeric', 'string', 'blob', 'geo2dsphere'",
-        ),
     ),
+    short_msg="Drop masking rules",
 )
-class ManageModuleMaskingRemoveController(ManageLeafCommandController):
+class ManageMaskingDropController(ManageLeafCommandController):
     def __init__(self):
-        self.required_modifiers = set(["namespace", "set", "bin", "type"])
+        self.required_modifiers = set(["namespace", "set", "bin"])
 
     async def _do_default(self, line):
         line.pop(0)  # Remove "rule"
 
-        # Parse remaining parameters using standard utility functions
+        # Parse required parameters
         namespace = util.get_arg_and_delete_from_mods(
             line=line,
             arg="namespace",
@@ -3564,27 +3629,18 @@ class ManageModuleMaskingRemoveController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
-        bin_type = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="type",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
 
         # Validate required parameters
-        if not all([namespace, set_name, bin_name, bin_type]):
-            logger.error("All parameters are required: namespace, set, bin, and type")
-            return
+        if not all([namespace, set_name, bin_name]):
+            raise ShellException("All parameters are required: namespace, set, bin")
 
         if self.warn and not self.prompt_challenge(
-            f"You're about to remove the masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}'."
+            f"You're about to drop the masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}'."
         ):
             return
 
         remove_resp = await self.cluster.info_masking_remove_rule(
-            namespace, set_name, bin_name, bin_type, nodes=self.nodes
+            namespace, set_name, bin_name, nodes="principal"
         )
 
         resp = list(remove_resp.values())[0]
@@ -3592,4 +3648,4 @@ class ManageModuleMaskingRemoveController(ManageLeafCommandController):
         if isinstance(resp, Exception):
             raise resp
 
-        self.view.print_result("Successfully removed datamasking rule.")
+        self.view.print_result("Successfully dropped masking rule.")
