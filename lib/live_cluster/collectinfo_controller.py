@@ -316,9 +316,6 @@ class CollectinfoController(LiveClusterCommandController):
         )
         node_names = self.cluster.get_node_names()
 
-        # Collect individual UDF content for each UDF found
-        udf_content_data = await self._collect_udf_content(udf_data)
-
         for nodeid in builds:
             metamap[nodeid] = {}
             self._check_for_exception_and_set(builds, "asd_build", nodeid, metamap)
@@ -329,9 +326,6 @@ class CollectinfoController(LiveClusterCommandController):
             self._check_for_exception_and_set(services, "services", nodeid, metamap)
             self._check_for_exception_and_set(udf_data, "udf", nodeid, metamap)
             self._check_for_exception_and_set(
-                udf_content_data, "udf_content", nodeid, metamap
-            )
-            self._check_for_exception_and_set(
                 health_outliers, "health", nodeid, metamap
             )
             self._check_for_exception_and_set(
@@ -340,67 +334,6 @@ class CollectinfoController(LiveClusterCommandController):
             self._check_for_exception_and_set(node_names, "node_names", nodeid, metamap)
             self._check_for_exception_and_set(jobs, "jobs", nodeid, metamap)
         return metamap
-
-    async def _collect_udf_content(self, udf_data):
-        """Collect individual UDF content for all UDFs found in the cluster."""
-        udf_content_map = {}
-
-        udf_getter = GetUdfController(self.cluster)
-
-        # Collect all unique UDF filenames from all nodes
-        all_udf_filenames = set()
-        for node_id, udfs in udf_data.items():
-            if isinstance(udfs, Exception):
-                continue
-            if isinstance(udfs, dict):
-                all_udf_filenames.update(udfs.keys())
-
-        # If no UDFs found, return empty map
-        if not all_udf_filenames:
-            for node_id in udf_data.keys():
-                udf_content_map[node_id] = {}
-            return udf_content_map
-
-        # Collect content for each UDF from principal node
-        try:
-            udf_content_tasks = []
-            for filename in all_udf_filenames:
-                udf_content_tasks.append(
-                    udf_getter.get_udf(nodes="principal", filename=filename)
-                )
-
-            udf_contents = await asyncio.gather(
-                *udf_content_tasks, return_exceptions=True
-            )
-
-            # Process results and organize by filename
-            filename_to_content = {}
-            for filename, content_result in zip(all_udf_filenames, udf_contents):
-                if isinstance(content_result, Exception):
-                    logger.warning(
-                        "Failed to collect content for UDF '%s': %s",
-                        filename,
-                        content_result,
-                    )
-                    continue
-
-                # Extract content from principal node response
-                if content_result:
-                    principal_content = list(content_result.values())[0]
-                    if not isinstance(principal_content, Exception):
-                        filename_to_content[filename] = principal_content
-
-            # Populate content map for all nodes
-            for node_id in udf_data.keys():
-                udf_content_map[node_id] = filename_to_content.copy()
-
-        except Exception as e:
-            logger.warning("Failed to collect UDF content: %s", e)
-            # Initialize empty content map for all nodes
-            for node_id in udf_data.keys():
-                udf_content_map[node_id] = {}
-
-        return udf_content_map
 
     async def _get_as_histograms(self):
         histogram_map = {}
