@@ -1545,10 +1545,10 @@ class ShowUdfsController(CollectinfoCommandController):
             try:
                 principal_ip = node_id_to_ip[principal_id]
                 data = udf_data[timestamp][principal_ip]
-                self.view.show_udfs(data, **self.mods, timestamp=timestamp)
+                self.view.show_udfs(data, timestamp=timestamp, **self.mods)
             except KeyError:
                 data = list(udf_data[timestamp].values())[0]
-                self.view.show_udfs(data, **self.mods, timestamp=timestamp)
+                self.view.show_udfs(data, timestamp=timestamp, **self.mods)
                 logger.warning(
                     f"No UDF data found for principal node {principal_id}. Using a random node instead."
                 )
