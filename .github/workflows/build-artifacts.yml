@@ -1,8 +1,6 @@
 name: build-artifacts.yml
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, SERVER-216,  SERVER-216-debug-jfrog, SERVER-436 ]
 
 jobs:
   build-artifacts:
