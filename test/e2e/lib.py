@@ -232,6 +232,7 @@ def create_conf_file_from_template(
         "fabric_port": str(port_base + 1),
         "heartbeat_port": str(port_base + 2),
         "info_port": str(port_base + 3),
+        "admin_port": str(port_base + 4),
         "access_address": access_address,
         "peer_connection": (
             "# no peer connection"
@@ -359,6 +360,7 @@ def start_server(
             str(base + 1) + "/tcp": str(base + 1),
             str(base + 2) + "/tcp": str(base + 2),
             str(base + 3) + "/tcp": str(base + 3),
+            str(base + 4) + "/tcp": str(base + 4),
         },
         volumes={mount_dir: {"bind": CONTAINER_DIR, "mode": "rw"}},
         tty=True,

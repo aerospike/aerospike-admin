@@ -313,7 +313,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Change the password of another user",
+    "Set the password of a user",
     modifiers=(
         ModifierHelp("username", "User to have password set"),
         ModifierHelp(
@@ -321,7 +321,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
             "Password for the user.  A prompt will appear if no password is provided",
         ),
     ),
-    usage="<username> [password <password>]",
+    usage="user <username> [password <password>]",
 )
 class ManageACLSetPasswordUserController(ManageLeafCommandController):
     def __init__(self):
@@ -365,33 +365,34 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Change your password",
+    "Change your own password",
     modifiers=(
-        ModifierHelp("username", "User that needs a new password"),
         ModifierHelp(
             "old",
-            "Current password for the user. User will be prompted if no password is provided",
+            "Current password. User will be prompted if no password is provided",
         ),
         ModifierHelp(
             "new",
-            "New password for the user. User will be prompted if no password is provided",
+            "New password. User will be prompted if no password is provided",
         ),
     ),
-    usage="<username> [old <old-password>] [new <new-password>]",
+    usage="[old <old-password>] [new <new-password>]",
 )
 class ManageACLChangePasswordUserController(ManageLeafCommandController):
     def __init__(self):
-        self.modifiers = set(["old", "new"])
-        self.required_modifiers = set(["user"])
+        self.modifiers = set(["user", "old", "new"])
+        self.required_modifiers = set([])
         self.controller_map = {}
 
     async def _do_default(self, line):
+        # the username modifier is for backward compatibility and can be provided as a modifier or as an argument
+        # this is not documented as a modifier in the help text and should be removed in the future
         username = util.get_arg_and_delete_from_mods(
             line=line,
             arg="user",
             return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
+            default=None,
+            modifiers=self.modifiers,
             mods=self.mods,
         )
         old_password = None
@@ -409,6 +410,13 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
 
         if self.warn and not self.prompt_challenge():
             return
+
+        if username is None:
+            # Get the current user from the cluster connection
+            username = self.cluster.user
+            if not username:
+                logger.error("No user is currently authenticated.")
+                return
 
         result = await self.cluster.admin_change_password(
             username, old_password, new_password, nodes="principal"
@@ -2615,7 +2623,7 @@ class ManageTruncateController(ManageLeafCommandController):
             unrecognized = self.mods["before"]
 
         if unrecognized is not None:
-            logger.error("Unrecognized input: {}".format(" ".join(unrecognized)))
+            logger.error("Unrecognized input: %s", " ".join(unrecognized))
             return
 
         namespace = self.mods["ns"][0]
@@ -2863,7 +2871,7 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
                 else None
             )
             if not namespace_stats or not isinstance(namespace_stats, dict):
-                logger.error("namespace {} does not exist on this node".format(ns))
+                logger.error("namespace %s does not exist on this node", ns)
                 return False
 
             strong_consistency = (
@@ -3035,7 +3043,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
         if warn:
             if len(missing_nodes):
                 logger.warning(
-                    "The following nodes are not in the pending-roster: {}",
+                    "The following nodes are not in the pending-roster: %s",
                     ", ".join(missing_nodes),
                 )
 

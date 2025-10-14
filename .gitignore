@@ -154,3 +154,4 @@ tramp
 .cursor
 
 docker_logs
+test/e2e/work/*
