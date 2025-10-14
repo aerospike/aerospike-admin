@@ -421,9 +421,7 @@ class CollectinfoController(LiveClusterCommandController):
         masking_map = {}
 
         for node in masking_data:
-            if not masking_data[node] or isinstance(
-                masking_data[node], Exception
-            ):
+            if not masking_data[node] or isinstance(masking_data[node], Exception):
                 continue
 
             masking_map[node] = masking_data[node]

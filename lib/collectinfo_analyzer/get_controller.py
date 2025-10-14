@@ -410,7 +410,9 @@ class GetMaskingRulesController:
     def __init__(self, log_analyzer: CollectinfoLogHandler):
         self.log_handler = log_analyzer
 
-    def get_masking_rules(self, namespace=None, set_=None) -> TimestampDict[NodeDict[list[dict[str, str]]]]:
+    def get_masking_rules(
+        self, namespace=None, set_=None
+    ) -> TimestampDict[NodeDict[list[dict[str, str]]]]:
         """Get masking rules data from collectinfo"""
         masking_rules = self.log_handler.info_masking_rules()
         return util.filter_exceptions(masking_rules)

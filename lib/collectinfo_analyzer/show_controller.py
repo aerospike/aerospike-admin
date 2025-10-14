@@ -1920,13 +1920,15 @@ class ShowMaskingController(CollectinfoCommandController):
             for rule in masking_rules:
                 rule_ns = rule.get("ns") or rule.get("namespace", "")
                 rule_set = rule.get("set", "")
-                
+
                 if namespace and namespace not in rule_ns:
                     continue
                 if set_name and set_name != rule_set:
                     continue
-                    
+
                 filtered_rules.append(rule)
             masking_rules = filtered_rules
 
-        return self.view.show_masking_rules(masking_rules, timestamp=latest_timestamp, **self.mods)
+        return self.view.show_masking_rules(
+            masking_rules, timestamp=latest_timestamp, **self.mods
+        )
