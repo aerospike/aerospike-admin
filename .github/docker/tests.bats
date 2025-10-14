@@ -67,3 +67,14 @@ VERSION=$(git rev-parse HEAD | cut -c -8)
   docker run -e BUILD_DISTRO="redhat-ubi9" -v $TEMP_DIR:/tmp/output "asadmin-pkg-builder-redhat-ubi9-$VERSION"
   [ $? -eq 0 ] && [ -f $TEMP_DIR/redhat-ubi9/*.deb ]
 }
+
+@test "build redhat ubi910" {
+  .github/docker/entrypoint.sh -c -d redhat-ubi10
+  [ "$?" -eq 0 ]
+}
+
+@test "build redhat ubi10 package" {
+  TEMP_DIR=$(mktemp -d)
+  docker run -e BUILD_DISTRO="redhat-ubi10" -v $TEMP_DIR:/tmp/output "asadmin-pkg-builder-redhat-ubi10-$VERSION"
+  [ $? -eq 0 ] && [ -f $TEMP_DIR/redhat-ubi10/*.deb ]
+}
