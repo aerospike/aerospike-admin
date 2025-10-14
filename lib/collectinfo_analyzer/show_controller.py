@@ -21,7 +21,7 @@ from lib.collectinfo_analyzer.get_controller import (
     GetStatisticsController,
 )
 from lib.utils import common, constants, util, version
-from lib.base_controller import CommandHelp, CommandName, ModifierHelp
+from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
 from .collectinfo_command_controller import CollectinfoCommandController
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,7 @@ class ShowController(CollectinfoCommandController):
             "config": ShowConfigController,
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
+            "masking": ShowMaskingController,
         }
         self.modifiers = set()
 
@@ -1852,3 +1853,80 @@ class ShowUserAgentsController(CollectinfoCommandController):
 
         cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=latest_timestamp)
         return self.view.show_user_agents(cinfo_log, processed_data, **self.mods)
+
+
+@CommandHelp(
+    "Display masking rules",
+    "Shows all configured data masking rules from collectinfo. Rules can be filtered by namespace",
+    "and set.",
+    modifiers=(
+        ModifierHelp("namespace", "Filter by namespace"),
+        ModifierHelp("set", "Filter by set"),
+    ),
+    usage=f"[namespace <namespace> [set <set>]]",
+    short_msg="Display masking rules",
+)
+class ShowMaskingController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set(["namespace", "set"])
+
+    def _do_default(self, line):
+        """Display masking rules information from collectinfo"""
+        from .get_controller import GetMaskingRulesController
+
+        # Parse optional namespace and set parameters in any order
+        namespace = None
+        set_name = None
+
+        # Parse parameters from line arguments
+        while line:
+            if line[0] == "namespace" and len(line) > 1:
+                line.pop(0)  # Remove "namespace" keyword
+                namespace = line.pop(0)  # Get the namespace value
+            elif line[0] == "set" and len(line) > 1:
+                line.pop(0)  # Remove "set" keyword
+                set_name = line.pop(0)  # Get the set value
+            else:
+                # Unknown argument, skip it
+                line.pop(0)
+
+        # Validate that set is only used with namespace
+        if set_name and not namespace:
+            raise ShellException("Set filter can only be used with namespace filter")
+
+        getter = GetMaskingRulesController(self.log_handler)
+        masking_data = getter.get_masking_rules(namespace=namespace, set_=set_name)
+
+        # Get the latest timestamp
+        if not masking_data:
+            return
+
+        latest_timestamp = max(masking_data.keys())
+        data = masking_data[latest_timestamp]
+
+        # Get data from any available node (masking rules are cluster-wide)
+        masking_rules = None
+        for node_data in data.values():
+            if not isinstance(node_data, Exception) and node_data:
+                masking_rules = node_data
+                break
+
+        if not masking_rules:
+            return
+
+        # Apply filtering if specified
+        if namespace or set_name:
+            filtered_rules = []
+            for rule in masking_rules:
+                rule_ns = rule.get("ns") or rule.get("namespace", "")
+                rule_set = rule.get("set", "")
+                
+                if namespace and namespace not in rule_ns:
+                    continue
+                if set_name and set_name != rule_set:
+                    continue
+                    
+                filtered_rules.append(rule)
+            masking_rules = filtered_rules
+
+        return self.view.show_masking_rules(masking_rules, timestamp=latest_timestamp, **self.mods)

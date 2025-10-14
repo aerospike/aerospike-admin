@@ -45,6 +45,7 @@ from lib.live_cluster.get_controller import (
     GetPmapController,
     GetJobsController,
     GetUserAgentsController,
+    GetMaskingRulesController,
 )
 
 from .live_cluster_command_controller import LiveClusterCommandController
@@ -413,6 +414,22 @@ class CollectinfoController(LiveClusterCommandController):
 
         return user_agents_map
 
+    async def _get_as_masking_rules(self) -> NodeDict[list[dict[str, str]]]:
+        """Collect masking rules data from principal node"""
+        masking_getter = GetMaskingRulesController(self.cluster)
+        masking_data = await masking_getter.get_masking_rules(nodes="principal")
+        masking_map = {}
+
+        for node in masking_data:
+            if not masking_data[node] or isinstance(
+                masking_data[node], Exception
+            ):
+                continue
+
+            masking_map[node] = masking_data[node]
+
+        return masking_map
+
     async def _get_collectinfo_data_json(
         self,
         enable_ssh: bool,
@@ -434,6 +451,7 @@ class CollectinfoController(LiveClusterCommandController):
             latency_map,
             acl_map,
             user_agents_map,
+            masking_map,
             sys_map,
         ) = await asyncio.gather(
             self._get_as_cluster_name(),
@@ -443,6 +461,7 @@ class CollectinfoController(LiveClusterCommandController):
             self._get_as_latency(),
             self._get_as_access_control_list(),
             self._get_as_user_agents(),
+            self._get_as_masking_rules(),
             self.cluster.info_system_statistics(
                 enable_ssh=enable_ssh,
                 ssh_user=ssh_user,
@@ -488,6 +507,9 @@ class CollectinfoController(LiveClusterCommandController):
 
             if node in user_agents_map:
                 dump_map[node]["as_stat"]["user_agents"] = user_agents_map[node]
+
+            if node in masking_map:
+                dump_map[node]["as_stat"]["masking"] = masking_map[node]
 
         snp_map = {}
         snp_map[cluster_name] = dump_map

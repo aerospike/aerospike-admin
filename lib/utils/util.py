@@ -932,7 +932,7 @@ def normalize_masking_rule_data(rule):
 
     # Parse the function string to display it properly
     # Handle both "func" and "function" field names
-    func_name = rule.get("function")
+    func_name = rule.get("function") or rule.get("func")  #TODO: remove func after testing
 
     if func_name:
         # Build complete function string from rule parameters
