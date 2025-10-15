@@ -1731,7 +1731,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
             None,
             None,
-            False,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": False,
+                "namespace_query_selector_support": False,
+            },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1798,7 +1802,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             None,
             None,
             "dGVzdA==",
-            True,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": True,
+                "namespace_query_selector_support": True,
+            },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1824,7 +1832,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             None,
             "dGVzdA==",
             None,
-            False,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": False,
+                "namespace_query_selector_support": False,
+            },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1949,8 +1961,8 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.cluster_mock.info_sindex_statistics.return_value = {
-            "1.1.1.1": {"keys": 1111},
-            "2.2.2.2": {"keys": 2222},
+            "1.1.1.1": {"entries": 1111},
+            "2.2.2.2": {"entries": 2222},
         }
 
         await self.controller.execute(line)
@@ -1972,6 +1984,7 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
             "a-index",
             "test",
             "testset",
+            {"namespace_query_selector_support": False},
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(

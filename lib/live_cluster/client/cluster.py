@@ -719,9 +719,6 @@ class Cluster(AsyncObject):
     async def is_XDR_enabled(self, nodes="all"):
         return await self.call_node_method_async(nodes, "is_XDR_enabled")
 
-    async def is_feature_present(self, feature, nodes="all"):
-        return await self.call_node_method_async(nodes, "is_feature_present", feature)
-
     def is_localhost_a_node(self) -> bool:
         # Returns True if asadm's host is also hosting a node in the cluster
         return any([node.is_localhost() for node in self.nodes.values()])
