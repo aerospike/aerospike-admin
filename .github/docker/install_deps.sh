@@ -143,9 +143,10 @@ function install_deps_ubuntu24.04() {
   gem install fpm
 }
 function install_deps_redhat-el8() {
-  dnf -y install ruby rpm-build make git python3 python3-pip rsync gcc gcc-c++ \
+  dnf -y install ruby ruby-devel redhat-rpm-config  rubygems rpm-build make git python3 python3-pip rsync gcc gcc-c++ \
                  make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
-                 sqlite sqlite-devel sqlite-libs epel-release fpm 
+                 sqlite sqlite-devel sqlite-libs
+  gem install --no-document fpm 
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
       mkdir -p /opt/golang && tar -zxvf /tmp/go1.24.6.linux-amd64.tar.gz -C /opt/golang
