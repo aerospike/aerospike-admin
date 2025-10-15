@@ -143,6 +143,7 @@ function install_deps_ubuntu24.04() {
   gem install fpm
 }
 function install_deps_redhat-el8() {
+  microdnf module enable -y ruby:2.7
   dnf -y install ruby ruby-devel redhat-rpm-config  rubygems rpm-build make git python3 python3-pip rsync gcc gcc-c++ \
                  make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
                  sqlite sqlite-devel sqlite-libs
