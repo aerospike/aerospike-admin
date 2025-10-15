@@ -44,7 +44,7 @@ from lib.live_cluster.get_controller import (
     GetLatenciesController,
     GetPmapController,
     GetJobsController,
-    GetUserAgentsController
+    GetUserAgentsController,
 )
 
 from .live_cluster_command_controller import LiveClusterCommandController
