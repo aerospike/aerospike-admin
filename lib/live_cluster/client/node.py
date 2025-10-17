@@ -3140,7 +3140,7 @@ class Node(AsyncObject):
         """
         Remove a masking rule.
         """
-        req = "masking:namespace={};set={};bin={};type=string;function=off".format(
+        req = "masking:namespace={};set={};bin={};type=string;function=remove".format(
             namespace, set_, bin_
         )
         resp = await self._info(req)

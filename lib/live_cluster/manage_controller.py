@@ -3439,23 +3439,22 @@ class ManageMaskingController(LiveClusterManageCommandController):
     "    value:    String to use as mask. Default: empty string",
     "",
     "Examples:",
-    "  manage masking add rule redact position 0 length 4 namespace test set demo bin ssn type string",
-    "  manage masking add rule redact position 0 length 4 value # namespace test set demo bin ssn type string",
-    "  manage masking add rule constant value REDACTED namespace test set demo bin notes type string",
+    "  manage masking add rule redact position 0 length 4 namespace test set demo bin ssn",
+    "  manage masking add rule redact position 0 length 4 value # namespace test set demo bin ssn",
+    "  manage masking add rule constant value REDACTED namespace test set demo bin notes",
     "",
     "Note: Acceptable values include lower ASCII characters 33-127 excluding =, ; and :",
-    usage="rule <function> [function-args] namespace <namespace> set <set> bin <bin> type <bin-type>",
+    usage="rule <function> [function-args] namespace <namespace> set <set> bin <bin>",
     modifiers=(
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
         ModifierHelp("bin", "The bin to apply the rule to"),
-        ModifierHelp("type", "The bin type. Must be one of 'string'"),
     ),
     short_msg="Add masking rules with redact or constant functions",
 )
 class ManageMaskingAddController(ManageLeafCommandController):
     def __init__(self):
-        self.required_modifiers = set(["namespace", "set", "bin", "type"])
+        self.required_modifiers = set(["namespace", "set", "bin"])
 
     async def _do_default(self, line):
         line.pop(0)  # Remove "rule"
@@ -3470,7 +3469,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
 
         if function_name == "redact":
             # Parse redact parameters: position, length, value
-            while line and line[0] not in ["namespace", "set", "bin", "type"]:
+            while line and line[0] not in ["namespace", "set", "bin"]:
                 if line[0] == "position" and len(line) > 1:
                     line.pop(0)  # Remove "position"
                     function_params["position"] = line.pop(0)
@@ -3484,7 +3483,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
                     break
         elif function_name == "constant":
             # Parse constant parameters: value
-            while line and line[0] not in ["namespace", "set", "bin", "type"]:
+            while line and line[0] not in ["namespace", "set", "bin"]:
                 if line[0] == "value" and len(line) > 1:
                     line.pop(0)  # Remove "value"
                     function_params["value"] = line.pop(0)
@@ -3520,19 +3519,11 @@ class ManageMaskingAddController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
-        bin_type = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="type",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
 
         # Validate required parameters
-        if not all([namespace, set_name, bin_name, bin_type]):
+        if not all([namespace, set_name, bin_name]):
             raise ShellException(
-                "All parameters are required: namespace, set, bin, type"
+                "All parameters are required: namespace, set, bin"
             )
 
         # Build function string for display
@@ -3547,7 +3538,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
             namespace,
             set_name,
             bin_name,
-            bin_type,
+            "string",  # bin type is always string for masking rules
             function_name,
             function_params,
             nodes="principal",
