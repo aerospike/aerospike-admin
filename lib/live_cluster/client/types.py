@@ -74,6 +74,9 @@ class ASPrivilege(IntEnum):
     READ_WRITE_UDF = 12
     WRITE = 13
     TRUNCATE = 14
+    MASKING_ADMIN = 15
+    READ_MASKED = 16
+    WRITE_MASKED = 17
     ERROR = 255
 
     @classmethod
@@ -92,6 +95,9 @@ class ASPrivilege(IntEnum):
             "read-write-udf": cls.READ_WRITE_UDF,
             "write": cls.WRITE,
             "truncate": cls.TRUNCATE,
+            "masking-admin": cls.MASKING_ADMIN,
+            "read-masked": cls.READ_MASKED,
+            "write-masked": cls.WRITE_MASKED,
         }
 
         if privilege_str in str_to_enum_map:
