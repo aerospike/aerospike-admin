@@ -441,25 +441,17 @@ class CollectinfoController(LiveClusterCommandController):
 
         dump_map = {}
 
+        # Split operations into batches to reduce socket contention and timeouts
+        # Batch 1: Core data collection (most resource intensive)
         (
             cluster_name,
             as_map,
             meta_map,
-            histogram_map,
-            latency_map,
-            acl_map,
-            user_agents_map,
-            masking_map,
             sys_map,
         ) = await asyncio.gather(
             self._get_as_cluster_name(),
             self._get_as_data_json(),
             self._get_as_metadata(),
-            self._get_as_histograms(),
-            self._get_as_latency(),
-            self._get_as_access_control_list(),
-            self._get_as_user_agents(),
-            self._get_as_masking_rules(),
             self.cluster.info_system_statistics(
                 enable_ssh=enable_ssh,
                 ssh_user=ssh_user,
@@ -469,6 +461,26 @@ class CollectinfoController(LiveClusterCommandController):
                 ssh_port=ssh_port,
                 nodes=self.nodes,
             ),
+        )
+
+        # Batch 2: Histograms and latency data
+        (
+            histogram_map,
+            latency_map,
+        ) = await asyncio.gather(
+            self._get_as_histograms(),
+            self._get_as_latency(),
+        )
+
+        # Batch 3: Security and auxiliary data (lighter operations)
+        (
+            acl_map,
+            user_agents_map,
+            masking_map,
+        ) = await asyncio.gather(
+            self._get_as_access_control_list(),
+            self._get_as_user_agents(),
+            self._get_as_masking_rules(),
         )
 
         for val in sys_map.values():
