@@ -3429,35 +3429,35 @@ class ManageMaskingController(LiveClusterManageCommandController):
 
 
 @CommandHelp(
-    "Add masking rules",
-    "Supported functions:",
-    "",
-    "  redact [position <pos>] [length <len>] [value <char>]",
-    "    position: Position in string to start redaction (0 or greater for start,",
-    "              negative for end, -1 = last character). Default: 0",
-    "    length:   Number of characters to redact from position. Default: to end",
-    "    value:    Character to use for redaction. Default: *",
-    "",
-    "  constant [value <string>]",
-    "    value:    String to use as mask. Default: empty string",
-    "",
-    "Examples:",
-    "  manage masking add rule redact position 0 length 4 namespace test set demo bin ssn",
-    "  manage masking add rule redact position 0 length 4 value # namespace test set demo bin ssn",
-    "  manage masking add rule constant value REDACTED namespace test set demo bin notes",
-    "",
-    "Note: Acceptable values include lower ASCII characters 33-127 excluding =, ; and :",
+    "Add masking rules to redact or replace sensitive data in bins",
     usage="rule <function> [function-args] namespace <namespace> set <set> bin <bin>",
     modifiers=(
+        ModifierHelp(
+            "function",
+            "Masking function: redact [position 0] [length LEN] [value *] or constant [value STR]",
+        ),
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
         ModifierHelp("bin", "The bin to apply the rule to"),
+        ModifierHelp(
+            "position",
+            "For redact: Start position (0+ from start, negative from end). Default: 0",
+        ),
+        ModifierHelp(
+            "length",
+            "For redact: Number of characters to redact from position. Default: to end",
+        ),
+        ModifierHelp(
+            "value",
+            "For redact: Character to use for redaction (Default: *). For constant: String to use as mask (Default: empty string) Note: Acceptable values include ASCII characters 33-127 excluding =, ; and :",
+        ),
     ),
     short_msg="Add masking rules with redact or constant functions",
 )
 class ManageMaskingAddController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["namespace", "set", "bin"])
+        self.meta_getter = GetClusterMetadataController(self.cluster)
 
     async def _do_default(self, line):
         line.pop(0)  # Remove "rule"
@@ -3525,8 +3525,23 @@ class ManageMaskingAddController(ManageLeafCommandController):
 
         # Validate required parameters
         if not all([namespace, set_name, bin_name]):
+            raise ShellException("All parameters are required: namespace, set, bin")
+
+        # check if the cluster supports data masking
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+
+        feature_support = await util.check_version_support(
+            feature_versions={
+                "data_masking": constants.SERVER_DATA_MASKING_FIRST_VERSION,
+            },
+            builds=builds,
+        )
+
+        if not feature_support["data_masking"]:
             raise ShellException(
-                "All parameters are required: namespace, set, bin"
+                "Data masking is not supported on one or more servers.  Requires v. {} and later.".format(
+                    str(constants.SERVER_DATA_MASKING_FIRST_VERSION)
+                )
             )
 
         # Build function string for display
