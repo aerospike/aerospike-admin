@@ -1907,3 +1907,52 @@ class CliViewTest(unittest.TestCase):
         self.cluster_mock.get_node_ids.assert_not_called()
         self.cluster_mock.get_expected_principal.assert_not_called()
         self.render_mock.assert_not_called()
+
+    def test_show_single_udf_success(self):
+        """Test show_single_udf with valid UDF data"""
+        udf_info = {
+            "Filename": "test.lua",
+            "Type": "LUA",
+            "Content": "function test()\n  return 'hello world'\nend",
+        }
+
+        with patch.object(CliView, "print_result") as mock_print:
+            CliView.show_single_udf(
+                udf_info, "test.lua", timestamp="2025-01-01 12:00:00 UTC"
+            )
+
+            mock_print.assert_called_once()
+            output = mock_print.call_args[0][0]
+
+            # Verify title
+            self.assertIn("UDF Content: test.lua (2025-01-01 12:00:00 UTC)", output)
+
+            # Verify all properties are displayed
+            self.assertIn("Filename:", output)
+            self.assertIn("test.lua", output)
+            self.assertIn("Type:", output)
+            self.assertIn("LUA", output)
+            self.assertIn("Content:", output)
+
+            # Verify multi-line content is preserved
+            self.assertIn("function test()", output)
+            self.assertIn("return 'hello world'", output)
+            self.assertIn("end", output)
+
+    def test_show_single_udf_empty_content(self):
+        """Test show_single_udf with empty content"""
+        udf_info = {"Filename": "empty.lua", "Type": "LUA", "Content": ""}
+
+        with patch.object(CliView, "print_result") as mock_print:
+            CliView.show_single_udf(udf_info, "empty.lua")
+
+            mock_print.assert_called_once()
+            output = mock_print.call_args[0][0]
+
+            # Should still show structure even with empty content
+            self.assertIn("UDF Content: empty.lua", output)
+            self.assertIn("Filename:", output)
+            self.assertIn("empty.lua", output)
+            self.assertIn("Type:", output)
+            self.assertIn("LUA", output)
+            self.assertIn("Content:", output)

@@ -26,6 +26,7 @@ import socket
 import subprocess
 import sys
 import logging
+from lib.utils import version
 from time import time
 from typing import (
     Any,
@@ -911,6 +912,54 @@ def is_valid_base64(data: Union[str, bytes]) -> None:
     except Exception as e:
         logger.debug("Error validating base64: %s", e)
         raise ValueError("Invalid base64 encoding")
+
+
+async def check_version_support(
+    feature_versions: dict[str, str], builds: dict[str, str]
+) -> dict[str, bool]:
+    """
+    Check which features are supported across all nodes in the cluster.
+    Single pass optimization.
+
+    Args:
+        feature_versions: Dictionary mapping feature names to their minimum required versions
+        builds: Dictionary mapping node identifiers to their build versions
+
+    Returns:
+        Dictionary mapping feature names to boolean support status (True if supported, False if not)
+
+    Example:
+        feature_versions = {
+            "cdt_indexing": "5.6.0",
+            "expression_indexing": "5.7.0",
+            "blob_indexing": "6.0.0"
+        }
+        builds = {
+            "node1": "6.1.0",
+            "node2": "5.8.0",
+            "node3": "6.2.0"
+        }
+        result = await check_version_support(feature_versions, builds)
+        # Returns: {"cdt_indexing": True, "expression_indexing": True, "blob_indexing": False}
+    """
+    # Convert version strings to LooseVersion objects once
+    min_versions = {
+        feature: version.LooseVersion(min_version)
+        for feature, min_version in feature_versions.items()
+    }
+
+    # if no builds, return False for all features
+    if not builds:
+        return {feature: False for feature in feature_versions.keys()}
+
+    # find the minimum build version across all nodes
+    min_build_version = min(version.LooseVersion(build) for build in builds.values())
+
+    # Check all features against the minimum build version
+    return {
+        feature: min_build_version >= min_version
+        for feature, min_version in min_versions.items()
+    }
 
 
 def normalize_masking_rule_data(rule):

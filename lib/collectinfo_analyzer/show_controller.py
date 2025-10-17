@@ -1533,6 +1533,7 @@ class ShowUdfsController(CollectinfoCommandController):
         self.modifiers = set(["like"])
 
     def _do_default(self, line):
+        # Show all UDFs
         udf_data = self.log_handler.info_meta_data(stanza=constants.METADATA_UDF)
 
         for timestamp in sorted(udf_data.keys()):

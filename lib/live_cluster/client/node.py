@@ -407,7 +407,7 @@ class Node(AsyncObject):
             connection_info = None
 
         # Info calls for node id, features
-        commands = ["node", "features"]
+        commands = ["node"]
 
         # Check if the node is an admin node
         if self._is_admin_port_enabled(connection_info):
@@ -430,7 +430,7 @@ class Node(AsyncObject):
             if peers_info_calls
             else []
         )
-        return results["node"], service_addresses, results["features"], peers
+        return results["node"], service_addresses, peers
 
     async def connect(self, address, port):
         try:
@@ -446,7 +446,6 @@ class Node(AsyncObject):
             (
                 self.node_id,
                 service_addresses,
-                self.features,
                 self.peers,
             ) = await self._node_connect()
 
@@ -521,7 +520,6 @@ class Node(AsyncObject):
 
             self.node_id = "000000000000000"
             self.service_addresses = [(self.ip, self.port, self.tls_name)]
-            self.features = ""
             self.peers = []
             self.is_admin_node = False
             self.use_new_histogram_format = False
@@ -659,11 +657,6 @@ class Node(AsyncObject):
             return True
 
         return False
-
-    def is_feature_present(self, feature):
-        if not self.features or isinstance(self.features, Exception):
-            return False
-        return feature in self.features
 
     async def has_peers_changed(self):
         # Admin nodes don't track peer changes
@@ -1310,6 +1303,19 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_bin_statistics(self):
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # bins removed in 7.0
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_INFO_BINS_REMOVAL_VERSION
+        ):
+            logger.debug("bin stats were removed in 7.0")
+            return {}
+
         stats = client_util.info_to_list(await self._info("bins"))
         if not stats:
             return {}
@@ -1715,8 +1721,21 @@ class Node(AsyncObject):
 
             new_param = delimiter.join([subcontext, param])
 
-        req = "set-config:context=namespace;id={};{}={}".format(
-            namespace, new_param, value
+        namespace_info_selector = "id"
+
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
+        ):
+            namespace_info_selector = "namespace"
+
+        req = "set-config:context=namespace;{}={};{}={}".format(
+            namespace_info_selector, namespace, new_param, value
         )
 
         if set_:
@@ -1839,19 +1858,43 @@ class Node(AsyncObject):
         return config
 
     @async_return_exceptions
-    async def info_single_namespace_config(self, namespace):
+    async def info_single_namespace_config(
+        self, getconfig_namespace_command, namespace
+    ):
         return client_util.info_to_dict(
-            await self._info("get-config:context=namespace;id=%s" % namespace)
+            await self._info(f"{getconfig_namespace_command}{namespace}")
         )
 
     @async_return_exceptions
     async def info_namespace_config(self, namespace=""):
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        namespace_info_selector = "id"
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
+        ):
+            namespace_info_selector = "namespace"
+
+        getconfig_namespace_command = "get-config:context=namespace;{}=".format(
+            namespace_info_selector
+        )
+
         if namespace != "":
-            return {namespace: await self.info_single_namespace_config(namespace)}
+            return {
+                namespace: await self.info_single_namespace_config(
+                    getconfig_namespace_command, namespace
+                )
+            }
         else:
             namespaces = await self.info_namespaces()
             config_list = await client_util.concurrent_map(
-                lambda ns: self.info_single_namespace_config(ns),
+                lambda ns: self.info_single_namespace_config(
+                    getconfig_namespace_command, ns
+                ),
                 namespaces,
             )
 
@@ -2397,6 +2440,20 @@ class Node(AsyncObject):
         )
 
     @async_return_exceptions
+    async def info_udf_get(self, filename):
+        """
+        Get list of UDFs stored on the node.
+        Returns:
+        dict -- {<file-name>: {"content": <content>, "type": 'LUA'}, . . .}
+        """
+        udf_data = await self._info("udf-get:filename={}".format(filename))
+
+        if not udf_data:
+            return {}
+
+        return client_util.info_to_dict(udf_data)
+
+    @async_return_exceptions
     async def info_udf_put(self, udf_file_name, udf_str, udf_type="LUA"):
         """
         Add a udf module.
@@ -2716,7 +2773,9 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         return client_util.info_to_dict(
-            await self._info("sindex/%s/%s" % (namespace, indexname))
+            await self._info(
+                "sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname)
+            )
         )
 
     @async_return_exceptions
@@ -2731,7 +2790,7 @@ class Node(AsyncObject):
         ctx: Optional[CDTContext] = None,
         cdt_ctx_base64: Optional[str] = None,
         exp_base64: Optional[str] = None,
-        supports_sindex_type_syntax: bool = False,
+        feature_support: dict[str, bool] = {},
     ):
         """
         Create a new secondary index. index_type and set are optional.
@@ -2743,7 +2802,12 @@ class Node(AsyncObject):
         if index_type:
             command += "indextype={};".format(index_type)
 
-        command += "ns={};".format(namespace)
+        namespace_info_selector = "ns"
+
+        if feature_support["namespace_query_selector_support"]:
+            namespace_info_selector = "namespace"
+
+        command += "{}={};".format(namespace_info_selector, namespace)
 
         if set_:
             command += "set={};".format(set_)
@@ -2767,7 +2831,7 @@ class Node(AsyncObject):
             command += "type={}".format(bin_type)
 
         else:
-            if supports_sindex_type_syntax:
+            if feature_support["expression_indexing"]:
                 command += "bin={};type={}".format(bin_name, bin_type)
             else:
                 command += "indexdata={},{}".format(bin_name, bin_type)
@@ -2782,19 +2846,26 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_sindex_delete(self, index_name, namespace, set_=None):
+    async def info_sindex_delete(
+        self, index_name, namespace, set_=None, feature_support: dict[str, bool] = {}
+    ):
         """
         Delete a secondary index. set_ must be provided if sindex is created on a set.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        command = ""
+        namespace_info_selector = "ns"
 
-        if set_ is None:
-            command = "sindex-delete:ns={};indexname={}".format(namespace, index_name)
-        else:
-            command = "sindex-delete:ns={};set={};indexname={}".format(
-                namespace, set_, index_name
+        if feature_support["namespace_query_selector_support"]:
+            namespace_info_selector = "namespace"
+
+        command = "sindex-delete:{}={};indexname={}".format(
+            namespace_info_selector, namespace, index_name
+        )
+
+        if set_ is not None:
+            command = "sindex-delete:{}={};set={};indexname={}".format(
+                namespace_info_selector, namespace, set_, index_name
             )
 
         resp = await self._info(command)
@@ -2959,11 +3030,26 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_jobs(self, module):
         """
-        Get all jobs from a particular module. Exceptable values are scan, query, and
-        sindex-builder.
+        Get all jobs from a particular module. Acceptable values are scan, query, and
+        sindex-builder. Jobs command was removed in 6.3.
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}},
         """
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # jobs command removed in 6.3.0
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_JOBS_REMOVAL_VERSION
+        ):
+            logger.debug(
+                "jobs command was removed in %s+", constants.SERVER_JOBS_REMOVAL_VERSION
+            )
+            return {}
+
         resp = await self._info("jobs:module={}".format(module))
 
         if resp.startswith("ERROR"):
@@ -2977,7 +3063,15 @@ class Node(AsyncObject):
     async def _jobs_helper(self, old_req, new_req):
         req = None
 
-        if self.is_feature_present("query-show"):
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_JOBS_REMOVAL_VERSION
+        ):
             req = new_req
         else:
             req = old_req
@@ -2987,7 +3081,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_query_show(self):
         """
-        Get all query jobs. Calls "query-show" if supported (5.7).  Calls "jobs" if not.
+        Get all query jobs. Calls "query-show" if supported (5.7+). Calls "jobs" if not.
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
         """
@@ -3002,10 +3096,27 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_scan_show(self):
         """
-        Get all scan jobs. Calls "scan-show" if supported (5.7).  Calls "jobs" if not.
+        Get all scan jobs. Calls "scan-show" if supported (5.7-6.4).  Calls "jobs" if supported (<6.3).
+        Both commands were removed in later versions.
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
         """
+        build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        # scan-show removed in 6.4, jobs removed in 6.3
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_SCAN_SHOW_REMOVAL_VERSION
+        ):
+            logger.debug(
+                "scan jobs commands were removed in %s+",
+                constants.SERVER_SCAN_SHOW_REMOVAL_VERSION,
+            )
+            return {}
+
         old_req = "jobs:module=scan"
         new_req = "scan-show"
 

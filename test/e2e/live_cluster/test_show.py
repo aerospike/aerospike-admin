@@ -1263,6 +1263,47 @@ end
         self.assertListEqual(exp_header, actual_header)
         self.assertEqual(exp_num_rows, actual_num_rows)
 
+    async def test_show_single_udf(self):
+        """Test showing individual UDF content with show udfs <filename>"""
+        # First add a UDF to ensure we have one to test
+        await util.capture_stdout(
+            self.rc.execute,
+            ["manage", "udfs", "add", self.exp_module, "path", self.path],
+        )
+        time.sleep(1)
+
+        # Test showing the specific UDF content
+        output = await util.capture_stdout(
+            self.rc.execute, ["show", "udfs", self.exp_module]
+        )
+
+        # Verify the output contains expected elements
+        self.assertIn(f"UDF Content: {self.exp_module}", output)
+        self.assertIn("Filename:", output)
+        self.assertIn("Type:", output)
+        self.assertIn("Content:", output)
+        self.assertIn("function get_digest(rec)", output)  # Part of our test UDF
+        self.assertIn("LUA", output)  # UDF type
+
+        # Clean up: remove the UDF we added
+        await util.capture_stdout(
+            self.rc.execute, ["manage", "udfs", "remove", self.exp_module]
+        )
+
+    async def test_show_nonexistent_udf(self):
+        """Test showing UDF that doesn't exist"""
+        nonexistent_udf = "nonexistent.lua"
+
+        # When a UDF doesn't exist, the controller logs an error and returns early
+        # without producing any output. So we should expect empty output.
+        output = await util.capture_stdout(
+            self.rc.execute, ["show", "udfs", nonexistent_udf]
+        )
+
+        # The command should complete without crashing and produce no output
+        # (error is logged but not printed to stdout/stderr)
+        self.assertEqual("", output.strip())
+
 
 class TestShowUserAgents(asynctest.TestCase):
     async def setUp(self):
