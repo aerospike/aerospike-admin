@@ -15,8 +15,19 @@ jobs:
     with:
       runs-on: ${{ matrix.host }}
       project: database
+      build-name: aerospike-admin
       build-id: ${{ github.run_number }}
-      build-script: set -x && cd local && git checkout ${{ github.ref_name }} && git submodule update --init && ls -laht && .github/docker/entrypoint.sh -c -d ${{ matrix.distro }} && .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} && ls -laht ../dist
+      build-script:  |
+        set -x &&
+        cd local && 
+        git fetch --unshallow --tags --no-recurse-submodules &&
+        git submodule update --init &&
+        ls -laht &&
+        echo ref_name ${{ github.ref_name }} &&
+        git branch -v &&
+        .github/docker/entrypoint.sh -c -d ${{ matrix.distro }} &&
+        .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} &&
+        ls -laht ../dist
       artifact-directory: dist
       artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
       retention-days: 7
@@ -24,7 +35,6 @@ jobs:
       artifactory-url: https://aerospike.jfrog.io # default
       artifactory-oidc-provider-name: database-gh-aerospike # default
       artifactory-oidc-audience: database-gh-aerospike # default
-      build-name: asadm
   sign-artifacts:
     strategy:
       matrix:

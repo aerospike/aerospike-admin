@@ -1,0 +1,97 @@
+# Build aerospike mac distribution.
+
+export MAC_SOURCE_ROOT = $(shell echo `pwd`/dist)
+export MAC_BUILD_ROOT = $(MAC_SOURCE_ROOT)/BUILD
+export CL_BASE = $(MAC_BUILD_ROOT)/usr/local/aerospike
+export ETC_BASE = $(MAC_BUILD_ROOT)/etc/aerospike
+
+SHORT_VERSION = $(shell build/version_short)
+LONG_VERSION = $(shell build/version_long)
+
+INTERNAL_PKG_VERSION = $(LONG_VERSION)
+EXTERNAL_PKG_VERSION = $(SHORT_VERSION)
+
+PKG_DIR = pkg/packages
+UNSIGNED_PKG = $(PKG_DIR)/unsigned.pkg
+ARCH = $(shell uname -m)
+RELEASE_PKG = $(PKG_DIR)/aerospike-tools_$(EXTERNAL_PKG_VERSION)_macOS_$(ARCH).pkg
+SIGNED_PKG = $(RELEASE_PKG)
+
+.PHONY: default
+default: dist
+
+.PHONY: dist
+dist:	$(UNSIGNED_PKG)
+	mv $(UNSIGNED_PKG) $(RELEASE_PKG)
+
+$(UNSIGNED_PKG):	mac_tools
+	pkgbuild --identifier com.aerospike.tools --version $(INTERNAL_PKG_VERSION) --root $(MAC_BUILD_ROOT) $(UNSIGNED_PKG)
+
+.PHONEY: sign
+sign:	$(SIGNED_PKG)
+
+codesign:
+ifneq ($(CODESIGNMAC),)
+	codesign --verbose=4 --entitlements pkg/entitlements --force --options runtime  --sign "$$APPLE_APP_SIGNER" asbackup/bin/asbackup
+	codesign --entitlements pkg/entitlements --force --options runtime  --sign "$$APPLE_APP_SIGNER" asbackup/bin/asrestore
+	codesign --entitlements pkg/entitlements --force --options runtime  --sign "$$APPLE_APP_SIGNER" aql/target/Darwin-$(ARCH)/bin/aql
+	codesign --entitlements pkg/entitlements --force --options runtime  --sign "$$APPLE_APP_SIGNER" asbenchmark/target/asbench
+	codesign --entitlements pkg/entitlements --force --options runtime  --sign "$$APPLE_APP_SIGNER" asconfig/bin/asconfig
+
+	# Needed to codesign every binary in admin --onedir pyinstaller bundle.  This can be done by pyinstaller at build time but we would need to duplicate the codesign setup
+	# found in mac-build.yml github action.  This is the alternative.
+	find admin/build/bin -perm +111  -type f | xargs -I file codesign --deep --entitlements pkg/asadm-entitlements --force --options runtime  --sign "$$APPLE_APP_SIGNER" file 2>&1
+endif
+
+$(SIGNED_PKG): codesign $(UNSIGNED_PKG)
+	productsign --sign "$$APPLE_INSTALL_SIGNER" $(UNSIGNED_PKG) $(SIGNED_PKG)
+	rm $(UNSIGNED_PKG)
+
+.PHONEY: mac_tools
+mac_tools:
+	# Build tools package
+	echo "Making mac tools package...."
+
+	rm -rf $(MAC_BUILD_ROOT)/*
+	mkdir -p $(MAC_BUILD_ROOT)/usr/local/bin
+
+	mkdir -p $(CL_BASE)
+	mkdir -p $(CL_BASE)/bin
+	mkdir -p $(CL_BASE)/doc
+
+	# asbackup tool
+	install -m 755 asbackup/bin/asbackup $(CL_BASE)/bin/asbackup
+	install -m 755 asbackup/bin/asrestore $(CL_BASE)/bin/asrestore
+
+	# AQL tool
+	install -m 755 aql/target/Darwin-$(ARCH)/bin/aql $(CL_BASE)/bin/aql
+
+	# asadm tool
+	cp -a admin/build/bin/asadm/. $(CL_BASE)/bin/asadm/
+
+	# license
+	install -m 644 LICENSE $(CL_BASE)/doc/LICENSE-TOOLS
+
+	# asbench
+	install -m 755 asbenchmark/target/asbench $(CL_BASE)/bin/asbench
+
+	# asconfig
+	chmod +x asconfig/bin/asconfig
+	install -m 755 asconfig/bin/asconfig $(CL_BASE)/bin/asconfig
+
+	# install config file
+	mkdir -p $(ETC_BASE)
+	install -m 644 etc/astools.conf $(ETC_BASE)/astools.conf 
+
+	# Create symlinks to /usr/local/bin
+	mkdir -p $(MAC_BUILD_ROOT)/usr/local/bin
+	ls -al $(MAC_BUILD_ROOT)/usr/local/bin || true
+	ls -al $(MAC_BUILD_ROOT)/usr/local/bin/asadm || true
+	ls -al /usr/local/aerospike/bin || true
+	ln -sf /usr/local/aerospike/bin/aql $(MAC_BUILD_ROOT)/usr/local/bin/aql
+	ln -sf /usr/local/aerospike/bin/asbackup $(MAC_BUILD_ROOT)/usr/local/bin/asbackup
+	ln -sf /usr/local/aerospike/bin/asrestore $(MAC_BUILD_ROOT)/usr/local/bin/asrestore
+	ln -sf /usr/local/aerospike/bin/asadm/asadm $(MAC_BUILD_ROOT)/usr/local/bin/asadm
+	ln -sf /usr/local/aerospike/bin/asadm/asinfo $(MAC_BUILD_ROOT)/usr/local/bin/asinfo
+	ln -sf /usr/local/aerospike/bin/asbench $(MAC_BUILD_ROOT)/usr/local/bin/asbench
+	ln -sf /usr/local/aerospike/bin/asconfig $(MAC_BUILD_ROOT)/usr/local/bin/asconfig
