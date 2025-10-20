@@ -78,6 +78,13 @@ RUNNING = False
 # where to mount work directory in the docker container
 CONTAINER_DIR = "/opt/work"
 
+# Enable docker log dumping via environment variable
+DUMP_DOCKER_LOGS = os.environ.get("DUMP_DOCKER_LOGS", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+
 
 def graceful_exit(handler):
     def graceful_exit(sig, frame):
@@ -225,6 +232,7 @@ def create_conf_file_from_template(
         "fabric_port": str(port_base + 1),
         "heartbeat_port": str(port_base + 2),
         "info_port": str(port_base + 3),
+        "admin_port": str(port_base + 4),
         "access_address": access_address,
         "peer_connection": (
             "# no peer connection"
@@ -352,6 +360,7 @@ def start_server(
             str(base + 1) + "/tcp": str(base + 1),
             str(base + 2) + "/tcp": str(base + 2),
             str(base + 3) + "/tcp": str(base + 3),
+            str(base + 4) + "/tcp": str(base + 4),
         },
         volumes={mount_dir: {"bind": CONTAINER_DIR, "mode": "rw"}},
         tty=True,
@@ -457,6 +466,62 @@ def start(
             reset()
 
 
+def dump_docker_logs():
+    """
+    Dumps logs from all running docker containers to files.
+    """
+    if not DUMP_DOCKER_LOGS:
+        return
+
+    for i in range(0, NODE_CAPACITY):
+        if NODES[i] is not None:
+            try:
+                container = NODES[i]
+                # Use actual container name and ID for unique identification
+                container_name = (
+                    container.name if hasattr(container, "name") else f"container-{i+1}"
+                )
+                container_id = (
+                    container.short_id
+                    if hasattr(container, "short_id")
+                    else container.id[:12]
+                )
+
+                logs = container.logs(timestamps=True, tail=1000)
+
+                # Create docker_logs directory if it doesn't exist
+                log_dir = "docker_logs"
+                if not os.path.exists(log_dir):
+                    os.makedirs(log_dir)
+
+                # Use container name and ID for unique filename
+                log_file = os.path.join(
+                    log_dir, f"{container_name}_{container_id}_logs.txt"
+                )
+                with open(log_file, "wb") as f:
+                    f.write(logs)
+
+            except Exception as e:
+                # Silent failure - don't spam output during tests
+                pass
+
+
+def dump_logs_now():
+    """
+    Manually dump docker logs during test execution.
+    Call this function from your test to capture logs at any point.
+    """
+    dump_docker_logs()
+
+
+def dump_logs_on_failure():
+    """
+    Dump docker logs when a test fails.
+    Call this from your test's tearDown method or exception handler.
+    """
+    dump_docker_logs()
+
+
 def stop():
     global CLIENT
     global RUNNING
@@ -473,6 +538,9 @@ def stop():
         else:
             CLIENT.close()
             CLIENT = None
+
+        # Dump docker logs before stopping containers
+        dump_docker_logs()
 
         print("Stopping asd")
         for i in range(0, NODE_CAPACITY):
@@ -565,7 +633,9 @@ def populate_db(set_name: str, namespace: str = "test"):
 
 def create_sindex(name, type_, ns, bin, set_: str | None = None):
     global CLIENT
-    req = "sindex-create:ns={};indexname={};bin={};type={}".format(ns, name, bin, type_)
+    req = "sindex-create:namespace={};indexname={};bin={};type={}".format(
+        ns, name, bin, type_
+    )
 
     if set_:
         req += ";set=" + set_

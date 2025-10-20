@@ -20,6 +20,7 @@ import socket
 import lib
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
+from lib.utils import constants
 
 import warnings
 
@@ -56,24 +57,7 @@ class ClusterTest(asynctest.TestCase):
             if cmd == "connection":
                 return "admin:false"
 
-            if cmd == ["node", "features", "service-clear-std", "peers-clear-std"]:
-                return {
-                    "node": return_value,
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
-                    "service-clear-std": (
-                        str(ip)
-                        + ":"
-                        + str(port)
-                        + ",172.17.0.1:"
-                        + str(port)
-                        + ",172.17.1.1:"
-                        + str(port)
-                    ),
-                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
-                }
-
-            # Legacy single command support for backward compatibility
-            if cmd == ["node", "service-clear-std", "features", "peers-clear-std"]:
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": return_value,
                     "service-clear-std": (
@@ -86,7 +70,6 @@ class ClusterTest(asynctest.TestCase):
                         + str(port)
                     ),
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
                 }
 
             if cmd == "service":
@@ -148,6 +131,22 @@ class ClusterTest(asynctest.TestCase):
 
             if cmd == "peers-clear-std":
                 return "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]"
+
+            # Handle the new command structure with build as separate command
+            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
+                return {
+                    "node": return_value,
+                    "service-clear-std": (
+                        str(ip)
+                        + ":"
+                        + str(port)
+                        + ",172.17.0.1:"
+                        + str(port)
+                        + ",172.17.1.1:"
+                        + str(port)
+                    ),
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                }
 
             if cmd == "peers-tls-std":
                 return "10,4333,[[BB9050011AC4202,peers,[172.17.0.1]],[BB9070011AC4202,peers,[[2001:db8:85a3::8a2e]]]]"
@@ -549,31 +548,6 @@ class ClusterTest(asynctest.TestCase):
             "is_XDR_enabled did not return the expected result",
         )
 
-    async def test_is_feature_present(self):
-        cl = await self.get_cluster_mock(
-            2,
-        )
-        expected = {"127.0.0.1:3000": True, "127.0.0.0:3000": True}
-        self.assertEqual(
-            await cl.is_feature_present("cdt-map"),
-            expected,
-            "is_feature_present(nodes=all) did not return the expected result",
-        )
-
-        cl = await self.get_cluster_mock(
-            2,
-            return_key_value={
-                "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;"
-            },
-        )
-        key = "127.0.0.1:3000"
-        expected = {key: False}
-        self.assertEqual(
-            await cl.is_feature_present("wrongFeature", nodes=[key]),
-            expected,
-            "is_feature_present did not return the expected result",
-        )
-
     async def test_get_IP_to_node_map(self):
         cl = await self.get_cluster_mock(3)
         aliases = cl.aliases
@@ -637,14 +611,15 @@ class ClusterTest(asynctest.TestCase):
             # First call - admin port detection (enabled for this test)
             if cmd == "connection":
                 return "admin=true"
-            if cmd == ["node", "features", "admin-clear-std"]:
+            if cmd == ["node", "admin-clear-std"]:
                 return {
                     "node": "ADMIN000000000",
-                    "features": "batch-index;blob-bits;cdt-list;cdt-map;cluster-stable;float;geo;",
                     "admin-clear-std": "127.0.0.1:3003",
                 }
             if cmd == "node":
                 return "ADMIN000000000"
+            if cmd == "build":
+                return "4.9.0.0"
             # Second call - admin service info for admin nodes
             elif cmd == ["service-clear-admin"]:
                 return {
@@ -705,3 +680,65 @@ class ClusterTest(asynctest.TestCase):
 
         # Restore original mock behavior
         Node._info_cinfo.side_effect = original_side_effect
+
+    async def test_has_admin_nodes_visual_cue_functionality(self):
+        """Test has_admin_nodes() method for admin port visual cue functionality"""
+        cl = await self.get_cluster_mock(2)
+
+        # Test with no admin nodes
+        self.assertFalse(cl.has_admin_nodes())
+
+        # Add admin node
+        admin_node = await self.get_info_mock(
+            "ADMIN000000000", ip="127.0.0.1", port=3003
+        )
+        admin_node.is_admin_node = True
+        cl.update_node(admin_node)
+
+        # Test with admin nodes
+        self.assertTrue(cl.has_admin_nodes())
+
+    async def test_get_admin_nodes_visual_cue_functionality(self):
+        """Test get_admin_nodes() method for admin port visual cue functionality"""
+        cl = await self.get_cluster_mock(2)
+
+        # Test empty list initially
+        admin_nodes = cl.get_admin_nodes()
+        self.assertEqual(len(admin_nodes), 0)
+
+        # Add admin node
+        admin_node = await self.get_info_mock(
+            "ADMIN000000000", ip="127.0.0.1", port=3003
+        )
+        admin_node.is_admin_node = True
+        cl.update_node(admin_node)
+
+        # Test returns admin nodes
+        admin_nodes = cl.get_admin_nodes()
+        self.assertEqual(len(admin_nodes), 1)
+        self.assertTrue(getattr(admin_nodes[0], "is_admin_node", False))
+
+    async def test_cluster_str_admin_port_visual_cue(self):
+        """Test cluster string representation shows admin port visual cue"""
+        cl = await self.get_cluster_mock(2)
+
+        # Test without admin nodes - no admin message
+        cluster_str = str(cl)
+        self.assertNotIn("Connected via admin port", cluster_str)
+
+        # Add alive admin node
+        admin_node = await self.get_info_mock(
+            "ADMIN000000000", ip="127.0.0.1", port=3003
+        )
+        admin_node.is_admin_node = True
+        admin_node.alive = True
+        cl.update_node(admin_node)
+
+        # Test with alive admin nodes - shows admin message
+        cluster_str = str(cl)
+        self.assertIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cluster_str)
+
+        # Test with dead admin node - no admin message
+        admin_node.alive = False
+        cluster_str = str(cl)
+        self.assertNotIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cluster_str)

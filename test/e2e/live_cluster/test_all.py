@@ -20,6 +20,7 @@ from lib.utils import version
 
 from test.e2e import util
 from .. import lib
+from lib.utils import constants
 
 TEST_UDF = """
 function get_digest(rec)
@@ -220,6 +221,22 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         print(o.stderr)
 
         self.check_cmd_for_errors(o)
+
+    def test_admin_port_connection_sanity_check(self):
+        """Sanity check: Test that admin port connection works"""
+        admin_port = lib.PORT + 4
+        args = f"-h {lib.SERVER_IP}:{admin_port} -e 'summary' -Uadmin -Padmin"
+
+        # Run asadm with admin port connection
+        cp = util.run_asadm(args)
+
+        # Check that the connection was successful
+        self.assertEqual(
+            cp.returncode, 0, f"Failed to connect via admin port: {cp.stderr}"
+        )
+
+        # The help command should work, indicating successful admin port connection
+        self.assertIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cp.stdout)
 
 
 @parameterized_class(

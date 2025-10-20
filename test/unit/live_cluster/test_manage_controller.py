@@ -1731,7 +1731,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
             None,
             None,
-            False,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": False,
+                "namespace_query_selector_support": False,
+            },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1798,7 +1802,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             None,
             None,
             "dGVzdA==",
-            True,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": True,
+                "namespace_query_selector_support": True,
+            },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1824,7 +1832,11 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             None,
             "dGVzdA==",
             None,
-            False,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": False,
+                "namespace_query_selector_support": False,
+            },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -1949,8 +1961,8 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.cluster_mock.info_sindex_statistics.return_value = {
-            "1.1.1.1": {"keys": 1111},
-            "2.2.2.2": {"keys": 2222},
+            "1.1.1.1": {"entries": 1111},
+            "2.2.2.2": {"entries": 2222},
         }
 
         await self.controller.execute(line)
@@ -1972,6 +1984,7 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
             "a-index",
             "test",
             "testset",
+            {"namespace_query_selector_support": False},
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
@@ -3006,7 +3019,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_raises_warn_from_invalid_ns(self):
@@ -3023,7 +3036,7 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_raises_warn_from_ap_ns(self):
@@ -3239,7 +3252,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         await self.controller.execute(line.split())
 
         self.logger_mock.warning.assert_any_call(
-            "The following nodes are not in the pending-roster: {}", "GHI"
+            "The following nodes are not in the pending-roster: %s", "GHI"
         )
         self.check_and_log_cluster_stable_mock.assert_called_once_with(
             {"1.1.1.1": "CDEF"}
@@ -3304,7 +3317,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_raises_warn_from_invalid_ns(self):
@@ -3326,7 +3339,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_raises_warn_from_ap_ns(self):
@@ -3370,7 +3383,7 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_roster_set.assert_not_called()
         self.view_mock.print_result.assert_not_called()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_warn_returns_false(self):
@@ -3531,7 +3544,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_raises_warn_from_invalid_ns(self):
@@ -3552,7 +3565,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_raises_warn_from_ap_ns(self):
@@ -3596,7 +3609,7 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
         self.logger_mock.error.assert_any_call(
-            "namespace test does not exist on this node"
+            "namespace %s does not exist on this node", "test"
         )
 
     async def test_warn_returns_false(self):

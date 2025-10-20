@@ -313,7 +313,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Change the password of another user",
+    "Set the password of a user",
     modifiers=(
         ModifierHelp("username", "User to have password set"),
         ModifierHelp(
@@ -321,7 +321,7 @@ class ManageACLDeleteUserController(ManageLeafCommandController):
             "Password for the user.  A prompt will appear if no password is provided",
         ),
     ),
-    usage="<username> [password <password>]",
+    usage="user <username> [password <password>]",
 )
 class ManageACLSetPasswordUserController(ManageLeafCommandController):
     def __init__(self):
@@ -365,33 +365,34 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Change your password",
+    "Change your own password",
     modifiers=(
-        ModifierHelp("username", "User that needs a new password"),
         ModifierHelp(
             "old",
-            "Current password for the user. User will be prompted if no password is provided",
+            "Current password. User will be prompted if no password is provided",
         ),
         ModifierHelp(
             "new",
-            "New password for the user. User will be prompted if no password is provided",
+            "New password. User will be prompted if no password is provided",
         ),
     ),
-    usage="<username> [old <old-password>] [new <new-password>]",
+    usage="[old <old-password>] [new <new-password>]",
 )
 class ManageACLChangePasswordUserController(ManageLeafCommandController):
     def __init__(self):
-        self.modifiers = set(["old", "new"])
-        self.required_modifiers = set(["user"])
+        self.modifiers = set(["user", "old", "new"])
+        self.required_modifiers = set([])
         self.controller_map = {}
 
     async def _do_default(self, line):
+        # the username modifier is for backward compatibility and can be provided as a modifier or as an argument
+        # this is not documented as a modifier in the help text and should be removed in the future
         username = util.get_arg_and_delete_from_mods(
             line=line,
             arg="user",
             return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
+            default=None,
+            modifiers=self.modifiers,
             mods=self.mods,
         )
         old_password = None
@@ -409,6 +410,13 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
 
         if self.warn and not self.prompt_challenge():
             return
+
+        if username is None:
+            # Get the current user from the cluster connection
+            username = self.cluster.user
+            if not username:
+                logger.error("No user is currently authenticated.")
+                return
 
         result = await self.cluster.admin_change_password(
             username, old_password, new_password, nodes="principal"
@@ -1296,28 +1304,14 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         # get the every node version to determine if the server supports CDT and expression indexes
         builds = await self.meta_getter.get_builds(nodes=self.nodes)
 
-        # Check cluster capability for secondary index features
-        min_cdt_version = version.LooseVersion(
-            constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION
+        feature_support = await util.check_version_support(
+            feature_versions={
+                "cdt_indexing": constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION,
+                "expression_indexing": constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION,
+                "namespace_query_selector_support": constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION,
+            },
+            builds=builds,
         )
-        min_expression_version = version.LooseVersion(
-            constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION
-        )
-
-        supports_cdt_indexing = True
-        supports_expression_indexing = True
-
-        # Check versions and exit early if any feature is unsupported on any node
-        for build in builds.values():
-            build_version = version.LooseVersion(build)
-            if build_version < min_cdt_version:
-                supports_cdt_indexing = False
-            if build_version < min_expression_version:
-                supports_expression_indexing = False
-
-            # Early exit once both features are determined to be unsupported
-            if not supports_cdt_indexing and not supports_expression_indexing:
-                break
 
         # Validate mutually exclusive ctx modifiers
         if ctx_list and cdt_ctx_base64:
@@ -1327,14 +1321,14 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
         # Handle ctx_list
         if ctx_list:
-            if not supports_cdt_indexing:
+            if not feature_support["cdt_indexing"]:
                 raise ShellException("One or more servers does not support 'ctx'.")
 
             cdt_ctx = self._list_to_cdt_ctx(ctx_list)
 
         # Handle cdt_ctx_base64
         if cdt_ctx_base64:
-            if not supports_cdt_indexing:
+            if not feature_support["cdt_indexing"]:
                 raise ShellException(
                     "One or more servers does not support 'ctx_base64'."
                 )
@@ -1369,7 +1363,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             )
 
         if exp_base64 is not None:
-            if not supports_expression_indexing:
+            if not feature_support["expression_indexing"]:
                 logger.error(
                     "One or more servers does not support 'expression' modifier."
                 )
@@ -1400,7 +1394,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             cdt_ctx,
             cdt_ctx_base64,
             exp_base64,
-            supports_expression_indexing,
+            feature_support,
             nodes="principal",
         )
         resp = list(resp.values())[0]
@@ -1456,6 +1450,7 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line", "ns"])
         self.modifiers = set(["set"])
+        self.meta_getter = GetClusterMetadataController(self.cluster)
 
     async def _do_default(self, line):
         index_name = line.pop(0)
@@ -1476,12 +1471,11 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
             mods=self.mods,
         )
 
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+
         if self.warn:
-            sindex_data, builds = await asyncio.gather(
-                self.cluster.info_sindex_statistics(
-                    namespace, index_name, nodes=self.nodes
-                ),
-                self.cluster.info_build(nodes=self.nodes),
+            sindex_data = await self.cluster.info_sindex_statistics(
+                namespace, index_name, nodes=self.nodes
             )
 
             if any(
@@ -1496,8 +1490,10 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
                 ):
                     return
             else:
+                # For backwards compatibility check both old and new stat names
+                # to be safe.
                 key_data = util.get_value_from_second_level_of_dict(
-                    sindex_data, ["keys"], 0, int
+                    sindex_data, ["entries", "keys"], 0, int
                 )
                 num_keys = sum(key_data.values())
 
@@ -1508,8 +1504,15 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
                 ):
                     return
 
+        feature_support = await util.check_version_support(
+            feature_versions={
+                "namespace_query_selector_support": constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION,
+            },
+            builds=builds,
+        )
+
         resp = await self.cluster.info_sindex_delete(
-            index_name, namespace, set_, nodes="principal"
+            index_name, namespace, set_, feature_support, nodes="principal"
         )
         resp = list(resp.values())[0]
 
@@ -2620,7 +2623,7 @@ class ManageTruncateController(ManageLeafCommandController):
             unrecognized = self.mods["before"]
 
         if unrecognized is not None:
-            logger.error("Unrecognized input: {}".format(" ".join(unrecognized)))
+            logger.error("Unrecognized input: %s", " ".join(unrecognized))
             return
 
         namespace = self.mods["ns"][0]
@@ -2868,7 +2871,7 @@ class ManageRosterLeafCommandController(ManageLeafCommandController):
                 else None
             )
             if not namespace_stats or not isinstance(namespace_stats, dict):
-                logger.error("namespace {} does not exist on this node".format(ns))
+                logger.error("namespace %s does not exist on this node", ns)
                 return False
 
             strong_consistency = (
@@ -3040,7 +3043,7 @@ class ManageRosterRemoveController(ManageRosterLeafCommandController):
         if warn:
             if len(missing_nodes):
                 logger.warning(
-                    "The following nodes are not in the pending-roster: {}",
+                    "The following nodes are not in the pending-roster: %s",
                     ", ".join(missing_nodes),
                 )
 

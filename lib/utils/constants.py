@@ -17,6 +17,11 @@ from typing import Literal
 
 ADMIN_HOME = os.path.expanduser("~") + "/.aerospike/"
 
+# Admin port visual cue message
+ADMIN_PORT_VISUAL_CUE_MSG = (
+    "Connected via admin port. Note: Cluster discovery is disabled for admin ports."
+)
+
 # For "manage config". Directory is relative to live_cluster/client
 # This variable should match what is reflected in pyinstaller-build.spec
 CONFIG_SCHEMAS_HOME = "schemas/json/aerospike"
@@ -55,6 +60,7 @@ SUMMARY_SINDEX = "sindex"
 METADATA_JOBS = "jobs"
 METADATA_PRACTICES = "best_practices"
 METADATA_UDF = "udf"
+METADATA_UDF_CONTENT = "udf_content"
 
 ADMIN_ROLES = "roles"
 ADMIN_USERS = "users"
@@ -160,6 +166,7 @@ SERVER_INFO_BINS_REMOVAL_VERSION = "7.0"
 SERVER_SINDEX_BLOB_TYPE_FIRST_VERSION = "7.0"
 SERVER_SINDEX_ON_CDT_FIRST_VERSION = "6.1"
 SERVER_SINDEX_ON_EXP_FIRST_VERSION = "8.1"
+SERVER_INFO_NAMESPACE_SELECTOR_VERSION = "7.2"  # before this namespace can be id/ns
 SERVER_QUERIES_ABORT_ALL_FIRST_VERSION = "6.0"
 SERVER_39_BYTE_OVERHEAD_FIRST_VERSION = "6.0"
 SERVER_NO_BYTE_OVERHEAD_FIRST_VERSION = "8.0"
@@ -170,6 +177,8 @@ SERVER_XDR_FILTER_FIRST_VERSION = "5.3"
 SERVER_NEW_LATENCIES_CMD_FIRST_VERSION = "5.1"
 SERVER_NEW_XDR5_VERSION = "5.0"
 SERVER_NEW_HISTOGRAM_FIRST_VERSION = "4.2"
+SERVER_JOBS_REMOVAL_VERSION = "6.3"
+SERVER_SCAN_SHOW_REMOVAL_VERSION = "6.4"
 
 # [inclusive, exclusive)
 SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS = [

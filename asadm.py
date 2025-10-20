@@ -72,6 +72,7 @@ from lib.utils.constants import (
     DEFAULT_ASADM_VERSION,
     USER_AGENT_FORMAT_VERSION,
     ASADM_APP_ID,
+    ADMIN_PORT_VISUAL_CUE_MSG,
 )
 from lib.view import terminal, view, sheet
 from time import sleep
@@ -94,6 +95,8 @@ MULTILEVEL_COMMANDS = ["show", "info", "manage"]
 
 DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
+ADMIN_DEFAULT_PROMPT = "ADMIN> "
+ADMIN_PRIVILEGED_PROMPT = "ADMIN+> "
 
 
 class AerospikeShell(cmd.Cmd, AsyncObject):
@@ -206,6 +209,8 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         self.ctrl.do_enable([])
                 else:
                     self.intro += str(self.ctrl.cluster) + "\n"
+                    # Update prompt now that cluster is connected and admin nodes are detected
+                    self.set_default_prompt()
                     cluster_visibility_error_nodes = (
                         self.ctrl.cluster.get_visibility_error_nodes()
                     )
@@ -256,7 +261,15 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             try:
                 readline.read_history_file(self.admin_history)
             except Exception:
-                readline.write_history_file(self.admin_history)
+                try:
+                    readline.write_history_file(self.admin_history)
+                except (OSError, PermissionError) as e:
+                    # Cannot write history file, continue without it
+                    logger.debug(
+                        "Cannot write to history file %s: %s",
+                        self.admin_history,
+                        e,
+                    )
 
         self.commands = set()
 
@@ -317,11 +330,32 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 + "\002"
             )
 
+    def _has_admin_nodes(self) -> bool:
+        """Check if cluster has admin nodes."""
+        try:
+            if hasattr(self.ctrl, "cluster") and self.ctrl.cluster.has_admin_nodes():
+                logger.debug("Admin nodes detected in cluster")
+                return True
+            return False
+        except Exception as e:
+            logger.debug("Error checking admin nodes: %s", e)
+            return False
+
     def set_default_prompt(self):
-        self.set_prompt(DEFAULT_PROMPT, "green")
+        if self._has_admin_nodes():
+            logger.debug("Setting ADMIN default prompt")
+            self.set_prompt(ADMIN_DEFAULT_PROMPT, "green")
+        else:
+            logger.debug("Setting regular default prompt")
+            self.set_prompt(DEFAULT_PROMPT, "green")
 
     def set_privaliged_prompt(self):
-        self.set_prompt(PRIVILEGED_PROMPT, "red")
+        if self._has_admin_nodes():
+            logger.debug("Setting ADMIN privileged prompt")
+            self.set_prompt(ADMIN_PRIVILEGED_PROMPT, "red")
+        else:
+            logger.debug("Setting regular privileged prompt")
+            self.set_prompt(PRIVILEGED_PROMPT, "red")
 
     def clean_line(self, line):
         # get rid of extra whitespace
@@ -559,7 +593,15 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
     async def do_exit(self, line):
         await self.close()
         if not self.execute_only_mode and readline.get_current_history_length() > 0:
-            readline.write_history_file(self.admin_history)
+            try:
+                readline.write_history_file(self.admin_history)
+            except (OSError, PermissionError) as e:
+                # Cannot save history, continue without it
+                logger.debug(
+                    "Cannot write to history file %s: %s",
+                    self.admin_history,
+                    e,
+                )
 
         return True
 
@@ -752,13 +794,17 @@ async def main():
     if cli_args.json:
         output_json()
 
-    if not os.path.isdir(ADMIN_HOME):
-        os.makedirs(ADMIN_HOME)
-
     execute_only_mode = False
 
     if cli_args.execute is not None:
         execute_only_mode = True
+
+    # Only create ADMIN_HOME if not in execute mode (avoids issues on read-only filesystems)
+    if not execute_only_mode and not os.path.isdir(ADMIN_HOME):
+        try:
+            os.makedirs(ADMIN_HOME)
+        except (OSError, PermissionError) as e:
+            logger.warning("Cannot create history directory %s: %s", ADMIN_HOME, e)
 
     cli_args, seeds = conf.loadconfig(cli_args)
 
@@ -868,6 +914,10 @@ async def main():
                 pass
 
         if shell.connected:
+            # Print admin port visual cue message in execute mode
+            if shell._has_admin_nodes():
+                print(ADMIN_PORT_VISUAL_CUE_MSG)
+
             line = await shell.precmd(
                 commands_arg,
                 max_commands_to_print_header=max_commands_to_print_header,

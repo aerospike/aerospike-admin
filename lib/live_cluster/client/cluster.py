@@ -97,6 +97,20 @@ class Cluster(AsyncObject):
         # of available nodes name, if names are same then we can use ip:port
         self._same_name_nodes = False
 
+    def has_admin_nodes(self) -> bool:
+        """Check if any nodes in the cluster are admin nodes."""
+        return any(
+            getattr(node, "is_admin_node", False) for node in self.nodes.values()
+        )
+
+    def get_admin_nodes(self) -> list[Node]:
+        """Get list of admin nodes in the cluster."""
+        return [
+            node
+            for node in self.nodes.values()
+            if getattr(node, "is_admin_node", False)
+        ]
+
     def __str__(self):
         nodes = self.nodes.values()
         if len(nodes) == 0:
@@ -110,6 +124,13 @@ class Cluster(AsyncObject):
             retval += "\nOnline:  %s" % (", ".join(online))
         if offline:
             retval += "\nOffline: %s" % (", ".join(offline))
+
+        # Add admin port message if admin nodes detected
+        if self.has_admin_nodes():
+            admin_nodes = self.get_admin_nodes()
+            admin_keys = [node.key for node in admin_nodes if node.alive]
+            if admin_keys:
+                retval += f"\n{constants.ADMIN_PORT_VISUAL_CUE_MSG}"
 
         return retval
 
@@ -697,9 +718,6 @@ class Cluster(AsyncObject):
 
     async def is_XDR_enabled(self, nodes="all"):
         return await self.call_node_method_async(nodes, "is_XDR_enabled")
-
-    async def is_feature_present(self, feature, nodes="all"):
-        return await self.call_node_method_async(nodes, "is_feature_present", feature)
 
     def is_localhost_a_node(self) -> bool:
         # Returns True if asadm's host is also hosting a node in the cluster
