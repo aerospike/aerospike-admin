@@ -4466,6 +4466,116 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with("user-agents", self.ip)
         self.assertIsInstance(result, ASInfoResponseError)
 
+    async def test_info_masking_add_rule_success(self):
+        """Test successful masking rule addition"""
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_add_rule(
+            "test",
+            "demo",
+            "ssn",
+            "string",
+            "redact",
+            {"position": "0", "length": "4", "value": "*"},
+        )
+
+        expected_req = "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*"
+        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_add_rule_error(self):
+        """Test masking rule addition error"""
+        self.info_mock.return_value = "error::invalid parameters"
+
+        result = await self.node.info_masking_add_rule(
+            "test", "demo", "ssn", "string", "redact", {"position": "0"}
+        )
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to add masking rule")
+
+    async def test_info_masking_remove_rule_success(self):
+        """Test successful masking rule removal"""
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_remove_rule("test", "demo", "ssn")
+
+        expected_req = (
+            "masking:namespace=test;set=demo;bin=ssn;type=string;function=remove"
+        )
+        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_remove_rule_error(self):
+        """Test masking rule removal error"""
+        self.info_mock.return_value = "error::rule not found"
+
+        result = await self.node.info_masking_remove_rule("test", "demo", "ssn")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to remove masking rule")
+
+    async def test_info_masking_list_rules_success(self):
+        """Test successful masking rules listing"""
+        self.info_mock.return_value = "ns=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*:ns=test;set=demo;bin=email;type=string;function=constant;value=REDACTED"
+
+        result = await self.node.info_masking_list_rules("test", "demo")
+
+        expected_req = "masking-show:ns=test;set=demo;"
+        self.info_mock.assert_called_with(expected_req, self.ip)
+
+        expected = [
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact",
+                "position": "0",
+                "length": "4",
+                "value": "*",
+            },
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "email",
+                "type": "string",
+                "function": "constant",
+                "value": "REDACTED",
+            },
+        ]
+        self.assertEqual(result, expected)
+
+    async def test_info_masking_list_rules_no_filters(self):
+        """Test masking rules listing without filters"""
+        self.info_mock.return_value = (
+            "ns=test;set=demo;bin=ssn;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        expected_req = "masking-show:"
+        self.info_mock.assert_called_with(expected_req, self.ip)
+
+        expected = [
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact",
+            }
+        ]
+        self.assertEqual(result, expected)
+
+    async def test_info_masking_list_rules_empty_response(self):
+        """Test masking rules listing with empty response"""
+        self.info_mock.return_value = ""
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(result, [])
+
 
 class SyscmdTest(unittest.TestCase):
     def setUp(self) -> None:

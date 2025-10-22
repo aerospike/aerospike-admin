@@ -12,11 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
 import os
-import tempfile
 import shutil
+import tempfile
+import unittest
+
 from mock import patch
+
+from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
+    CollectinfoLogHandler,
+)
 from lib.utils import log_util
 
 
@@ -68,3 +73,11 @@ class LogUtilTest(unittest.TestCase):
         # Assert both files are included on Linux
         self.assertIn("test.log", [os.path.basename(f) for f in files])
         self.assertIn("._test.log", [os.path.basename(f) for f in files])
+
+
+class CollectinfoLogHandlerTest(unittest.TestCase):
+    def test_info_masking_rules_method_exists(self):
+        """Test that info_masking_rules method exists"""
+        # Just test that the method exists and is callable
+        self.assertTrue(hasattr(CollectinfoLogHandler, "info_masking_rules"))
+        self.assertTrue(callable(getattr(CollectinfoLogHandler, "info_masking_rules")))

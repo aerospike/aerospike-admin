@@ -29,6 +29,7 @@ from lib.live_cluster.get_controller import (
     GetClusterMetadataController,
     GetConfigController,
     GetJobsController,
+    GetMaskingRulesController,
     GetStatisticsController,
     GetUserAgentsController,
 )
@@ -37,6 +38,7 @@ from lib.live_cluster.show_controller import (
     ShowConfigController,
     ShowConfigXDRController,
     ShowJobsController,
+    ShowMaskingController,
     ShowRacksController,
     ShowRolesController,
     ShowRosterController,
@@ -1709,3 +1711,148 @@ class ShowUdfsControllerTest(unittest.TestCase):
             )  # Should be empty string for missing content
 
         asyncio.run(async_test())
+
+
+class ShowMaskingControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.controller = ShowMaskingController()
+        self.cluster_mock = self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.getter = create_autospec(
+            GetMaskingRulesController
+        )
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.controller.mods = {}
+        self.controller.nodes = "principal"
+        self.addCleanup(patch.stopall)
+
+    async def test_do_default_success(self):
+        """Test successful masking rules display"""
+        line = []
+        masking_data = {
+            "node1": [
+                {
+                    "ns": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                    "position": "0",
+                    "length": "4",
+                    "value": "*",
+                },
+                {
+                    "ns": "test",
+                    "set": "demo",
+                    "bin": "email",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "REDACTED",
+                },
+            ]
+        }
+        self.getter_mock.get_masking_rules.return_value = masking_data
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_masking_rules.assert_called_with(
+            nodes="principal", namespace=None, set_=None
+        )
+        self.view_mock.show_masking_rules.assert_called_with(
+            masking_data["node1"], **self.controller.mods
+        )
+
+    async def test_do_default_with_namespace_filter(self):
+        """Test masking rules display with namespace filter"""
+        line = ["namespace", "test"]
+        masking_data = {
+            "node1": [
+                {
+                    "ns": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                }
+            ]
+        }
+        self.getter_mock.get_masking_rules.return_value = masking_data
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_masking_rules.assert_called_with(
+            nodes="principal", namespace="test", set_=None
+        )
+        self.view_mock.show_masking_rules.assert_called_with(
+            masking_data["node1"], **self.controller.mods
+        )
+
+    async def test_do_default_with_namespace_and_set_filter(self):
+        """Test masking rules display with namespace and set filters"""
+        line = ["namespace", "test", "set", "demo"]
+        masking_data = {
+            "node1": [
+                {
+                    "ns": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                }
+            ]
+        }
+        self.getter_mock.get_masking_rules.return_value = masking_data
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_masking_rules.assert_called_with(
+            nodes="principal", namespace="test", set_="demo"
+        )
+
+    async def test_do_default_set_without_namespace_raises_error(self):
+        """Test that using set filter without namespace raises error"""
+        line = ["set", "demo"]
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception), "Set filter can only be used with namespace filter"
+        )
+
+    async def test_do_default_protocol_error(self):
+        """Test handling of protocol errors"""
+        line = []
+        protocol_error = ASProtocolError(1, "Connection failed")
+        self.getter_mock.get_masking_rules.return_value = {"node1": protocol_error}
+
+        # Should return None when there's a protocol error (early return)
+        result = await self.controller._do_default(line)
+
+        self.assertIsNone(result)
+        self.view_mock.show_masking_rules.assert_not_called()
+
+    async def test_do_default_exception_raised(self):
+        """Test handling of general exceptions"""
+        line = []
+        exception = Exception("General error")
+        self.getter_mock.get_masking_rules.return_value = {"node1": exception}
+
+        with self.assertRaises(Exception) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(str(context.exception), "General error")
+
+    async def test_do_default_empty_data(self):
+        """Test handling of empty masking data"""
+        line = []
+        # Return empty list for a node (no masking rules)
+        self.getter_mock.get_masking_rules.return_value = {"node1": []}
+
+        result = await self.controller._do_default(line)
+
+        # Should call view with empty list
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [], **self.controller.mods
+        )
