@@ -1957,15 +1957,17 @@ class CliViewTest(unittest.TestCase):
             self.assertIn("LUA", output)
             self.assertIn("Content:", output)
 
-    @patch('lib.view.view.CliView.print_result')
-    @patch('lib.view.view.sheet')
-    @patch('lib.view.view.templates')
-    def test_show_masking_rules_success(self, templates_mock, sheet_mock, print_result_mock):
+    @patch("lib.view.view.CliView.print_result")
+    @patch("lib.view.view.sheet")
+    @patch("lib.view.view.templates")
+    def test_show_masking_rules_success(
+        self, templates_mock, sheet_mock, print_result_mock
+    ):
         """Test successful display of masking rules"""
         # Mock template and sheet rendering
         templates_mock.show_masking_rules = MagicMock()
         sheet_mock.render.return_value = "Rendered masking rules table"
-        
+
         masking_data = [
             {
                 "ns": "test",
@@ -1975,7 +1977,7 @@ class CliViewTest(unittest.TestCase):
                 "function": "redact",
                 "position": "0",
                 "length": "4",
-                "value": "*"
+                "value": "*",
             }
         ]
 
@@ -1994,21 +1996,23 @@ class CliViewTest(unittest.TestCase):
         # Should return early without calling print_result for empty data
         self.assertIsNone(result)
 
-    @patch('lib.view.view.CliView.print_result')
-    @patch('lib.view.view.sheet')
-    @patch('lib.view.view.templates')
-    def test_show_masking_rules_with_timestamp(self, templates_mock, sheet_mock, print_result_mock):
+    @patch("lib.view.view.CliView.print_result")
+    @patch("lib.view.view.sheet")
+    @patch("lib.view.view.templates")
+    def test_show_masking_rules_with_timestamp(
+        self, templates_mock, sheet_mock, print_result_mock
+    ):
         """Test display with timestamp"""
         templates_mock.show_masking_rules = MagicMock()
         sheet_mock.render.return_value = "Rendered masking rules table"
-        
+
         masking_data = [
             {
                 "ns": "test",
-                "set": "demo", 
+                "set": "demo",
                 "bin": "ssn",
                 "type": "string",
-                "function": "redact"
+                "function": "redact",
             }
         ]
 
