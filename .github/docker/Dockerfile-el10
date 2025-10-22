@@ -1,4 +1,4 @@
-FROM redhat/ubi10.0
+FROM redhat/ubi10:10.0
 SHELL ["/bin/bash", "-euox", "pipefail", "-c"]
 ADD .github/docker/entrypoint.sh /tmp/entrypoint.sh
 ADD .github/docker/install_deps.sh /tmp/install_deps.sh
