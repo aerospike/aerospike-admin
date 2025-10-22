@@ -142,7 +142,7 @@ function install_deps_ubuntu24.04() {
   asdf exec pip install --break-system-packages pipenv
   gem install fpm -v 1.17.0
 }
-function install_deps_redhat-el8() {
+function install_deps_el8() {
   dnf module enable -y ruby:2.7
   dnf -y install ruby ruby-devel redhat-rpm-config  rubygems rpm-build make git python3 python3-pip rsync gcc gcc-c++ \
                  make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
@@ -176,7 +176,7 @@ function install_deps_redhat-el8() {
   gem install fpm -v 1.17.0
 }
 
-function install_deps_redhat-el9() {
+function install_deps_el9() {
   dnf -y install ruby rpmdevtools make git python3 python3-pip rsync
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
@@ -199,7 +199,7 @@ function install_deps_redhat-el9() {
   gem install fpm -v 1.17.0
 }
 
-function install_deps_redhat-el10() {
+function install_deps_el10() {
   dnf -y install ruby rpmdevtools make git python3 python3-pip rsync
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
@@ -222,7 +222,7 @@ function install_deps_redhat-el10() {
   gem install fpm
 }
 
-function install_deps_amazon-2023() {
+function install_deps_amzn2023() {
   dnf -y install ruby rpmdevtools make git python3 python3-pip rsync
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go1.24.6.linux-amd64.tar.gz -o /tmp/go1.24.6.linux-amd64.tar.gz
