@@ -14,7 +14,7 @@ function build_packages(){
     make deb
   elif [[ $ENV_DISTRO == *"debian"* ]]; then
     make deb
-  elif [[ $ENV_DISTRO == *"ubi"* ]]; then
+  elif [[ $ENV_DISTRO == *"el"* ]]; then
     make rpm
   else
     make tar
