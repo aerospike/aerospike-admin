@@ -1956,3 +1956,63 @@ class CliViewTest(unittest.TestCase):
             self.assertIn("Type:", output)
             self.assertIn("LUA", output)
             self.assertIn("Content:", output)
+
+    @patch('lib.view.view.CliView.print_result')
+    @patch('lib.view.view.sheet')
+    @patch('lib.view.view.templates')
+    def test_show_masking_rules_success(self, templates_mock, sheet_mock, print_result_mock):
+        """Test successful display of masking rules"""
+        # Mock template and sheet rendering
+        templates_mock.show_masking_rules = MagicMock()
+        sheet_mock.render.return_value = "Rendered masking rules table"
+        
+        masking_data = [
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact",
+                "position": "0",
+                "length": "4",
+                "value": "*"
+            }
+        ]
+
+        result = CliView.show_masking_rules(masking_data, timestamp="2023-01-01")
+
+        # Verify sheet.render was called with correct parameters
+        sheet_mock.render.assert_called_once()
+        print_result_mock.assert_called_once_with("Rendered masking rules table")
+
+    def test_show_masking_rules_empty(self):
+        """Test display of empty masking rules"""
+        masking_data = []
+
+        result = CliView.show_masking_rules(masking_data)
+
+        # Should return early without calling print_result for empty data
+        self.assertIsNone(result)
+
+    @patch('lib.view.view.CliView.print_result')
+    @patch('lib.view.view.sheet')
+    @patch('lib.view.view.templates')
+    def test_show_masking_rules_with_timestamp(self, templates_mock, sheet_mock, print_result_mock):
+        """Test display with timestamp"""
+        templates_mock.show_masking_rules = MagicMock()
+        sheet_mock.render.return_value = "Rendered masking rules table"
+        
+        masking_data = [
+            {
+                "ns": "test",
+                "set": "demo", 
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact"
+            }
+        ]
+
+        result = CliView.show_masking_rules(masking_data, timestamp="2023-01-01")
+
+        sheet_mock.render.assert_called_once()
+        print_result_mock.assert_called_once_with("Rendered masking rules table")
