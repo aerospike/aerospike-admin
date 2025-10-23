@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -x
-DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils   rsync libssl3 libssl-dev lzma lzma-dev libffi-dev"
+DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev"
 DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils"
-UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils   rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev"
-UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils   rsync libssl3 libssl-dev lzma lzma-dev libffi-dev"
-UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils   rsync libssl3 libssl-dev lzma lzma-dev libffi-dev"
+UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev"
+UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev"
+UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev"
 EL8_DEPS="ruby rubygems redhat-rpm-config  rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs"
-EL9_DEPS="ruby rpmdevtools make git rsync"
-EL10_DEPS="ruby rpmdevtools make git rsync"
-AMZN2023_DEPS="readline-devel ruby rpmdevtools make git   rsync"
+EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs"
+EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs"
+AMZN2023_DEPS="readline-devel ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs"
 function install_deps_debian12() {
   apt -y install $DEBIAN_12_DEPS
   if [ "$(uname -m)" = "x86_64" ]; then
@@ -173,8 +173,6 @@ function install_deps_el9() {
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
-                      sqlite sqlite-devel sqlite-libs
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install pipenv
@@ -197,8 +195,6 @@ function install_deps_el10() {
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
-                      sqlite sqlite-devel sqlite-libs
   asdf install python 3.10.18
   asdf set python 3.10.18
   asdf exec pip install pipenv
@@ -220,8 +216,6 @@ function install_deps_amzn2023() {
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  dnf install -y gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs \
-                      sqlite sqlite-devel sqlite-libs
   asdf install python 3.10.18
   asdf set python 3.10.18
   echo "python 3.10.18" > /.tool-versions
