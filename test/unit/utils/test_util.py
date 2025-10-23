@@ -399,3 +399,105 @@ class UtilTest(asynctest.TestCase):
         }
 
         self.assertEqual(result, expected)
+
+    def test_normalize_masking_rule_data_redact_function(self):
+        """Test normalize_masking_rule_data with redact function"""
+        rule = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "redact",
+            "position": "0",
+            "length": "4",
+            "value": "*",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        expected = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "redact position 0 length 4 value *",
+        }
+
+        self.assertEqual(result, expected)
+
+    def test_normalize_masking_rule_data_constant_function(self):
+        """Test normalize_masking_rule_data with constant function"""
+        rule = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "email",
+            "type": "string",
+            "function": "constant",
+            "value": "REDACTED",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        expected = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "email",
+            "type": "string",
+            "function": "constant value REDACTED",
+        }
+
+        self.assertEqual(result, expected)
+
+    def test_normalize_masking_rule_data_namespace_field_variations(self):
+        """Test normalize_masking_rule_data handles both 'ns' and 'namespace' fields"""
+        rule_with_namespace = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "redact",
+        }
+
+        result = util.normalize_masking_rule_data(rule_with_namespace)
+
+        expected = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "redact",
+        }
+
+        self.assertEqual(result, expected)
+
+    def test_normalize_masking_rule_data_missing_fields(self):
+        """Test normalize_masking_rule_data with missing fields"""
+        rule = {"ns": "test", "bin": "ssn"}
+
+        result = util.normalize_masking_rule_data(rule)
+
+        expected = {"ns": "test", "set": "", "bin": "ssn", "type": "", "function": ""}
+
+        self.assertEqual(result, expected)
+
+    def test_normalize_masking_rule_data_unknown_function(self):
+        """Test normalize_masking_rule_data with unknown function"""
+        rule = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "unknown_func",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        expected = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "unknown_func",
+        }
+
+        self.assertEqual(result, expected)
