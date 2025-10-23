@@ -12,11 +12,11 @@ PKG_VERSION=$(git describe --tags --always)
 
 #Build the test container and install the current version of asadm from JFrog
 # -d specifies the distro to test
-.github/docker/test/entrypoint.sh -c -d debian12
+.github/docker/test/entrypoint.sh -c -d ubuntu24.04
 #...
 
 #Execute the test runner
-docker run -t -i asadm-pkg-tester-debian12:$(git describe --tags --always)
+docker run -t -i asadm-pkg-tester-ubuntu24.04:$(git describe --tags --always)
 
 #...
 #test_execute.bats

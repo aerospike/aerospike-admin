@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt -y update
 ADD .github/docker/test/entrypoint.sh /tmp/entrypoint.sh
 ADD .github/docker/test/install_test_deps.sh /tmp/install_test_deps.sh
-RUN source /tmp/install_test_deps.sh && install_test_deps_debian12
+RUN source /tmp/install_test_deps.sh && install_test_deps_debian13
 RUN apt -y install aerospike-asadm=$PKG_VERSION
 ADD . /opt/asadm
 WORKDIR /opt/asadm

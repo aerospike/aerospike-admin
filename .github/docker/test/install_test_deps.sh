@@ -91,19 +91,7 @@ EOF
 }
 
 function install_deb_repo() {
-  CODENAME=$(lsb_release -sc)             # e.g. bookworm, jammy, noble
   ARCH=$(dpkg --print-architecture)       # e.g. amd64, arm64
-  KEYRING=/usr/share/keyrings/aerospike.gpg
-  REPO_URL="https://artifact.aerospike.io/artifactory/deb"
-  apt -y install $UBUNTU_DEPS
-  # https://aerospike.atlassian.net/wiki/spaces/DevOps/pages/4371644510/Installing+deb+and+rpm+for+internal+password+protected+use
-  # Fetch Aerospike key (if not already present)
-
-  wget -qO - https://aerospike.jfrog.io/artifactory/api/security/keypair/aerospike/public | gpg --batch --no-tty --dearmor -o $KEYRING
-  # 2. Add the Aerospike repository to the sources list
-  echo "deb [arch=$ARCH signed-by=$KEYRING] $REPO_URL $CODENAME main" >> /etc/apt/sources.list.d/aerospike.list
-  apt-get update
-
 
 
   # This script creates an Aerospike apt sources.list.d file for the detected OS and arch
@@ -127,7 +115,7 @@ function install_deb_repo() {
       exit 1
   fi
   # Fetch Aerospike key (if not already present)
-#  wget -qO - https://artifact.aerospike.io/artifactory/api/security/keypair/aerospike/public | gpg --batch --no-tty --dearmor -o /usr/share/keyrings/aerospike.gpg
+  wget -qO - https://artifact.aerospike.io/artifactory/api/security/keypair/aerospike/public | gpg --batch --no-tty --dearmor -o /usr/share/keyrings/aerospike.gpg
   # Output file
   REPO_FILE="/etc/apt/sources.list.d/aerospike-${CODENAME}-all.list"
   # Write sources.list content
