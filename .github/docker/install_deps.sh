@@ -26,7 +26,14 @@ function install_deps_debian12() {
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install --break-system-packages pipenv
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+  asdf exec python -m pip install --break-system-packages pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
   gem install fpm -v 1.17.0
 }
 
@@ -77,7 +84,14 @@ function install_deps_ubuntu20.04() {
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install pipenv
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+  asdf exec python -m pip install pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
   gem install fpm -v 1.17.0
 }
 
@@ -98,7 +112,14 @@ function install_deps_ubuntu22.04() {
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install pipenv
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+  asdf exec python -m pip install pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
   gem install fpm -v 1.17.0
 }
 
@@ -120,7 +141,14 @@ function install_deps_ubuntu24.04() {
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install --break-system-packages pipenv
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+  asdf exec python -m pip install --break-system-packages pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
   gem install fpm -v 1.17.0
 }
 function install_deps_el8() {
@@ -146,7 +174,6 @@ function install_deps_el8() {
   echo "python 3.10.18" > /.tool-versions
   echo "python 3.10.18" > /root/.tool-versions
   asdf exec python -m pip install pipenv
-
   install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
   install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
   install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
@@ -175,7 +202,14 @@ function install_deps_el9() {
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install pipenv
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+  asdf exec python -m pip install --break-system-packages pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
   gem install fpm -v 1.17.0
 }
 
@@ -197,7 +231,14 @@ function install_deps_el10() {
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
   asdf install python 3.10.18
   asdf set python 3.10.18
-  asdf exec pip install pipenv
+  echo "python 3.10.18" > /.tool-versions
+  echo "python 3.10.18" > /root/.tool-versions
+  asdf exec python -m pip install --break-system-packages pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
+  install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
+  install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
+  install /root/.asdf/installs/python/3.10.18/bin/pip /usr/bin/pip
+  install /root/.asdf/installs/python/3.10.18/bin/pip3 /usr/bin/pip3
   gem install fpm
 }
 
@@ -220,7 +261,7 @@ function install_deps_amzn2023() {
   asdf set python 3.10.18
   echo "python 3.10.18" > /.tool-versions
   echo "python 3.10.18" > /root/.tool-versions
-  asdf exec pip install pipenv
+  asdf exec python -m pip install --break-system-packages pipenv
   install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python
   install /root/.asdf/installs/python/3.10.18/bin/python /usr/bin/python3
   install /root/.asdf/installs/python/3.10.18/bin/pipenv /usr/bin/pipenv
