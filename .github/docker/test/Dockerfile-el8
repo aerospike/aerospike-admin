@@ -1,0 +1,17 @@
+FROM redhat/ubi8:8.10
+SHELL ["/bin/bash", "-euox", "pipefail", "-c"]
+ARG JF_USERNAME
+ENV JF_USERNAME=${JF_USERNAME}
+ARG JF_TOKEN
+ENV JF_TOKEN=${JF_TOKEN}
+ARG PKG_VERSION
+ENV PKG_VERSION=${PKG_VERSION}
+
+ADD .github/docker/test/entrypoint.sh /tmp/entrypoint.sh
+ADD .github/docker/test/install_test_deps.sh /tmp/install_test_deps.sh
+RUN source /tmp/install_test_deps.sh && install_test_deps_el8
+RUN dnf install -y aerospike-asadm-"$(echo $PKG_VERSION | tr '-' '_')"-1.$(uname -m)
+ADD . /opt/asadm
+WORKDIR /opt/asadm
+ENTRYPOINT ["/opt/asadm/.github/docker/test/entrypoint.sh"]
+CMD ["-t"]
