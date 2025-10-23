@@ -18,7 +18,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-13, macos-14, macos-15]  
+        os: [macos-14, macos-15]  
     runs-on: ${{ matrix.os }}
     steps:
       - name: Get checkout directory
