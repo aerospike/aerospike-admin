@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Setup snyk CLI
         uses: snyk/actions/setup@cdb760004ba9ea4d525f2e043745dfe85bb9077e
         with: 
