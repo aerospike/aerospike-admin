@@ -16,3 +16,4 @@ class ErrorsMsgs:
 
 
 DEFAULT_CONFIG_PATH = "/etc/aerospike/aerospike.conf"
+MAX_SOCKET_POOL_SIZE = 16
