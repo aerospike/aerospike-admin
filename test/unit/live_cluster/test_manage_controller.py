@@ -3876,6 +3876,29 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
             "Successfully added masking rule. Use 'show masking' to view the rules."
         )
 
+    async def test_add_rule_with_custom_type(self):
+        """Test successful addition of masking rule with custom type"""
+        line = "rule redact namespace test set demo bin ssn type number".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "ssn",
+            "number",
+            "redact",
+            {},
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully added masking rule. Use 'show masking' to view the rules."
+        )
+
     async def test_add_constant_rule_success(self):
         """Test successful addition of constant masking rule"""
         line = "rule constant value REDACTED namespace test set demo bin email".split()
@@ -3954,7 +3977,23 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
         await self.controller.execute(line)
 
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
-            "test", "demo", "ssn", nodes="principal"
+            "test", "demo", "ssn", "string", nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully dropped masking rule."
+        )
+
+    async def test_drop_rule_with_custom_type(self):
+        """Test successful removal of masking rule with custom type"""
+        line = "rule namespace test set demo bin ssn type int".split()
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            "test", "demo", "ssn", "int", nodes="principal"
         )
         self.view_mock.print_result.assert_called_once_with(
             "Successfully dropped masking rule."

@@ -4506,6 +4506,18 @@ class NodeTest(asynctest.TestCase):
         self.info_mock.assert_called_with(expected_req, self.ip)
         self.assertEqual(result, ASINFO_RESPONSE_OK)
 
+    async def test_info_masking_remove_rule_with_custom_type(self):
+        """Test successful masking rule removal with custom type"""
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_remove_rule("test", "demo", "ssn", "number")
+
+        expected_req = (
+            "masking:namespace=test;set=demo;bin=ssn;type=number;function=remove"
+        )
+        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
     async def test_info_masking_remove_rule_error(self):
         """Test masking rule removal error"""
         self.info_mock.return_value = "error::rule not found"

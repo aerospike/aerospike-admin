@@ -3247,12 +3247,12 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_masking_remove_rule(self, namespace, set_, bin_):
+    async def info_masking_remove_rule(self, namespace, set_, bin_, bin_type):
         """
         Remove a masking rule.
         """
-        req = "masking:namespace={};set={};bin={};type=string;function=remove".format(
-            namespace, set_, bin_
+        req = "masking:namespace={};set={};bin={};type={};function=remove".format(
+            namespace, set_, bin_, bin_type
         )
         resp = await self._info(req)
 

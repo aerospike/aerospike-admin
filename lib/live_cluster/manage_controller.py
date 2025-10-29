@@ -3430,7 +3430,12 @@ class ManageMaskingController(LiveClusterManageCommandController):
 
 @CommandHelp(
     "Add masking rules to redact or replace sensitive data in bins",
-    usage="rule <function> [function-args] namespace <namespace> set <set> bin <bin>",
+    "Examples:",
+    "  manage masking add rule redact position 0 length 4 namespace test set demo bin ssn",
+    "  manage masking add rule redact position 0 length 4 value # namespace test set demo bin ssn",
+    "  manage masking add rule constant value REDACTED namespace test set demo bin notes",
+    "",
+    usage="rule <function> [function-args] namespace <namespace> set <set> bin <bin> [type <type>]",
     modifiers=(
         ModifierHelp(
             "function",
@@ -3439,6 +3444,7 @@ class ManageMaskingController(LiveClusterManageCommandController):
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
         ModifierHelp("bin", "The bin to apply the rule to"),
+        ModifierHelp("type", "The bin type for the masking rule", default="string"),
         ModifierHelp(
             "position",
             "For redact: Start position (0+ from start, negative from end). Default: 0",
@@ -3472,7 +3478,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
 
         if function_name == "redact":
             # Parse redact parameters: position, length, value
-            while line and line[0] not in ["namespace", "set", "bin"]:
+            while line and line[0] not in ["namespace", "set", "bin", "type"]:
                 if line[0] == "position" and len(line) > 1:
                     line.pop(0)  # Remove "position"
                     function_params["position"] = line.pop(0)
@@ -3486,7 +3492,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
                     break
         elif function_name == "constant":
             # Parse constant parameters: value
-            while line and line[0] not in ["namespace", "set", "bin"]:
+            while line and line[0] not in ["namespace", "set", "bin", "type"]:
                 if line[0] == "value" and len(line) > 1:
                     line.pop(0)  # Remove "value"
                     function_params["value"] = line.pop(0)
@@ -3520,6 +3526,16 @@ class ManageMaskingAddController(ManageLeafCommandController):
             return_type=str,
             default="",
             modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        
+        # Parse optional type parameter
+        bin_type = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="type",
+            return_type=str,
+            default="string",
+            modifiers=set(),
             mods=self.mods,
         )
 
@@ -3556,7 +3572,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
             namespace,
             set_name,
             bin_name,
-            "string",  # bin type is always string for masking rules
+            bin_type,
             function_name,
             function_params,
             nodes="principal",
@@ -3598,11 +3614,12 @@ class ManageMaskingAddController(ManageLeafCommandController):
     "",
     "Example:",
     "  manage masking drop rule namespace test set demo bin ssn",
-    usage="rule namespace <namespace> set <set> bin <bin>",
+    usage="rule namespace <namespace> set <set> bin <bin> [type <type>]",
     modifiers=(
         ModifierHelp("namespace", "The namespace to remove the rule from"),
         ModifierHelp("set", "The set to remove the rule from"),
         ModifierHelp("bin", "The bin to remove the rule from"),
+        ModifierHelp("type", "The bin type for the masking rule", default="string"),
     ),
     short_msg="Drop masking rules",
 )
@@ -3638,6 +3655,16 @@ class ManageMaskingDropController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
+        
+        # Parse optional type parameter
+        bin_type = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="type",
+            return_type=str,
+            default="string",
+            modifiers=set(),
+            mods=self.mods,
+        )
 
         # Validate required parameters
         if not all([namespace, set_name, bin_name]):
@@ -3649,7 +3676,7 @@ class ManageMaskingDropController(ManageLeafCommandController):
             return
 
         remove_resp = await self.cluster.info_masking_remove_rule(
-            namespace, set_name, bin_name, nodes="principal"
+            namespace, set_name, bin_name, bin_type, nodes="principal"
         )
 
         resp = list(remove_resp.values())[0]
