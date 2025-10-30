@@ -50,6 +50,8 @@ from lib.live_cluster.manage_controller import (
     ManageJobsKillAllScansController,
     ManageJobsKillAllQueriesController,
     ManageJobsKillTridController,
+    ManageMaskingAddController,
+    ManageMaskingDropController,
     ManageQuiesceController,
     ManageReclusterController,
     ManageReviveController,
@@ -3829,3 +3831,197 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         )
         self.cluster_mock.info_roster_set.assert_called_once()
         self.cluster_mock.info_namespace_statistics.assert_called_once()
+
+
+class ManageMaskingAddControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageMaskingAddController()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageMaskingAddController.prompt_challenge"
+        ).start()
+        self.meta_mock = self.controller.meta_getter = create_autospec(
+            GetClusterMetadataController
+        )
+        self.controller.warn = False
+        self.controller.nodes = "principal"
+        self.controller.controller_arg_context = []
+        self.addCleanup(patch.stopall)
+
+    async def test_add_redact_rule_success(self):
+        """Test successful addition of redact masking rule"""
+        line = (
+            "redact position 0 length 4 value * namespace test set demo bin ssn".split()
+        )
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
+
+        result = await self.controller.execute(line)
+
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "ssn",
+            "string",
+            "redact",
+            {"position": "0", "length": "4", "value": "*"},
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully added masking rule. Use 'show masking' to view the rules."
+        )
+
+    async def test_add_rule_with_custom_type(self):
+        """Test successful addition of masking rule with custom type"""
+        line = "redact namespace test set demo bin ssn type number".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
+
+        result = await self.controller.execute(line)
+
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "ssn",
+            "number",
+            "redact",
+            {},
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully added masking rule. Use 'show masking' to view the rules."
+        )
+
+    async def test_add_constant_rule_success(self):
+        """Test successful addition of constant masking rule"""
+        line = "constant value REDACTED namespace test set demo bin email".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
+
+        result = await self.controller.execute(line)
+
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "email",
+            "string",
+            "constant",
+            {"value": "REDACTED"},
+            nodes="principal",
+        )
+
+    async def test_add_rule_version_not_supported(self):
+        """Test error when server version doesn't support masking"""
+        line = "redact namespace test set demo bin ssn".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.0.0.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertIn("Data masking is not supported", str(context.exception))
+
+    async def test_add_rule_missing_required_params(self):
+        """Test error when required parameters are missing"""
+        line = "redact namespace test".split()  # Missing set and bin
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception), "All parameters are required: namespace, set, bin"
+        )
+
+    async def test_add_rule_odd_number_of_params(self):
+        """Test error when function parameters are not in pairs"""
+        line = (
+            "redact position 0 length namespace test set demo bin ssn".split()
+        )  # Missing value for 'length'
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertIn(
+            "Function parameters must be in key-value pairs", str(context.exception)
+        )
+
+
+class ManageMaskingDropControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageMaskingDropController()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageMaskingDropController.prompt_challenge"
+        ).start()
+        self.controller.warn = False
+        self.controller.nodes = "principal"
+        self.controller.controller_arg_context = []
+        self.addCleanup(patch.stopall)
+
+    async def test_drop_rule_success(self):
+        """Test successful removal of masking rule"""
+        line = "namespace test set demo bin ssn".split()
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        result = await self.controller.execute(line)
+
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            "test", "demo", "ssn", "string", nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully dropped masking rule."
+        )
+
+    async def test_drop_rule_with_custom_type(self):
+        """Test successful removal of masking rule with custom type"""
+        line = "namespace test set demo bin ssn type int".split()
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        result = await self.controller.execute(line)
+
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            "test", "demo", "ssn", "int", nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Successfully dropped masking rule."
+        )
+
+    async def test_drop_rule_missing_required_params(self):
+        """Test error when required parameters are missing"""
+        line = "namespace test".split()  # Missing set and bin
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception), "All parameters are required: namespace, set, bin"
+        )

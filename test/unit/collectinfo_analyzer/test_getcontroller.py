@@ -24,6 +24,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
 from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
     GetConfigController,
+    GetMaskingRulesController,
     GetStatisticsController,
     GetUserAgentsController,
 )
@@ -548,3 +549,136 @@ class GetUserAgentsControllerTest(unittest.TestCase):
 
         self.log_handler.info_user_agents.assert_called_once()
         self.assertEqual(actual, {})
+
+
+class GetMaskingRulesControllerTest(unittest.TestCase):
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        self.controller = GetMaskingRulesController(self.log_handler)
+
+    def test_get_masking_rules_success(self):
+        """Test successful retrieval of masking rules data"""
+        self.log_handler.info_masking_rules.return_value = {
+            "timestamp": {
+                "192.168.1.1:3000": [
+                    {
+                        "ns": "test",
+                        "set": "demo",
+                        "bin": "ssn",
+                        "type": "string",
+                        "function": "redact",
+                        "position": "0",
+                        "length": "4",
+                        "value": "*",
+                    },
+                    {
+                        "ns": "test",
+                        "set": "demo",
+                        "bin": "email",
+                        "type": "string",
+                        "function": "constant",
+                        "value": "REDACTED",
+                    },
+                ],
+                "192.168.1.2:3000": [
+                    {
+                        "ns": "prod",
+                        "set": "users",
+                        "bin": "phone",
+                        "type": "string",
+                        "function": "redact",
+                        "position": "3",
+                        "length": "4",
+                    }
+                ],
+            }
+        }
+
+        expected = {
+            "timestamp": {
+                "192.168.1.1:3000": [
+                    {
+                        "ns": "test",
+                        "set": "demo",
+                        "bin": "ssn",
+                        "type": "string",
+                        "function": "redact",
+                        "position": "0",
+                        "length": "4",
+                        "value": "*",
+                    },
+                    {
+                        "ns": "test",
+                        "set": "demo",
+                        "bin": "email",
+                        "type": "string",
+                        "function": "constant",
+                        "value": "REDACTED",
+                    },
+                ],
+                "192.168.1.2:3000": [
+                    {
+                        "ns": "prod",
+                        "set": "users",
+                        "bin": "phone",
+                        "type": "string",
+                        "function": "redact",
+                        "position": "3",
+                        "length": "4",
+                    }
+                ],
+            }
+        }
+
+        actual = self.controller.get_masking_rules()
+
+        self.log_handler.info_masking_rules.assert_called_once()
+        self.assertEqual(actual, expected)
+
+    def test_get_masking_rules_empty(self):
+        """Test handling of empty masking rules data"""
+        self.log_handler.info_masking_rules.return_value = {}
+
+        actual = self.controller.get_masking_rules()
+
+        self.log_handler.info_masking_rules.assert_called_once()
+        self.assertEqual(actual, {})
+
+    def test_get_masking_rules_with_exceptions(self):
+        """Test handling of exceptions in masking rules data"""
+        exception = Exception("Connection error")
+        self.log_handler.info_masking_rules.return_value = {
+            "timestamp": {
+                "192.168.1.1:3000": [
+                    {
+                        "ns": "test",
+                        "set": "demo",
+                        "bin": "ssn",
+                        "type": "string",
+                        "function": "redact",
+                    }
+                ],
+                "192.168.1.2:3000": exception,
+            }
+        }
+
+        # The util.filter_exceptions should remove the exception
+        expected = {
+            "timestamp": {
+                "192.168.1.1:3000": [
+                    {
+                        "ns": "test",
+                        "set": "demo",
+                        "bin": "ssn",
+                        "type": "string",
+                        "function": "redact",
+                    }
+                ]
+                # Note: 192.168.1.2:3000 should be removed by filter_exceptions
+            }
+        }
+
+        actual = self.controller.get_masking_rules()
+
+        self.log_handler.info_masking_rules.assert_called_once()
+        self.assertEqual(actual, expected)

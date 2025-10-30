@@ -402,3 +402,15 @@ class GetUserAgentsController:
         """Get user agents data from collectinfo"""
         user_agents = self.log_handler.info_user_agents()
         return util.filter_exceptions(user_agents)
+
+
+class GetMaskingRulesController:
+    """Controller for retrieving masking rules data from collectinfo"""
+
+    def __init__(self, log_analyzer: CollectinfoLogHandler):
+        self.log_handler = log_analyzer
+
+    def get_masking_rules(self) -> TimestampDict[NodeDict[list[dict[str, str]]]]:
+        """Get masking rules data from collectinfo"""
+        masking_rules = self.log_handler.info_masking_rules()
+        return util.filter_exceptions(masking_rules)

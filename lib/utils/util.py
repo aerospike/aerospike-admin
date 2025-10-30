@@ -960,3 +960,62 @@ async def check_version_support(
         feature: min_build_version >= min_version
         for feature, min_version in min_versions.items()
     }
+
+
+def normalize_masking_rule_data(rule):
+    """Normalize masking rule data from API response.
+
+    Args:
+        rule (dict): Raw masking rule data from API
+
+    Returns:
+        dict: Normalized rule data with consistent field names
+
+    Example:
+        Input dict from API response:
+        {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "credit_card",
+            "type": "string",
+            "function": "redact",
+            "position": "0",
+            "length": "3"
+        }
+
+        Output normalized dict:
+        {
+            "ns": "test",
+            "set": "demo",
+            "bin": "credit_card",
+            "type": "string",
+            "function": "redact position 0 length 3"
+        }
+    """
+    processed_rule = {}
+
+    # Normalize field names (handle both "ns"/"namespace")
+    processed_rule["ns"] = rule.get("ns") or rule.get("namespace", "")
+    processed_rule["set"] = rule.get("set", "")
+    processed_rule["bin"] = rule.get("bin", "")
+    processed_rule["type"] = rule.get("type", "")
+
+    # Parse the function string to display it properly
+    # Handle both "func" and "function" field names
+    func_name = rule.get("function")
+
+    if func_name:
+        # Build complete function string dynamically from rule parameters
+        result = func_name
+
+        # Add all function parameters except the core fields
+        core_fields = {"ns", "namespace", "set", "bin", "type", "function"}
+        for key, value in rule.items():
+            if key not in core_fields and value is not None:
+                result += f" {key} {value}"
+
+        processed_rule["function"] = result
+    else:
+        processed_rule["function"] = ""
+
+    return processed_rule
