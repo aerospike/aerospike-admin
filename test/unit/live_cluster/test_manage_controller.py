@@ -3863,8 +3863,10 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
         }
         self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
 
-        await self.controller.execute(line)
+        result = await self.controller.execute(line)
 
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
         self.cluster_mock.info_masking_add_rule.assert_called_once_with(
             "test",
             "demo",
@@ -3886,8 +3888,10 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
         }
         self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
 
-        await self.controller.execute(line)
+        result = await self.controller.execute(line)
 
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
         self.cluster_mock.info_masking_add_rule.assert_called_once_with(
             "test",
             "demo",
@@ -3909,8 +3913,10 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
         }
         self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
 
-        await self.controller.execute(line)
+        result = await self.controller.execute(line)
 
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
         self.cluster_mock.info_masking_add_rule.assert_called_once_with(
             "test",
             "demo",
@@ -3980,8 +3986,10 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
             "principal": ASINFO_RESPONSE_OK
         }
 
-        await self.controller.execute(line)
+        result = await self.controller.execute(line)
 
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
             "test", "demo", "ssn", "string", nodes="principal"
         )
@@ -3996,8 +4004,10 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
             "principal": ASINFO_RESPONSE_OK
         }
 
-        await self.controller.execute(line)
+        result = await self.controller.execute(line)
 
+        # Should return None (from view.print_result)
+        self.assertIsNone(result)
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
             "test", "demo", "ssn", "int", nodes="principal"
         )

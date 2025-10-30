@@ -1251,7 +1251,6 @@ class CliView(object):
     @staticmethod
     @reserved_modifiers
     def show_masking_rules(masking_data, timestamp="", **ignore):
-        CliView._get_timestamp_suffix(timestamp)
         if not masking_data:
             return
 

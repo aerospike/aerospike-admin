@@ -1981,7 +1981,7 @@ class CliViewTest(unittest.TestCase):
             }
         ]
 
-        result = CliView.show_masking_rules(masking_data, timestamp="2023-01-01")
+        CliView.show_masking_rules(masking_data, timestamp="2023-01-01")
 
         # Verify sheet.render was called with correct parameters
         sheet_mock.render.assert_called_once()
@@ -2016,7 +2016,7 @@ class CliViewTest(unittest.TestCase):
             }
         ]
 
-        result = CliView.show_masking_rules(masking_data, timestamp="2023-01-01")
+        CliView.show_masking_rules(masking_data, timestamp="2023-01-01")
 
         sheet_mock.render.assert_called_once()
         print_result_mock.assert_called_once_with("Rendered masking rules table")

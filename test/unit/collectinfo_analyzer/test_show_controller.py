@@ -26,6 +26,8 @@ class ShowMaskingControllerTest(unittest.TestCase):
     def setUp(self):
         self.log_handler = create_autospec(CollectinfoLogHandler)
         self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        # Configure view.show_masking_rules to return None (like the real method)
+        self.view_mock.show_masking_rules.return_value = None
         self.controller = ShowMaskingController()
         self.controller.log_handler = self.log_handler
         self.controller.mods = {}
@@ -59,6 +61,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
 
         result = self.controller._do_default([])
 
+        self.assertIsNone(result)
         getter_class_mock.assert_called_once_with(self.log_handler)
         getter_mock.get_masking_rules.assert_called_once_with(namespace=None, set_=None)
         self.view_mock.show_masking_rules.assert_called_once_with(
@@ -78,6 +81,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         line = ["namespace", "test"]
         result = self.controller._do_default(line)
 
+        self.assertIsNone(result)
         getter_mock.get_masking_rules.assert_called_once_with(
             namespace="test", set_=None
         )
@@ -95,6 +99,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         line = ["namespace", "test", "set", "demo"]
         result = self.controller._do_default(line)
 
+        self.assertIsNone(result)
         getter_mock.get_masking_rules.assert_called_once_with(
             namespace="test", set_="demo"
         )
@@ -120,6 +125,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
 
         result = self.controller._do_default([])
 
+        self.assertIsNone(result)
         getter_mock.get_masking_rules.assert_called_once_with(namespace=None, set_=None)
         # Should return early without calling view
         self.view_mock.show_masking_rules.assert_not_called()
@@ -142,6 +148,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         line = ["namespace", "test"]
         result = self.controller._do_default(line)
 
+        self.assertIsNone(result)
         # Should filter to only the "test" namespace rule
         expected_filtered = [mock_rules[0]]  # Only the test namespace rule
         self.view_mock.show_masking_rules.assert_called_once_with(
