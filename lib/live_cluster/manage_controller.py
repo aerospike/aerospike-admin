@@ -3486,7 +3486,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
-        
+
         # Parse optional type parameter
         bin_type = util.get_arg_and_delete_from_mods(
             line=line,
@@ -3548,22 +3548,27 @@ class ManageMaskingAddController(ManageLeafCommandController):
     def _parse_function_params(self, line):
         """Parse function parameters dynamically."""
         function_params = {}
-        reserved_keywords = {"namespace", "set", "bin", "type"}  # Use set for O(1) lookup
-        
+        reserved_keywords = {
+            "namespace",
+            "set",
+            "bin",
+            "type",
+        }  # Use set for O(1) lookup
+
         # Count parameters first for validation (single pass)
         param_count = 0
         for i, arg in enumerate(line):
             if arg in reserved_keywords:
                 break
             param_count += 1
-        
+
         # Ensure even number of arguments for proper key-value pairing
         if param_count % 2 != 0:
             param_args = line[:param_count]
             raise ShellException(
                 f"Function parameters must be in key-value pairs. Found {param_count} arguments: {' '.join(param_args)}"
             )
-        
+
         # Parse parameters in pairs (single pass, no copying)
         while line and line[0] not in reserved_keywords:
             if len(line) >= 2:
@@ -3572,7 +3577,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
                 function_params[param_name] = param_value
             else:
                 break  # Should not happen due to validation above
-        
+
         return function_params
 
     def _build_function_string(self, function_name, params):
@@ -3625,7 +3630,7 @@ class ManageMaskingDropController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
-        
+
         # Parse optional type parameter
         bin_type = util.get_arg_and_delete_from_mods(
             line=line,

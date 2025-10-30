@@ -4501,7 +4501,9 @@ class NodeTest(asynctest.TestCase):
         """Test successful masking rule removal"""
         self.info_mock.return_value = "ok"
 
-        result = await self.node.info_masking_remove_rule("test", "demo", "ssn", "string")
+        result = await self.node.info_masking_remove_rule(
+            "test", "demo", "ssn", "string"
+        )
 
         expected_req = (
             "masking:namespace=test;set=demo;bin=ssn;type=string;function=remove"
@@ -4513,7 +4515,9 @@ class NodeTest(asynctest.TestCase):
         """Test successful masking rule removal with custom type"""
         self.info_mock.return_value = "ok"
 
-        result = await self.node.info_masking_remove_rule("test", "demo", "ssn", "number")
+        result = await self.node.info_masking_remove_rule(
+            "test", "demo", "ssn", "number"
+        )
 
         expected_req = (
             "masking:namespace=test;set=demo;bin=ssn;type=number;function=remove"
@@ -4525,7 +4529,9 @@ class NodeTest(asynctest.TestCase):
         """Test masking rule removal error"""
         self.info_mock.return_value = "error::rule not found"
 
-        result = await self.node.info_masking_remove_rule("test", "demo", "ssn", "string")
+        result = await self.node.info_masking_remove_rule(
+            "test", "demo", "ssn", "string"
+        )
 
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to remove masking rule")

@@ -3855,7 +3855,9 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
 
     async def test_add_redact_rule_success(self):
         """Test successful addition of redact masking rule"""
-        line = "redact position 0 length 4 value * namespace test set demo bin ssn".split()
+        line = (
+            "redact position 0 length 4 value * namespace test set demo bin ssn".split()
+        )
         self.cluster_mock.info_masking_add_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
@@ -3942,12 +3944,16 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
 
     async def test_add_rule_odd_number_of_params(self):
         """Test error when function parameters are not in pairs"""
-        line = "redact position 0 length namespace test set demo bin ssn".split()  # Missing value for 'length'
+        line = (
+            "redact position 0 length namespace test set demo bin ssn".split()
+        )  # Missing value for 'length'
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
-        self.assertIn("Function parameters must be in key-value pairs", str(context.exception))
+        self.assertIn(
+            "Function parameters must be in key-value pairs", str(context.exception)
+        )
 
 
 class ManageMaskingDropControllerTest(asynctest.TestCase):
