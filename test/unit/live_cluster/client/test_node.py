@@ -23,6 +23,7 @@ from pytest import PytestUnraisableExceptionWarning
 from mock import MagicMock, patch
 import socket
 import unittest
+from collections import deque
 
 from mock.mock import AsyncMock, Mock, call
 import pytest
@@ -294,12 +295,14 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock.connect.return_value = True
         as_socket_mock.login.returns_value = True
         as_socket_mock.get_session_info.return_value = "token", 59
-        self.assertEqual(self.node.socket_pool, {self.node.port: set()})
+        self.assertEqual(self.node.socket_pool, {self.node.port: deque(maxlen=16)})
 
         self.assertTrue(await self.node.login())
 
         as_socket_mock.close.assert_not_called()
-        self.assertEqual(self.node.socket_pool, {self.node.port: set([as_socket_mock])})
+        self.assertEqual(
+            self.node.socket_pool, {self.node.port: deque([as_socket_mock], maxlen=16)}
+        )
         self.assertEqual("token", self.node.session_token)
         self.assertEqual(59, self.node.session_expiration)
 
@@ -377,8 +380,8 @@ class NodeTest(asynctest.TestCase):
         as_socket_mock2.is_connected.return_value = False
         as_socket_mock2.name = 2
         self.node._initialize_socket_pool()
-        self.node.socket_pool[self.node.port].add(as_socket_mock2)
-        self.node.socket_pool[self.node.port].add(as_socket_mock1)
+        self.node.socket_pool[self.node.port].append(as_socket_mock2)
+        self.node.socket_pool[self.node.port].append(as_socket_mock1)
 
         sock = await self.node._get_connection(self.node.ip, self.node.port)
 
@@ -394,7 +397,7 @@ class NodeTest(asynctest.TestCase):
 
         as_socket_in_pool = ASSocket_Mock()
         as_socket_in_pool.is_connected.return_value = False
-        self.node.socket_pool[self.node.port].add(as_socket_in_pool)
+        self.node.socket_pool[self.node.port].append(as_socket_in_pool)
 
         self.node.session_token = "session-token"
         as_socket_mock.connect.return_value = True
@@ -4670,6 +4673,461 @@ class SyscmdTest(unittest.TestCase):
         result = sys_cmd.parse("foo")
 
         self.assertDictEqual(expected, result)
+
+
+class NeedsRefreshTest(asynctest.TestCase):
+    """Test cases for the needs_refresh method"""
+
+    async def setUp(self):
+        self.ip = "192.1.1.1"
+        self.port = 3000
+
+        # Mock dependencies
+        self.get_fully_qualified_domain_name = patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start()
+        self.async_shell_cmd_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command"
+        ).start()
+        getaddrinfo = patch("socket.getaddrinfo")
+        self.addCleanup(patch.stopall)
+
+        lib.live_cluster.client.node.Node.info_build = patch(
+            "lib.live_cluster.client.node.Node.info_build", AsyncMock()
+        ).start()
+        socket.getaddrinfo = getaddrinfo.start()
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+        self.get_fully_qualified_domain_name.return_value = "host.domain.local"
+        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
+
+        # Mock _info_cinfo for Node initialization
+        self.init_info_mock = patch.object(
+            lib.live_cluster.client.node.Node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "features", "connection"]:
+                return {
+                    "node": "A00000000000000",
+                    "features": "features",
+                    "connection": "admin=false",
+                }
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "192.1.1.1:3000",
+                    "peers-clear-std": "2,3000,[[1A0,,[192.1.1.1]]]",
+                }
+            else:
+                return "mock_response"
+
+        self.init_info_mock.side_effect = info_side_effect
+
+        # Create node
+        self.node = await Node(self.ip, self.port)
+        self.node._initialize_socket_pool()
+
+        # Mock info methods
+        self.info_mock = patch.object(
+            self.node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+        self.get_connection_mock = patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ).start()
+        self.info_service_helper_mock = patch.object(
+            self.node, "_info_service_helper"
+        ).start()
+        self.get_service_info_call_mock = patch.object(
+            self.node, "_get_service_info_call"
+        ).start()
+
+    async def test_needs_refresh_node_not_alive(self):
+        """Test that needs_refresh returns True when node is not alive"""
+        self.node.alive = False
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)
+
+    async def test_needs_refresh_no_socket_pool(self):
+        """Test that needs_refresh returns True when socket pool is None"""
+        self.node.alive = True
+        self.node.socket_pool = None
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)
+
+    async def test_needs_refresh_no_socket_pool_for_port(self):
+        """Test that needs_refresh returns True when socket pool doesn't have the port"""
+        self.node.alive = True
+        self.node.socket_pool = {9999: deque()}  # Different port
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)
+
+    async def test_needs_refresh_no_connection_available(self):
+        """Test that needs_refresh returns True when no socket connection is available"""
+        self.node.alive = True
+        self.get_connection_mock.return_value = None
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)
+        self.get_connection_mock.assert_called_once_with(self.ip, self.port)
+
+    async def test_needs_refresh_service_addresses_changed(self):
+        """Test that needs_refresh returns True when service addresses have changed"""
+        self.node.alive = True
+        self.node.service_addresses = [("192.1.1.1", 3000, None)]
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+
+        # Mock successful connection
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # Mock service info calls
+        self.get_service_info_call_mock.return_value = "service-clear-std"
+        self.info_mock.return_value = {
+            "node": "A00000000000000",
+            "service-clear-std": "192.1.1.2:3000",
+        }
+        self.info_service_helper_mock.return_value = [
+            ("192.1.1.2", 3000, None)
+        ]  # Different address
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)
+        self.info_mock.assert_called_once_with(
+            ["node", "service-clear-std"], self.ip, disable_cache=True
+        )
+
+    async def test_needs_refresh_service_addresses_compatible(self):
+        """Test that needs_refresh returns False when service addresses are compatible"""
+        self.node.alive = True
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+        self.node.node_id = "A00000000000000"  # Set node ID to match
+        self.node.service_addresses = [
+            ("192.1.1.1", 3000, None),
+            ("192.1.1.2", 3000, None),
+        ]
+
+        # Mock successful connection
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # Mock service info calls - current connection is in refreshed addresses
+        self.get_service_info_call_mock.return_value = "service-clear-std"
+        self.info_mock.return_value = {
+            "node": "A00000000000000",
+            "service-clear-std": "192.1.1.1:3000,192.1.1.2:3000",
+        }
+        self.info_service_helper_mock.return_value = [
+            ("192.1.1.1", 3000, None),
+            ("192.1.1.2", 3000, None),
+        ]  # Same addresses including current connection
+
+        result = await self.node.needs_refresh()
+
+        self.assertFalse(result)
+
+    async def test_needs_refresh_exception_handling(self):
+        """Test that needs_refresh returns True when an exception occurs"""
+        self.node.alive = True
+        self.get_connection_mock.side_effect = Exception("Connection failed")
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)
+
+    async def test_service_addresses_compatible_same_addresses(self):
+        """Test _service_addresses_compatible with identical addresses"""
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+        refreshed = [("192.1.1.1", 3000, None)]
+
+        result = self.node._service_addresses_compatible(refreshed, "service-clear-std")
+
+        self.assertTrue(result)
+
+    async def test_service_addresses_compatible_subset(self):
+        """Test _service_addresses_compatible with current connection in refreshed addresses"""
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+        refreshed = [("192.1.1.1", 3000, None), ("192.1.1.2", 3000, None)]
+
+        result = self.node._service_addresses_compatible(refreshed, "service-clear-std")
+
+        self.assertTrue(result)
+
+    async def test_service_addresses_compatible_connection_not_in_current(self):
+        """Test _service_addresses_compatible when connection address not in refreshed addresses"""
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+        refreshed = [("192.1.1.2", 3000, None)]  # Different from connection
+
+        result = self.node._service_addresses_compatible(refreshed, "service-clear-std")
+
+        self.assertFalse(result)
+
+    async def test_service_addresses_compatible_empty_current(self):
+        """Test _service_addresses_compatible with empty refreshed addresses"""
+        refreshed = []
+
+        result = self.node._service_addresses_compatible(refreshed, "service-clear-std")
+
+        self.assertFalse(result)  # Empty refreshed addresses should trigger refresh
+
+    async def test_needs_refresh_load_balancer_scenario(self):
+        """Test load balancer to direct connection optimization"""
+        # Current connection via load balancer
+        self.node.ip = "load-balancer.com"
+        self.node.port = 3000
+        self.node.tls_name = None
+        self.node.alive = True
+
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # Mock service info calls
+        self.get_service_info_call_mock.return_value = "service-clear-std"
+        self.info_mock.return_value = {
+            "node": "A00000000000000",
+            "service-clear-std": "192.1.1.1:3000,192.1.1.2:3000",
+        }
+
+        # Service addresses from node (no LB)
+        refreshed_addresses = [("192.1.1.1", 3000, None), ("192.1.1.2", 3000, None)]
+        self.info_service_helper_mock.return_value = refreshed_addresses
+
+        result = await self.node.needs_refresh()
+
+        # Should trigger refresh to attempt direct connections
+        self.assertTrue(result)
+
+    async def test_service_addresses_compatible_load_balancer_not_in_refreshed(self):
+        """Test load balancer scenario where LB is not in refreshed addresses"""
+        self.node.ip = "load-balancer.com"
+        self.node.port = 3000
+        self.node.tls_name = None
+
+        refreshed_addresses = [("192.1.1.1", 3000, None), ("192.1.1.2", 3000, None)]
+
+        result = self.node._service_addresses_compatible(
+            refreshed_addresses, "service-clear-std"
+        )
+
+        self.assertFalse(result)  # Should trigger refresh
+
+    async def test_service_addresses_compatible_direct_connection_valid(self):
+        """Test direct connection when it's in service addresses"""
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+
+        refreshed_addresses = [("192.1.1.1", 3000, None), ("192.1.1.2", 3000, None)]
+
+        result = self.node._service_addresses_compatible(
+            refreshed_addresses, "service-clear-std"
+        )
+
+        self.assertTrue(result)  # No refresh needed
+
+    async def test_needs_refresh_admin_node(self):
+        """Test needs_refresh for admin nodes"""
+        # Override admin node setting (it was set to False during initialization)
+        self.node.is_admin_node = True
+        self.node.alive = True
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000  # Keep original port for test consistency
+        self.node.tls_name = None
+        self.node.node_id = "A00000000000000"  # Set node ID to match
+
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # The needs_refresh method will call _get_admin_info_call internally
+        # We need to mock the _get_admin_info_call method that exists on the node
+        with patch.object(
+            self.node, "_get_admin_info_call", return_value="admin-clear-std"
+        ) as admin_call_mock:
+            self.info_mock.return_value = {
+                "node": "A00000000000000",
+                "admin-clear-std": "192.1.1.1:3000",
+            }
+            self.info_service_helper_mock.return_value = [("192.1.1.1", 3000, None)]
+
+            result = await self.node.needs_refresh()
+
+            # The logic should work correctly for admin nodes
+            # (admin call usage is tested implicitly through the mocked return)
+            self.assertFalse(result)  # Should not need refresh if addresses match
+
+    async def test_needs_refresh_node_id_changed(self):
+        """Test needs_refresh when node ID changes"""
+        self.node.alive = True
+        self.node.node_id = "A00000000000000"
+
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # Mock different node ID returned
+        self.get_service_info_call_mock.return_value = "service-clear-std"
+        self.info_mock.return_value = {
+            "node": "B11111111111111",  # Different node ID
+            "service-clear-std": "192.1.1.1:3000",
+        }
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)  # Should refresh due to node ID change
+
+    async def test_service_addresses_compatible_empty_refreshed_addresses(self):
+        """Test handling of empty refreshed service addresses"""
+        result = self.node._service_addresses_compatible([], "service-clear-std")
+
+        self.assertFalse(result)  # Should trigger refresh
+
+    async def test_needs_refresh_info_call_exception(self):
+        """Test needs_refresh when info call fails"""
+        self.node.alive = True
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # Mock info call failure
+        self.info_mock.side_effect = Exception("Info call failed")
+
+        result = await self.node.needs_refresh()
+
+        self.assertTrue(result)  # Should refresh on error
+
+
+class SocketPoolTest(asynctest.TestCase):
+    """Test cases for socket pool FIFO behavior and edge cases"""
+
+    async def setUp(self):
+        self.ip = "192.1.1.1"
+        self.port = 3000
+
+        # Mock dependencies
+        self.get_fully_qualified_domain_name = patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start()
+        self.async_shell_cmd_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command"
+        ).start()
+        getaddrinfo = patch("socket.getaddrinfo")
+        self.addCleanup(patch.stopall)
+
+        lib.live_cluster.client.node.Node.info_build = patch(
+            "lib.live_cluster.client.node.Node.info_build", AsyncMock()
+        ).start()
+        socket.getaddrinfo = getaddrinfo.start()
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+        self.get_fully_qualified_domain_name.return_value = "host.domain.local"
+        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
+
+        # Mock _info_cinfo for Node initialization
+        self.init_info_mock = patch.object(
+            lib.live_cluster.client.node.Node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "features", "connection"]:
+                return {
+                    "node": "A00000000000000",
+                    "features": "features",
+                    "connection": "admin=false",
+                }
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "192.1.1.1:3000",
+                    "peers-clear-std": "2,3000,[[1A0,,[192.1.1.1]]]",
+                }
+            else:
+                return "mock_response"
+
+        self.init_info_mock.side_effect = info_side_effect
+
+        # Create node
+        self.node = await Node(self.ip, self.port)
+        self.node._initialize_socket_pool()
+
+    async def test_socket_pool_maxlen_behavior(self):
+        """Test that socket pool respects maxlen and FIFO behavior"""
+        from lib.live_cluster.client.constants import MAX_SOCKET_POOL_SIZE
+
+        # Fill socket pool to max capacity
+        for i in range(MAX_SOCKET_POOL_SIZE + 5):  # Add more than max
+            mock_sock = AsyncMock()
+            mock_sock.name = f"sock_{i}"
+            self.node.socket_pool[self.node.port].append(mock_sock)
+
+        # Should only have MAX_SOCKET_POOL_SIZE sockets
+        self.assertEqual(
+            len(self.node.socket_pool[self.node.port]), MAX_SOCKET_POOL_SIZE
+        )
+
+        # Should be FIFO - last sockets should be in pool (oldest ones dropped)
+        first_remaining_sock = self.node.socket_pool[self.node.port][0]
+        self.assertEqual(first_remaining_sock.name, "sock_5")  # First 5 were dropped
+
+        last_sock = self.node.socket_pool[self.node.port][-1]
+        self.assertEqual(last_sock.name, f"sock_{MAX_SOCKET_POOL_SIZE + 4}")
+
+    async def test_get_connection_fifo_order(self):
+        """Test that _get_connection returns sockets in FIFO order"""
+        # Add sockets in order
+        sock1 = AsyncMock()
+        sock1.is_connected.return_value = True
+        sock1.name = "first"
+
+        sock2 = AsyncMock()
+        sock2.is_connected.return_value = True
+        sock2.name = "second"
+
+        self.node.socket_pool[self.node.port].append(sock1)
+        self.node.socket_pool[self.node.port].append(sock2)
+
+        # Should return first socket (FIFO)
+        result = await self.node._get_connection(self.node.ip, self.node.port)
+        self.assertEqual(result.name, "first")
+
+    async def test_socket_pool_disconnected_socket_cleanup(self):
+        """Test that disconnected sockets are cleaned up properly"""
+        # Add disconnected socket first
+        disconnected_sock = AsyncMock()
+        disconnected_sock.is_connected.return_value = False
+        disconnected_sock.name = "disconnected"
+
+        # Add connected socket second
+        connected_sock = AsyncMock()
+        connected_sock.is_connected.return_value = True
+        connected_sock.name = "connected"
+
+        self.node.socket_pool[self.node.port].append(disconnected_sock)
+        self.node.socket_pool[self.node.port].append(connected_sock)
+
+        # Should skip disconnected socket and return connected one
+        result = await self.node._get_connection(self.node.ip, self.node.port)
+
+        # Disconnected socket should be closed
+        disconnected_sock.close.assert_called_once()
+
+        # Should return connected socket
+        self.assertEqual(result.name, "connected")
 
 
 if __name__ == "__main__":
