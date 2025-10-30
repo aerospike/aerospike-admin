@@ -63,7 +63,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
 
         self.assertIsNone(result)
         getter_class_mock.assert_called_once_with(self.log_handler)
-        getter_mock.get_masking_rules.assert_called_once_with(namespace=None, set_=None)
+        getter_mock.get_masking_rules.assert_called_once_with()
         self.view_mock.show_masking_rules.assert_called_once_with(
             mock_rules, timestamp="2023-01-01", **{}
         )
@@ -82,9 +82,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         result = self.controller._do_default(line)
 
         self.assertIsNone(result)
-        getter_mock.get_masking_rules.assert_called_once_with(
-            namespace="test", set_=None
-        )
+        getter_mock.get_masking_rules.assert_called_once_with()
 
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
     def test_do_default_with_namespace_and_set_filter(self, getter_class_mock):
@@ -100,9 +98,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         result = self.controller._do_default(line)
 
         self.assertIsNone(result)
-        getter_mock.get_masking_rules.assert_called_once_with(
-            namespace="test", set_="demo"
-        )
+        getter_mock.get_masking_rules.assert_called_once_with()
 
     def test_do_default_set_without_namespace_raises_error(self):
         """Test error when set is specified without namespace"""
@@ -126,7 +122,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         result = self.controller._do_default([])
 
         self.assertIsNone(result)
-        getter_mock.get_masking_rules.assert_called_once_with(namespace=None, set_=None)
+        getter_mock.get_masking_rules.assert_called_once_with()
         # Should return early without calling view
         self.view_mock.show_masking_rules.assert_not_called()
 

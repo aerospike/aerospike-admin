@@ -1896,7 +1896,7 @@ class ShowMaskingController(CollectinfoCommandController):
             raise ShellException("Set filter can only be used with namespace filter")
 
         getter = GetMaskingRulesController(self.log_handler)
-        masking_data = getter.get_masking_rules(namespace=namespace, set_=set_name)
+        masking_data = getter.get_masking_rules()
 
         # Get the latest timestamp
         if not masking_data:
