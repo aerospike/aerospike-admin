@@ -3855,7 +3855,7 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
 
     async def test_add_redact_rule_success(self):
         """Test successful addition of redact masking rule"""
-        line = "rule redact position 0 length 4 value * namespace test set demo bin ssn".split()
+        line = "redact position 0 length 4 value * namespace test set demo bin ssn".split()
         self.cluster_mock.info_masking_add_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
@@ -3878,7 +3878,7 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
 
     async def test_add_rule_with_custom_type(self):
         """Test successful addition of masking rule with custom type"""
-        line = "rule redact namespace test set demo bin ssn type number".split()
+        line = "redact namespace test set demo bin ssn type number".split()
         self.cluster_mock.info_masking_add_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
@@ -3901,7 +3901,7 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
 
     async def test_add_constant_rule_success(self):
         """Test successful addition of constant masking rule"""
-        line = "rule constant value REDACTED namespace test set demo bin email".split()
+        line = "constant value REDACTED namespace test set demo bin email".split()
         self.cluster_mock.info_masking_add_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
@@ -3921,7 +3921,7 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
 
     async def test_add_rule_version_not_supported(self):
         """Test error when server version doesn't support masking"""
-        line = "rule redact namespace test set demo bin ssn".split()
+        line = "redact namespace test set demo bin ssn".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.0.0.0"}
 
         with self.assertRaises(ShellException) as context:
@@ -3931,7 +3931,7 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
 
     async def test_add_rule_missing_required_params(self):
         """Test error when required parameters are missing"""
-        line = "rule redact namespace test".split()  # Missing set and bin
+        line = "redact namespace test".split()  # Missing set and bin
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
@@ -3940,14 +3940,14 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
             str(context.exception), "All parameters are required: namespace, set, bin"
         )
 
-    async def test_add_rule_unsupported_function(self):
-        """Test error with unsupported function"""
-        line = "rule invalid_func namespace test set demo bin ssn".split()
+    async def test_add_rule_odd_number_of_params(self):
+        """Test error when function parameters are not in pairs"""
+        line = "redact position 0 length namespace test set demo bin ssn".split()  # Missing value for 'length'
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
-        self.assertIn("Unsupported function: invalid_func", str(context.exception))
+        self.assertIn("Function parameters must be in key-value pairs", str(context.exception))
 
 
 class ManageMaskingDropControllerTest(asynctest.TestCase):
@@ -3969,7 +3969,7 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
 
     async def test_drop_rule_success(self):
         """Test successful removal of masking rule"""
-        line = "rule namespace test set demo bin ssn".split()
+        line = "namespace test set demo bin ssn".split()
         self.cluster_mock.info_masking_remove_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
@@ -3985,7 +3985,7 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
 
     async def test_drop_rule_with_custom_type(self):
         """Test successful removal of masking rule with custom type"""
-        line = "rule namespace test set demo bin ssn type int".split()
+        line = "namespace test set demo bin ssn type int".split()
         self.cluster_mock.info_masking_remove_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
@@ -4001,7 +4001,7 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
 
     async def test_drop_rule_missing_required_params(self):
         """Test error when required parameters are missing"""
-        line = "rule namespace test".split()  # Missing set and bin
+        line = "namespace test".split()  # Missing set and bin
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)

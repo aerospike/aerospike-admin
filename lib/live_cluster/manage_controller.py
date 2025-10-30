@@ -3429,36 +3429,23 @@ class ManageMaskingController(LiveClusterManageCommandController):
 
 
 @CommandHelp(
-    "Add masking rules to redact or replace sensitive data in bins",
-    "Examples:",
-    "  manage masking add rule redact position 0 length 4 namespace test set demo bin ssn",
-    "  manage masking add rule redact position 0 length 4 value # namespace test set demo bin ssn",
-    "  manage masking add rule constant value REDACTED namespace test set demo bin notes",
-    "",
-    usage="rule <function> [function-args] namespace <namespace> set <set> bin <bin> [type <type>]",
+    "Add masking rules to redact or replace sensitive data in bins.",
+    usage="<function> [function-args] namespace <namespace> set <set> bin <bin> [type <type>]",
     modifiers=(
         ModifierHelp(
             "function",
-            "Masking function: redact [position 0] [length LEN] [value *] or constant [value STR]",
+            "Masking function name (e.g. redact, constant). See https://aerospike.com/docs/ for supported functions.",
+        ),
+        ModifierHelp(
+            "function-args",
+            "Function parameters in key-value pairs (e.g. position 0 length 4 value *)",
         ),
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
         ModifierHelp("bin", "The bin to apply the rule to"),
         ModifierHelp("type", "The bin type for the masking rule", default="string"),
-        ModifierHelp(
-            "position",
-            "For redact: Start position (0+ from start, negative from end). Default: 0",
-        ),
-        ModifierHelp(
-            "length",
-            "For redact: Number of characters to redact from position. Default: to end",
-        ),
-        ModifierHelp(
-            "value",
-            "For redact: Character to use for redaction (Default: *). For constant: String to use as mask (Default: empty string) Note: Acceptable values include ASCII characters 33-127 excluding =, ; and :",
-        ),
     ),
-    short_msg="Add masking rules with redact or constant functions",
+    short_msg="Add masking rules with dynamic function support",
 )
 class ManageMaskingAddController(ManageLeafCommandController):
     def __init__(self):
@@ -3466,42 +3453,13 @@ class ManageMaskingAddController(ManageLeafCommandController):
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
     async def _do_default(self, line):
-        line.pop(0)  # Remove "rule"
-
         if not line:
             raise ShellException("Function is required")
 
         function_name = line.pop(0)
 
-        # Parse function-specific parameters
-        function_params = {}
-
-        if function_name == "redact":
-            # Parse redact parameters: position, length, value
-            while line and line[0] not in ["namespace", "set", "bin", "type"]:
-                if line[0] == "position" and len(line) > 1:
-                    line.pop(0)  # Remove "position"
-                    function_params["position"] = line.pop(0)
-                elif line[0] == "length" and len(line) > 1:
-                    line.pop(0)  # Remove "length"
-                    function_params["length"] = line.pop(0)
-                elif line[0] == "value" and len(line) > 1:
-                    line.pop(0)  # Remove "value"
-                    function_params["value"] = line.pop(0)
-                else:
-                    break
-        elif function_name == "constant":
-            # Parse constant parameters: value
-            while line and line[0] not in ["namespace", "set", "bin", "type"]:
-                if line[0] == "value" and len(line) > 1:
-                    line.pop(0)  # Remove "value"
-                    function_params["value"] = line.pop(0)
-                else:
-                    break
-        else:
-            raise ShellException(
-                f"Unsupported function: {function_name}. Supported functions: redact, constant"
-            )
+        # Parse function parameters dynamically
+        function_params = self._parse_function_params(line)
 
         # Parse required parameters
         namespace = util.get_arg_and_delete_from_mods(
@@ -3587,34 +3545,47 @@ class ManageMaskingAddController(ManageLeafCommandController):
             "Successfully added masking rule. Use 'show masking' to view the rules."
         )
 
+    def _parse_function_params(self, line):
+        """Parse function parameters dynamically."""
+        function_params = {}
+        reserved_keywords = {"namespace", "set", "bin", "type"}  # Use set for O(1) lookup
+        
+        # Count parameters first for validation (single pass)
+        param_count = 0
+        for i, arg in enumerate(line):
+            if arg in reserved_keywords:
+                break
+            param_count += 1
+        
+        # Ensure even number of arguments for proper key-value pairing
+        if param_count % 2 != 0:
+            param_args = line[:param_count]
+            raise ShellException(
+                f"Function parameters must be in key-value pairs. Found {param_count} arguments: {' '.join(param_args)}"
+            )
+        
+        # Parse parameters in pairs (single pass, no copying)
+        while line and line[0] not in reserved_keywords:
+            if len(line) >= 2:
+                param_name = line.pop(0)
+                param_value = line.pop(0)
+                function_params[param_name] = param_value
+            else:
+                break  # Should not happen due to validation above
+        
+        return function_params
+
     def _build_function_string(self, function_name, params):
-        """Build the function string for the masking rule."""
-        if function_name == "redact":
-            parts = ["redact"]
-            if "position" in params:
-                parts.extend(["position", params["position"]])
-            if "length" in params:
-                parts.extend(["length", params["length"]])
-            if "value" in params:
-                parts.extend(["value", params["value"]])
-            return " ".join(parts)
-        elif function_name == "constant":
-            parts = ["constant"]
-            if "value" in params:
-                parts.extend(["value", params["value"]])
-            return " ".join(parts)
-        else:
-            return function_name
+        """Build the function string for the masking rule dynamically."""
+        parts = [function_name]
+        for key, value in params.items():
+            parts.extend([key, value])
+        return " ".join(parts)
 
 
 @CommandHelp(
-    "Drop masking rules",
-    "Removes any masking rule applied to the specified bin, regardless of the",
-    "original function type (redact, constant, etc.).",
-    "",
-    "Example:",
-    "  manage masking drop rule namespace test set demo bin ssn",
-    usage="rule namespace <namespace> set <set> bin <bin> [type <type>]",
+    "Drop masking rules. Removes any masking rule applied to the specified bin",
+    usage="namespace <namespace> set <set> bin <bin> [type <type>]",
     modifiers=(
         ModifierHelp("namespace", "The namespace to remove the rule from"),
         ModifierHelp("set", "The set to remove the rule from"),
@@ -3628,7 +3599,6 @@ class ManageMaskingDropController(ManageLeafCommandController):
         self.required_modifiers = set(["namespace", "set", "bin"])
 
     async def _do_default(self, line):
-        line.pop(0)  # Remove "rule"
 
         # Parse required parameters
         namespace = util.get_arg_and_delete_from_mods(

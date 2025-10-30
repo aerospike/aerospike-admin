@@ -970,6 +970,27 @@ def normalize_masking_rule_data(rule):
 
     Returns:
         dict: Normalized rule data with consistent field names
+
+    Example:
+        Input dict from API response:
+        {
+            "namespace": "test",
+            "set": "demo", 
+            "bin": "credit_card",
+            "type": "string",
+            "function": "redact",
+            "position": "0",
+            "length": "3"
+        }
+
+        Output normalized dict:
+        {
+            "ns": "test",
+            "set": "demo",
+            "bin": "credit_card", 
+            "type": "string",
+            "function": "redact position 0 length 3"
+        }
     """
     processed_rule = {}
 
@@ -984,23 +1005,16 @@ def normalize_masking_rule_data(rule):
     func_name = rule.get("function")
 
     if func_name:
-        # Build complete function string from rule parameters
-        if func_name == "redact":
-            result = "redact"
-            if "position" in rule:
-                result += f" position {rule['position']}"
-            if "length" in rule:
-                result += f" length {rule['length']}"
-            if "value" in rule:
-                result += f" value {rule['value']}"
-            processed_rule["function"] = result
-        elif func_name == "constant":
-            result = "constant"
-            if "value" in rule:
-                result += f" value {rule['value']}"
-            processed_rule["function"] = result
-        else:
-            processed_rule["function"] = func_name
+        # Build complete function string dynamically from rule parameters
+        result = func_name
+        
+        # Add all function parameters except the core fields
+        core_fields = {"ns", "namespace", "set", "bin", "type", "function"}
+        for key, value in rule.items():
+            if key not in core_fields and value is not None:
+                result += f" {key} {value}"
+        
+        processed_rule["function"] = result
     else:
         processed_rule["function"] = ""
 

@@ -501,3 +501,28 @@ class UtilTest(asynctest.TestCase):
         }
 
         self.assertEqual(result, expected)
+
+    def test_normalize_masking_rule_data_dynamic_function_params(self):
+        """Test normalize_masking_rule_data with dynamic function parameters"""
+        rule = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "custom_func",
+            "param1": "value1",
+            "param2": "value2",
+            "custom_arg": "custom_value",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        expected = {
+            "ns": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "custom_func param1 value1 param2 value2 custom_arg custom_value",
+        }
+
+        self.assertEqual(result, expected)
