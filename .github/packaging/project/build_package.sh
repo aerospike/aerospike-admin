@@ -5,9 +5,10 @@ function build_packages(){
     return
   fi
   chown -R root:root .
+  GIT_DIR=$(git rev-parse --show-toplevel)
   cd "$GIT_DIR"
   make one-file
-  cd $PKG_DIR
+  cd $GIT_DIR/pkg
   echo "building package for $BUILD_DISTRO"
 
   if [[ $ENV_DISTRO == *"ubuntu"* ]]; then
@@ -23,5 +24,5 @@ function build_packages(){
   fi
 
   mkdir -p /tmp/output/$ENV_DISTRO
-  cp -a $PKG_DIR/target/* /tmp/output/$ENV_DISTRO
+  cp -a $GIT_DIR/pkg/target/* /tmp/output/$ENV_DISTRO
 }
