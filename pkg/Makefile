@@ -6,6 +6,7 @@ TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
 # Package variables
 VERSION = $(shell git describe --tags --always)
+RPM_VERSION = $(shell git describe --tags --always | tr '-' '_')
 BUILD_DISTRO ?= $(shell .github/packaging/common/os_version.sh)
 NAME = "aerospike-$(PACKAGE_NAME)"
 MAINTAINER = "Aerospike"
@@ -43,13 +44,13 @@ rpm: prep
 		--output-type rpm \
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
-		--version $(VERSION) \
+		--version $(RPM_VERSION) \
 		--maintainer $(MAINTAINER) \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/$(NAME)-$(VERSION).$(BUILD_DISTRO).$(ARCH).rpm
+		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
 tar: prep
