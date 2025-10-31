@@ -1,54 +1,81 @@
 name: build-artifacts.yml
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
 on:
   workflow_dispatch:
   push:
-    branches: [ main, SERVER-216,  SERVER-216-debug-jfrog, SERVER-436 ]
+    branches:
+      - "dev/*"
+      - "hotfix/*"
+    tags:
+      - "*"
 
 jobs:
   build-artifacts:
     strategy:
       matrix:
-        distro: [ debian12, debian13, ubuntu20.04, ubuntu22.04, ubuntu24.04, el8, el9, el10, amzn2023 ]
-        host: [ ubuntu-24.04-arm, ubuntu-24.04 ]
-
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@0da06cb2182165b125dc219ca2fda09732ca0fa4
+        distro:
+          - el8
+          - el9
+          - el10
+          - amzn2023
+          - debian12
+          - debian13
+          - ubuntu20.04
+          - ubuntu22.04
+          - ubuntu24.04
+        host:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.1
     with:
       runs-on: ${{ matrix.host }}
-      project: database
-      build-name: aerospike-admin
-      build-id: ${{ github.run_number }}
-      build-script:  |
-        set -x &&
-        cd local && 
-        git fetch --unshallow --tags --no-recurse-submodules &&
-        git submodule update --init &&
-        ls -laht &&
-        echo ref_name ${{ github.ref_name }} &&
-        git branch -v &&
-        .github/docker/entrypoint.sh -c -d ${{ matrix.distro }} &&
-        .github/docker/entrypoint.sh -e -d ${{ matrix.distro }} &&
+      jf-project: database
+      jf-build-id: ${{ github.run_number }}
+      # this is the default behaviour so we can leave it out but if it is wanted to be explicit
+      # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
+      # gh-source-ref: ${{ github.ref }}
+      build-script: |
+        set -xeuo pipefail
+        cd local
+        git fetch --unshallow --tags --no-recurse-submodules
+        git submodule update --init
+        ls -laht
+        echo ref_name ${{ github.ref_name }}
+        git branch -v
+        .github/packaging/common/entrypoint.sh -c -d ${{ matrix.distro }}
+        .github/packaging/common/entrypoint.sh -e -d ${{ matrix.distro }}
         ls -laht ../dist
-      artifact-directory: dist
-      artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
-      retention-days: 7
+      gh-artifact-directory: dist
+      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+      gh-retention-days: 1
       dry-run: false
-      artifactory-url: https://aerospike.jfrog.io # default
-      artifactory-oidc-provider-name: database-gh-aerospike # default
-      artifactory-oidc-audience: database-gh-aerospike # default
+      oidc-provider-name: database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      jf-build-name: aerospike-admin
   sign-artifacts:
     strategy:
       matrix:
-        distro: [ debian12, debian13, ubuntu20.04, ubuntu22.04, ubuntu24.04, el8, el9, el10, amzn2023 ]
-        host: [ ubuntu-24.04-arm, ubuntu-24.04 ]
-
+        distro:
+          - el8
+          - el9
+          - el10
+          - amzn2023
+          - debian12
+          - debian13
+          - ubuntu20.04
+          - ubuntu22.04
+          - ubuntu24.04
+        host:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     needs: build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@0da06cb2182165b125dc219ca2fda09732ca0fa4 # vn.n.n
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.1
     with:
-      artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
-      unsigned-artifacts: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
-      # artifact-name: signed-artifacts  # optional, defaults to signed-artifacts
-      # retention-days: 7               # optional, defaults to 7
-      # dry-run: false                  # optional, for future compatibility
+      gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+      gh-unsigned-artifacts: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
@@ -57,20 +84,29 @@ jobs:
   upload-artifacts:
     strategy:
       matrix:
-        distro: [ debian12, debian13, ubuntu20.04, ubuntu22.04, ubuntu24.04, el8, el9, el10, amzn2023 ]
-        host: [ ubuntu-24.04-arm, ubuntu-24.04 ]
-
+        distro:
+          - el8
+          - el9
+          - el10
+          - amzn2023
+          - debian12
+          - debian13
+          - ubuntu20.04
+          - ubuntu22.04
+          - ubuntu24.04
+        host:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     needs: sign-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@0da06cb2182165b125dc219ca2fda09732ca0fa4 # vn.n.n
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.1
     with:
-      project: database
-      build-name: aerospike-admin
+      jf-project: database
+      jf-build-name: aerospike-admin
       version: ${{ github.ref_name }}
-      artifactory-url: https://aerospike.jfrog.io
-      artifactory-oidc-provider-name: database-gh-aerospike
-      artifactory-oidc-audience: database-gh-aerospike
-      artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
-      retention-days: 1
+      oidc-provider-name: database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+      gh-retention-days: 1
       dry-run: false
-      build-id: ${{ github.run_number }}
-      metadata-build-id: ${{ github.run_number }}-metadata
+      jf-build-id: ${{ github.run_number }}
+      jf-metadata-build-id: ${{ github.run_number }}-metadata
