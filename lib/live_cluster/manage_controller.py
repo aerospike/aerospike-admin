@@ -3459,7 +3459,10 @@ class ManageMaskingAddController(ManageLeafCommandController):
         function_name = line.pop(0)
 
         # Parse function parameters dynamically
-        function_params = self._parse_function_params(line)
+        try:
+            function_params = self._parse_function_params(line)
+        except Exception as e:
+            raise ShellException(f"Unexpected error parsing function parameters: {str(e)}") from e
 
         # Parse required parameters
         namespace = util.get_arg_and_delete_from_mods(
@@ -3526,15 +3529,18 @@ class ManageMaskingAddController(ManageLeafCommandController):
         ):
             return
 
-        info_resp = await self.cluster.info_masking_add_rule(
-            namespace,
-            set_name,
-            bin_name,
-            bin_type,
-            function_name,
-            function_params,
-            nodes="principal",
-        )
+        try:
+            info_resp = await self.cluster.info_masking_add_rule(
+                namespace,
+                set_name,
+                bin_name,
+                bin_type,
+                function_name,
+                function_params,
+                nodes="principal",
+            )
+        except Exception as e:
+            raise ShellException(f"Failed to add masking rule: {str(e)}") from e
 
         resp = list(info_resp.values())[0]
 
@@ -3650,9 +3656,12 @@ class ManageMaskingDropController(ManageLeafCommandController):
         ):
             return
 
-        remove_resp = await self.cluster.info_masking_remove_rule(
-            namespace, set_name, bin_name, bin_type, nodes="principal"
-        )
+        try:
+            remove_resp = await self.cluster.info_masking_remove_rule(
+                namespace, set_name, bin_name, bin_type, nodes="principal"
+            )
+        except Exception as e:
+            raise ShellException(f"Failed to remove masking rule: {str(e)}") from e
 
         resp = list(remove_resp.values())[0]
 
