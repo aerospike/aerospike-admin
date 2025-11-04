@@ -3584,7 +3584,9 @@ class ManageMaskingAddController(ManageLeafCommandController):
                 param_value = line.pop(0)
                 function_params[param_name] = param_value
             else:
-                break  # Should not happen due to validation above
+                raise ShellException(
+                    "Unexpected parameter parsing state - insufficient arguments remaining"
+                )
 
         return function_params
 
