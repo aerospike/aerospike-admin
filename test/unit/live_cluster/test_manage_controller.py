@@ -3965,27 +3965,33 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
         """Test exception handling in _parse_function_params method"""
         # Mock _parse_function_params to raise an exception
         with patch.object(
-            self.controller, '_parse_function_params', side_effect=ValueError("Invalid parameter format")
+            self.controller,
+            "_parse_function_params",
+            side_effect=ValueError("Invalid parameter format"),
         ):
             line = "redact namespace test set demo bin ssn".split()
-            
+
             with self.assertRaises(ShellException) as context:
                 await self.controller.execute(line)
-            
-            self.assertIn("Unexpected error parsing function parameters", str(context.exception))
+
+            self.assertIn(
+                "Unexpected error parsing function parameters", str(context.exception)
+            )
             self.assertIn("Invalid parameter format", str(context.exception))
 
     async def test_cluster_add_rule_exception_handling(self):
         """Test exception handling for cluster.info_masking_add_rule"""
         line = "redact namespace test set demo bin ssn".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
-        
+
         # Mock cluster operation to raise an exception
-        self.cluster_mock.info_masking_add_rule.side_effect = Exception("Cluster connection failed")
-        
+        self.cluster_mock.info_masking_add_rule.side_effect = Exception(
+            "Cluster connection failed"
+        )
+
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
-        
+
         self.assertIn("Failed to add masking rule", str(context.exception))
         self.assertIn("Cluster connection failed", str(context.exception))
 
@@ -4057,12 +4063,14 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
     async def test_cluster_remove_rule_exception_handling(self):
         """Test exception handling for cluster.info_masking_remove_rule"""
         line = "namespace test set demo bin ssn".split()
-        
+
         # Mock cluster operation to raise an exception
-        self.cluster_mock.info_masking_remove_rule.side_effect = Exception("Network timeout")
-        
+        self.cluster_mock.info_masking_remove_rule.side_effect = Exception(
+            "Network timeout"
+        )
+
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
-        
+
         self.assertIn("Failed to remove masking rule", str(context.exception))
         self.assertIn("Network timeout", str(context.exception))

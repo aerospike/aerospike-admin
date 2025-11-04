@@ -3462,7 +3462,9 @@ class ManageMaskingAddController(ManageLeafCommandController):
         try:
             function_params = self._parse_function_params(line)
         except Exception as e:
-            raise ShellException(f"Unexpected error parsing function parameters: {str(e)}") from e
+            raise ShellException(
+                f"Unexpected error parsing function parameters: {str(e)}"
+            ) from e
 
         # Parse required parameters
         namespace = util.get_arg_and_delete_from_mods(
