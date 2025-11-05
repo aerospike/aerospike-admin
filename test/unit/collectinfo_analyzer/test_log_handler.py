@@ -12,11 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
 import os
-import tempfile
 import shutil
+import tempfile
+import unittest
+
 from mock import patch
+
+from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
+    CollectinfoLogHandler,
+)
 from lib.utils import log_util
 
 
@@ -68,3 +73,31 @@ class LogUtilTest(unittest.TestCase):
         # Assert both files are included on Linux
         self.assertIn("test.log", [os.path.basename(f) for f in files])
         self.assertIn("._test.log", [os.path.basename(f) for f in files])
+
+
+class CollectinfoLogHandlerTest(unittest.TestCase):
+    def test_info_masking_rules_method_exists(self):
+        """Test that info_masking_rules method exists"""
+        # Just test that the method exists and is callable
+        self.assertTrue(hasattr(CollectinfoLogHandler, "info_masking_rules"))
+        self.assertTrue(callable(getattr(CollectinfoLogHandler, "info_masking_rules")))
+
+    @patch(
+        "lib.collectinfo_analyzer.collectinfo_handler.log_handler.CollectinfoLogHandler._fetch_from_cinfo_log"
+    )
+    def test_info_masking_rules_calls_fetch(self, fetch_mock):
+        """Test that info_masking_rules calls _fetch_from_cinfo_log with correct type"""
+        from mock import MagicMock
+
+        # Mock the _fetch_from_cinfo_log method
+        fetch_mock.return_value = {"timestamp": {"node1": []}}
+
+        # Create a mock handler instance
+        handler = MagicMock(spec=CollectinfoLogHandler)
+        handler._fetch_from_cinfo_log = fetch_mock
+
+        # Call the actual method
+        CollectinfoLogHandler.info_masking_rules(handler)
+
+        # Verify it was called with the correct type
+        fetch_mock.assert_called_once_with(type="masking")

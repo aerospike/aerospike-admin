@@ -1151,6 +1151,16 @@ class GetSIndexController:
         return await self.cluster.info_sindex(nodes=nodes)
 
 
+class GetMaskingRulesController:
+    def __init__(self, cluster):
+        self.cluster = cluster
+
+    async def get_masking_rules(self, nodes="all", namespace=None, set_=None):
+        return await self.cluster.info_masking_list_rules(
+            namespace=namespace, set_=set_, nodes=nodes
+        )
+
+
 class GetUserAgentsController:
     def __init__(self, cluster):
         self.cluster = cluster

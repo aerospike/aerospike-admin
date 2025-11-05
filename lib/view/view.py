@@ -1250,6 +1250,23 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
+    def show_masking_rules(masking_data, timestamp="", **ignore):
+        if not masking_data:
+            return
+
+        # Process the data using utility functions
+        processed_data = [
+            util.normalize_masking_rule_data(rule) for rule in masking_data
+        ]
+
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Masking Rules{}".format(title_timestamp)
+        sources = dict(data=processed_data)
+
+        CliView.print_result(sheet.render(templates.show_masking_rules, title, sources))
+
+    @staticmethod
+    @reserved_modifiers
     def show_roster(
         roster_data,
         cluster,

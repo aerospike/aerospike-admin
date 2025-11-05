@@ -29,6 +29,7 @@ from lib.live_cluster.get_controller import (
     GetAclController,
     GetLatenciesController,
     GetUserAgentsController,
+    GetMaskingRulesController,
 )
 
 from .client import ASProtocolError
@@ -88,6 +89,7 @@ class ShowController(LiveClusterCommandController):
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
             "user-agents": ShowUserAgentsController,
+            "masking": ShowMaskingController,
         }
 
         self.modifiers = set()
@@ -1986,3 +1988,54 @@ class ShowUserAgentsController(LiveClusterCommandController):
                     )
 
         return self.view.show_user_agents(self.cluster, processed_data, **self.mods)
+
+
+@CommandHelp(
+    "Display masking rules",
+    "Shows all configured data masking rules. Rules can be filtered by namespace",
+    "and set.",
+    modifiers=(
+        ModifierHelp("namespace", "Filter by namespace"),
+        ModifierHelp("set", "Filter by set"),
+    ),
+    usage=f"[namespace <namespace> [set <set>]]",
+    short_msg="Display masking rules",
+)
+class ShowMaskingController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set(["namespace", "set"])
+        self.getter = GetMaskingRulesController(self.cluster)
+
+    async def _do_default(self, line):
+        # Parse optional namespace and set parameters in any order
+        namespace = None
+        set_name = None
+
+        # Parse parameters from line arguments
+        while line:
+            if line[0] == "namespace" and len(line) > 1:
+                line.pop(0)  # Remove "namespace" keyword
+                namespace = line.pop(0)  # Get the namespace value
+            elif line[0] == "set" and len(line) > 1:
+                line.pop(0)  # Remove "set" keyword
+                set_name = line.pop(0)  # Get the set value
+            else:
+                # Unknown argument, skip it
+                line.pop(0)
+
+        # Validate that set is only used with namespace
+        if set_name and not namespace:
+            raise ShellException("Set filter can only be used with namespace filter")
+
+        masking_data = await self.getter.get_masking_rules(
+            nodes="principal", namespace=namespace, set_=set_name
+        )
+        resp = list(masking_data.values())[0]
+
+        if isinstance(resp, ASProtocolError):
+            logger.error(resp)
+            return
+        elif isinstance(resp, Exception):
+            raise resp
+
+        return self.view.show_masking_rules(resp, **self.mods)

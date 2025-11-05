@@ -170,6 +170,7 @@ class ManageController(LiveClusterManageCommandController):
             "sindex": ManageSIndexController,
             "config": ManageConfigController,
             "acl": ManageACLController,
+            "masking": ManageMaskingController,
         }
 
 
@@ -3411,3 +3412,264 @@ class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController)
         resp = await self.cluster.info_query_abort_all(nodes=self.nodes)
 
         self.view.print_info_responses("Kill Jobs", resp, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Manage masking rules",
+    "Data masking allows you to obscure sensitive data in bins. Use 'add' to create",
+    "masking rules and 'drop' to remove them. View existing rules with 'show masking'.",
+    short_msg="Manage masking rules",
+)
+class ManageMaskingController(LiveClusterManageCommandController):
+    def __init__(self):
+        self.controller_map = {
+            "add": ManageMaskingAddController,
+            "drop": ManageMaskingDropController,
+        }
+
+
+@CommandHelp(
+    "Add masking rules to redact or replace sensitive data in bins.",
+    usage="<function> [function-args] namespace <namespace> set <set> bin <bin> [type <type>]",
+    modifiers=(
+        ModifierHelp(
+            "function",
+            "Masking function name (e.g. redact, constant). See https://aerospike.com/docs/ for supported functions.",
+        ),
+        ModifierHelp(
+            "function-args",
+            "Function parameters in key-value pairs (e.g. position 0 length 4 value *)",
+        ),
+        ModifierHelp("namespace", "The namespace to apply the rule to"),
+        ModifierHelp("set", "The set to apply the rule to"),
+        ModifierHelp("bin", "The bin to apply the rule to"),
+        ModifierHelp("type", "The bin type for the masking rule", default="string"),
+    ),
+    short_msg="Add masking rules with dynamic function support",
+)
+class ManageMaskingAddController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = set(["namespace", "set", "bin"])
+        self.meta_getter = GetClusterMetadataController(self.cluster)
+
+    async def _do_default(self, line):
+        if not line:
+            raise ShellException("Function is required")
+
+        function_name = line.pop(0)
+
+        # Parse function parameters dynamically
+        try:
+            function_params = self._parse_function_params(line)
+        except Exception as e:
+            raise ShellException(
+                f"Unexpected error parsing function parameters: {str(e)}"
+            ) from e
+
+        # Parse required parameters
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="namespace",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        set_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        bin_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="bin",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        # Parse optional type parameter
+        bin_type = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="type",
+            return_type=str,
+            default="string",
+            modifiers=set(),
+            mods=self.mods,
+        )
+
+        # Validate required parameters
+        if not all([namespace, set_name, bin_name]):
+            raise ShellException("All parameters are required: namespace, set, bin")
+
+        # check if the cluster supports data masking
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+
+        feature_support = await util.check_version_support(
+            feature_versions={
+                "data_masking": constants.SERVER_DATA_MASKING_FIRST_VERSION,
+            },
+            builds=builds,
+        )
+
+        if not feature_support["data_masking"]:
+            raise ShellException(
+                "Data masking is not supported on one or more servers.  Requires v. {} and later.".format(
+                    str(constants.SERVER_DATA_MASKING_FIRST_VERSION)
+                )
+            )
+
+        # Build function string for display
+        function_str = self._build_function_string(function_name, function_params)
+
+        if self.warn and not self.prompt_challenge(
+            f"You're about to add a masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}' with function '{function_str}'."
+        ):
+            return
+
+        try:
+            info_resp = await self.cluster.info_masking_add_rule(
+                namespace,
+                set_name,
+                bin_name,
+                bin_type,
+                function_name,
+                function_params,
+                nodes="principal",
+            )
+        except Exception as e:
+            raise ShellException(f"Failed to add masking rule: {str(e)}") from e
+
+        resp = list(info_resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result(
+            "Successfully added masking rule. Use 'show masking' to view the rules."
+        )
+
+    def _parse_function_params(self, line):
+        """Parse function parameters dynamically."""
+        function_params = {}
+        reserved_keywords = {
+            "namespace",
+            "set",
+            "bin",
+            "type",
+        }  # Use set for O(1) lookup
+
+        # Count parameters first for validation (single pass)
+        param_count = 0
+        for i, arg in enumerate(line):
+            if arg in reserved_keywords:
+                break
+            param_count += 1
+
+        # Ensure even number of arguments for proper key-value pairing
+        if param_count % 2 != 0:
+            param_args = line[:param_count]
+            raise ShellException(
+                f"Function parameters must be in key-value pairs. Found {param_count} arguments: {' '.join(param_args)}"
+            )
+
+        # Parse parameters in pairs (single pass, no copying)
+        while line and line[0] not in reserved_keywords:
+            if len(line) >= 2:
+                param_name = line.pop(0)
+                param_value = line.pop(0)
+                function_params[param_name] = param_value
+            else:
+                raise ShellException(
+                    "Unexpected parameter parsing state - insufficient arguments remaining"
+                )
+
+        return function_params
+
+    def _build_function_string(self, function_name, params):
+        """Build the function string for the masking rule dynamically."""
+        parts = [function_name]
+        for key, value in params.items():
+            parts.extend([key, value])
+        return " ".join(parts)
+
+
+@CommandHelp(
+    "Drop masking rules. Removes any masking rule applied to the specified bin",
+    usage="namespace <namespace> set <set> bin <bin> [type <type>]",
+    modifiers=(
+        ModifierHelp("namespace", "The namespace to remove the rule from"),
+        ModifierHelp("set", "The set to remove the rule from"),
+        ModifierHelp("bin", "The bin to remove the rule from"),
+        ModifierHelp("type", "The bin type for the masking rule", default="string"),
+    ),
+    short_msg="Drop masking rules",
+)
+class ManageMaskingDropController(ManageLeafCommandController):
+    def __init__(self):
+        self.required_modifiers = set(["namespace", "set", "bin"])
+
+    async def _do_default(self, line):
+
+        # Parse required parameters
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="namespace",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        set_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        bin_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="bin",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        # Parse optional type parameter
+        bin_type = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="type",
+            return_type=str,
+            default="string",
+            modifiers=set(),
+            mods=self.mods,
+        )
+
+        # Validate required parameters
+        if not all([namespace, set_name, bin_name]):
+            raise ShellException("All parameters are required: namespace, set, bin")
+
+        if self.warn and not self.prompt_challenge(
+            f"You're about to drop the masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}'."
+        ):
+            return
+
+        try:
+            remove_resp = await self.cluster.info_masking_remove_rule(
+                namespace, set_name, bin_name, bin_type, nodes="principal"
+            )
+        except Exception as e:
+            raise ShellException(f"Failed to remove masking rule: {str(e)}") from e
+
+        resp = list(remove_resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result("Successfully dropped masking rule.")
