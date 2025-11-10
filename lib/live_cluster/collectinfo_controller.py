@@ -45,6 +45,7 @@ from lib.live_cluster.get_controller import (
     GetPmapController,
     GetJobsController,
     GetUserAgentsController,
+    GetMaskingRulesController,
 )
 
 from .live_cluster_command_controller import LiveClusterCommandController
@@ -413,6 +414,20 @@ class CollectinfoController(LiveClusterCommandController):
 
         return user_agents_map
 
+    async def _get_as_masking_rules(self) -> NodeDict[list[dict[str, str]]]:
+        """Collect masking rules data from principal node"""
+        masking_getter = GetMaskingRulesController(self.cluster)
+        masking_data = await masking_getter.get_masking_rules(nodes="principal")
+        masking_map = {}
+
+        for node in masking_data:
+            if not masking_data[node] or isinstance(masking_data[node], Exception):
+                continue
+
+            masking_map[node] = masking_data[node]
+
+        return masking_map
+
     async def _get_collectinfo_data_json(
         self,
         enable_ssh: bool,
@@ -426,23 +441,17 @@ class CollectinfoController(LiveClusterCommandController):
 
         dump_map = {}
 
+        # Split operations into batches to reduce socket contention and timeouts
+        # Batch 1: Core data collection (most resource intensive)
         (
             cluster_name,
             as_map,
             meta_map,
-            histogram_map,
-            latency_map,
-            acl_map,
-            user_agents_map,
             sys_map,
         ) = await asyncio.gather(
             self._get_as_cluster_name(),
             self._get_as_data_json(),
             self._get_as_metadata(),
-            self._get_as_histograms(),
-            self._get_as_latency(),
-            self._get_as_access_control_list(),
-            self._get_as_user_agents(),
             self.cluster.info_system_statistics(
                 enable_ssh=enable_ssh,
                 ssh_user=ssh_user,
@@ -452,6 +461,26 @@ class CollectinfoController(LiveClusterCommandController):
                 ssh_port=ssh_port,
                 nodes=self.nodes,
             ),
+        )
+
+        # Batch 2: Histograms and latency data
+        (
+            histogram_map,
+            latency_map,
+        ) = await asyncio.gather(
+            self._get_as_histograms(),
+            self._get_as_latency(),
+        )
+
+        # Batch 3: Security and auxiliary data (lighter operations)
+        (
+            acl_map,
+            user_agents_map,
+            masking_map,
+        ) = await asyncio.gather(
+            self._get_as_access_control_list(),
+            self._get_as_user_agents(),
+            self._get_as_masking_rules(),
         )
 
         for val in sys_map.values():
@@ -488,6 +517,9 @@ class CollectinfoController(LiveClusterCommandController):
 
             if node in user_agents_map:
                 dump_map[node]["as_stat"]["user_agents"] = user_agents_map[node]
+
+            if node in masking_map:
+                dump_map[node]["as_stat"]["masking"] = masking_map[node]
 
         snp_map = {}
         snp_map[cluster_name] = dump_map

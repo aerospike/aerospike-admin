@@ -11,18 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from lib.live_cluster.client.config_handler import BoolConfigType, IntConfigType
-from mock import MagicMock
 import unittest
 
+from mock import MagicMock
 from parameterized import parameterized
 
-from test.unit import util
+from lib.live_cluster.client.config_handler import BoolConfigType, IntConfigType
 from lib.live_cluster.client.node import (
     ASInfoConfigError,
     ASInfoResponseError,
     ASResponse,
 )
+from lib.live_cluster.client.types import ASPrivilege
+from test.unit import util
 
 
 class ASInfoErrorTest(unittest.TestCase):
@@ -411,3 +412,24 @@ class ASResponseTest(unittest.TestCase):
 
     def test_fail(self):
         self.assertRaises(ValueError, ASResponse, "wrong")
+
+
+class ASPrivilegeTest(unittest.TestCase):
+    def test_masking_privileges_exist(self):
+        """Test that masking-related privileges are defined"""
+        # Test that the new masking privileges exist
+        self.assertEqual(ASPrivilege.MASKING_ADMIN, 15)
+        self.assertEqual(ASPrivilege.READ_MASKED, 16)
+        self.assertEqual(ASPrivilege.WRITE_MASKED, 17)
+
+    def test_masking_privileges_from_string(self):
+        """Test that masking privileges can be created from strings"""
+        self.assertEqual(
+            ASPrivilege.str_to_enum("masking-admin"), ASPrivilege.MASKING_ADMIN
+        )
+        self.assertEqual(
+            ASPrivilege.str_to_enum("read-masked"), ASPrivilege.READ_MASKED
+        )
+        self.assertEqual(
+            ASPrivilege.str_to_enum("write-masked"), ASPrivilege.WRITE_MASKED
+        )
