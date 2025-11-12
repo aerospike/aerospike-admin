@@ -76,6 +76,10 @@ deb: prep
 rpm: prep
 	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
 
+.PHONY: tar
+tar: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
 .PHONY: prep
 prep: one-dir
 	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
