@@ -5,12 +5,13 @@ BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
 # Package variables
+PACKAGE_NAME = asadm
 VERSION = $(shell git describe --tags --always)
 RPM_VERSION = $(shell git describe --tags --always | tr '-' '_')
-BUILD_DISTRO ?= $(shell .github/packaging/common/os_version.sh)
-NAME = "aerospike-$(PACKAGE_NAME)"
+BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/packaging/common/os_version.sh)
+NAME = aerospike-$(PACKAGE_NAME)
 MAINTAINER = "Aerospike"
-DESCRIPTION = "Asadmin, a tool for managing Aerospike database."
+DESCRIPTION = "Aerospike Admin, a tool for managing Aerospike database."
 LICENSE = "Apache License 2.0"
 URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
@@ -72,12 +73,11 @@ tar: prep
 prep:
 	install -d $(TARGET_DIR)
 	install -d $(BUILD_DIR)/$(CONFIG_DIR)
-	install -d $(BUILD_DIR)/opt/aerospike/bin
-	install -pm 755 $(TOP_DIR)/asadm $(BUILD_DIR)/opt/aerospike/bin
-	install -pm 755 $(TOP_DIR)/asinfo $(BUILD_DIR)/opt/aerospike/bin
 	install -d $(BUILD_DIR)/usr/bin
-	ln -sf /opt/aerospike/bin/asadm $(BUILD_DIR)/usr/bin/asadm
-	ln -sf /opt/aerospike/bin/asinfo $(BUILD_DIR)/usr/bin/asinfo
+	install -d $(BUILD_DIR)/opt/aerospike/bin/asadm
+	cp -a $(TOP_DIR)/asadm/. $(BUILD_DIR)/opt/aerospike/bin/asadm/
+	ln -sf /opt/aerospike/bin/asadm/asadm $(BUILD_DIR)/usr/bin/asadm
+	ln -sf /opt/aerospike/bin/asadm/asinfo $(BUILD_DIR)/usr/bin/asinfo
 
 .PHONY: clean
 clean:
