@@ -5,11 +5,9 @@ permissions:
   attestations: write
 on:
   workflow_dispatch: {}
-  pull_request:
+  push:
     branches:
-      - master
-    tags:
-      - '*'
+      - MASTER-SERVER-216
 
 jobs:
   build-artifacts:
