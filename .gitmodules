@@ -1,3 +1,6 @@
 [submodule "lib/live_cluster/client/schemas"]
 	path = lib/live_cluster/client/schemas
-	url = git@github.com:aerospike/schemas.git
+	url = https://github.com/aerospike/schemas.git
+[submodule ".github/packaging/common"]
+	path = .github/packaging/common
+	url = https://github.com/aerospike/server-packaging-common.git
