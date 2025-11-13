@@ -7,8 +7,7 @@ function build_packages(){
   chown -R root:root .
   GIT_DIR=$(git rev-parse --show-toplevel)
   cd "$GIT_DIR"
-  make one-file
-  cd $GIT_DIR/pkg
+
   echo "building package for $BUILD_DISTRO"
 
   if [[ $ENV_DISTRO == *"ubuntu"* ]]; then
