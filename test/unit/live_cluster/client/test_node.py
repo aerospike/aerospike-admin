@@ -4597,6 +4597,16 @@ class NodeTest(asynctest.TestCase):
 
         self.assertEqual(result, [])
 
+    async def test_info_masking_list_rules_error(self):
+        """Test masking rules listing with ERROR response"""
+        self.info_mock.return_value = "ERROR::masking not supported"
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to list masking rules")
+        self.assertEqual(result.response, "masking not supported")
+
 
 class SyscmdTest(unittest.TestCase):
     def setUp(self) -> None:
