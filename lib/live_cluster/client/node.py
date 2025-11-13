@@ -3391,7 +3391,7 @@ class Node(AsyncObject):
 
         resp = await self._info(masking_show_req)
 
-        if resp.startswith("ERROR"):
+        if resp.startswith("error") or resp.startswith("ERROR"):
             raise ASInfoResponseError("Failed to list masking rules", resp)
 
         return [
