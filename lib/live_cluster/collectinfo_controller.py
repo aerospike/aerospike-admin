@@ -621,6 +621,7 @@ class CollectinfoController(LiveClusterCommandController):
                 dignostic_show_params.append("pmap")
 
             dignostic_aerospike_info_commands = [
+                "connection",
                 "service-clear-std",
                 "service-clear-alt",
                 "service-tls-std",
