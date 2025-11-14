@@ -70,7 +70,7 @@ one-dir: init
 
 .PHONY: init
 init:
-	PATH="$$HOME/.cargo/bin:/usr/local/bin:$$PATH" PIP_NO_BINARY=cryptography pipenv install --dev
+	pipenv install --dev
 	# pipenv check
 	pipenv graph
 
