@@ -70,7 +70,7 @@ one-dir: init
 
 .PHONY: init
 init:
-	pipenv install --dev
+	PIP_NO_BINARY=cryptography pipenv install --dev
 	# pipenv check
 	pipenv graph
 
