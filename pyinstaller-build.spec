@@ -47,17 +47,6 @@ using pyenv on our build machine since pyenv relies on libcrypt to run `pyenv in
 if "darwin" not in platform.system().lower() and path.isfile('/usr/lib64/libcrypt.so.1'):
     binaries.append(('/usr/lib64/libcrypt.so.1', '.'))
 
-# Exclude system libraries to prevent glibc version conflicts
-# These will be loaded from the target system at runtime
-excludes_binaries = [
-    'libgcc_s.so.1',
-    'libc.so.6',
-    'libm.so.6',
-    'libpthread.so.0',
-    'libdl.so.2',
-    'librt.so.1',
-]
-
 block_cipher = None
 
 asadm_a = Analysis(['asadm.py'],
@@ -73,9 +62,6 @@ asadm_a = Analysis(['asadm.py'],
              win_private_assemblies=False,
              cipher=block_cipher,
              noarchive=False)
-
-# Filter out excluded system libraries
-asadm_a.binaries = [x for x in asadm_a.binaries if not any(exc in x[0] for exc in excludes_binaries)]
 
 if not options.exclude_asinfo:
     asinfo_a = Analysis(['asinfo.py'],
