@@ -181,7 +181,7 @@ jobs:
              "name": "${{ github.event.repository.name }}-release-bundle",
              "version": "${{ needs.get-version.outputs.VERSION }}",
              "description": "Release for build version ${{ needs.get-version.outputs.VERSION }}",
-             # "files": [
+             "files": [
                {
                  "project": "database",
                  "build": "${{ github.event.repository.name }}-rpm/${{ needs.get-version.outputs.VERSION }}"
