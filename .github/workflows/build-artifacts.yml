@@ -10,7 +10,25 @@ on:
       - MASTER-SERVER-216
 
 jobs:
+  get-version:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      VERSION: ${{ steps.git_describe.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute version from git describe
+        id: git_describe
+        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
   build-artifacts:
+    needs: get-version
     if: ${{ github.repository_owner == 'aerospike' }}
     strategy:
       matrix:
@@ -31,7 +49,7 @@ jobs:
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
-      jf-build-id: ${{ github.ref_name }}
+      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       # this is the default behaviour so we can leave it out but if it is wanted to be explicit
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
@@ -60,7 +78,9 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    needs: build-artifacts
+    needs:
+       - get-version
+       - build-artifacts
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
     with:
       gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
@@ -85,19 +105,21 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    needs: sign-artifacts
+    needs:
+       - get-version
+       - sign-artifacts
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
       jf-build-name: ${{ github.event.repository.name }}
-      version: ${{ github.ref_name }}
+      version: ${{ needs.get-version.outputs.VERSION }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
       gh-retention-days: 1
       dry-run: false
-      jf-build-id: ${{ github.ref_name }}
-      jf-metadata-build-id: ${{ github.ref_name }}-metadata
+      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
+      jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
   test-install-from-jfrog-and-execute:
     strategy:
       matrix:
