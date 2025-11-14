@@ -199,6 +199,13 @@ function install_deps_el9() {
   fi
   /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@v0.18.0
   install /root/go/bin/asdf /usr/local/bin/asdf
+  
+  # Install Rust for building cryptography from source
+  echo "=== Installing Rust for cryptography build ==="
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  source "$HOME/.cargo/env"
+  export PATH="$HOME/.cargo/bin:$PATH"
+  
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
   asdf install python 3.10.18
   asdf set python 3.10.18
