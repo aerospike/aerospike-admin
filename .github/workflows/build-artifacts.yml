@@ -131,6 +131,10 @@ jobs:
 
   create-release-bundle:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO     
@@ -150,9 +154,9 @@ jobs:
            JF_URL: https://aerospike.jfrog.io          
            JF_PROJECT: database
          with:
-           oidc-provider-name: gh-aerospike
-           oidc-audience: aerospike
-
+           oidc-provider-name: database-gh-aerospike
+           oidc-audience: database-gh-aerospike
+           
        - name: Check JFrog Configuration 
          run: |
            jf c show
