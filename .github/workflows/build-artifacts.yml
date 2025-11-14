@@ -20,7 +20,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
@@ -31,7 +31,7 @@ jobs:
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
-      jf-build-id: ${{ github.run_number }}
+      jf-build-id: ${{ github.ref_name }}
       # this is the default behaviour so we can leave it out but if it is wanted to be explicit
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
@@ -53,7 +53,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
@@ -78,7 +78,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
@@ -96,8 +96,8 @@ jobs:
       gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
       gh-retention-days: 1
       dry-run: false
-      jf-build-id: ${{ github.run_number }}
-      jf-metadata-build-id: ${{ github.run_number }}-metadata
+      jf-build-id: ${{ github.ref_name }}
+      jf-metadata-build-id: ${{ github.ref_name }}-metadata
   test-install-from-jfrog-and-execute:
     strategy:
       matrix:
@@ -107,7 +107,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
