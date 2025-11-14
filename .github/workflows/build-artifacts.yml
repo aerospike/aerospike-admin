@@ -143,15 +143,21 @@ jobs:
          with:
            fetch-depth: 0
            fetch-tags: true
-       - name: Install JFrog CLI
-         id: jf
-         uses: jfrog/setup-jfrog-cli@5b06f730cc5a6f55d78b30753f8583454b08c0aa # v4.8.1
+
+       - name: Setup JFrog CLI
+         uses: jfrog/setup-jfrog-cli@f748a0599171a192a2668afee8d0497f7c1069df  # v4.5.6
          env:
-           JF_URL: https://artifact.aerospike.io
+           JF_URL: https://aerospike.jfrog.io          
            JF_PROJECT: database
          with:
-           oidc-provider-name: database-gh-aerospike
-           oidc-audience: database-gh-aerospike
+           oidc-provider-name: gh-aerospike
+           oidc-audience: aerospike
+
+       - name: Check JFrog Configuration 
+         run: |
+           jf c show
+           jf rt ping
+
        - name: Create release bundle
          run: |
            echo '{
