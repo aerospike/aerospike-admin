@@ -166,11 +166,11 @@ jobs:
              "description": "Release for build version ${{ needs.get-version.outputs.VERSION }}",
              "files": [
                {
-                 "project": database,
+                 "project": "database",
                  "build": "${{ github.event.repository.name }}-rpm/${{ needs.get-version.outputs.VERSION }}"
                }, 
                {
-                 "project": database,
+                 "project": "database",
                  "build": "${{ github.event.repository.name }}-deb/${{ needs.get-version.outputs.VERSION }}"               }
              ]
            }' > release-bundle-spec.json
