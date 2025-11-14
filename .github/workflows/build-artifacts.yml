@@ -7,10 +7,16 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - 'dev/*'
-      - 'hotfix/*'
+      # yamllint disable-line rule:quoted-strings
+      - "dev/*"
+      # yamllint disable-line rule:quoted-strings
+      - "hotfix/*"
+      # yamllint disable-line rule:quoted-strings
+      - "main"
+      # yamllint disable-line rule:quoted-strings
+      - "master"
     tags:
-      - '*'
+      - "*"
 
 
 jobs:
@@ -23,7 +29,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
@@ -56,7 +62,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
@@ -81,7 +87,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
@@ -110,7 +116,7 @@ jobs:
           - el10
           - amzn2023
           - debian12
-          #- debian13
+          - debian13
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
