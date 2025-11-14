@@ -128,6 +128,41 @@ jobs:
       dry-run: false
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
+
+  create-release-bundle:
+     runs-on: ubuntu-24.04
+     needs: 
+        - upload-artifacts
+        - get-version
+     steps:
+       - name: Checkout
+         uses: actions/checkout@v5
+         with:
+           fetch-depth: 0
+           fetch-tags: true
+       - name: Create release bundle
+         run: |
+           echo '{
+             "name": "${{ github.event.repository.name }}-release-bundle",
+             "version": "${{ needs.get-version.outputs.VERSION }}",
+             "description": "Release for build version ${{ needs.get-version.outputs.VERSION }}",
+             "files": [
+               {
+                 "project": database,
+                 "build": "${{ github.event.repository.name }}-rpm/${{ needs.get-version.outputs.VERSION }}"
+               }, 
+               {
+                 "project": database,
+                 "build": "${{ github.event.repository.name }}-deb/${{ needs.get-version.outputs.VERSION }}"               }
+             ]
+           }' > release-bundle-spec.json
+
+           cat release-bundle-spec.json
+           jf release-bundle-create "${{ github.event.repository.name }}" "${{ needs.get-version.outputs.VERSION }}" \
+             --spec release-bundle-spec.json \
+             --project="database" \
+             --signing-key="aerospike"
+             
   test-install-from-jfrog-and-execute:
     strategy:
       matrix:
