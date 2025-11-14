@@ -130,60 +130,72 @@ jobs:
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
 
   create-release-bundle:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    env:
-      JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
-      JFROG_CLI_LOG_LEVEL: INFO     
-    needs: 
+    needs:
        - upload-artifacts
        - get-version
-    steps:
-       - name: Checkout
-         uses: actions/checkout@v5
-         with:
-           fetch-depth: 0
-           fetch-tags: true
+    uses: ./.github/workflows/reusable_create-release-bundle.yaml
+    with:
+      jf-project: database
+      jf-build-names: "aerospike-admin"
+      jf-bundle-name: "aerospike-admin"
+      version: ${{ needs.get-version.outputs.VERSION }}
+      gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
+      dry-run: false
+  # Create-release-bundle:
+    # runs-on: ubuntu-24.04
+    # permissions:
+      # contents: read
+      # id-token: write
+      # attestations: write
+    # env:
+      # JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
+      # JFROG_CLI_LOG_LEVEL: INFO     
+    # needs: 
+       # - upload-artifacts
+       # - get-version
+    # steps:
+       # - name: Checkout
+         # uses: actions/checkout@v5
+         # with:
+           # fetch-depth: 0
+           # fetch-tags: true
 
-       - name: Setup JFrog CLI
-         uses: jfrog/setup-jfrog-cli@f748a0599171a192a2668afee8d0497f7c1069df  # v4.5.6
-         env:
-           JF_URL: https://aerospike.jfrog.io          
-           JF_PROJECT: database
-         with:
-           oidc-provider-name: database-gh-aerospike
-           oidc-audience: database-gh-aerospike
+       # - name: Setup JFrog CLI
+         # uses: jfrog/setup-jfrog-cli@f748a0599171a192a2668afee8d0497f7c1069df  # v4.5.6
+         # env:
+           # JF_URL: https://aerospike.jfrog.io          
+           # JF_PROJECT: database
+         # with:
+           # oidc-provider-name: database-gh-aerospike
+           # oidc-audience: database-gh-aerospike
            
-       - name: Check JFrog Configuration 
-         run: |
-           jf c show
-           jf rt ping
+       # - name: Check JFrog Configuration 
+         # run: |
+           # jf c show
+           # jf rt ping
+# 
+       # - name: Create release bundle
+         # run: |
+           # echo '{
+             # "name": "${{ github.event.repository.name }}-release-bundle",
+             # "version": "${{ needs.get-version.outputs.VERSION }}",
+             # "description": "Release for build version ${{ needs.get-version.outputs.VERSION }}",
+             # "files": [
+               # {
+                 # "project": "database",
+                 # "build": "${{ github.event.repository.name }}-rpm/${{ needs.get-version.outputs.VERSION }}"
+               # }, 
+               # {
+                 # "project": "database",
+                 # "build": "${{ github.event.repository.name }}-deb/${{ needs.get-version.outputs.VERSION }}"               }
+             # ]
+           # }' > release-bundle-spec.json
 
-       - name: Create release bundle
-         run: |
-           echo '{
-             "name": "${{ github.event.repository.name }}-release-bundle",
-             "version": "${{ needs.get-version.outputs.VERSION }}",
-             "description": "Release for build version ${{ needs.get-version.outputs.VERSION }}",
-             "files": [
-               {
-                 "project": "database",
-                 "build": "${{ github.event.repository.name }}-rpm/${{ needs.get-version.outputs.VERSION }}"
-               }, 
-               {
-                 "project": "database",
-                 "build": "${{ github.event.repository.name }}-deb/${{ needs.get-version.outputs.VERSION }}"               }
-             ]
-           }' > release-bundle-spec.json
-
-           cat release-bundle-spec.json
-           jf release-bundle-create "${{ github.event.repository.name }}" "${{ needs.get-version.outputs.VERSION }}" \
-             --spec release-bundle-spec.json \
-             --project="database" \
-             --signing-key="aerospike"
+           # cat release-bundle-spec.json
+           # jf release-bundle-create "${{ github.event.repository.name }}" "${{ needs.get-version.outputs.VERSION }}" \
+             # --spec release-bundle-spec.json \
+             # --project="database" \
+             # --signing-key="aerospike"
              
   test-install-from-jfrog-and-execute:
     strategy:
