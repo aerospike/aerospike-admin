@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
+
 DISTRO="$1"
 env
 cd local

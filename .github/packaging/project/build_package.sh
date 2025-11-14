@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+set -xeuo pipefail
 
 function build_packages(){
   if [ "$ENV_DISTRO" = "" ]; then
