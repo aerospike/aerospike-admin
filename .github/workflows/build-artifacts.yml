@@ -201,7 +201,7 @@ jobs:
            }' > release-bundle-spec.json
 
            cat release-bundle-spec.json
-           jf release-bundle-create "${{ github.event.repository.name }}" "${{ needs.get-version.outputs.VERSION }}" \
+           jf release-bundle-create "${{ github.event.repository.name }}" "${{ needs.get-version.outputs.VERSION }}-artifacts" \
              --spec release-bundle-spec.json \
              --project="database" \
              --signing-key="aerospike"
