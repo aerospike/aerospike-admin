@@ -93,6 +93,7 @@ jobs:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
       gpg-key-pass: ${{ secrets.GPG_PASS }}
+
   upload-artifacts:
     strategy:
       matrix:
@@ -143,7 +144,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
+      gh-workflows-ref: 7e15d6b3519213f441d73f64214e23fd8f7b1d0c # Use specific shared-workflows version
       dry-run: false
              
   test-install-from-jfrog-and-execute:
