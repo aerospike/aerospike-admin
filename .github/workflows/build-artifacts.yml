@@ -177,9 +177,9 @@ jobs:
 
       - name: Publish build info
         run: |
-          jf rt build-publish "${{ github.event.repository.name }}-rpm" "${{ needs.get-version.outputs.VERSION }}-artifacts" \
+          jf rt build-publish "${{ github.event.repository.name }}-rpm" "${{ needs.get-version.outputs.VERSION }}" \
             --project="database"
-          jf rt build-publish "${{ github.event.repository.name }}-deb" "${{ needs.get-version.outputs.VERSION }}-artifacts" \
+          jf rt build-publish "${{ github.event.repository.name }}-deb" "${{ needs.get-version.outputs.VERSION }}" \
             --project="database"
       
       - name: Create release bundle
@@ -191,17 +191,17 @@ jobs:
              "files": [
                {
                  "project": "database",
-                 "build": "${{ github.event.repository.name }}-deb/${{ needs.get-version.outputs.VERSION }}-artifacts"
+                 "build": "${{ github.event.repository.name }}-deb/${{ needs.get-version.outputs.VERSION }}"
                },
                {
                  "project": "database",
-                 "build": "${{ github.event.repository.name }}-rpm/${{ needs.get-version.outputs.VERSION }}-artifacts"
+                 "build": "${{ github.event.repository.name }}-rpm/${{ needs.get-version.outputs.VERSION }}"
                }
              ]
            }' > release-bundle-spec.json
 
            cat release-bundle-spec.json
-           jf release-bundle-create "${{ github.event.repository.name }}" "${{ needs.get-version.outputs.VERSION }}-artifacts" \
+           jf release-bundle-create "${{ github.event.repository.name }}" "${{ needs.get-version.outputs.VERSION }}" \
              --spec release-bundle-spec.json \
              --project="database" \
              --signing-key="aerospike"
