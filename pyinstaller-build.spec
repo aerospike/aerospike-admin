@@ -93,7 +93,6 @@ if not options.exclude_asinfo:
                 win_private_assemblies=False,
                 cipher=block_cipher,
                 noarchive=False)
-    
     asinfo_a.binaries = [x for x in asinfo_a.binaries if not any(exc in x[0] for exc in excludes_binaries)]
 
     MERGE((asadm_a, "asadm", "asadm"), (asinfo_a, "asinfo", "asinfo"))
