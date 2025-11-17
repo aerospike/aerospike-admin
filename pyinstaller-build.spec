@@ -50,12 +50,14 @@ if "darwin" not in platform.system().lower() and path.isfile('/usr/lib64/libcryp
 # Exclude system libraries to prevent glibc version conflicts
 # These will be loaded from the target system at runtime
 excludes_binaries = [
-    'libgcc_s.so.1',
-    'libc.so.6',
-    'libm.so.6',
-    'libpthread.so.0',
-    'libdl.so.2',
-    'librt.so.1',
+    'libgcc_s.so',
+    'libc.so',
+    'libm.so',
+    'libpthread.so',
+    'libdl.so',
+    'librt.so',
+    'libz.so',
+    'libstdc++.so',
 ]
 
 block_cipher = None
@@ -91,6 +93,9 @@ if not options.exclude_asinfo:
                 win_private_assemblies=False,
                 cipher=block_cipher,
                 noarchive=False)
+
+    # Filter out excluded system libraries
+    asinfo_a.binaries = [x for x in asadm_a.binaries if not any(exc in x[0] for exc in excludes_binaries)]
 
     MERGE((asadm_a, "asadm", "asadm"), (asinfo_a, "asinfo", "asinfo"))
 
