@@ -5,18 +5,20 @@ permissions:
   attestations: write
 on:
   workflow_dispatch:
+  pull_request:
+    # yamllint disable-line rule:quoted-strings
+    branches:
+      - "*"
   push:
     branches:
       # yamllint disable-line rule:quoted-strings
-      - "dev/*"
-      # yamllint disable-line rule:quoted-strings
-      - "hotfix/*"
+      - "release/*"
       # yamllint disable-line rule:quoted-strings
       - "main"
       # yamllint disable-line rule:quoted-strings
       - "master"
-    tags:
-      - "*"
+      # yamllint disable-line rule:quoted-strings
+      - "develop"
 
 
 jobs:
