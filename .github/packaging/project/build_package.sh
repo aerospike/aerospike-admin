@@ -6,7 +6,6 @@ function build_packages(){
     echo "ENV_DISTRO is not set"
     return
   fi
-  chown -R root:root .
   GIT_DIR=$(git rev-parse --show-toplevel)
   cd "$GIT_DIR"
   make one-file
