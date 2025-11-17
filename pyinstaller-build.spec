@@ -77,7 +77,7 @@ asadm_a = Analysis(['asadm.py'],
              noarchive=False)
 
 
-asadm_a.binaries = [x for x in asadm_a.binaries if not any(exc in x[0] for exc in excludes_binaries)]
+asadm_a.binaries = [x for x in asadm_a.binaries if not any(path.basename(x[0]).startswith(exc) for exc in excludes_binaries)]
 
 if not options.exclude_asinfo:
     asinfo_a = Analysis(['asinfo.py'],
@@ -94,7 +94,7 @@ if not options.exclude_asinfo:
                 win_private_assemblies=False,
                 cipher=block_cipher,
                 noarchive=False)
-    asinfo_a.binaries = [x for x in asinfo_a.binaries if not any(exc in x[0] for exc in excludes_binaries)]
+    asinfo_a.binaries = [x for x in asinfo_a.binaries if not any(path.basename(x[0]).startswith(exc) for exc in excludes_binaries)]
 
     MERGE((asadm_a, "asadm", "asadm"), (asinfo_a, "asinfo", "asinfo"))
 
