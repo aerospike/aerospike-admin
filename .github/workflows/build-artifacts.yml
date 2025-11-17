@@ -109,7 +109,7 @@ jobs:
       version: ${{ needs.get-version.outputs.VERSION }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      #gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+      gh-artifact-name: signed-artifacts
       gh-retention-days: 1
       dry-run: false
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
