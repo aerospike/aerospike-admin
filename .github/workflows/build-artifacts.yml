@@ -131,7 +131,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: 7e15d6b3519213f441d73f64214e23fd8f7b1d0c # Use specific shared-workflows version
+      #gh-workflows-ref: 7e15d6b3519213f441d73f64214e23fd8f7b1d0c # Use specific shared-workflows version
       dry-run: false
              
   test-install-from-jfrog-and-execute:
