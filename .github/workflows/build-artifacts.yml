@@ -95,7 +95,6 @@ jobs:
       gpg-key-pass: ${{ secrets.GPG_PASS }}
 
   upload-artifacts:
-
     needs:
        - get-version
        - sign-artifacts
