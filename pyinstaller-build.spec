@@ -47,16 +47,17 @@ using pyenv on our build machine since pyenv relies on libcrypt to run `pyenv in
 if "darwin" not in platform.system().lower() and path.isfile('/usr/lib64/libcrypt.so.1'):
     binaries.append(('/usr/lib64/libcrypt.so.1', '.'))
 
-# Exclude system libraries to prevent glibc version conflicts
+# Exclude system libraries to prevent glibc/libstdc++ version conflicts
 # These will be loaded from the target system at runtime
 excludes_binaries = [
-    'libgcc_s.so.1',
-    'libc.so.6',
-    'libm.so.6',
-    'libpthread.so.0',
-    'libdl.so.2',
-    'librt.so.1',
-    'libz.so.1',
+    'libgcc_s.so',
+    'libc.so',
+    'libm.so',
+    'libpthread.so',
+    'libdl.so',
+    'librt.so',
+    'libz.so',
+    'libstdc++.so',
 ]
 
 block_cipher = None
