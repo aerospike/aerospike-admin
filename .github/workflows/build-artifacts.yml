@@ -85,7 +85,7 @@ jobs:
     needs:
        - get-version
        - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
       gh-unsigned-artifacts: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
@@ -95,25 +95,11 @@ jobs:
       gpg-key-pass: ${{ secrets.GPG_PASS }}
 
   upload-artifacts:
-    strategy:
-      matrix:
-        distro:
-          - el8
-          - el9
-          - el10
-          - amzn2023
-          - debian12
-          - debian13
-          - ubuntu20.04
-          - ubuntu22.04
-          - ubuntu24.04
-        host:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
+
     needs:
        - get-version
        - sign-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       jf-project: database
       jf-build-name: ${{ (startsWith(matrix.distro, 'el') || startsWith(matrix.distro, 'amzn'))
@@ -122,7 +108,7 @@ jobs:
       version: ${{ needs.get-version.outputs.VERSION }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+      #gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
       gh-retention-days: 1
       dry-run: false
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
@@ -136,7 +122,7 @@ jobs:
     needs:
       - upload-artifacts
       - get-version
-    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       jf-project: "database"
       jf-build-names: "aerospike-admin-deb:${{ needs.get-version.outputs.VERSION }}, aerospike-admin-rpm:${{ needs.get-version.outputs.VERSION }}"
