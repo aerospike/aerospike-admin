@@ -59,6 +59,27 @@ excludes_binaries = [
     'libstdc++.so',
 ]
 
+def should_exclude_library(binary_tuple):
+    """
+    Check if a binary should be excluded from the bundle.
+    
+    Args:
+        binary_tuple: PyInstaller binary tuple (name, source_path, type)
+    
+    Returns:
+        True if should be excluded, False otherwise
+    """
+    if not binary_tuple or not binary_tuple[0]:
+        return False
+    
+    binary_name = path.basename(binary_tuple[0])
+    
+    for exclude_pattern in excludes_binaries:
+        if binary_name.startswith(exclude_pattern):
+            return True
+    
+    return False
+
 block_cipher = None
 
 asadm_a = Analysis(['asadm.py'],
@@ -77,7 +98,7 @@ asadm_a = Analysis(['asadm.py'],
              noarchive=False)
 
 
-asadm_a.binaries = [x for x in asadm_a.binaries if not any(path.basename(x[0]).startswith(exc) for exc in excludes_binaries)]
+asadm_a.binaries = [x for x in asadm_a.binaries if not should_exclude_library(x)]
 
 if not options.exclude_asinfo:
     asinfo_a = Analysis(['asinfo.py'],
@@ -94,7 +115,7 @@ if not options.exclude_asinfo:
                 win_private_assemblies=False,
                 cipher=block_cipher,
                 noarchive=False)
-    asinfo_a.binaries = [x for x in asinfo_a.binaries if not any(path.basename(x[0]).startswith(exc) for exc in excludes_binaries)]
+    asinfo_a.binaries = [x for x in asinfo_a.binaries if not should_exclude_library(x)]
 
     MERGE((asadm_a, "asadm", "asadm"), (asinfo_a, "asinfo", "asinfo"))
 
