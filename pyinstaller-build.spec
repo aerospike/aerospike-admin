@@ -13,7 +13,6 @@
 # limitations under the License.
 
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
 import platform
 from os import path
 import argparse
@@ -70,7 +69,8 @@ asadm_a = Analysis(['asadm.py'],
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
-             excludes=[],
+             excludes=['coverage', 'pytest', 'unittest', 'test', 'mock', 'asynctest', 
+                       'black', 'flake8', 'docker', 'aerospike', 'tox'],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher,
@@ -88,7 +88,8 @@ if not options.exclude_asinfo:
                 hookspath=[],
                 hooksconfig={},
                 runtime_hooks=[],
-                excludes=[],
+                excludes=['coverage', 'pytest', 'unittest', 'test', 'mock', 'asynctest', 
+                          'black', 'flake8', 'docker', 'aerospike', 'tox'],
                 win_no_prefer_redirects=False,
                 win_private_assemblies=False,
                 cipher=block_cipher,
