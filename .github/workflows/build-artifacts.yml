@@ -70,7 +70,7 @@ jobs:
     needs:
        - get-version
        - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       gh-artifact-name: signed-artifacts # prefix of signed artifacts
       gh-unsigned-artifacts: unsigned-artifacts # prefix of unsigned/downloaded artifacts
