@@ -116,7 +116,7 @@ jobs:
       version: ${{ needs.get-version.outputs.VERSION }}
       gh-workflows-ref: 77e2f7f0b412413644cfe87367d6ea63ade0a307   # Use specific shared-workflows version
       dry-run: false
-             
+      
   test-install-from-jfrog-and-execute:
     strategy:
       matrix:
@@ -164,4 +164,3 @@ jobs:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
         run: .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }}
-
