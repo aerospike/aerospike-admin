@@ -13,7 +13,6 @@
 # limitations under the License.
 
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
 import platform
 from os import path
 import argparse
@@ -47,6 +46,40 @@ using pyenv on our build machine since pyenv relies on libcrypt to run `pyenv in
 if "darwin" not in platform.system().lower() and path.isfile('/usr/lib64/libcrypt.so.1'):
     binaries.append(('/usr/lib64/libcrypt.so.1', '.'))
 
+# Exclude system libraries to prevent glibc/libstdc++ version conflicts
+# These will be loaded from the target system at runtime
+excludes_binaries = [
+    'libgcc_s.so',
+    'libc.so',
+    'libm.so',
+    'libpthread.so',
+    'libdl.so',
+    'librt.so',
+    'libz.so',
+    'libstdc++.so',
+]
+
+def should_exclude_library(binary_tuple):
+    """
+    Check if a binary should be excluded from the bundle.
+    
+    Args:
+        binary_tuple: PyInstaller binary tuple (name, source_path, type)
+    
+    Returns:
+        True if should be excluded, False otherwise
+    """
+    if not binary_tuple or not binary_tuple[0]:
+        return False
+    
+    binary_name = path.basename(binary_tuple[0])
+    
+    for exclude_pattern in excludes_binaries:
+        if binary_name.startswith(exclude_pattern):
+            return True
+    
+    return False
+
 block_cipher = None
 
 asadm_a = Analysis(['asadm.py'],
@@ -57,11 +90,15 @@ asadm_a = Analysis(['asadm.py'],
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
-             excludes=[],
+             excludes=['coverage', 'pytest', 'unittest', 'test', 'mock', 'asynctest', 
+                       'black', 'flake8', 'docker', 'aerospike', 'tox'],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher,
              noarchive=False)
+
+
+asadm_a.binaries = [x for x in asadm_a.binaries if not should_exclude_library(x)]
 
 if not options.exclude_asinfo:
     asinfo_a = Analysis(['asinfo.py'],
@@ -72,11 +109,13 @@ if not options.exclude_asinfo:
                 hookspath=[],
                 hooksconfig={},
                 runtime_hooks=[],
-                excludes=[],
+                excludes=['coverage', 'pytest', 'unittest', 'test', 'mock', 'asynctest', 
+                          'black', 'flake8', 'docker', 'aerospike', 'tox'],
                 win_no_prefer_redirects=False,
                 win_private_assemblies=False,
                 cipher=block_cipher,
                 noarchive=False)
+    asinfo_a.binaries = [x for x in asinfo_a.binaries if not should_exclude_library(x)]
 
     MERGE((asadm_a, "asadm", "asadm"), (asinfo_a, "asinfo", "asinfo"))
 

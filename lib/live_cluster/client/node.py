@@ -3389,11 +3389,14 @@ class Node(AsyncObject):
         if set_ is not None:
             masking_show_req += "set={};".format(set_)
 
+        resp = await self._info(masking_show_req)
+
+        if resp.startswith("error") or resp.startswith("ERROR"):
+            raise ASInfoResponseError("Failed to list masking rules", resp)
+
         return [
             client_util.info_to_dict(v, ";")
-            for v in client_util.info_to_list(
-                await self._info(masking_show_req), delimiter=":"
-            )
+            for v in client_util.info_to_list(resp, delimiter=":")
             if v != ""
         ]
 
