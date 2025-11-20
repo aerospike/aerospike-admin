@@ -85,7 +85,7 @@ jobs:
     needs:
        - get-version
        - sign-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2 #vinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@SERVER-475 #v2.0.2 #vinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       jf-project: database
       jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
