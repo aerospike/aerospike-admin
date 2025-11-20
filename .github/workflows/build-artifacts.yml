@@ -45,7 +45,7 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.2
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@SERVER-475 #v2.0.2
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
@@ -72,7 +72,7 @@ jobs:
     needs:
        - get-version
        - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@SERVER-475 #v2.0.2 #pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       gh-artifact-name: signed-artifacts
       gh-unsigned-artifacts: "" # set empty string to download all
@@ -114,7 +114,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: v2.0.2 #77e2f7f0b412413644cfe87367d6ea63ade0a307   # Use specific shared-workflows version
+      gh-workflows-ref: SERVER-475 #v2.0.2 #77e2f7f0b412413644cfe87367d6ea63ade0a307   # Use specific shared-workflows version
       dry-run: false
       
   test-install-from-jfrog-and-execute:
