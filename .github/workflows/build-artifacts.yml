@@ -4,10 +4,10 @@ permissions:
   id-token: write
   attestations: write
 on:
-  workflow_dispatch: #{}
-  #push:
-  #  branches:
-  #    - MASTER-SERVER-216
+  workflow_dispatch: {}
+  push:
+    branches:
+      - MASTER-SERVER-216
 
 jobs:
   get-version:
