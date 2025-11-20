@@ -72,7 +72,7 @@ jobs:
     needs:
        - get-version
        - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2  #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
     with:
       gh-artifact-name: signed-artifacts
       gh-unsigned-artifacts: "" # set empty string to download all
