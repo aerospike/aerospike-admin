@@ -61,8 +61,8 @@ jobs:
       dry-run: false
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      jf-build-name: aerospike-asadm  
-        #jf-build-name: ${{ 
+      jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
+      #jf-build-name: ${{ 
         # (startsWith(matrix.distro, 'el') || startsWith(matrix.distro, 'amzn'))
         #  && format('{0}-rpm', github.event.repository.name)
         #  || format('{0}-deb', github.event.repository.name)
@@ -72,10 +72,10 @@ jobs:
     needs:
        - get-version
        - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       gh-artifact-name: signed-artifacts
-      gh-unsigned-artifacts: unsigned-artifacts
+      gh-unsigned-artifacts: "" # set empty string to download all
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
@@ -85,14 +85,14 @@ jobs:
     needs:
        - get-version
        - sign-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@pv2.0.2 #vinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       jf-project: database
-      jf-build-name: aerospike-asadm
+      jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
       version: ${{ needs.get-version.outputs.VERSION }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      gh-artifact-name: signed-artifacts
+      gh-artifact-name: "" # set empty string to download all
       gh-retention-days: 1
       dry-run: false
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
@@ -106,7 +106,7 @@ jobs:
     needs:
       - upload-artifacts
       - get-version
-    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2 #pvinh-spike-patch-1 #7e15d6b3519213f441d73f64214e23fd8f7b1d0c
     with:
       jf-project: "database"
       jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }}"
@@ -114,7 +114,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: 77e2f7f0b412413644cfe87367d6ea63ade0a307   # Use specific shared-workflows version
+      gh-workflows-ref: v2.0.2 #77e2f7f0b412413644cfe87367d6ea63ade0a307   # Use specific shared-workflows version
       dry-run: false
       
   test-install-from-jfrog-and-execute:
