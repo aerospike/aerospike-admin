@@ -68,6 +68,22 @@ one-dir: init
 	rm -r $(BUILD_ROOT)bin/asinfo
 	@echo Check $(BUILD_ROOT)bin for bundle
 
+.PHONY: deb
+deb: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
+.PHONY: rpm
+rpm: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
+.PHONY: tar
+tar: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
+.PHONY: prep
+prep: one-dir
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
 .PHONY: init
 init:
 	pipenv install --dev
