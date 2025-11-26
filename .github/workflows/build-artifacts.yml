@@ -92,7 +92,7 @@ jobs:
       - name: Upload packaged Artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: packaged-artifacts
+          name: unsigned-artifacts #packaged-artifacts
           path: build-artifacts
           overwrite: true
           retention-days: 1
@@ -103,7 +103,7 @@ jobs:
     with:
       gh-retention-days: 1
       gh-artifact-name: signed-artifacts
-      gh-unsigned-artifacts: packaged-artifacts
+      gh-unsigned-artifacts: unsigned-artifacts # packaged-artifacts
       # gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
