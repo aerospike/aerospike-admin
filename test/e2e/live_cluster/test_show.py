@@ -1347,3 +1347,66 @@ class TestShowUserAgents(asynctest.TestCase):
         # The actual number of rows will depend on connected clients
         self.assertIsInstance(actual_no_of_rows, int)
         self.assertGreaterEqual(actual_no_of_rows, 1)
+
+
+class TestSummaryCommand(asynctest.TestCase):
+    """Test cases for the summary command and compression awareness"""
+
+    async def setUp(self):
+        lib.start()
+        time.sleep(5)
+        self.rc = await controller.LiveClusterRootController(
+            [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
+        )  # type: ignore
+
+    def tearDown(self):
+        lib.stop()
+
+    async def test_summary_basic_output(self):
+        """Test that summary command produces valid output"""
+        actual_out = await util.capture_stdout(self.rc.execute, ["summary"])
+
+        # Should contain cluster and namespace sections
+        self.assertIn("Cluster", actual_out)
+        self.assertIn("Cluster Name", actual_out)
+        self.assertIn("Server Version", actual_out)
+        self.assertIn("Cluster Size", actual_out)
+        self.assertIn("License Usage", actual_out)
+
+    async def test_summary_compression_warning_display(self):
+        """Test that compression warning is displayed when asdb-compression is enabled"""
+        # Get summary output
+        summary_out = await util.capture_stdout(self.rc.execute, ["summary"])
+
+        # E2E test cluster has asdb-compression enabled, so warning should always appear
+        self.assertIn(
+            "inaccurate due to compression",
+            summary_out,
+            "Compression warning should be displayed when asdb-compression is enabled",
+        )
+
+        # Summary should contain license usage section
+        self.assertIn("License Usage", summary_out)
+
+        # Check that license values are displayed with compression indicators
+        self.assertIn("Latest", summary_out)
+
+        # Basic validation - summary should have required sections
+        self.assertIn("Cluster", summary_out)
+        self.assertIn("Server Version", summary_out)
+
+    async def test_summary_with_list_view(self):
+        """Test summary command with list view option and compression warning"""
+        summary_out = await util.capture_stdout(self.rc.execute, ["summary", "--list"])
+
+        # E2E test cluster has asdb-compression enabled, warning should appear in list view too
+        self.assertIn(
+            "inaccurate due to compression",
+            summary_out,
+            "Compression warning should be displayed in list view when asdb-compression is enabled",
+        )
+
+        # Should have same key sections
+        self.assertIn("Cluster", summary_out)
+        self.assertIn("License Usage", summary_out)
+        self.assertIn("Server Version", summary_out)

@@ -126,7 +126,11 @@ class TestCollectinfo(asynctest.TestCase):
         ("show sindex", [], None),
         ("show stop-writes", ["Usage", "Usage%", "Namespace", "Set"], None),
         ("health", [], None),
-        ("summary", [], None),
+        (
+            "summary",
+            ["License Usage Latest"],
+            None,
+        ),
     ]
 
     maxDiff = None
