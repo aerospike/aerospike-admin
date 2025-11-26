@@ -190,4 +190,5 @@ jobs:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
         run: |
+          sleep 60
           .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }}
