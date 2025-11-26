@@ -20,7 +20,7 @@ on:
       # yamllint disable-line rule:quoted-strings
       - "develop"
       # yamllint disable-line rule:quoted-strings
-      - "SERVER-475"  
+      - "pvinh/SERVER-475"  
 
 jobs:
   get-version:
@@ -76,35 +76,54 @@ jobs:
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
 
+  package-built-artifacts:
+    needs: [build-artifacts, get-version]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Download All Matrix Artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: build-artifacts
+          merge-multiple: true
+      - name: Upload packaged Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: build-artifacts
+          path: packaged-artifacts
+          overwrite: true
+          retention-days: 1
+
   sign-artifacts:
-    needs:
-       - get-version
-       - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
+    needs: [package-built-artifacts, get-version]
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #update to 2.0.2 once released
     with:
-      gh-artifact-name: signed-artifacts
-      gh-unsigned-artifacts: "" # set empty string to download all
+      gh-retention-days: 1
+      gh-artifact-name: packaged-artifacts
+      # gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
       gpg-key-pass: ${{ secrets.GPG_PASS }}
 
-  upload-artifacts:
-    needs:
-       - get-version
-       - sign-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@SERVER-475 # v2.0.2
+  deploy-artifacts:
+    needs: [sign-artifacts, get-version]
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
       jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
-      version: ${{ needs.get-version.outputs.VERSION }}
-      oidc-provider-name: database-gh-aerospike
-      oidc-audience: database-gh-aerospike
-      gh-artifact-name: "" # set empty string to download all
-      gh-retention-days: 1
-      dry-run: false
-      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
+      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
+      gh-artifact-name: ${{ needs.sign-artifacts.outputs.gh-artifact-name }}
+      version: ${{ needs.get-version.outputs.VERSION }}
+      gh-retention-days: 1
+      # gh-workflows-ref: v2.0.2  # Use specific shared-workflows version
+      oidc-provider-name:  database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      dry-run: false
 
   create-release-bundle:
     permissions:
