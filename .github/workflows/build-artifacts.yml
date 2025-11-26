@@ -158,7 +158,7 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    needs: upload-artifacts
+    needs: deploy-artifacts
     env:
       JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
