@@ -92,8 +92,8 @@ jobs:
       - name: Upload packaged Artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: build-artifacts
-          path: packaged-artifacts
+          name: packaged-artifacts
+          path: build-artifacts
           overwrite: true
           retention-days: 1
 
