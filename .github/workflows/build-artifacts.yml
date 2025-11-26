@@ -118,7 +118,7 @@ jobs:
       jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
-      gh-artifact-name: ${{ needs.sign-artifacts.outputs.gh-artifact-name }}
+      gh-artifact-name: signed-artifacts
       version: ${{ needs.get-version.outputs.VERSION }}
       gh-retention-days: 1
       # gh-workflows-ref: v2.0.2  # Use specific shared-workflows version
@@ -189,4 +189,6 @@ jobs:
         env:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
-        run: .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }}
+        run: |
+          sleep 60
+          .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }}
