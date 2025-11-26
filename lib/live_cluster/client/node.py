@@ -3013,6 +3013,20 @@ class Node(AsyncObject):
         """
         return await self._info("version")
 
+    @async_return_exceptions
+    async def info_feature_key(self):
+        """
+        Get feature-key information for this node. asinfo -v "feature-key"
+
+        Returns:
+        dictionary -- feature name -> value (e.g., {"asdb-compression": "true", ...})
+        """
+        resp = await self._info("feature-key")
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get feature-key", resp)
+
+        return client_util.info_to_dict(resp)
+
     async def _use_new_truncate_command(self):
         """
         A new truncate-namespace and truncate-namespace-undo was added to some
