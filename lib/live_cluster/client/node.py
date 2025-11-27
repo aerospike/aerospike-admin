@@ -1333,7 +1333,9 @@ class Node(AsyncObject):
 
         resp = await self._info("namespace/%s" % namespace)
         if resp.startswith("ERROR") or resp.startswith("error"):
-            raise ASInfoResponseError("Failed to get namespace statistics for {}".format(namespace), resp)
+            raise ASInfoResponseError(
+                "Failed to get namespace statistics for {}".format(namespace), resp
+            )
 
         ns_stat = client_util.info_to_dict(resp)
 
@@ -1405,7 +1407,7 @@ class Node(AsyncObject):
         stats = await self._info("health-outliers")
         if stats.startswith("ERROR") or stats.startswith("error"):
             raise ASInfoResponseError("Failed to get health outliers", stats)
-        
+
         stats = client_util.info_to_list(stats)
         if not stats:
             return {}
@@ -1455,7 +1457,7 @@ class Node(AsyncObject):
         resp = await self._info("bins")
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get bin statistics", resp)
-        
+
         stats = client_util.info_to_list(resp)
         if not stats:
             return {}
@@ -1492,12 +1494,16 @@ class Node(AsyncObject):
         ):
             resp = await self._info("dc/%s" % dc)
             if resp.startswith("ERROR") or resp.startswith("error"):
-                raise ASInfoResponseError("Failed to get DC statistics for {}".format(dc), resp)
+                raise ASInfoResponseError(
+                    "Failed to get DC statistics for {}".format(dc), resp
+                )
             return client_util.info_to_dict(resp)
 
         resp = await self._info("get-stats:context=xdr;dc=%s" % dc)
         if resp.startswith("ERROR") or resp.startswith("error"):
-            raise ASInfoResponseError("Failed to get DC statistics for {}".format(dc), resp)
+            raise ASInfoResponseError(
+                "Failed to get DC statistics for {}".format(dc), resp
+            )
         return client_util.info_to_dict(resp)
 
     @async_return_exceptions
@@ -1791,7 +1797,7 @@ class Node(AsyncObject):
         resp = await self._info("logs")
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get log IDs", resp)
-        
+
         ls = client_util.info_to_list(resp)
 
         for pair in ls:
@@ -1807,7 +1813,9 @@ class Node(AsyncObject):
         async def get_logging_config(log_id):
             resp = await self._info("log/{}".format(log_id))
             if resp.startswith("ERROR") or resp.startswith("error"):
-                raise ASInfoResponseError("Failed to get logging config for {}".format(log_id), resp)
+                raise ASInfoResponseError(
+                    "Failed to get logging config for {}".format(log_id), resp
+                )
             return client_util.info_to_dict(resp, key_value_delimter=":")
 
         log_names = log_ids.keys()
@@ -2941,7 +2949,9 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
 
-        resp = await self._info("sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname))
+        resp = await self._info(
+            "sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname)
+        )
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp)
 
