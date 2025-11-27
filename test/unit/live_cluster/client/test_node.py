@@ -3694,7 +3694,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_called_with("sindex-list", self.ip)
+        self.info_mock.assert_called_with("sindex-list:", self.ip)
         self.assertListEqual(actual, expected)
 
     async def test_info_sindex_statistics(self):
