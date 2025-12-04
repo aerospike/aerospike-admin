@@ -1634,10 +1634,10 @@ class NodeTest(asynctest.TestCase):
         actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
 
         self.assertIsInstance(actual, ASInfoResponseError)
+        self.assertEqual(actual.message, "Failed to get namespaces")
         self.assertEqual(
-            actual.message, "Failed to set namespace configuration parameter foo to bar"
-        )
-        self.assertEqual(actual.response, "Namespace does not exist")
+            actual.response, "Unknown error occurred"
+        )  # preserve the original error message
 
     async def test_info_set_config_network_success(self):
         self.info_mock.return_value = "ok"
@@ -5422,7 +5422,9 @@ class NodeErrorHandlingTest(asynctest.TestCase):
                 # Should handle the namespace error gracefully - in this case it returns ASInfoResponseError
                 # because the namespace check fails (which is the expected behavior)
                 self.assertIsInstance(result, ASInfoResponseError)
-                self.assertEqual(result.response, "Namespace does not exist")
+                self.assertEqual(
+                    result.response, "no access"
+                )  # preserve the original error message
 
     # Backward compatibility tests
     async def test_existing_error_handling_still_works(self):

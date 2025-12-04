@@ -1914,7 +1914,13 @@ class Node(AsyncObject):
 
             # Check if namespace exists, but handle potential errors from info_namespaces()
             namespaces = await self.info_namespaces()
-            if isinstance(namespaces, Exception) or namespace not in namespaces:
+            if isinstance(namespaces, Exception):
+                logger.error(
+                    f"Failed to get namespaces while setting config: {namespaces}"
+                )
+                return namespaces
+
+            if namespace and namespace not in namespaces:
                 raise ASInfoResponseError(
                     "Failed to set namespace configuration parameter {} to {}".format(
                         param, value
