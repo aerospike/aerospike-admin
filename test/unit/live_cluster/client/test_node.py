@@ -5027,6 +5027,67 @@ class NeedsRefreshTest(asynctest.TestCase):
 
         self.assertTrue(result)  # Should refresh on error
 
+    async def test_info_feature_key(self):
+        """Test info_feature_key method parsing semicolon-separated response"""
+        self.info_mock.return_value = "feature-key-version=2;serial-number=892960312;asdb-compression=true;asdb-encryption-at-rest=false;asdb-xdr=true"
+        expected = {
+            "feature-key-version": "2",
+            "serial-number": "892960312",
+            "asdb-compression": "true",
+            "asdb-encryption-at-rest": "false",
+            "asdb-xdr": "true",
+        }
+
+        feature_keys = await self.node.info_feature_key()
+
+        self.info_mock.assert_called_with("feature-key", self.ip)
+        self.assertEqual(
+            feature_keys,
+            expected,
+            "info_feature_key error:\n_expected:\t%s\n_found:\t%s"
+            % (expected, feature_keys),
+        )
+
+    async def test_info_feature_key_empty_response(self):
+        """Test info_feature_key with empty response"""
+        self.info_mock.return_value = ""
+        expected = {}
+
+        feature_keys = await self.node.info_feature_key()
+
+        self.info_mock.assert_called_with("feature-key", self.ip)
+        self.assertEqual(feature_keys, expected)
+
+    async def test_info_feature_key_malformed_response(self):
+        """Test info_feature_key with malformed response"""
+        self.info_mock.return_value = "format=;missing=value;"
+        expected = {"format": "", "missing": "value"}
+
+        feature_keys = await self.node.info_feature_key()
+
+        self.info_mock.assert_called_with("feature-key", self.ip)
+        self.assertEqual(feature_keys, expected)
+
+    async def test_info_feature_key_error_response(self):
+        """Test info_feature_key with ERROR response returns exception due to @async_return_exceptions"""
+        self.info_mock.return_value = "ERROR::invalid command"
+
+        result = await self.node.info_feature_key()
+
+        # Due to @async_return_exceptions decorator, exception is returned not raised
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.info_mock.assert_called_with("feature-key", self.ip)
+
+    async def test_info_feature_key_error_lowercase_response(self):
+        """Test info_feature_key with error (lowercase) response returns exception due to @async_return_exceptions"""
+        self.info_mock.return_value = "error: not available"
+
+        result = await self.node.info_feature_key()
+
+        # Due to @async_return_exceptions decorator, exception is returned not raised
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.info_mock.assert_called_with("feature-key", self.ip)
+
 
 class SocketPoolTest(asynctest.TestCase):
     """Test cases for socket pool FIFO behavior and edge cases"""

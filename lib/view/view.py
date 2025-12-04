@@ -2235,6 +2235,7 @@ class CliView(object):
         def __init__(
             self,
             license_dict: SummaryClusterLicenseAggDict,
+            compression_enabled: bool = False,
         ):
             s = ""
 
@@ -2243,11 +2244,27 @@ class CliView(object):
                 time_ = license_dict["latest_time"]
                 time_str = time_.isoformat()
 
-                s += f"Latest ({time_str}): {file_size.size(license_dict['latest'])} Min: {file_size.size(license_dict['min'])} Max: {file_size.size(license_dict['max'])} Avg: {file_size.size(license_dict['avg'])}"
+                license_value = file_size.size(license_dict["latest"]).strip()
+
+                if compression_enabled and license_dict["latest"] > 0:
+                    # Show license usage in red with parentheses and question mark
+                    license_value = (
+                        f"{terminal.fg_red()}({license_value}) ?{terminal.fg_clear()}"
+                    )
+
+                s += f"Latest ({time_str}): {license_value}  Min: {file_size.size(license_dict['min'])} Max: {file_size.size(license_dict['max'])} Avg: {file_size.size(license_dict['avg'])}"
 
             except Exception:
                 # license_data was manually computed by asadm
-                s += f"Latest: {file_size.size(license_dict['latest'])}"
+                license_value = file_size.size(license_dict["latest"]).strip()
+
+                if compression_enabled and license_dict["latest"] > 0:
+                    # Show license usage in red with parentheses and question mark
+                    license_value = (
+                        f"{terminal.fg_red()}({license_value}) ?{terminal.fg_clear()}"
+                    )
+
+                s += f"Latest: {license_value}"
 
             super().__init__("License Usage", s)
 
@@ -2398,6 +2415,7 @@ class CliView(object):
             numbered_lines.append(
                 CliView.SummaryLicenseLine(
                     cluster_dict["license_data"],
+                    cluster_dict["compression_enabled"],
                 )
             )
 
@@ -2519,6 +2537,7 @@ class CliView(object):
                 ns_lines.append(
                     CliView.SummaryLicenseLine(
                         ns_stats["license_data"],
+                        ns_stats["compression_enabled"],
                     )
                 )
 
@@ -2580,6 +2599,14 @@ class CliView(object):
         else:
             CliView._summary_cluster_table_view(summary["CLUSTER"])
             CliView._summary_namespace_table_view(summary["NAMESPACES"])
+
+        if summary["CLUSTER"].get("compression_enabled", False):
+            print(
+                "\n"
+                + terminal.fg_red()
+                + "The license usage calculation is inaccurate due to compression.\n\n"
+                + terminal.fg_clear()
+            )
 
     @staticmethod
     @reserved_modifiers
