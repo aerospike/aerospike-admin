@@ -649,6 +649,7 @@ class SummaryClusterDict(TypedDict):
     active_ns: int
     ns_count: int
     license_data: SummaryClusterLicenseAggDict
+    compression_enabled: NotRequired[bool]
     memory_data_and_indexes: NotRequired[SummaryStorageUsageDict]  # pre 7.0
     memory: NotRequired[SummaryStorageUsageDict]  # post 7.0
     device: NotRequired[SummaryStorageUsageDict]
@@ -671,6 +672,7 @@ class SummaryNamespaceDict(TypedDict):
     license_data: SummaryClusterLicenseAggDict
     index_type: NotRequired[str]
     compression_ratio: NotRequired[float]
+    compression_enabled: NotRequired[bool]
     cache_read_pct: NotRequired[int]
     memory_data_and_indexes: NotRequired[SummaryStorageUsageDict]  # pre 7.0
     memory: NotRequired[SummaryStorageUsageDict]  # post 7.0
@@ -920,6 +922,7 @@ def create_summary(
     service_configs={},
     ns_configs={},
     security_configs={},
+    feature_keys={},
 ) -> SummaryDict:
     """
     Function takes four dictionaries service stats, namespace stats, set stats and metadata.
@@ -979,6 +982,19 @@ def create_summary(
     _set_migration_status(
         namespace_stats, summary_dict["CLUSTER"], summary_dict["NAMESPACES"]
     )
+
+    # Check if compression is enabled based on config settings
+    compression_enabled = False
+
+    for node_features_keys in feature_keys.values():
+        if (
+            isinstance(node_features_keys, dict)
+            and node_features_keys.get("asdb-compression") == "true"
+        ):
+            compression_enabled = True
+            break
+
+    summary_dict["CLUSTER"]["compression_enabled"] = compression_enabled
 
     summary_dict["CLUSTER"]["active_features"] = features
     summary_dict["CLUSTER"]["cluster_size"] = list(
@@ -1231,6 +1247,8 @@ def create_summary(
 
         if compression_ratio > 0:
             summary_dict["NAMESPACES"][ns]["compression_ratio"] = compression_ratio
+
+        summary_dict["NAMESPACES"][ns]["compression_enabled"] = compression_enabled
 
         summary_dict["NAMESPACES"][ns]["repl_factor"] = list(
             set(

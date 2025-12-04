@@ -38,6 +38,7 @@ from lib.view.sheet import (
     Subgroup,
     TitleField,
 )
+from lib.utils import file_size
 
 #
 # Projectors.
@@ -1246,6 +1247,20 @@ def extract_value_from_dict(key: str):
     return extract_value
 
 
+def format_license_latest_with_compression(license_data_dict, compression_enabled_flag):
+    """Format license latest value with parentheses if compression is enabled."""
+
+    if not license_data_dict or not isinstance(license_data_dict, dict):
+        return "0.000 B"
+
+    license_value = license_data_dict.get("latest", 0)
+    formatted = file_size.size(license_value).strip()
+
+    if compression_enabled_flag and license_value > 0:
+        return f"({formatted}) ?"
+    return formatted
+
+
 def _storage_type_display_name(storage_type: str, field_title: str, subgroup: bool):
     title = ""
 
@@ -1526,13 +1541,33 @@ summary_cluster_sheet = Sheet(
             "Compression Ratio", Projectors.Float("cluster_dict", "compression_ratio")
         ),
         Field(
-            "License Usage Latest",
+            "Cluster License Latest Value",
             Projectors.Func(
                 FieldType.number,
                 extract_value_from_dict("latest"),
                 Projectors.Identity("cluster_dict", "license_data"),
             ),
-            converter=Converters.byte,
+            hidden=True,
+        ),
+        Field(
+            "Cluster Compression Enabled",
+            Projectors.Identity("cluster_dict", "compression_enabled"),
+            hidden=True,
+        ),
+        Field(
+            "License Usage Latest",
+            Projectors.Func(
+                FieldType.string,
+                format_license_latest_with_compression,
+                Projectors.Identity("cluster_dict", "license_data"),
+                Projectors.Identity("cluster_dict", "compression_enabled"),
+            ),
+            formatters=(
+                Formatters.red_alert(
+                    lambda edata: edata.record.get("Cluster Compression Enabled", False)
+                    and edata.record.get("Cluster License Latest Value", 0) > 0
+                ),
+            ),
         ),
         Field(
             "License Usage Latest Time",
@@ -1687,6 +1722,20 @@ summary_namespace_sheet = Sheet(
             Projectors.Number("ns_stats", "master_objects"),
             Converters.scientific_units,
         ),
+        Field(
+            "Namespace License Latest Value",
+            Projectors.Func(
+                FieldType.number,
+                extract_value_from_dict("latest"),
+                Projectors.Identity("ns_stats", "license_data"),
+            ),
+            hidden=True,
+        ),
+        Field(
+            "Namespace Compression Enabled",
+            Projectors.Identity("ns_stats", "compression_enabled"),
+            hidden=True,
+        ),
         Field("Compression Ratio", Projectors.Float("ns_stats", "compression_ratio")),
         Subgroup(
             "License Usage",
@@ -1694,11 +1743,20 @@ summary_namespace_sheet = Sheet(
                 Field(
                     "Latest",
                     Projectors.Func(
-                        FieldType.number,
-                        extract_value_from_dict("latest"),
+                        FieldType.string,
+                        format_license_latest_with_compression,
                         Projectors.Identity("ns_stats", "license_data"),
+                        Projectors.Identity("ns_stats", "compression_enabled"),
                     ),
-                    converter=Converters.byte,
+                    formatters=(
+                        Formatters.red_alert(
+                            lambda edata: edata.record.get(
+                                "Namespace Compression Enabled", False
+                            )
+                            and edata.record.get("Namespace License Latest Value", 0)
+                            > 0
+                        ),
+                    ),
                 ),
                 Field(
                     "Latest Time",
