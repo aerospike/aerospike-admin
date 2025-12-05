@@ -4462,7 +4462,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_user_agents_error(self):
         """Test error handling"""
-        self.info_mock.return_value = ASInfoResponseError("error", "Test error")
+        self.info_mock.return_value = "error:Test error"
 
         result = await self.node.info_user_agents()
 
@@ -5360,6 +5360,69 @@ class NodeErrorHandlingTest(asynctest.TestCase):
 
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to get set statistics")
+
+    async def test_info_set_statistics_error_response(self):
+        """Test info_set_statistics handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::set test/test-set not found"
+
+        result = await self.node.info_set_statistics("test", "test-set")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get set statistics")
+
+    async def test_info_build_error_response(self):
+        """Test info_build handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::build not available"
+
+        result = await self.node.info_build()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get build")
+
+    async def test_info_version_error_response(self):
+        """Test info_version handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::version not accessible"
+
+        result = await self.node.info_version()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get version")
+
+    async def test_info_get_config_error_response(self):
+        """Test info_get_config handles ERROR response correctly for general config"""
+        self.info_mock.return_value = "ERROR::config not available"
+
+        result = await self.node.info_get_config()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get config")
+
+    async def test_info_get_config_context_error_response(self):
+        """Test info_get_config handles ERROR response correctly for specific context"""
+        self.info_mock.return_value = "ERROR::service context not found"
+
+        result = await self.node.info_get_config(stanza="service")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get config for context service")
+
+    async def test_info_xdr_single_dc_config_error_response(self):
+        """Test info_xdr_single_dc_config handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::DC DC1 not found"
+
+        result = await self.node.info_xdr_single_dc_config("DC1")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get XDR DC config for DC1")
+
+    async def test_info_xdr_dc_single_namespace_config_error_response(self):
+        """Test info_xdr_dc_single_namespace_config handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::DC DC1 namespace test not found"
+
+        result = await self.node.info_xdr_dc_single_namespace_config("DC1", "test")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get XDR config for DC DC1 and namespace test")
 
     # Edge case tests
     async def test_info_functions_with_empty_error_response(self):

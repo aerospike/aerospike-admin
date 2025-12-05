@@ -1367,6 +1367,8 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_statistics(self, namespace, set_):
         set_stat = await self._info("sets/{}/{}".format(namespace, set_))
+        if set_stat.startswith("ERROR") or set_stat.startswith("error"):
+            raise ASInfoResponseError("Failed to get set statistics", set_stat)
 
         if set_stat and set_stat[-1] == ";":
             set_stat = client_util.info_colon_to_dict(set_stat[0:-1])
@@ -2018,11 +2020,17 @@ class Node(AsyncObject):
         elif stanza == "xdr":
             config = await self.info_xdr_config()
         elif not stanza:
-            config = client_util.info_to_dict(await self._info("get-config:"))
+            resp = await self._info("get-config:")
+            if resp.startswith("ERROR") or resp.startswith("error"):
+                raise ASInfoResponseError("Failed to get config", resp)
+            config = client_util.info_to_dict(resp)
         else:
-            config = client_util.info_to_dict(
-                await self._info("get-config:context=%s" % stanza)
-            )
+            resp = await self._info("get-config:context=%s" % stanza)
+            if resp.startswith("ERROR") or resp.startswith("error"):
+                raise ASInfoResponseError(
+                    f"Failed to get config for context {stanza}", resp
+                )
+            config = client_util.info_to_dict(resp)
         return config
 
     @async_return_exceptions
@@ -2077,9 +2085,10 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_xdr_single_dc_config(self, dc):
-        return client_util.info_to_dict(
-            await self._info("get-config:context=xdr;dc=%s" % dc)
-        )
+        resp = await self._info("get-config:context=xdr;dc=%s" % dc)
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError(f"Failed to get XDR DC config for {dc}", resp)
+        return client_util.info_to_dict(resp)
 
     @async_return_exceptions
     async def info_xdr_dcs_config(self, dcs: list[str] | None = None):
@@ -2138,9 +2147,14 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_xdr_dc_single_namespace_config(self, dc: str, ns: str):
-        return client_util.info_to_dict(
-            await self._info("get-config:context=xdr;dc={};namespace={}".format(dc, ns))
+        resp = await self._info(
+            "get-config:context=xdr;dc={};namespace={}".format(dc, ns)
         )
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError(
+                f"Failed to get XDR config for DC {dc} and namespace {ns}", resp
+            )
+        return client_util.info_to_dict(resp)
 
     @async_return_exceptions
     async def info_xdr_dc_namespaces_config(self, dc: str, namespaces: list[str]):
@@ -2587,6 +2601,8 @@ class Node(AsyncObject):
             return client_util.info_to_list(dcs, delimiter=",")
 
         dcs = await self._info("dcs")
+        if dcs.startswith("ERROR") or dcs.startswith("error"):
+            raise ASInfoResponseError("Failed to get DCs", dcs)
 
         if dcs == "":
             return []
@@ -2602,6 +2618,8 @@ class Node(AsyncObject):
         dict -- {<file-name>: {"filename": <file-name>, "hash": <hash>, "type": 'LUA'}, . . .}
         """
         udf_data = await self._info("udf-list")
+        if udf_data.startswith("ERROR") or udf_data.startswith("error"):
+            raise ASInfoResponseError("Failed to get UDF list", udf_data)
 
         if not udf_data:
             return {}
@@ -2618,6 +2636,8 @@ class Node(AsyncObject):
         dict -- {<file-name>: {"content": <content>, "type": 'LUA'}, . . .}
         """
         udf_data = await self._info("udf-get:filename={}".format(filename))
+        if udf_data.startswith("ERROR") or udf_data.startswith("error"):
+            raise ASInfoResponseError("Failed to get UDF", udf_data)
 
         if not udf_data:
             return {}
@@ -2690,7 +2710,7 @@ class Node(AsyncObject):
         req = "roster:namespace={}".format(namespace)
         resp = await self._info(req)
 
-        if resp.startswith("ERROR"):
+        if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError(ErrorsMsgs.ROSTER_READ_FAIL, resp)
 
         response = client_util.info_to_dict(resp, delimiter=":")
@@ -2718,6 +2738,8 @@ class Node(AsyncObject):
             return await self.info_roster_namespace(namespace)
 
         roster_data = await self._info("roster:")
+        if roster_data.startswith("ERROR") or roster_data.startswith("error"):
+            raise ASInfoResponseError("Failed to get roster", roster_data)
 
         if not roster_data:
             return {}
@@ -2792,6 +2814,8 @@ class Node(AsyncObject):
         dict -- {ns1:{rack-id: {'rack-id': rack-id, 'nodes': [node1, node2, ...]}, ns2:{...}, ...}
         """
         rack_data = await self._info("racks:")
+        if rack_data.startswith("ERROR") or rack_data.startswith("error"):
+            raise ASInfoResponseError("Failed to get racks", rack_data)
 
         if not rack_data:
             return {}
@@ -2838,7 +2862,7 @@ class Node(AsyncObject):
         """
         resp = await self._info("rack-ids")
 
-        if "ERROR" in resp:
+        if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get rack ids for this node", resp)
 
         rack_data = {}
@@ -2916,8 +2940,6 @@ class Node(AsyncObject):
     async def info_sindex(self):
 
         resp = await self._info("sindex-list:")
-        if isinstance(resp, Exception):
-            raise resp
 
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get sindex list", resp)
@@ -2934,8 +2956,6 @@ class Node(AsyncObject):
         Get a list of user agents for this node.
         """
         response = await self._info("user-agents")
-        if isinstance(response, Exception):
-            return response
 
         if response.startswith("ERROR") or response.startswith("error"):
             raise ASInfoResponseError("Failed to get user agents", response)
@@ -3070,7 +3090,10 @@ class Node(AsyncObject):
         Returns:
         string -- build version
         """
-        return await self._info("build")
+        resp = await self._info("build")
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get build", resp)
+        return resp
 
     @async_return_exceptions
     async def info_version(self):
@@ -3080,7 +3103,10 @@ class Node(AsyncObject):
         Returns:
         string -- build edition and version
         """
-        return await self._info("version")
+        resp = await self._info("version")
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get version", resp)
+        return resp
 
     @async_return_exceptions
     async def info_feature_key(self):
@@ -3251,7 +3277,7 @@ class Node(AsyncObject):
 
         resp = await self._info("jobs:module={}".format(module))
 
-        if resp.startswith("ERROR"):
+        if resp.startswith("ERROR") or resp.startswith("error"):
             return {}
 
         jobs = client_util.info_to_dict_multi_level(resp, "trid")
