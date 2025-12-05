@@ -58,6 +58,7 @@ class SummaryController(CollectinfoCommandController):
         kernel_version = self.log_handler.get_sys_data(stanza="uname")
         server_version = self.log_handler.info_meta_data(stanza="asd_build")
         server_edition = self.log_handler.info_meta_data(stanza="edition")
+        feature_keys_raw = self.log_handler.info_meta_data(stanza="feature-key")
 
         last_timestamp = sorted(service_stats.keys())[-1]
 
@@ -78,6 +79,7 @@ class SummaryController(CollectinfoCommandController):
 
         server_version = server_version[last_timestamp]
         server_edition = server_edition[last_timestamp]
+        feature_keys = feature_keys_raw.get(last_timestamp, {})
 
         for node, version in server_version.items():
             if not version or isinstance(version, Exception):
@@ -147,6 +149,7 @@ class SummaryController(CollectinfoCommandController):
                 service_configs=service_configs[last_timestamp],
                 ns_configs=namespace_configs[last_timestamp],
                 security_configs=security_configs[last_timestamp],
+                feature_keys=feature_keys,
             ),
             list_view=enable_list_view,
         )

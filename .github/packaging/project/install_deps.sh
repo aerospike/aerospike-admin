@@ -191,7 +191,7 @@ function install_deps_el8() {
 }
 
 function install_deps_el9() {
-  yum install -y "https://download.rockylinux.org/pub/rocky/9.6/devel/$(uname -m)/os/Packages/r/readline-devel-8.1-4.el9.$(uname -m).rpm"
+  yum install -y "https://dl.rockylinux.org/vault/rocky/9.6/devel/$(uname -m)/os/Packages/r/readline-devel-8.1-4.el9.$(uname -m).rpm"
   dnf -y install $EL9_DEPS
 
   if [ "$(uname -m)" = "x86_64" ]; then
@@ -221,7 +221,7 @@ function install_deps_el9() {
 }
 
 function install_deps_el10() {
-  yum install -y "https://download.rockylinux.org/pub/rocky/10.1/devel/$(uname -m)/os/Packages/r/readline-devel-8.2-11.el10.$(uname -m).rpm"
+  yum install -y "https://dl.rockylinux.org/vault/rocky/10.0/devel/$(uname -m)/os/Packages/r/readline-devel-8.2-11.el10.$(uname -m).rpm"
   dnf -y install $EL10_DEPS
   if [ "$(uname -m)" = "x86_64" ]; then
       curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz

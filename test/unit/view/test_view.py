@@ -753,6 +753,7 @@ class CliViewTest(unittest.TestCase):
                 "max": 4,
                 "avg": 5,
             },
+            "compression_enabled": False,
             "active_ns": 2,
             "ns_count": 2,
             "active_features": ["Compression", "Depression"],
@@ -855,6 +856,7 @@ class CliViewTest(unittest.TestCase):
                     "max": 4,
                     "avg": 5,
                 },
+                "compression_enabled": False,
                 "cache_read_pct": 1,
                 "rack_aware": True,
                 "master_objects": 2,
@@ -925,6 +927,7 @@ class CliViewTest(unittest.TestCase):
                     "max": 4,
                     "avg": 5,
                 },
+                "compression_enabled": False,
                 "cache_read_pct": 1,
                 "rack_aware": False,
                 "master_objects": 2,
@@ -2020,3 +2023,175 @@ class CliViewTest(unittest.TestCase):
 
         sheet_mock.render.assert_called_once()
         print_result_mock.assert_called_once_with("Rendered masking rules table")
+
+
+class SummaryLicenseLineTest(unittest.TestCase):
+    """Test cases for SummaryLicenseLine with compression awareness"""
+
+    def test_license_line_without_compression(self):
+        """Test license line display without compression enabled"""
+        license_dict = {
+            "latest_time": datetime.datetime(
+                2023, 10, 4, 20, 35, 42, tzinfo=datetime.timezone.utc
+            ),
+            "latest": 1048576,  # 1 MB
+            "min": 524288,  # 512 KB
+            "max": 2097152,  # 2 MB
+            "avg": 1048576,  # 1 MB
+        }
+
+        line = CliView.SummaryLicenseLine(license_dict, compression_enabled=False)
+        line_str = str(line)
+
+        # Should contain the license values without compression indicators
+        self.assertIn("1.000 MB", line_str)
+        self.assertIn("512.000 KB", line_str)
+        self.assertIn("2.000 MB", line_str)
+        # Should NOT have parentheses around latest value or question mark
+        self.assertNotIn("(1.000 MB) ?", line_str)
+        # Should have the value directly without parentheses
+        self.assertIn("Latest (2023-10-04T20:35:42+00:00): 1.000 MB", line_str)
+
+    def test_license_line_with_compression_enabled(self):
+        """Test license line display with compression enabled"""
+        license_dict = {
+            "latest_time": datetime.datetime(
+                2023, 10, 4, 20, 35, 42, tzinfo=datetime.timezone.utc
+            ),
+            "latest": 1048576,  # 1 MB
+            "min": 524288,  # 512 KB
+            "max": 2097152,  # 2 MB
+            "avg": 1048576,  # 1 MB
+        }
+
+        line = CliView.SummaryLicenseLine(license_dict, compression_enabled=True)
+        line_str = str(line)
+
+        # Should contain red formatting and question mark for latest value
+        self.assertIn(terminal.fg_red(), line_str)
+        self.assertIn("?", line_str)
+        self.assertIn(terminal.fg_clear(), line_str)
+        # Should still contain the actual values
+        self.assertIn("1.000 MB", line_str)
+        self.assertIn("512.000 KB", line_str)
+        self.assertIn("2.000 MB", line_str)
+
+    def test_license_line_with_compression_zero_value(self):
+        """Test license line with compression enabled but zero license value"""
+        license_dict = {
+            "latest_time": datetime.datetime(
+                2023, 10, 4, 20, 35, 42, tzinfo=datetime.timezone.utc
+            ),
+            "latest": 0,
+            "min": 0,
+            "max": 0,
+            "avg": 0,
+        }
+
+        line = CliView.SummaryLicenseLine(license_dict, compression_enabled=True)
+        line_str = str(line)
+
+        # Should NOT show compression indicators for zero values
+        self.assertNotIn("?", line_str)
+        self.assertNotIn("(0.000 B) ?", line_str)
+        # Should have zero values displayed normally
+        self.assertIn("0.000 B", line_str)
+        self.assertIn("Latest (2023-10-04T20:35:42+00:00): 0.000 B", line_str)
+
+    def test_license_line_manual_computation(self):
+        """Test license line with manually computed license data (no timestamp)"""
+        license_dict = {
+            "latest": 1048576,  # 1 MB
+        }
+
+        line = CliView.SummaryLicenseLine(license_dict, compression_enabled=False)
+        line_str = str(line)
+
+        # Should contain only the latest value
+        self.assertIn("Latest: 1.000 MB", line_str)
+        self.assertNotIn("Min:", line_str)
+        self.assertNotIn("Max:", line_str)
+
+    def test_license_line_manual_computation_with_compression(self):
+        """Test license line with manual computation and compression enabled"""
+        license_dict = {
+            "latest": 1048576,  # 1 MB
+        }
+
+        line = CliView.SummaryLicenseLine(license_dict, compression_enabled=True)
+        line_str = str(line)
+
+        # Should show red formatting even for manually computed values
+        self.assertIn(terminal.fg_red(), line_str)
+        self.assertIn("?", line_str)
+        self.assertIn(terminal.fg_clear(), line_str)
+        self.assertIn("1.000 MB", line_str)
+
+
+class PrintSummaryCompressionWarningTest(unittest.TestCase):
+    """Test cases for compression warning in print_summary"""
+
+    @patch("builtins.print")
+    def test_print_summary_with_compression_warning(self, mock_print):
+        """Test that compression warning is displayed when compression is enabled"""
+        summary = {
+            "CLUSTER": {
+                "active_features": [],
+                "ns_count": 1,
+                "migrations_in_progress": False,
+                "cluster_name": ["test"],
+                "server_version": ["7.0.0"],
+                "os_version": ["Linux"],
+                "cluster_size": [1],
+                "device_count": 0,
+                "device_count_per_node": 0,
+                "device_count_same_across_nodes": True,
+                "license_data": {"latest": 0},
+                "compression_enabled": True,
+                "active_ns": 1,
+            },
+            "NAMESPACES": {},
+        }
+
+        CliView.print_summary(summary, list_view=True)
+
+        # Check that the warning message was printed
+        warning_printed = False
+        for call_args in mock_print.call_args_list:
+            call_str = str(call_args)
+            if "inaccurate due to compression" in call_str:
+                warning_printed = True
+                # Verify it's in red
+                self.assertIn(terminal.fg_red(), call_str)
+                break
+
+        self.assertTrue(warning_printed, "Compression warning should be printed")
+
+    @patch("builtins.print")
+    def test_print_summary_without_compression_warning(self, mock_print):
+        """Test that no compression warning is displayed when compression is disabled"""
+        summary = {
+            "CLUSTER": {
+                "active_features": [],
+                "ns_count": 1,
+                "migrations_in_progress": False,
+                "cluster_name": ["test"],
+                "server_version": ["7.0.0"],
+                "os_version": ["Linux"],
+                "cluster_size": [1],
+                "device_count": 0,
+                "device_count_per_node": 0,
+                "device_count_same_across_nodes": True,
+                "license_data": {"latest": 0},
+                "compression_enabled": False,
+                "active_ns": 1,
+            },
+            "NAMESPACES": {},
+        }
+
+        CliView.print_summary(summary, list_view=True)
+
+        # Check that the warning message was NOT printed
+        for call_args in mock_print.call_args_list:
+            call_str = str(call_args)
+            self.assertNotIn("inaccurate due to compression", call_str)
