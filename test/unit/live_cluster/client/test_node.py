@@ -5422,7 +5422,9 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         result = await self.node.info_xdr_dc_single_namespace_config("DC1", "test")
 
         self.assertIsInstance(result, ASInfoResponseError)
-        self.assertEqual(result.message, "Failed to get XDR config for DC DC1 and namespace test")
+        self.assertEqual(
+            result.message, "Failed to get XDR config for DC DC1 and namespace test"
+        )
 
     # Edge case tests
     async def test_info_functions_with_empty_error_response(self):
