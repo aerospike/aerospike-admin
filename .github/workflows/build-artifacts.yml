@@ -19,10 +19,30 @@ on:
       - "master"
       # yamllint disable-line rule:quoted-strings
       - "develop"
-
+      # yamllint disable-line rule:quoted-strings
+      - "pvinh/SERVER-475"  
 
 jobs:
+  get-version:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      VERSION: ${{ steps.git_describe.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute version from git describe
+        id: git_describe
+        run: echo "version=$(git describe --tags --always --abbrev=7)" >> "$GITHUB_OUTPUT"
+
   build-artifacts:
+    needs: get-version
+    if: ${{ github.repository_owner == 'aerospike' }}
     strategy:
       matrix:
         distro:
@@ -42,7 +62,7 @@ jobs:
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
-      jf-build-id: ${{ github.run_number }}
+      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       # this is the default behaviour so we can leave it out but if it is wanted to be explicit
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
@@ -54,61 +74,75 @@ jobs:
       dry-run: false
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      jf-build-name: ${{ github.event.repository.name }}
+      jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
+
+  package-built-artifacts:
+    needs: [build-artifacts, get-version]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Download All Matrix Artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: build-artifacts
+          merge-multiple: true
+      - name: Upload packaged Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: unsigned-artifacts #packaged-artifacts
+          path: build-artifacts
+          overwrite: true
+          retention-days: 1
+
   sign-artifacts:
-    strategy:
-      matrix:
-        distro:
-          - el8
-          - el9
-          - el10
-          - amzn2023
-          - debian12
-          - debian13
-          - ubuntu20.04
-          - ubuntu22.04
-          - ubuntu24.04
-        host:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-    needs: build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
+    needs: [package-built-artifacts, get-version]
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #update to 2.0.2 once released
     with:
-      gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
-      gh-unsigned-artifacts: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+      gh-retention-days: 1
+      gh-artifact-name: signed-artifacts
+      gh-unsigned-artifacts: unsigned-artifacts # packaged-artifacts
+      # gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
       gpg-key-pass: ${{ secrets.GPG_PASS }}
-  upload-artifacts:
-    strategy:
-      matrix:
-        distro:
-          - el8
-          - el9
-          - el10
-          - amzn2023
-          - debian12
-          - debian13
-          - ubuntu20.04
-          - ubuntu22.04
-          - ubuntu24.04
-        host:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-    needs: sign-artifacts
+
+  deploy-artifacts:
+    needs: [sign-artifacts, get-version]
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
-      jf-build-name: ${{ github.event.repository.name }}
-      version: ${{ github.ref_name }}
+      jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
+      jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
+      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
+      gh-artifact-name: signed-artifacts
+      version: ${{ needs.get-version.outputs.VERSION }}
+      gh-retention-days: 1
+      # gh-workflows-ref: v2.0.2  # Use specific shared-workflows version
+      oidc-provider-name:  database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      dry-run: false
+
+  create-release-bundle:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write    
+    needs: [deploy-artifacts, get-version]
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
+    with:
+      jf-project: "database"
+      jf-build-names: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}:${{ needs.get-version.outputs.VERSION }}"
+      jf-bundle-name: "aerospike-asadm"
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      gh-artifact-name: signed-artifacts-${{ matrix.distro }}-${{ matrix.host }}
-      gh-retention-days: 1
+      version: ${{ needs.get-version.outputs.VERSION }}
+      gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
       dry-run: false
-      jf-build-id: ${{ github.run_number }}
-      jf-metadata-build-id: ${{ github.run_number }}-metadata
+      
   test-install-from-jfrog-and-execute:
     strategy:
       matrix:
@@ -125,7 +159,7 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    needs: upload-artifacts
+    needs: create-release-bundle
     env:
       JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
@@ -155,5 +189,5 @@ jobs:
         env:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
-        run: .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }}
-
+        run: |
+          .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }}
