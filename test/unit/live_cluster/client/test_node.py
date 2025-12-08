@@ -1634,10 +1634,10 @@ class NodeTest(asynctest.TestCase):
         actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
 
         self.assertIsInstance(actual, ASInfoResponseError)
+        self.assertEqual(actual.message, "Failed to get namespaces")
         self.assertEqual(
-            actual.message, "Failed to set namespace configuration parameter foo to bar"
-        )
-        self.assertEqual(actual.response, "Namespace does not exist")
+            actual.response, "Unknown error occurred"
+        )  # preserve the original error message
 
     async def test_info_set_config_network_success(self):
         self.info_mock.return_value = "ok"
@@ -3694,7 +3694,7 @@ class NodeTest(asynctest.TestCase):
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_called_with("sindex-list", self.ip)
+        self.info_mock.assert_called_with("sindex-list:", self.ip)
         self.assertListEqual(actual, expected)
 
     async def test_info_sindex_statistics(self):
@@ -4462,7 +4462,7 @@ class NodeTest(asynctest.TestCase):
 
     async def test_info_user_agents_error(self):
         """Test error handling"""
-        self.info_mock.return_value = ASInfoResponseError("error", "Test error")
+        self.info_mock.return_value = "error:Test error"
 
         result = await self.node.info_user_agents()
 
@@ -5205,6 +5205,322 @@ class SocketPoolTest(asynctest.TestCase):
 
         # Should return connected socket
         self.assertEqual(result.name, "connected")
+
+
+class NodeErrorHandlingTest(asynctest.TestCase):
+    """Test error handling for info functions"""
+
+    async def setUp(self):
+        self.maxDiff = None
+        self.ip = "127.0.0.1"
+
+        # Mock _info_cinfo to control responses
+        self.info_mock = patch(
+            "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
+        ).start()
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            self.node: Node = await Node(self.ip, timeout=0)
+
+    def tearDown(self):
+        patch.stopall()
+
+    # Core info function error tests
+    async def test_info_statistics_error_response(self):
+        """Test info_statistics handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::statistics not available"
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get statistics")
+        self.assertEqual(result.raw_response, "ERROR::statistics not available")
+
+    async def test_info_statistics_lowercase_error(self):
+        """Test info_statistics handles lowercase error response"""
+        self.info_mock.return_value = "error::permission denied"
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get statistics")
+
+    async def test_info_namespaces_error_response(self):
+        """Test info_namespaces handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::namespaces not accessible"
+
+        result = await self.node.info_namespaces()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get namespaces")
+        self.assertEqual(result.raw_response, "ERROR::namespaces not accessible")
+
+    async def test_info_user_agents_error_response(self):
+        """Test info_user_agents handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::user-agents not supported"
+
+        result = await self.node.info_user_agents()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get user agents")
+
+    async def test_info_namespace_statistics_error_response(self):
+        """Test info_namespace_statistics handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::namespace test not found"
+
+        result = await self.node.info_namespace_statistics("test")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get namespace statistics for test")
+
+    async def test_info_health_outliers_error_response(self):
+        """Test info_health_outliers handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::health-outliers not available"
+
+        result = await self.node.info_health_outliers()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get health outliers")
+
+    async def test_info_best_practices_error_response(self):
+        """Test info_best_practices handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::best-practices not supported"
+
+        result = await self.node.info_best_practices()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get best practices")
+
+    async def test_info_bin_statistics_error_response(self):
+        """Test info_bin_statistics handles ERROR response correctly"""
+        with patch.object(self.node, "info_build", AsyncMock()) as mock_build:
+            mock_build.return_value = "6.4.0.1"  # Pre-7.0
+            self.info_mock.return_value = "ERROR::bins not available"
+
+            result = await self.node.info_bin_statistics()
+
+            self.assertIsInstance(result, ASInfoResponseError)
+            self.assertEqual(result.message, "Failed to get bin statistics")
+
+    async def test_info_dc_statistics_error_response(self):
+        """Test info_dc_statistics handles ERROR response correctly"""
+        with patch.object(self.node, "info_build", AsyncMock()) as mock_build:
+            mock_build.return_value = "6.4.0.1"  # Pre-XDR5
+            self.info_mock.return_value = "ERROR::dc DC1 not found"
+
+            result = await self.node.info_dc_statistics("DC1")
+
+            self.assertIsInstance(result, ASInfoResponseError)
+            self.assertEqual(result.message, "Failed to get DC statistics for DC1")
+
+    async def test_info_xdr_statistics_error_response(self):
+        """Test info_XDR_statistics handles ERROR response correctly"""
+        with patch.object(self.node, "info_build", AsyncMock()) as mock_build:
+            mock_build.return_value = "4.9.0.1"  # Pre-XDR5 (XDR5 is 5.0+)
+            self.info_mock.return_value = "ERROR::XDR not enabled"
+
+            result = await self.node.info_XDR_statistics()
+
+            self.assertIsInstance(result, ASInfoResponseError)
+            self.assertEqual(result.message, "Failed to get XDR statistics")
+
+    async def test_info_logs_ids_error_response(self):
+        """Test info_logs_ids handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::logs not accessible"
+
+        result = await self.node.info_logs_ids()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get log IDs")
+
+    async def test_info_xdr_config_error_response(self):
+        """Test info_xdr_config handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::XDR config not available"
+
+        result = await self.node.info_xdr_config()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get XDR config")
+
+    async def test_info_sindex_list_error_response(self):
+        """Test info_sindex handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::sindex not supported"
+
+        result = await self.node.info_sindex()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get sindex list")
+
+    async def test_info_all_set_statistics_error_response(self):
+        """Test info_all_set_statistics handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::sets not available"
+
+        result = await self.node.info_all_set_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get set statistics")
+
+    async def test_info_set_statistics_error_response(self):
+        """Test info_set_statistics handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::set test/test-set not found"
+
+        result = await self.node.info_set_statistics("test", "test-set")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get set statistics")
+
+    async def test_info_build_error_response(self):
+        """Test info_build handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::build not available"
+
+        result = await self.node.info_build()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get build")
+
+    async def test_info_version_error_response(self):
+        """Test info_version handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::version not accessible"
+
+        result = await self.node.info_version()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get version")
+
+    async def test_info_get_config_error_response(self):
+        """Test info_get_config handles ERROR response correctly for general config"""
+        self.info_mock.return_value = "ERROR::config not available"
+
+        result = await self.node.info_get_config()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get config")
+
+    async def test_info_get_config_context_error_response(self):
+        """Test info_get_config handles ERROR response correctly for specific context"""
+        self.info_mock.return_value = "ERROR::service context not found"
+
+        result = await self.node.info_get_config(stanza="service")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get config for context service")
+
+    async def test_info_xdr_single_dc_config_error_response(self):
+        """Test info_xdr_single_dc_config handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::DC DC1 not found"
+
+        result = await self.node.info_xdr_single_dc_config("DC1")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get XDR DC config for DC1")
+
+    async def test_info_xdr_dc_single_namespace_config_error_response(self):
+        """Test info_xdr_dc_single_namespace_config handles ERROR response correctly"""
+        self.info_mock.return_value = "ERROR::DC DC1 namespace test not found"
+
+        result = await self.node.info_xdr_dc_single_namespace_config("DC1", "test")
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(
+            result.message, "Failed to get XDR config for DC DC1 and namespace test"
+        )
+
+    # Edge case tests
+    async def test_info_functions_with_empty_error_response(self):
+        """Test functions handle empty ERROR responses"""
+        self.info_mock.return_value = "ERROR"
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+
+    async def test_info_functions_with_mixed_case_error(self):
+        """Test functions don't trigger on mixed case like 'Error'"""
+        self.info_mock.return_value = "Error: not an aerospike error format"
+
+        result = await self.node.info_statistics()
+
+        # Should NOT be treated as error since it's not ERROR or error
+        self.assertIsInstance(result, dict)
+
+    async def test_info_functions_with_error_in_middle(self):
+        """Test functions don't trigger on ERROR in middle of response"""
+        self.info_mock.return_value = "valid-data;ERROR=something;more-data"
+
+        result = await self.node.info_statistics()
+
+        # Should NOT be treated as error since ERROR is not at start
+        self.assertIsInstance(result, dict)
+
+    async def test_info_error_checking_performance_with_large_response(self):
+        """Test error checking doesn't impact performance with large responses"""
+        large_response = "data=" + "x" * 100000  # 100KB response
+        self.info_mock.return_value = large_response
+
+        import time
+
+        start_time = time.time()
+        result = await self.node.info_statistics()
+        end_time = time.time()
+
+        # Should be very fast since it only checks first characters
+        self.assertLess(end_time - start_time, 0.1)  # Less than 100ms (generous for CI)
+        self.assertIsInstance(result, dict)
+
+    # Dependency error handling tests
+    async def test_info_set_config_namespace_with_namespaces_error(self):
+        """Test info_set_config_namespace when info_namespaces returns error"""
+        # Mock info_namespaces to return an error
+        with patch.object(self.node, "info_namespaces", AsyncMock()) as mock_namespaces:
+            with patch.object(self.node, "info_build", AsyncMock()) as mock_build:
+                mock_build.return_value = "6.4.0.1"
+                mock_namespaces.return_value = ASInfoResponseError(
+                    "Failed", "ERROR::no access"
+                )
+                self.info_mock.return_value = "error::config failed"
+
+                result = await self.node.info_set_config_namespace(
+                    "param", "value", "test-ns"
+                )
+
+                # Should handle the namespace error gracefully - in this case it returns ASInfoResponseError
+                # because the namespace check fails (which is the expected behavior)
+                self.assertIsInstance(result, ASInfoResponseError)
+                self.assertEqual(
+                    result.response, "no access"
+                )  # preserve the original error message
+
+    # Backward compatibility tests
+    async def test_existing_error_handling_still_works(self):
+        """Test that existing error handling patterns continue to work"""
+        # Test functions that already had error checking
+        self.info_mock.return_value = "ERROR::roster not available"
+
+        result = await self.node.info_roster("test-ns")
+
+        # Should still work as before
+        self.assertIsInstance(result, ASInfoResponseError)
+
+    async def test_async_return_exceptions_decorator_behavior(self):
+        """Test that @async_return_exceptions decorator still works correctly"""
+        self.info_mock.return_value = "ERROR::test error"
+
+        # Should return exception object, not raise it
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        # Should not have raised an exception - if it did, test would fail
+
+    async def test_successful_responses_still_work(self):
+        """Test that successful responses continue to work normally"""
+        self.info_mock.return_value = "cs=2;ck=71;ci=false"
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["cs"], "2")
+        self.assertEqual(result["ck"], "71")
 
 
 if __name__ == "__main__":
