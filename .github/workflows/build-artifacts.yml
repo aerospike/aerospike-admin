@@ -77,9 +77,6 @@ jobs:
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
       build-script: |
-        # Log in to GHCR so we can pull builder images
-        echo "${{ github.token }}" | docker login ghcr.io \
-          -u "${{ github.actor }}" --password-stdin
         ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
         USE_REMOTE_BUILDER_IMAGES=true \
         BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
