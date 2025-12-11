@@ -6,23 +6,35 @@ function build_packages(){
     echo "ENV_DISTRO is not set"
     return
   fi
+  export PATH=$PATH:/opt/golang/go/bin
   GIT_DIR=$(git rev-parse --show-toplevel)
-  cd "$GIT_DIR"
 
+  # build
+  cd "$GIT_DIR" || exit 1
+  make clean
+  make
+
+  echo "build_package.sh version: $(git describe --tags --always)"
+  VERSION=$(git describe --tags --always)
+  export VERSION
+
+  # package
+  cd "$GIT_DIR"/pkg || exit 1
+  make clean
   echo "building package for $BUILD_DISTRO"
 
-  if [[ $ENV_DISTRO == *"ubuntu"* ]]; then
+  if [[ "$ENV_DISTRO" == *"ubuntu"* ]]; then
     make deb
-  elif [[ $ENV_DISTRO == *"debian"* ]]; then
+  elif [[ "$ENV_DISTRO" == *"debian"* ]]; then
     make deb
-  elif [[ $ENV_DISTRO == *"el"* ]]; then
+  elif [[ "$ENV_DISTRO" == *"el"* ]]; then
     make rpm
-  elif [[ $ENV_DISTRO == *"amzn"* ]]; then
+  elif [[ "$ENV_DISTRO" == *"amzn"* ]]; then
     make rpm
   else
     make tar
   fi
 
-  mkdir -p /tmp/output/$ENV_DISTRO
-  cp -a $GIT_DIR/pkg/target/* /tmp/output/$ENV_DISTRO
+  mkdir -p /tmp/output/"$ENV_DISTRO"
+  cp -a "$GIT_DIR"/pkg/target/* /tmp/output/"$ENV_DISTRO"
 }
