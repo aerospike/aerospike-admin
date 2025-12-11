@@ -67,9 +67,6 @@ jobs:
           - ubuntu-24.04
             #- ubuntu-24.04-arm
 
-    env:
-      ARCH: ${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }}
-
     uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.2
     with:
       runs-on: ${{ matrix.host }}
@@ -79,7 +76,7 @@ jobs:
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
       build-script: |
-        ARCH=${ARCH} \
+        ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
         USE_REMOTE_BUILDER_IMAGES=true \
         BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
@@ -174,7 +171,7 @@ jobs:
           #- ubuntu24.04
         host:
           - ubuntu-24.04
-          - ubuntu-24.04-arm
+          #- ubuntu-24.04-arm
     needs: create-release-bundle
     env:
       JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
