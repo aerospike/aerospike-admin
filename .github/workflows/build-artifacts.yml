@@ -78,7 +78,7 @@ jobs:
       # gh-source-ref: ${{ github.ref }}
       build-script: |
         # Log in to GHCR so we can pull builder images
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+        echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
           -u "${{ github.actor }}" --password-stdin
         ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
         USE_REMOTE_BUILDER_IMAGES=true \
