@@ -77,9 +77,6 @@ jobs:
       # this is the default behaviour so we can leave it out but if it is wanted to be explicit
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
-   secrets:
-     ghcr-pat: ${{ secrets.GHCR_PAT }}
-
       build-script: |
         ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
         USE_REMOTE_BUILDER_IMAGES=true \
@@ -93,6 +90,9 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+
+   secrets:
+     ghcr-pat: ${{ secrets.GHCR_PAT }}        
 
   package-built-artifacts:
     needs: [build-artifacts, setup]
