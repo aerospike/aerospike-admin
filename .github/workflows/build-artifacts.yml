@@ -29,7 +29,9 @@ permissions:
 
 env:
   ARTIFACT_NAME: aerospike-asadm
-        
+  GHCR_PAT: ${{ secrets.GHCR_PAT }}
+  GITHUB_ACTOR: ${{ github.actor }}
+
 jobs:
   setup:
     runs-on: ubuntu-24.04
@@ -101,8 +103,6 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
-    secrets:
-      GHCR_PAT: ${{ secrets.GHCR_PAT }}
 
   package-built-artifacts:
     needs: [build-artifacts, setup]
