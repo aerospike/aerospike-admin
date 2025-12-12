@@ -29,8 +29,6 @@ permissions:
 
 env:
   ARTIFACT_NAME: aerospike-asadm
-  GHCR_PAT: ${{ secrets.GHCR_PAT }}
-  GITHUB_ACTOR: ${{ github.actor }}
 
 jobs:
   setup:
@@ -71,6 +69,9 @@ jobs:
         host:
           - ubuntu-24.04
             #- ubuntu-24.04-arm
+
+    env:
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}
 
     uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.2
     with:
