@@ -58,13 +58,13 @@ jobs:
         distro:
           #- el8
           #- el9
-          - el10
+          #- el10
           #- amzn2023
           #- debian12
           #- debian13
           #- ubuntu20.04
           #- ubuntu22.04
-          #- ubuntu24.04
+          - ubuntu24.04
         host:
           - ubuntu-24.04
             #- ubuntu-24.04-arm
@@ -167,13 +167,13 @@ jobs:
         distro:
           #- el8
           #- el9
-          - el10
+          #- el10
           #- amzn2023
           #- debian12
           #- debian13
           #- ubuntu20.04
           #- ubuntu22.04
-          #- ubuntu24.04
+          - ubuntu24.04
         host:
           - ubuntu-24.04
           #- ubuntu-24.04-arm
