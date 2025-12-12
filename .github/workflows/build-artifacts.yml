@@ -48,53 +48,59 @@ jobs:
         id: set_env
         run: |
           echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
-
-
+          
   build-artifacts:
     needs: setup
     if: ${{ github.repository_owner == 'aerospike' }}
+    runs-on: ${{ matrix.host }}
 
     strategy:
+      fail-fast: false
       matrix:
         distro:
-          #- el8
-          #- el9
+          # - el8
+          # - el9
           - el10
-          #- amzn2023
-          #- debian12
-          #- debian13
-          #- ubuntu20.04
-          #- ubuntu22.04
-          #- ubuntu24.04
+          # - amzn2023
+          # - debian12
+          # - debian13
+          # - ubuntu20.04
+          # - ubuntu22.04
+          # - ubuntu24.04
         host:
           - ubuntu-24.04
-            #- ubuntu-24.04-arm
+          # - ubuntu-24.04-arm
 
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.2
-    with:
-      runs-on: ${{ matrix.host }}
-      jf-project: database
-      jf-build-id: ${{ needs.setup.outputs.VERSION }}
-      # this is the default behaviour so we can leave it out but if it is wanted to be explicit
-      # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
-      # gh-source-ref: ${{ github.ref }}
-      build-script: |
-        echo "Logging in to ghcr.io as ${{ github.actor }}"
-        echo "${{ github.token }}" | docker login ghcr.io \
-          -u "${{ github.actor }}" --password-stdin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-        ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
-        USE_REMOTE_BUILDER_IMAGES=true \
-        BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
-        local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # either a PAT with read:packages, or GITHUB_TOKEN if it has access
+          password: ${{ secrets.GHCR_PAT }}
 
-      gh-artifact-directory: dist
-      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
-      gh-retention-days: 1
-      dry-run: false
-      oidc-provider-name: database-gh-aerospike
-      oidc-audience: database-gh-aerospike
-      jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+      - name: Build artifacts with prebuilt builder image
+        env:
+          VERSION: ${{ needs.setup.outputs.VERSION }}
+        run: |
+          ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
+          USE_REMOTE_BUILDER_IMAGES=true \
+          BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
+          local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
+
+      - name: Upload unsigned artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+          path: dist
+          retention-days: 1
 
   package-built-artifacts:
     needs: [build-artifacts, setup]
