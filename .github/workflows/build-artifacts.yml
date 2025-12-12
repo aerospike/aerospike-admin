@@ -47,7 +47,7 @@ jobs:
       - name: set env
         id: set_env
         run: |
-          echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+          echo "version=$(git describe --tags --always --abbrev=9)" >> "$GITHUB_OUTPUT"
           
   build-artifacts:
     needs: setup
@@ -89,7 +89,7 @@ jobs:
       dry-run: false
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+      jf-build-name: "aerospike-asadm"
 
    secrets:
      ghcr-pat: ${{ secrets.GHCR_PAT }}        
@@ -133,7 +133,7 @@ jobs:
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
-      jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+      jf-build-name: "aerospike-asadm"
       jf-metadata-build-id: ${{ needs.setup.outputs.VERSION }}-metadata
       jf-build-id: ${{ needs.setup.outputs.VERSION }}
       gh-artifact-name: signed-artifacts
@@ -153,7 +153,7 @@ jobs:
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
     with:
       jf-project: "database"
-      jf-build-names: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}:${{ needs.setup.outputs.VERSION }}"
+      jf-build-names: "aerospike-asadm:${{ needs.setup.outputs.VERSION }}"
       jf-bundle-name: "aerospike-asadm"
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
