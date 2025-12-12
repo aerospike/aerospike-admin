@@ -302,6 +302,7 @@ class CollectinfoController(LiveClusterCommandController):
             health_outliers,
             best_practices,
             jobs,
+            feature_keys,
         ) = await asyncio.gather(
             self.cluster.info_build(nodes=self.nodes),
             self.cluster.info_version(nodes=self.nodes),
@@ -313,6 +314,7 @@ class CollectinfoController(LiveClusterCommandController):
             self.cluster.info_health_outliers(nodes=self.nodes),
             self.cluster.info_best_practices(nodes=self.nodes),
             GetJobsController(self.cluster).get_all(flip=True, nodes=self.nodes),
+            self.cluster.info_feature_key(nodes=self.nodes),
         )
         node_names = self.cluster.get_node_names()
 
@@ -333,6 +335,9 @@ class CollectinfoController(LiveClusterCommandController):
             )
             self._check_for_exception_and_set(node_names, "node_names", nodeid, metamap)
             self._check_for_exception_and_set(jobs, "jobs", nodeid, metamap)
+            self._check_for_exception_and_set(
+                feature_keys, "feature-key", nodeid, metamap
+            )
         return metamap
 
     async def _get_as_histograms(self):

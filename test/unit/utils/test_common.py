@@ -1314,17 +1314,20 @@ class CreateSummaryTests(unittest.TestCase):
                         "device_count": 8,
                         "device_count_per_node": 4,
                         "ns_count": 2,
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
                             "devices_total": 2,
                             "devices_per_node": 1,
                             "repl_factor": [1],
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "devices_total": 6,
                             "devices_per_node": 3,
                             "repl_factor": [2],
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -1375,6 +1378,7 @@ class CreateSummaryTests(unittest.TestCase):
                             "avail": 2048,
                             "avail_pct": 50.0,
                         },
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
@@ -1387,6 +1391,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "memory_data_and_indexes": {
@@ -1398,6 +1403,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -1470,6 +1476,7 @@ class CreateSummaryTests(unittest.TestCase):
                             "avail": 2048.0,
                             "avail_pct": 50.0,
                         },
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
@@ -1497,6 +1504,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "index_type": "pmem",
@@ -1523,6 +1531,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -1570,6 +1579,7 @@ class CreateSummaryTests(unittest.TestCase):
                         "active_features": ["Index-on-flash"],
                         "ns_count": 2,
                         "license_data": {"latest": 2048},
+                        "compression_enabled": False,
                         "flash_index": {
                             "total": 2048,
                             "used": 1024,
@@ -1604,6 +1614,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "index_type": "flash",
@@ -1623,6 +1634,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -1678,6 +1690,7 @@ class CreateSummaryTests(unittest.TestCase):
                             "avail": 2048.0,
                             "avail_pct": 50.0,
                         },
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
@@ -1694,6 +1707,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "index_type": "shmem",
@@ -1709,6 +1723,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -1770,6 +1785,7 @@ class CreateSummaryTests(unittest.TestCase):
                             "avail": 2048.0,
                             "avail_pct": 50.0,
                         },
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
@@ -1790,6 +1806,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "index_type": "flash",
@@ -1809,6 +1826,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -1870,6 +1888,7 @@ class CreateSummaryTests(unittest.TestCase):
                             "avail": 2048.0,
                             "avail_pct": 50.0,
                         },
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
@@ -1890,6 +1909,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "index_type": "pmem",
@@ -1909,6 +1929,7 @@ class CreateSummaryTests(unittest.TestCase):
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -1946,22 +1967,26 @@ class CreateSummaryTests(unittest.TestCase):
                         "active_features": ["Compression"],
                         "ns_count": 3,
                         "license_data": {"latest": 0},
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
                             "compression_ratio": 0.73,
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "compression_ratio": 0.74,
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                         "foo": {
                             "compression_ratio": 0.75,
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -2043,6 +2068,7 @@ class CreateSummaryTests(unittest.TestCase):
                         "ns_count": 2,
                         "os_version": [],
                         "server_version": [],
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
@@ -2056,6 +2082,7 @@ class CreateSummaryTests(unittest.TestCase):
                             "migrations_in_progress": False,
                             "rack_aware": False,
                             "repl_factor": [2],
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "compression_ratio": 0.5,
@@ -2069,6 +2096,7 @@ class CreateSummaryTests(unittest.TestCase):
                             "migrations_in_progress": False,
                             "rack_aware": False,
                             "repl_factor": [2],
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -2133,22 +2161,26 @@ class CreateSummaryTests(unittest.TestCase):
                         "active_features": ["Compression"],
                         "ns_count": 3,
                         "license_data": {"latest": 0},
+                        "compression_enabled": False,
                     },
                     "NAMESPACES": {
                         "test": {
                             "compression_ratio": 0.73,
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                         "bar": {
                             "compression_ratio": 0.74,
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                         "foo": {
                             "compression_ratio": 0.75,
                             "repl_factor": [1],
                             "license_data": {"latest": 0},
+                            "compression_enabled": False,
                         },
                     },
                 },
@@ -2177,3 +2209,253 @@ class CreateSummaryTests(unittest.TestCase):
         )
 
         self.assertDictEqual(actual, expected)
+
+    def test_create_summary_compression_enabled(self):
+        """Test compression detection when feature-key has asdb-compression=true"""
+        feature_keys = {
+            "127.0.0.1:3000": {"asdb-compression": "true", "asdb-xdr": "true"}
+        }
+
+        service_stats = {"127.0.0.1:3000": {}}
+        ns_stats = {
+            "127.0.0.1:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            }
+        }
+        xdr_dc_stats = {"127.0.0.1:3000": {}}
+        metadata = {"server_build": {"127.0.0.1:3000": "7.0.0"}}
+        service_configs = {"127.0.0.1:3000": {}}
+        ns_configs = {"127.0.0.1:3000": {"test": {}}}
+        security_configs = {"127.0.0.1:3000": {}}
+
+        actual = common.create_summary(
+            service_stats,
+            ns_stats,
+            xdr_dc_stats,
+            metadata,
+            service_configs,
+            ns_configs,
+            security_configs,
+            feature_keys=feature_keys,
+        )
+
+        # Check compression enabled flags
+        self.assertTrue(actual["CLUSTER"]["compression_enabled"])
+        self.assertTrue(actual["NAMESPACES"]["test"]["compression_enabled"])
+
+    def test_create_summary_compression_disabled(self):
+        """Test compression detection when feature-key has asdb-compression=false"""
+        feature_keys = {
+            "127.0.0.1:3000": {"asdb-compression": "false", "asdb-xdr": "true"}
+        }
+
+        service_stats = {"127.0.0.1:3000": {}}
+        ns_stats = {
+            "127.0.0.1:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            }
+        }
+        xdr_dc_stats = {"127.0.0.1:3000": {}}
+        metadata = {"server_build": {"127.0.0.1:3000": "7.0.0"}}
+        service_configs = {"127.0.0.1:3000": {}}
+        ns_configs = {"127.0.0.1:3000": {"test": {}}}
+        security_configs = {"127.0.0.1:3000": {}}
+
+        actual = common.create_summary(
+            service_stats,
+            ns_stats,
+            xdr_dc_stats,
+            metadata,
+            service_configs,
+            ns_configs,
+            security_configs,
+            feature_keys=feature_keys,
+        )
+
+        # Check compression disabled flags
+        self.assertFalse(actual["CLUSTER"]["compression_enabled"])
+        self.assertFalse(actual["NAMESPACES"]["test"]["compression_enabled"])
+
+    def test_create_summary_no_feature_keys(self):
+        """Test backward compatibility when no feature_keys provided"""
+        service_stats = {"127.0.0.1:3000": {}}
+        ns_stats = {
+            "127.0.0.1:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            }
+        }
+        xdr_dc_stats = {"127.0.0.1:3000": {}}
+        metadata = {"server_build": {"127.0.0.1:3000": "7.0.0"}}
+        service_configs = {"127.0.0.1:3000": {}}
+        ns_configs = {"127.0.0.1:3000": {"test": {}}}
+        security_configs = {"127.0.0.1:3000": {}}
+
+        actual = common.create_summary(
+            service_stats,
+            ns_stats,
+            xdr_dc_stats,
+            metadata,
+            service_configs,
+            ns_configs,
+            security_configs,
+        )
+
+        # Check compression defaults to disabled
+        self.assertFalse(actual["CLUSTER"]["compression_enabled"])
+        self.assertFalse(actual["NAMESPACES"]["test"]["compression_enabled"])
+
+    def test_create_summary_mixed_compression_settings(self):
+        """Test compression detection with multiple nodes having mixed compression settings"""
+        # One node with compression enabled, one without
+        feature_keys = {
+            "127.0.0.1:3000": {"asdb-compression": "true", "asdb-xdr": "true"},
+            "127.0.0.2:3000": {"asdb-compression": "false", "asdb-xdr": "true"},
+        }
+
+        service_stats = {
+            "127.0.0.1:3000": {},
+            "127.0.0.2:3000": {},
+        }
+        ns_stats = {
+            "127.0.0.1:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            },
+            "127.0.0.2:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            },
+        }
+        xdr_dc_stats = {"127.0.0.1:3000": {}, "127.0.0.2:3000": {}}
+        metadata = {
+            "server_build": {"127.0.0.1:3000": "7.0.0", "127.0.0.2:3000": "7.0.0"}
+        }
+        service_configs = {"127.0.0.1:3000": {}, "127.0.0.2:3000": {}}
+        ns_configs = {"127.0.0.1:3000": {"test": {}}, "127.0.0.2:3000": {"test": {}}}
+        security_configs = {"127.0.0.1:3000": {}, "127.0.0.2:3000": {}}
+
+        actual = common.create_summary(
+            service_stats,
+            ns_stats,
+            xdr_dc_stats,
+            metadata,
+            service_configs,
+            ns_configs,
+            security_configs,
+            feature_keys=feature_keys,
+        )
+
+        # If ANY node has compression enabled, the cluster should be marked as compressed
+        self.assertTrue(actual["CLUSTER"]["compression_enabled"])
+        self.assertTrue(actual["NAMESPACES"]["test"]["compression_enabled"])
+
+    def test_create_summary_feature_keys_with_exception(self):
+        """Test compression detection when feature_keys contains exceptions"""
+        feature_keys = {
+            "127.0.0.1:3000": {"asdb-compression": "true"},
+            "127.0.0.2:3000": Exception("Connection error"),
+        }
+
+        service_stats = {
+            "127.0.0.1:3000": {},
+            "127.0.0.2:3000": {},
+        }
+        ns_stats = {
+            "127.0.0.1:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            },
+            "127.0.0.2:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            },
+        }
+        xdr_dc_stats = {"127.0.0.1:3000": {}, "127.0.0.2:3000": {}}
+        metadata = {
+            "server_build": {"127.0.0.1:3000": "7.0.0", "127.0.0.2:3000": "7.0.0"}
+        }
+        service_configs = {"127.0.0.1:3000": {}, "127.0.0.2:3000": {}}
+        ns_configs = {"127.0.0.1:3000": {"test": {}}, "127.0.0.2:3000": {"test": {}}}
+        security_configs = {"127.0.0.1:3000": {}, "127.0.0.2:3000": {}}
+
+        actual = common.create_summary(
+            service_stats,
+            ns_stats,
+            xdr_dc_stats,
+            metadata,
+            service_configs,
+            ns_configs,
+            security_configs,
+            feature_keys=feature_keys,
+        )
+
+        # Should still detect compression from the valid node
+        self.assertTrue(actual["CLUSTER"]["compression_enabled"])
+        self.assertTrue(actual["NAMESPACES"]["test"]["compression_enabled"])
+
+    def test_create_summary_empty_feature_keys(self):
+        """Test compression detection with empty feature_keys dict"""
+        feature_keys = {}
+
+        service_stats = {"127.0.0.1:3000": {}}
+        ns_stats = {
+            "127.0.0.1:3000": {
+                "test": {
+                    "memory_used_bytes": "1000000",
+                    "device_used_bytes": "2000000",
+                    "replication-factor": "1",
+                    "master_objects": "100",
+                }
+            }
+        }
+        xdr_dc_stats = {"127.0.0.1:3000": {}}
+        metadata = {"server_build": {"127.0.0.1:3000": "7.0.0"}}
+        service_configs = {"127.0.0.1:3000": {}}
+        ns_configs = {"127.0.0.1:3000": {"test": {}}}
+        security_configs = {"127.0.0.1:3000": {}}
+
+        actual = common.create_summary(
+            service_stats,
+            ns_stats,
+            xdr_dc_stats,
+            metadata,
+            service_configs,
+            ns_configs,
+            security_configs,
+            feature_keys=feature_keys,
+        )
+
+        # Should default to disabled with empty feature_keys
+        self.assertFalse(actual["CLUSTER"]["compression_enabled"])
+        self.assertFalse(actual["NAMESPACES"]["test"]["compression_enabled"])

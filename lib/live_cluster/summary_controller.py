@@ -150,6 +150,9 @@ class SummaryController(LiveClusterCommandController):
         security_configs = asyncio.create_task(
             self.cluster.info_get_config(nodes=self.nodes, stanza=CONFIG_SECURITY)
         )
+        feature_keys = asyncio.create_task(
+            self.cluster.info_feature_key(nodes=self.nodes)
+        )
 
         metadata = {}
         metadata["server_version"] = {}
@@ -231,6 +234,7 @@ class SummaryController(LiveClusterCommandController):
         service_configs = await service_configs
         namespace_configs = await namespace_configs
         security_configs = await security_configs
+        feature_keys = await feature_keys
 
         self.view.print_summary(
             common.create_summary(
@@ -241,6 +245,7 @@ class SummaryController(LiveClusterCommandController):
                 service_configs=service_configs,
                 ns_configs=namespace_configs,
                 security_configs=security_configs,
+                feature_keys=feature_keys,
             ),
             list_view=enable_list_view,
         )
