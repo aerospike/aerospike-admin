@@ -47,7 +47,7 @@ jobs:
       - name: set env
         id: set_env
         run: |
-          echo "version=$(git describe --tags --always --abbrev=9)" >> "$GITHUB_OUTPUT"
+          echo "version=$(git describe --tags --always --abbrev=7)" >> "$GITHUB_OUTPUT"
           
   build-artifacts:
     needs: setup
