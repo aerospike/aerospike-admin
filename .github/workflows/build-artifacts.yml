@@ -31,12 +31,12 @@ env:
   ARTIFACT_NAME: aerospike-asadm
         
 jobs:
-  get-version:
+  setup:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
-      VERSION: ${{ steps.git_describe.outputs.version }}
+      VERSION: ${{ steps.set_env.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -44,12 +44,14 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Compute version from git describe
-        id: git_describe
-        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+      - name: set env
+        id: set_env
+        run: |
+          echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
 
   build-artifacts:
-    needs: get-version
+    needs: setup
     if: ${{ github.repository_owner == 'aerospike' }}
 
     strategy:
@@ -72,11 +74,14 @@ jobs:
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
-      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
+      jf-build-id: ${{ needs.setup.outputs.VERSION }}
       # this is the default behaviour so we can leave it out but if it is wanted to be explicit
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
       build-script: |
+        echo "Logging in to ghcr.io as $GITHUB_ACTOR"
+        echo "${{ env.GHCR_PAT }}" | docker login ghcr.io \
+          -u "${{ env.GITHUB_ACTOR }}" --password-stdin
         ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
         USE_REMOTE_BUILDER_IMAGES=true \
         BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
@@ -88,10 +93,12 @@ jobs:
       dry-run: false
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
+      jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+    secrets:
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}
 
   package-built-artifacts:
-    needs: [build-artifacts, get-version]
+    needs: [build-artifacts, setup]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -112,7 +119,7 @@ jobs:
           retention-days: 1
 
   sign-artifacts:
-    needs: [package-built-artifacts, get-version]
+    needs: [package-built-artifacts, setup]
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #update to 2.0.2 once released
     with:
       gh-retention-days: 1
@@ -125,15 +132,15 @@ jobs:
       gpg-key-pass: ${{ secrets.GPG_PASS }}
 
   deploy-artifacts:
-    needs: [sign-artifacts, get-version]
+    needs: [sign-artifacts, setup]
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
-      jf-build-name: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}"
-      jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
-      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
+      jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+      jf-metadata-build-id: ${{ needs.setup.outputs.VERSION }}-metadata
+      jf-build-id: ${{ needs.setup.outputs.VERSION }}
       gh-artifact-name: signed-artifacts
-      version: ${{ needs.get-version.outputs.VERSION }}
+      version: ${{ needs.setup.outputs.VERSION }}
       gh-retention-days: 1
       # gh-workflows-ref: v2.0.2  # Use specific shared-workflows version
       oidc-provider-name:  database-gh-aerospike
@@ -145,15 +152,15 @@ jobs:
       contents: read
       id-token: write
       attestations: write    
-    needs: [deploy-artifacts, get-version]
+    needs: [deploy-artifacts, setup]
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
     with:
       jf-project: "database"
-      jf-build-names: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}:${{ needs.get-version.outputs.VERSION }}"
+      jf-build-names: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}:${{ needs.setup.outputs.VERSION }}"
       jf-bundle-name: "aerospike-asadm"
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      version: ${{ needs.get-version.outputs.VERSION }}
+      version: ${{ needs.setup.outputs.VERSION }}
       gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
       dry-run: false
       
