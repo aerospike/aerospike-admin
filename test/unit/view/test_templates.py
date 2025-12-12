@@ -60,3 +60,28 @@ class HelperTests(unittest.TestCase):
     def test_create_usage_weighted_avg(self, edatas, expected):
         func = templates.create_usage_weighted_avg("type")
         self.assertEqual(round(func(edatas), 3), expected)
+
+    @parameterized.expand(
+        [
+            # Test compression enabled with non-zero value
+            ({"latest": 1000000}, True, "(976.562 KB) ?"),
+            # Test compression disabled with non-zero value
+            ({"latest": 1000000}, False, "976.562 KB"),
+            # Test compression enabled with zero value (no parentheses)
+            ({"latest": 0}, True, "0.000 B"),
+            # Test compression disabled with zero value
+            ({"latest": 0}, False, "0.000 B"),
+            # Test empty license data
+            ({}, True, "0.000 B"),
+            # Test None license data
+            (None, True, "0.000 B"),
+        ]
+    )
+    def test_format_license_latest_with_compression(
+        self, license_data, compression_enabled, expected
+    ):
+        """Test format_license_latest_with_compression function"""
+        result = templates.format_license_latest_with_compression(
+            license_data, compression_enabled
+        )
+        self.assertEqual(result, expected)
