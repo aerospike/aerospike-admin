@@ -93,7 +93,7 @@ jobs:
           ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
           USE_REMOTE_BUILDER_IMAGES=true \
           BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
-          local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
+          .github/packaging/project/gha-main.sh "${{ matrix.distro }}"
 
       - name: Upload unsigned artifacts
         uses: actions/upload-artifact@v5
