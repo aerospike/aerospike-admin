@@ -914,6 +914,57 @@ def is_valid_base64(data: Union[str, bytes]) -> None:
         raise ValueError("Invalid base64 encoding")
 
 
+def is_valid_aerospike_name(name: str, object_type: str) -> bool:
+    """
+    Validate that a name follows Aerospike naming conventions.
+
+    Valid names can include only Latin lowercase and uppercase letters with
+    no diacritical marks (a-z, A-Z), digits 0-9, underscores (_), hyphens (-), and dollar signs ($).
+
+    This applies to roles, users, namespaces, sets, bins, UDFs, and other Aerospike objects.
+
+    Args:
+        name: The name to validate
+        object_type: Type of object for error messages (e.g., "role", "user", "namespace")
+
+    Returns:
+        bool: True if the name is valid, False otherwise
+    """
+    if not name:
+        logger.error("%s name cannot be empty", object_type.capitalize())
+        return False
+
+    pattern = r"^[a-zA-Z0-9_\-$]+$"
+    if not re.match(pattern, name):
+        # Find all illegal characters
+        illegal_chars = set(re.findall(r"[^a-zA-Z0-9_\-$]", name))
+        logger.error(
+            "Invalid %s name '%s': contains illegal characters: %s. "
+            "Names can only contain letters (a-z, A-Z), digits (0-9), underscores (_), hyphens (-), and dollar signs ($)",
+            object_type,
+            name,
+            ", ".join(f"'{char}'" for char in sorted(illegal_chars)),
+        )
+        return False
+
+    return True
+
+
+def is_valid_role_name(role_name: str) -> bool:
+    """
+    Validate that a role name follows Aerospike naming conventions.
+
+    This is a convenience wrapper around is_valid_aerospike_name() for role names.
+
+    Args:
+        role_name: The role name to validate
+
+    Returns:
+        bool: True if the role name is valid, False otherwise
+    """
+    return is_valid_aerospike_name(role_name, "role")
+
+
 async def check_version_support(
     feature_versions: dict[str, str], builds: dict[str, str]
 ) -> dict[str, bool]:
