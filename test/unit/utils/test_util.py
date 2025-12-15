@@ -526,3 +526,138 @@ class UtilTest(asynctest.TestCase):
         }
 
         self.assertEqual(result, expected)
+
+    def test_is_valid_aerospike_name_valid_names(self):
+        """Test is_valid_aerospike_name with valid names"""
+        valid_names = [
+            "read",
+            "write",
+            "admin",
+            "read-write",
+            "user_admin",
+            "sys-admin",
+            "data_admin",
+            "test123",
+            "role$1",
+            "MyRole",
+            "UPPERCASE",
+            "mixed_Case-123$",
+            "a",  # single character
+            "a1b2c3",
+            "test_role_with_underscores",
+            "test-role-with-hyphens",
+            "role$with$dollars",
+            "123numeric_start",
+            "role_123_end",
+        ]
+
+        for name in valid_names:
+            with self.subTest(name=name):
+                self.assertTrue(util.is_valid_aerospike_name(name, "role"))
+
+    def test_is_valid_aerospike_name_invalid_names(self):
+        """Test is_valid_aerospike_name with invalid names"""
+        invalid_names = [
+            "",  # empty
+            "read,write",  # comma
+            "role with spaces",  # spaces
+            "role@domain",  # @ symbol
+            "role#1",  # # symbol
+            "role!",  # exclamation
+            "role%admin",  # percent
+            "role&user",  # ampersand
+            "role*",  # asterisk
+            "role+admin",  # plus
+            "role=value",  # equals
+            "role[0]",  # brackets
+            "role{admin}",  # braces
+            "role|pipe",  # pipe
+            "role\\path",  # backslash
+            "role:admin",  # colon
+            "role;admin",  # semicolon
+            'role"quoted"',  # quotes
+            "role'quoted'",  # single quotes
+            "role<admin>",  # angle brackets
+            "role?admin",  # question mark
+            "role/path",  # forward slash
+            "role.admin",  # period
+            "role~admin",  # tilde
+            "role`admin",  # backtick
+            "café",  # accented characters
+            "rôle",  # accented characters
+            "角色",  # non-latin characters
+        ]
+
+        for name in invalid_names:
+            with self.subTest(name=name):
+                self.assertFalse(util.is_valid_aerospike_name(name, "role"))
+
+    def test_is_valid_aerospike_name_different_object_types(self):
+        """Test is_valid_aerospike_name with different object types"""
+        test_cases = [
+            ("myuser", "user", True),
+            ("myrole", "role", True),
+            ("my_namespace", "namespace", True),
+            ("my-set", "set", True),
+            ("my$bin", "bin", True),
+            ("my,invalid", "user", False),
+            ("", "namespace", False),
+            ("invalid space", "set", False),
+        ]
+
+        for name, obj_type, expected in test_cases:
+            with self.subTest(name=name, obj_type=obj_type):
+                result = util.is_valid_aerospike_name(name, obj_type)
+                self.assertEqual(result, expected)
+
+    def test_is_valid_role_name_convenience_wrapper(self):
+        """Test is_valid_role_name convenience wrapper"""
+        # Valid role names
+        valid_roles = ["admin", "read-write", "user_admin", "role123"]
+        for role in valid_roles:
+            with self.subTest(role=role):
+                self.assertTrue(util.is_valid_role_name(role))
+
+        # Invalid role names
+        invalid_roles = ["admin,user", "role with spaces", "role@domain", ""]
+        for role in invalid_roles:
+            with self.subTest(role=role):
+                self.assertFalse(util.is_valid_role_name(role))
+
+    def test_is_valid_aerospike_name_edge_cases(self):
+        """Test edge cases for is_valid_aerospike_name"""
+        # Very long name with valid characters
+        long_name = "a" * 100
+        self.assertTrue(util.is_valid_aerospike_name(long_name, "role"))
+
+        # Name with all valid special characters
+        all_valid_chars = "abc123_-$"
+        self.assertTrue(util.is_valid_aerospike_name(all_valid_chars, "role"))
+
+        # Name starting with number
+        number_start = "123role"
+        self.assertTrue(util.is_valid_aerospike_name(number_start, "role"))
+
+        # Name ending with special chars
+        special_end = "role_-$"
+        self.assertTrue(util.is_valid_aerospike_name(special_end, "role"))
+
+        # Mixed case with all valid chars
+        mixed_case = "MyRole_123-Test$"
+        self.assertTrue(util.is_valid_aerospike_name(mixed_case, "role"))
+
+    def test_is_valid_aerospike_name_comma_variations(self):
+        """Test various comma-related invalid names"""
+        comma_cases = [
+            "role1,role2",  # comma in middle
+            ",role",  # comma at start
+            "role,",  # comma at end
+            "role1,role2,role3",  # multiple commas
+            "role,,double",  # double comma
+            "role, space",  # comma with space
+            " ,role",  # space and comma at start
+        ]
+
+        for name in comma_cases:
+            with self.subTest(name=name):
+                self.assertFalse(util.is_valid_aerospike_name(name, "role"))

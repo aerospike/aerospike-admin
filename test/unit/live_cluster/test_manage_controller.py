@@ -44,6 +44,7 @@ from lib.live_cluster.manage_controller import (
     LiveClusterManageCommandController,
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
+    ManageACLGrantUserController,
     ManageACLQuotasRoleController,
     ManageConfigController,
     ManageConfigLeafController,
@@ -321,6 +322,147 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
             "test-user", "pass", [], nodes="principal"
         )
         self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_invalid_role_names_with_comma(self):
+        """Test that create user rejects role names containing commas"""
+        line = "test-user password pass roles admin,user read,write"
+
+        await self.controller.execute(line.split())
+
+        # Should not call admin_create_user due to validation failure
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_invalid_role_names_with_spaces(self):
+        """Test that create user rejects role names containing spaces"""
+        # Note: This test simulates a role name with spaces by using a role name
+        # that contains a space character, which would be invalid
+        line = ["test-user", "password", "pass", "roles", "admin user"]
+
+        await self.controller.execute(line)
+
+        # Should not call admin_create_user due to validation failure
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_invalid_role_names_with_special_chars(self):
+        """Test that create user rejects role names with invalid special characters"""
+        invalid_role_names = [
+            "role@domain",
+            "role#1",
+            "role!important",
+            "role%admin",
+            "role&user",
+            "role*",
+            "role+admin",
+            "role=value",
+            "role[0]",
+            "role{admin}",
+            "role|pipe",
+            "role:admin",
+            "role;admin",
+            "role.admin",
+        ]
+
+        for invalid_role in invalid_role_names:
+            with self.subTest(role=invalid_role):
+                line = f"test-user password pass roles {invalid_role}"
+
+                await self.controller.execute(line.split())
+
+                # Should not call admin_create_user due to validation failure
+                self.cluster_mock.admin_create_user.assert_not_called()
+                self.view_mock.print_result.assert_not_called()
+
+                # Reset mocks for next iteration
+                self.cluster_mock.reset_mock()
+                self.view_mock.reset_mock()
+
+    async def test_accepts_valid_role_names_basic(self):
+        """Test that create user accepts basic valid role names"""
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with admin role
+        line = "test-user password pass roles admin"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_user.assert_called_with(
+            "test-user", "pass", ["admin"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created user test-user."
+        )
+
+    async def test_accepts_valid_role_names_with_hyphens(self):
+        """Test that create user accepts role names with hyphens"""
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with hyphenated role
+        line = "test-user password pass roles read-write"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_user.assert_called_with(
+            "test-user", "pass", ["read-write"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created user test-user."
+        )
+
+    async def test_accepts_valid_role_names_with_underscores(self):
+        """Test that create user accepts role names with underscores"""
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with underscore role
+        line = "test-user password pass roles user_admin"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_user.assert_called_with(
+            "test-user", "pass", ["user_admin"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created user test-user."
+        )
+
+    async def test_accepts_valid_role_names_with_dollars(self):
+        """Test that create user accepts role names with dollar signs"""
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with dollar sign role
+        line = "test-user password pass roles role$1"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_user.assert_called_with(
+            "test-user", "pass", ["role$1"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created user test-user."
+        )
+
+    async def test_accepts_empty_role_names(self):
+        """Test that create user accepts empty role names (creates user with no roles)"""
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        line = "test-user password pass roles"
+
+        await self.controller.execute(line.split())
+
+        # Should call admin_create_user with empty roles list (valid case)
+        self.cluster_mock.admin_create_user.assert_called_with(
+            "test-user", "pass", [], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created user test-user."
+        )
 
 
 @asynctest.fail_on(active_handles=True)
@@ -643,6 +785,127 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
             nodes="principal",
         )
         self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_invalid_role_name_with_comma(self):
+        """Test that create role rejects role names containing commas"""
+        line = "test,role priv sys-admin"
+
+        await self.controller.execute(line.split())
+
+        # Should not call admin_create_role due to validation failure
+        self.cluster_mock.admin_create_role.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_invalid_role_name_with_spaces(self):
+        """Test that create role rejects role names containing spaces"""
+        # Note: This test simulates a role name with spaces by using a role name
+        # that contains a space character, which would be invalid
+        line = ["test role", "priv", "sys-admin"]
+
+        await self.controller.execute(line)
+
+        # Should not call admin_create_role due to validation failure
+        self.cluster_mock.admin_create_role.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_invalid_role_name_with_special_chars(self):
+        """Test that create role rejects role names with invalid special characters"""
+        invalid_role_names = [
+            "role@domain",
+            "role#1",
+            "role!important",
+            "role%admin",
+            "role&user",
+            "role*",
+            "role+admin",
+            "role=value",
+            "role[0]",
+            "role{admin}",
+            "role|pipe",
+            "role:admin",
+            "role;admin",
+            "role.admin",
+        ]
+
+        for invalid_role in invalid_role_names:
+            with self.subTest(role=invalid_role):
+                line = f"{invalid_role} priv sys-admin"
+
+                await self.controller.execute(line.split())
+
+                # Should not call admin_create_role due to validation failure
+                self.cluster_mock.admin_create_role.assert_not_called()
+                self.view_mock.print_result.assert_not_called()
+
+                # Reset mocks for next iteration
+                self.cluster_mock.reset_mock()
+                self.view_mock.reset_mock()
+
+    async def test_accepts_valid_role_names_basic(self):
+        """Test that create role accepts basic valid role names"""
+        self.cluster_mock.admin_create_role.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with admin role
+        line = "admin priv sys-admin"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_role.assert_called_with(
+            "admin",
+            privileges=["sys-admin"],
+            whitelist=[],
+            read_quota=None,
+            write_quota=None,
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created role admin."
+        )
+
+    async def test_accepts_valid_role_names_with_hyphens(self):
+        """Test that create role accepts role names with hyphens"""
+        self.cluster_mock.admin_create_role.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with hyphenated role
+        line = "read-write priv sys-admin"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_role.assert_called_with(
+            "read-write",
+            privileges=["sys-admin"],
+            whitelist=[],
+            read_quota=None,
+            write_quota=None,
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created role read-write."
+        )
+
+    async def test_accepts_valid_role_names_with_underscores(self):
+        """Test that create role accepts role names with underscores"""
+        self.cluster_mock.admin_create_role.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with underscore role
+        line = "user_admin priv sys-admin"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_create_role.assert_called_with(
+            "user_admin",
+            privileges=["sys-admin"],
+            whitelist=[],
+            read_quota=None,
+            write_quota=None,
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully created role user_admin."
+        )
 
 
 @asynctest.fail_on(active_handles=True)
@@ -4117,3 +4380,166 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
 
         self.assertIn("Failed to remove masking rule", str(context.exception))
         self.assertIn("Network timeout", str(context.exception))
+
+
+@asynctest.fail_on(active_handles=True)
+class ManageACLGrantUserControllerTest(asynctest.TestCase):
+    def setUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageACLGrantUserController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageACLGrantUserController()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+
+    async def test_grant_valid_roles_success(self):
+        """Test successful granting of valid roles to user"""
+        self.cluster_mock.admin_grant_roles.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        line = "test-user roles admin read-write user_admin"
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_grant_roles.assert_called_with(
+            "test-user", ["admin", "read-write", "user_admin"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully granted roles to user test-user."
+        )
+
+    async def test_rejects_roles_with_comma(self):
+        """Test that grant user rejects role names containing commas"""
+        line = "test-user roles admin,user read,write"
+
+        await self.controller.execute(line.split())
+
+        # Should not call admin_grant_roles due to validation failure
+        self.cluster_mock.admin_grant_roles.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_roles_with_special_chars(self):
+        """Test that grant user rejects role names with invalid special characters"""
+        invalid_role_names = [
+            "role@domain",
+            "role#1",
+            "role!important",
+            "role%admin",
+            "role&user",
+            "role*",
+            "role+admin",
+            "role=value",
+            "role[0]",
+            "role{admin}",
+            "role|pipe",
+            "role:admin",
+            "role;admin",
+            "role.admin",
+        ]
+
+        for invalid_role in invalid_role_names:
+            with self.subTest(role=invalid_role):
+                line = f"test-user roles {invalid_role}"
+
+                await self.controller.execute(line.split())
+
+                # Should not call admin_grant_roles due to validation failure
+                self.cluster_mock.admin_grant_roles.assert_not_called()
+                self.view_mock.print_result.assert_not_called()
+
+                # Reset mocks for next iteration
+                self.cluster_mock.reset_mock()
+                self.view_mock.reset_mock()
+
+    async def test_accepts_valid_roles_basic(self):
+        """Test that grant user accepts basic valid role names"""
+        self.cluster_mock.admin_grant_roles.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with admin role
+        line = "test-user roles admin"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_grant_roles.assert_called_with(
+            "test-user", ["admin"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully granted roles to user test-user."
+        )
+
+    async def test_accepts_valid_roles_with_hyphens(self):
+        """Test that grant user accepts role names with hyphens"""
+        self.cluster_mock.admin_grant_roles.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with hyphenated role
+        line = "test-user roles read-write"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_grant_roles.assert_called_with(
+            "test-user", ["read-write"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully granted roles to user test-user."
+        )
+
+    async def test_accepts_valid_roles_with_underscores(self):
+        """Test that grant user accepts role names with underscores"""
+        self.cluster_mock.admin_grant_roles.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        # Test with underscore role
+        line = "test-user roles user_admin"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_grant_roles.assert_called_with(
+            "test-user", ["user_admin"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully granted roles to user test-user."
+        )
+
+    async def test_mixed_valid_and_invalid_roles(self):
+        """Test that one invalid role prevents granting all roles"""
+        line = "test-user roles admin valid-role invalid,role another-valid"
+
+        await self.controller.execute(line.split())
+
+        # Should not call admin_grant_roles due to one invalid role
+        self.cluster_mock.admin_grant_roles.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_logs_error_when_asprotocol_error_returned(self):
+        """Test error logging when ASProtocolError is returned"""
+        as_error = ASProtocolError(ASResponse.USER_ALREADY_EXISTS, "test-message")
+        self.cluster_mock.admin_grant_roles.return_value = {"principal_ip": as_error}
+        line = "test-user roles admin"
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_grant_roles.assert_called_with(
+            "test-user", ["admin"], nodes="principal"
+        )
+        self.logger_mock.error.assert_called_with(as_error)
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_raises_exception_when_exception_returned(self):
+        """Test exception raising when Exception is returned"""
+        as_error = IOError("test-message")
+        self.cluster_mock.admin_grant_roles.return_value = {"principal_ip": as_error}
+        line = "test-user roles admin"
+
+        await test_util.assert_exception_async(
+            self, ShellException, "test-message", self.controller.execute, line.split()
+        )
+
+        self.cluster_mock.admin_grant_roles.assert_called_with(
+            "test-user", ["admin"], nodes="principal"
+        )
+        self.view_mock.print_result.assert_not_called()
