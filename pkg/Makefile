@@ -40,6 +40,8 @@ deb: prep
 .PHONY: rpm
 rpm: prep
 	fpm --force \
+		--exclude /usr/lib/.build-id/\* \
+		--exclude /usr/lib64/\* \
 		--config-files $(CONFIG_DIR) \
 		--input-type dir \
 		--output-type rpm \
