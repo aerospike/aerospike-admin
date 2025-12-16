@@ -71,7 +71,7 @@ jobs:
         BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
-      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-$ARCH
+      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }}
       gh-retention-days: 1
       dry-run: false
       oidc-provider-name: database-gh-aerospike
