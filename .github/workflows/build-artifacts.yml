@@ -143,7 +143,9 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    needs: create-release-bundle
+    needs:
+       - get-version 
+       - create-release-bundle
     env:
       JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
