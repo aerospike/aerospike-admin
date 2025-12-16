@@ -149,6 +149,9 @@ jobs:
     env:
       JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
+      ARCH: ${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }}
+      USE_REMOTE_BUILDER_IMAGES: false
+      BUILDER_IMAGE_PREFIX: "ghcr.io/aerospike/asadm-pkg-tester"
     runs-on: ${{ matrix.host }}
     permissions:
       contents: read
@@ -176,5 +179,7 @@ jobs:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
         run: |
-          echo ".github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }} ${{ needs.get-version.outputs.VERSION }}"
+          ARCH=${ARCH} \
+          USE_REMOTE_BUILDER_IMAGES=${USE_REMOTE_BUILDER_IMAGES} \
+          BUILDER_IMAGE_PREFIX=${BUILDER_IMAGE_PREFIX} \
           .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }} ${{ needs.get-version.outputs.VERSION }}
