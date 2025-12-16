@@ -40,6 +40,7 @@ deb: prep
 .PHONY: rpm
 rpm: prep
 	fpm --force \
+		--rpm-rpmbuild-define '_build_id_links none' \
 		--exclude 'usr/lib/.build-id/*' \
 		--exclude 'usr/lib64/*' \
 		--config-files $(CONFIG_DIR) \
