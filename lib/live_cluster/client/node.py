@@ -219,6 +219,7 @@ class Node(AsyncObject):
         self.session_expiration = 0
         self.perform_login = True
         self.user_agent = user_agent
+        self.build = None
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -392,45 +393,95 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
-        connection_info_call = "connection"
+        node_info_call = "node"
+        build_info_call = "build"
+
+        # First call: minimal info to determine build and node id.
+        base_results = await self._info_cinfo(
+            [node_info_call, build_info_call],
+            self.ip,
+            self.port,
+            disable_cache=True,
+        )
+
+        self.build = base_results.get(build_info_call)
+        build_supports_admin_info_call = False
+
         try:
-            connection_info = await self._info_cinfo(
-                connection_info_call, self.ip, self.port, disable_cache=True
-            )
-        except ASInfoError as e:
+            if self.build and not isinstance(self.build, Exception):
+                build_supports_admin_info_call = version.LooseVersion(self.build) >= (
+                    version.LooseVersion(constants.SERVER_ADMIN_PORT_FIRST_VERSION)
+                )
+        except Exception as e:
             logger.debug(
-                "unable to get connection info for node %s:%s error:%s",
+                "unable to parse build version '%s' for node %s:%s error:%s",
+                self.build,
                 self.ip,
                 self.port,
                 e,
             )
+
+        if build_supports_admin_info_call:
+            logger.debug("build version %s supports admin port", self.build)
             connection_info = None
+            connection_info_call = "connection"
+            try:
+                connection_info = await self._info_cinfo(
+                    connection_info_call, self.ip, self.port, disable_cache=True
+                )
+            except ASInfoError as e:
+                logger.debug(
+                    "unable to get connection info for node %s:%s error:%s",
+                    self.ip,
+                    self.port,
+                    e,
+                )
 
-        # Info calls for node id, features
-        commands = ["node"]
+            if self._is_admin_port_enabled(connection_info):
+                logger.debug("admin port is enabled for ip %s", self.ip)
+                self.is_admin_node = True
 
-        # Check if the node is an admin node
-        if self._is_admin_port_enabled(connection_info):
-            logger.debug("admin port is enabled for ip %s", self.ip)
-            self.is_admin_node = True
-            # use admin info call instead of service info call
-            info_address_call = self._get_admin_info_call()
-            # disable peer discovery for admin node
-            peers_info_calls = []
+                # Disable peer discovery for admin node
+                peers = []
+
+                # Use admin info call instead of service info call
+                admin_info_address_call = self._get_admin_info_call()
+                admin_info_response = await self._info_cinfo(
+                    admin_info_address_call, self.ip, disable_cache=True
+                )
+                admin_addresses = self._info_service_helper(admin_info_response)
+                logger.debug(
+                    "admin address discovered for node %s: %s",
+                    base_results[node_info_call],
+                    admin_addresses,
+                )
+
+                return base_results[node_info_call], admin_addresses, peers
         else:
-            # Get service addresses and peers info calls for non-admin node
-            info_address_call = self._get_service_info_call()
-            peers_info_calls = self._get_info_peers_list_calls()
+            logger.debug("build version %s does not support admin port", self.build)
 
-        commands += [info_address_call] + peers_info_calls
-        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
-        service_addresses = self._info_service_helper(results[info_address_call])
+        service_info_call = self._get_service_info_call()
+        peers_info_calls = self._get_info_peers_list_calls()
+
+        # Non-admin path: fetch service addresses and peers in a single call.
+        service_peers_results = await self._info_cinfo(
+            [service_info_call] + peers_info_calls,
+            self.ip,
+            self.port,
+            disable_cache=True,
+        )
+        service_addresses = self._info_service_helper(
+            service_peers_results[service_info_call]
+        )
         peers = (
-            self._aggregate_peers([results[call] for call in peers_info_calls])
+            self._aggregate_peers(
+                [service_peers_results[call] for call in peers_info_calls]
+            )
             if peers_info_calls
             else []
         )
-        return results["node"], service_addresses, peers
+
+        return base_results[node_info_call], service_addresses, peers
 
     async def connect(self, address, port):
         try:
@@ -482,10 +533,11 @@ class Node(AsyncObject):
                         break
 
                     # IP address have changed. Not common.
-                    self.node_id, _, self.peers = await asyncio.gather(
+                    self.node_id, _, self.peers, self.build = await asyncio.gather(
                         self.info_node(),
                         self._update_IP(self.ip, self.port),
                         self.info_peers_list(),
+                        self.info_build(),
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -789,6 +841,20 @@ class Node(AsyncObject):
         """
         Sets user agent on the Aerospike connection socket.
         """
+
+        if self.build is None:
+            logger.debug(
+                "build version not available for node %s:%s", self.ip, self.port
+            )
+            return False
+
+        # user agent was added in 8.1
+        if version.LooseVersion(self.build) < version.LooseVersion(
+            constants.SERVER_USER_AGENT_FIRST_VERSION
+        ):
+            logger.debug("build version %s does not support user agent", self.build)
+            return
+
         if self.user_agent is None:
             logger.debug(
                 "user agent string not available for node %s:%s",
@@ -796,6 +862,7 @@ class Node(AsyncObject):
                 self.port,
             )
             return
+
         try:
             user_agent_b64 = base64.b64encode(self.user_agent.encode()).decode()
             await self._info_cinfo(
