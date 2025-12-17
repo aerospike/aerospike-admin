@@ -2721,7 +2721,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
         ["hostname -I", "hostname"],
         ["top -n3 -b", "top -l 3"],
         ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
-        ["sudo lshw -class system"],
+        ["sudo lshw"],
         ["cat /proc/meminfo", "vmstat -s"],
         ["cat /proc/interrupts"],
         ["iostat -y -x 5 4"],
