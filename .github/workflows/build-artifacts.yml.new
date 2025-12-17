@@ -1,0 +1,211 @@
+name: build-artifacts.yml
+
+on:
+  workflow_dispatch:
+
+  pull_request:
+    # yamllint disable-line rule:quoted-strings
+    branches:
+      - "*"
+
+  push:
+    branches:
+      # yamllint disable-line rule:quoted-strings
+      - "release/*"
+      # yamllint disable-line rule:quoted-strings
+      - "main"
+      # yamllint disable-line rule:quoted-strings
+      - "master"
+      # yamllint disable-line rule:quoted-strings
+      - "develop"
+      # yamllint disable-line rule:quoted-strings
+      - "pvinh/tools-build-improve"  
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  packages: read
+
+env:
+  ARTIFACT_NAME: aerospike-asadm
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      VERSION: ${{ steps.set_env.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: set env
+        id: set_env
+        run: |
+          echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+          
+  build-artifacts:
+    needs: setup
+    if: ${{ github.repository_owner == 'aerospike' }}
+
+    strategy:
+      matrix:
+        distro:
+          #- el8
+          #- el9
+          - el10
+          #- amzn2023
+          #- debian12
+          #- debian13
+          #- ubuntu20.04
+          #- ubuntu22.04
+          #- ubuntu24.04
+        host:
+          - ubuntu-24.04
+            #- ubuntu-24.04-arm
+
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@SERVER-475
+    with:
+      runs-on: ${{ matrix.host }}
+      jf-project: database
+      jf-build-id: ${{ needs.setup.outputs.VERSION }}
+      # this is the default behaviour so we can leave it out but if it is wanted to be explicit
+      # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
+      # gh-source-ref: ${{ github.ref }}
+   secrets:
+     ghcr-pat: ${{ secrets.GHCR_PAT }}
+
+      build-script: |
+        ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
+        USE_REMOTE_BUILDER_IMAGES=true \
+        BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
+        local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
+
+      gh-artifact-directory: dist
+      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ matrix.host }}
+      gh-retention-days: 1
+      dry-run: false
+      oidc-provider-name: database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+
+  package-built-artifacts:
+    needs: [build-artifacts, setup]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Download All Matrix Artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: build-artifacts
+          merge-multiple: true
+      - name: Upload packaged Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: unsigned-artifacts #packaged-artifacts
+          path: build-artifacts
+          overwrite: true
+          retention-days: 1
+
+  sign-artifacts:
+    needs: [package-built-artifacts, setup]
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2 #update to 2.0.2 once released
+    with:
+      gh-retention-days: 1
+      gh-artifact-name: signed-artifacts
+      gh-unsigned-artifacts: unsigned-artifacts # packaged-artifacts
+      # gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
+    secrets:
+      gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
+      gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
+      gpg-key-pass: ${{ secrets.GPG_PASS }}
+
+  deploy-artifacts:
+    needs: [sign-artifacts, setup]
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
+    with:
+      jf-project: database
+      jf-build-name: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}"
+      jf-metadata-build-id: ${{ needs.setup.outputs.VERSION }}-metadata
+      jf-build-id: ${{ needs.setup.outputs.VERSION }}
+      gh-artifact-name: signed-artifacts
+      version: ${{ needs.setup.outputs.VERSION }}
+      gh-retention-days: 1
+      # gh-workflows-ref: v2.0.2  # Use specific shared-workflows version
+      oidc-provider-name:  database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      dry-run: false
+
+  create-release-bundle:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write    
+    needs: [deploy-artifacts, setup]
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
+    with:
+      jf-project: "database"
+      jf-build-names: "aerospike-asadm-${{ needs.setup.outputs.VERSION }}:${{ needs.setup.outputs.VERSION }}"
+      jf-bundle-name: "aerospike-asadm"
+      oidc-provider-name: database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      version: ${{ needs.setup.outputs.VERSION }}
+      gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
+      dry-run: false
+      
+  test-install-from-jfrog-and-execute:
+    strategy:
+      matrix:
+        distro:
+          #- el8
+          #- el9
+          - el10
+          #- amzn2023
+          #- debian12
+          #- debian13
+          #- ubuntu20.04
+          #- ubuntu22.04
+          #- ubuntu24.04
+        host:
+          - ubuntu-24.04
+          #- ubuntu-24.04-arm
+    needs: create-release-bundle
+    env:
+      JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
+      JFROG_CLI_LOG_LEVEL: INFO
+    runs-on: ${{ matrix.host }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Install JFrog CLI
+        id: jf
+        uses: jfrog/setup-jfrog-cli@5b06f730cc5a6f55d78b30753f8583454b08c0aa # v4.8.1
+        env:
+          JF_URL: https://artifact.aerospike.io
+          JF_PROJECT: database
+        with:
+          oidc-provider-name: database-gh-aerospike
+          oidc-audience: database-gh-aerospike
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+          submodules: recursive
+
+      - name: Run test cases
+        env:
+          JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
+          JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
+        run: |
+          .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }}
