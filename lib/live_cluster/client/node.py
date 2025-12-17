@@ -397,19 +397,19 @@ class Node(AsyncObject):
         build_info_call = "build"
 
         # First call: minimal info to determine build and node id.
-        base_results = await self._info_cinfo(
+        node_info_result = await self._info_cinfo(
             [node_info_call, build_info_call],
             self.ip,
             self.port,
             disable_cache=True,
         )
 
-        self.build = base_results.get(build_info_call)
-        build_supports_admin_info_call = False
+        self.build = node_info_result.get(build_info_call)
+        server_supports_admin_info_call = False
 
         try:
             if self.build and not isinstance(self.build, Exception):
-                build_supports_admin_info_call = version.LooseVersion(self.build) >= (
+                server_supports_admin_info_call = version.LooseVersion(self.build) >= (
                     version.LooseVersion(constants.SERVER_ADMIN_PORT_FIRST_VERSION)
                 )
         except Exception as e:
@@ -421,7 +421,7 @@ class Node(AsyncObject):
                 e,
             )
 
-        if build_supports_admin_info_call:
+        if server_supports_admin_info_call:
             logger.debug("build version %s supports admin port", self.build)
             connection_info = None
             connection_info_call = "connection"
@@ -452,11 +452,11 @@ class Node(AsyncObject):
                 admin_addresses = self._info_service_helper(admin_info_response)
                 logger.debug(
                     "admin address discovered for node %s: %s",
-                    base_results[node_info_call],
+                    node_info_result[node_info_call],
                     admin_addresses,
                 )
 
-                return base_results[node_info_call], admin_addresses, peers
+                return node_info_result[node_info_call], admin_addresses, peers
         else:
             logger.debug("build version %s does not support admin port", self.build)
 
@@ -481,7 +481,7 @@ class Node(AsyncObject):
             else []
         )
 
-        return base_results[node_info_call], service_addresses, peers
+        return node_info_result[node_info_call], service_addresses, peers
 
     async def connect(self, address, port):
         try:
@@ -830,12 +830,33 @@ class Node(AsyncObject):
         except Exception:
             return True
 
-    async def _is_new_histogram_version(self):
-        as_version = await self.info_build()
-        if isinstance(as_version, Exception):
-            return False
+    async def _get_build_version(self):
+        """
+        Get build version, preferring cached self.build over network call.
+        Falls back to info_build() if cached version not available.
+        Raises exception if build version cannot be obtained.
+        """
+        if self.build and not isinstance(self.build, Exception):
+            return self.build
 
-        return common.is_new_histogram_version(as_version)
+        # Fallback to network call if cached version not available
+        logger.debug("build version was not cached, calling info_build()")
+        build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error("failed to get build version: %s", build)
+            raise build
+
+        # Cache the result for future use
+        self.build = build
+        return build
+
+    async def _is_new_histogram_version(self):
+        try:
+            as_version = await self._get_build_version()
+            return common.is_new_histogram_version(as_version)
+        except Exception as e:
+            logger.error("failed to get histogram version: %s", e)
+            return False
 
     async def _set_user_agent(self):
         """
@@ -1510,11 +1531,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_bin_statistics(self):
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         # bins removed in 7.0
         if version.LooseVersion(build) >= version.LooseVersion(
@@ -1550,12 +1567,7 @@ class Node(AsyncObject):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            err = Exception("Unable to get stats for dc {} : {}".format(dc, build))
-            return err
+        build = await self._get_build_version()
 
         # XDR 5 created a new API
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1596,11 +1608,7 @@ class Node(AsyncObject):
         Returns:
         dict -- {stat_name : stat_value, ...}
         """
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         # XDR 5 does not have statistics at the xdr context level.  It requires a dc.
         if version.LooseVersion(build) >= version.LooseVersion(
@@ -1630,11 +1638,7 @@ class Node(AsyncObject):
     async def info_all_xdr_namespaces_statistics(
         self, namespaces: list[str] | None = None, dcs: list[str] | None = None
     ):
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         # New in XDR5. These stats used to be stored at the namespace level
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1678,7 +1682,7 @@ class Node(AsyncObject):
         if dc in dcs:
             raise ASInfoResponseError(ErrorsMsgs.DC_CREATE_FAIL, ErrorsMsgs.DC_EXISTS)
 
-        build = await self.info_build()
+        build = await self._get_build_version()
         req = "set-config:context=xdr;dc={};action=create"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1703,7 +1707,7 @@ class Node(AsyncObject):
         if dc not in dcs:
             raise ASInfoResponseError(ErrorsMsgs.DC_DELETE_FAIL, "DC does not exist")
 
-        build = await self.info_build()
+        build = await self._get_build_version()
         req = "set-config:context=xdr;dc={};action=delete"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1721,7 +1725,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
-        build = await self.info_build()
+        build = await self._get_build_version()
         req = "set-config:context=xdr;dc={};namespace={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1751,7 +1755,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_set_config_xdr_remove_namespace(self, dc, namespace):
-        build = await self.info_build()
+        build = await self._get_build_version()
         req = "set-config:context=xdr;dc={};namespace={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1769,7 +1773,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_set_config_xdr_add_node(self, dc, node):
-        build = await self.info_build()
+        build = await self._get_build_version()
         req = "set-config:context=xdr;dc={};node-address-port={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1787,7 +1791,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_set_config_xdr_remove_node(self, dc, node):
-        build = await self.info_build()
+        build = await self._get_build_version()
         req = "set-config:context=xdr;dc={};node-address-port={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1811,7 +1815,7 @@ class Node(AsyncObject):
         req = "set-config:context=xdr;{}={}".format(param, value)
 
         if dc:
-            build = await self.info_build()
+            build = await self._get_build_version()
 
             if version.LooseVersion(build) < version.LooseVersion(
                 constants.SERVER_NEW_XDR5_VERSION
@@ -1952,11 +1956,7 @@ class Node(AsyncObject):
 
         namespace_info_selector = "id"
 
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
@@ -2110,11 +2110,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_namespace_config(self, namespace=""):
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         namespace_info_selector = "id"
         if version.LooseVersion(build) >= version.LooseVersion(
@@ -2168,13 +2164,11 @@ class Node(AsyncObject):
         build = None
 
         if dcs is not None:
-            build = await self.info_build()
+            build = await self._get_build_version()
         else:
-            build, dcs = await asyncio.gather(self.info_build(), self.info_dcs())
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+            build, dcs = await asyncio.gather(
+                self._get_build_version(), self.info_dcs()
+            )
 
         # New in XDR5. These stats used to be stored at the namespace level
         if version.LooseVersion(build) < version.LooseVersion(
@@ -2250,11 +2244,7 @@ class Node(AsyncObject):
         the configuration is requested.  If a namespace does not exist on a dc the request
         is skipped.
         """
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         # New in XDR5. XDR Namespace configs used to be defined inside the namespace context.
         # Now they are defined in the xdr.dc context.
@@ -2649,7 +2639,8 @@ class Node(AsyncObject):
         Returns:
         list -- list of dcs
         """
-        xdr_major_version = int((await self.info_build())[0])
+        build = await self._get_build_version()
+        xdr_major_version = int(build[0])
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
@@ -3194,7 +3185,7 @@ class Node(AsyncObject):
         A new truncate-namespace and truncate-namespace-undo was added to some
         4.3.x, 4.4.x, and 4.5.x but not all
         """
-        build = await self.info_build()
+        build = await self._get_build_version()
 
         for version_ in constants.SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS:
             if version_[1] is not None:
@@ -3327,11 +3318,7 @@ class Node(AsyncObject):
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}},
         """
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         # jobs command removed in 6.3.0
         if version.LooseVersion(build) >= version.LooseVersion(
@@ -3355,11 +3342,7 @@ class Node(AsyncObject):
     async def _jobs_helper(self, old_req, new_req):
         req = None
 
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_JOBS_REMOVAL_VERSION
@@ -3393,11 +3376,7 @@ class Node(AsyncObject):
 
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
         """
-        build = await self.info_build()
-
-        if isinstance(build, Exception):
-            logger.error(build)
-            return build
+        build = await self._get_build_version()
 
         # scan-show removed in 6.4, jobs removed in 6.3
         if version.LooseVersion(build) >= version.LooseVersion(
