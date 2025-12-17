@@ -77,7 +77,9 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm"
-
+    secrets:
+      ghcr-pat: ${{ secrets.GHCR_PAT }}
+      
   sign-artifacts:
     needs:
        - get-version
