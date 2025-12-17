@@ -45,18 +45,18 @@ jobs:
     strategy:
       matrix:
         distro:
-          - el8
-          - el9
+          #- el8
+          #- el9
           - el10
-          - amzn2023
-          - debian12
-          - debian13
-          - ubuntu20.04
-          - ubuntu22.04
+          #- amzn2023
+          #- debian12
+          #- debian13
+          #- ubuntu20.04
+          #- ubuntu22.04
           - ubuntu24.04
         host:
           - ubuntu-24.04
-          - ubuntu-24.04-arm
+          #- ubuntu-24.04-arm
     uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.2
     with:
       runs-on: ${{ matrix.host }}
@@ -67,7 +67,7 @@ jobs:
       # gh-source-ref: ${{ github.ref }}
       build-script: |
         ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
-        USE_REMOTE_BUILDER_IMAGES=false \
+        USE_REMOTE_BUILDER_IMAGES=true \
         BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
@@ -131,18 +131,18 @@ jobs:
     strategy:
       matrix:
         distro:
-          - el8
-          - el9
+          #- el8
+          #- el9
           - el10
-          - amzn2023
-          - debian12
-          - debian13
-          - ubuntu20.04
-          - ubuntu22.04
+          #- amzn2023
+          #- debian12
+          #- debian13
+          #- ubuntu20.04
+          #- ubuntu22.04
           - ubuntu24.04
         host:
           - ubuntu-24.04
-          - ubuntu-24.04-arm
+          #- ubuntu-24.04-arm
     needs:
        - get-version 
        - create-release-bundle
