@@ -268,6 +268,12 @@ class ManageACLCreateUserController(ManageLeafCommandController):
             line.pop(0)
             roles = line
 
+        # Validate role names if any are specified
+        if roles:
+            for role in roles:
+                if not util.is_valid_role_name(role):
+                    return
+
         if self.warn and not self.prompt_challenge():
             return
 
@@ -452,6 +458,11 @@ class ManageACLGrantUserController(ManageLeafCommandController):
         username = line.pop(0)
         roles = self.mods["roles"]
 
+        # Validate role names
+        for role in roles:
+            if not util.is_valid_role_name(role):
+                return
+
         if self.warn and not self.prompt_challenge():
             return
 
@@ -570,6 +581,11 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
 
     async def _do_default(self, line):
         role_name = line.pop(0)
+
+        # Validate role name
+        if not util.is_valid_role_name(role_name):
+            return
+
         privilege = None
         allowlist = self.mods["allow"]
 
