@@ -130,7 +130,8 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             self.prompt = "Collectinfo-analyzer> "
         else:
             self.name = "Aerospike Interactive Shell"
-            self.set_default_prompt()
+            # Set temporary prompt, will be updated after ctrl is initialized
+            self.prompt = DEFAULT_PROMPT
 
         if not execute_only_mode:
             print(
