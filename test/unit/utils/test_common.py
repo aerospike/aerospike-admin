@@ -16,6 +16,7 @@ from datetime import datetime
 import asynctest
 from parameterized import parameterized
 import unittest
+from mock import patch
 
 from lib.utils import common, util
 
@@ -2459,3 +2460,246 @@ class CreateSummaryTests(unittest.TestCase):
         # Should default to disabled with empty feature_keys
         self.assertFalse(actual["CLUSTER"]["compression_enabled"])
         self.assertFalse(actual["NAMESPACES"]["test"]["compression_enabled"])
+
+
+class CollectInstalledPackagesTest(unittest.TestCase):
+    """Test cases for _collect_installed_packages function"""
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_rpm_only_system(self, mock_shell_cmd, mock_which):
+        """Test collection on RPM-based system (RHEL/CentOS/Fedora)"""
+        # Setup: rpm exists, dpkg doesn't
+        mock_which.side_effect = lambda cmd: "/usr/bin/rpm" if cmd == "rpm" else None
+        mock_shell_cmd.return_value = ("package1-1.0\npackage2-2.0\npackage3-3.0", None)
+
+        result, error = common._collect_installed_packages()
+
+        # Verify shell_command was called with correct arguments
+        mock_shell_cmd.assert_called_once_with(["rpm", "-qa"])
+        # Verify output format
+        self.assertIn("['rpm -qa']", result)
+        self.assertIn("package1-1.0", result)
+        self.assertIn("package2-2.0", result)
+        self.assertIn("package3-3.0", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_dpkg_query_system(self, mock_shell_cmd, mock_which):
+        """Test collection on Debian/Ubuntu with dpkg-query"""
+
+        # Setup: dpkg-query exists, rpm doesn't
+        def which_side_effect(cmd):
+            if cmd == "dpkg-query":
+                return "/usr/bin/dpkg-query"
+            return None
+
+        mock_which.side_effect = which_side_effect
+        mock_shell_cmd.return_value = ("package1\t1.0\npackage2\t2.0", None)
+
+        result, error = common._collect_installed_packages()
+
+        # Verify
+        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"])
+        self.assertIn("['dpkg-query -W']", result)
+        self.assertIn("package1", result)
+        self.assertIn("package2", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_dpkg_fallback(self, mock_shell_cmd, mock_which):
+        """Test fallback to dpkg when dpkg-query not available"""
+
+        # Setup: only dpkg exists
+        def which_side_effect(cmd):
+            if cmd == "dpkg":
+                return "/usr/bin/dpkg"
+            return None
+
+        mock_which.side_effect = which_side_effect
+        mock_shell_cmd.return_value = (
+            "ii  package1  1.0  Description\nii  package2  2.0  Description",
+            None,
+        )
+
+        result, error = common._collect_installed_packages()
+
+        # Verify
+        mock_shell_cmd.assert_called_once_with(["dpkg", "-l"])
+        self.assertIn("['dpkg -l']", result)
+        self.assertIn("package1", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_both_rpm_and_dpkg(self, mock_shell_cmd, mock_which):
+        """Test system with both package managers (edge case)"""
+
+        # Setup: both exist (unusual but possible)
+        def which_side_effect(cmd):
+            if cmd in ["rpm", "dpkg-query"]:
+                return f"/usr/bin/{cmd}"
+            return None
+
+        mock_which.side_effect = which_side_effect
+        mock_shell_cmd.side_effect = [
+            ("rpm-package-1.0\nrpm-package-2.0", None),
+            ("deb-package\t1.0\ndeb-package2\t2.0", None),
+        ]
+
+        result, error = common._collect_installed_packages()
+
+        # Verify both commands called
+        self.assertEqual(mock_shell_cmd.call_count, 2)
+        self.assertIn("['rpm -qa']", result)
+        self.assertIn("['dpkg-query -W']", result)
+        self.assertIn("rpm-package", result)
+        self.assertIn("deb-package", result)
+        # Verify sections are separated
+        self.assertIn("\n\n", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    def test_no_package_manager(self, mock_which):
+        """Test system with no supported package manager"""
+        mock_which.return_value = None
+
+        result, error = common._collect_installed_packages()
+
+        # Verify error message
+        self.assertIn("['packages']", result)
+        self.assertIn("No supported package manager", result)
+        self.assertIn("rpm or dpkg", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_shell_command_with_error(self, mock_shell_cmd, mock_which):
+        """Test handling of shell command errors"""
+        mock_which.return_value = "/usr/bin/rpm"
+        mock_shell_cmd.return_value = ("package1-1.0", "permission denied")
+
+        result, error = common._collect_installed_packages()
+
+        # Verify error is included in output
+        self.assertIn("['rpm -qa']", result)
+        self.assertIn("package1-1.0", result)
+        self.assertIn("Error: permission denied", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_shell_command_error_only(self, mock_shell_cmd, mock_which):
+        """Test handling when shell command returns only error, no output"""
+        mock_which.return_value = "/usr/bin/rpm"
+        mock_shell_cmd.return_value = ("", "command not found")
+
+        result, error = common._collect_installed_packages()
+
+        # Verify error is included even with no output
+        self.assertIn("['rpm -qa']", result)
+        self.assertIn("Error: command not found", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_empty_package_list(self, mock_shell_cmd, mock_which):
+        """Test handling of empty package list (no packages installed)"""
+        mock_which.return_value = "/usr/bin/rpm"
+        mock_shell_cmd.return_value = ("", None)
+
+        result, error = common._collect_installed_packages()
+
+        # Should still have header but no packages
+        self.assertIn("['rpm -qa']", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_whitespace_handling(self, mock_shell_cmd, mock_which):
+        """Test that whitespace in output is properly stripped"""
+        mock_which.return_value = "/usr/bin/rpm"
+        mock_shell_cmd.return_value = (
+            "  package1-1.0  \n  package2-2.0  \n\n",
+            "  warning message  ",
+        )
+
+        result, error = common._collect_installed_packages()
+
+        # Verify whitespace is stripped
+        self.assertIn("['rpm -qa']", result)
+        self.assertIn("package1-1.0", result)
+        self.assertIn("Error: warning message", result)
+        # Should not have excessive whitespace
+        self.assertNotIn("  package1", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_dpkg_query_preferred_over_dpkg(self, mock_shell_cmd, mock_which):
+        """Test that dpkg-query is preferred when both dpkg-query and dpkg exist"""
+
+        # Setup: both dpkg-query and dpkg exist
+        def which_side_effect(cmd):
+            if cmd in ["dpkg-query", "dpkg"]:
+                return f"/usr/bin/{cmd}"
+            return None
+
+        mock_which.side_effect = which_side_effect
+        mock_shell_cmd.return_value = ("package1\t1.0", None)
+
+        result, error = common._collect_installed_packages()
+
+        # Verify dpkg-query was used, not dpkg -l
+        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"])
+        self.assertIn("['dpkg-query -W']", result)
+        self.assertNotIn("['dpkg -l']", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_multiple_errors_in_multi_manager_system(self, mock_shell_cmd, mock_which):
+        """Test error handling when both package managers return errors"""
+
+        # Setup: both exist
+        def which_side_effect(cmd):
+            if cmd in ["rpm", "dpkg-query"]:
+                return f"/usr/bin/{cmd}"
+            return None
+
+        mock_which.side_effect = which_side_effect
+        mock_shell_cmd.side_effect = [
+            ("rpm-pkg-1.0", "rpm warning"),
+            ("deb-pkg\t1.0", "dpkg warning"),
+        ]
+
+        result, error = common._collect_installed_packages()
+
+        # Verify both outputs and errors are present
+        self.assertIn("['rpm -qa']", result)
+        self.assertIn("['dpkg-query -W']", result)
+        self.assertIn("rpm-pkg-1.0", result)
+        self.assertIn("deb-pkg", result)
+        self.assertIn("Error: rpm warning", result)
+        self.assertIn("Error: dpkg warning", result)
+        self.assertIsNone(error)
+
+    @patch("lib.utils.common.shutil.which")
+    @patch("lib.utils.common.util.shell_command")
+    def test_special_characters_in_package_names(self, mock_shell_cmd, mock_which):
+        """Test handling of special characters in package names"""
+        mock_which.return_value = "/usr/bin/rpm"
+        mock_shell_cmd.return_value = (
+            "package-with-dashes-1.0\npackage_with_underscores-2.0\npackage.with.dots-3.0",
+            None,
+        )
+
+        result, error = common._collect_installed_packages()
+
+        # Verify special characters are preserved
+        self.assertIn("package-with-dashes", result)
+        self.assertIn("package_with_underscores", result)
+        self.assertIn("package.with.dots", result)
+        self.assertIsNone(error)

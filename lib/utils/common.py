@@ -22,6 +22,7 @@ import logging
 import operator
 import os
 import platform
+import shutil
 from typing import Any, Callable, TypedDict
 from typing_extensions import NotRequired, Required
 import distro
@@ -2579,6 +2580,37 @@ def _collect_env_variables(cmd=""):
     return out, None
 
 
+def _collect_installed_packages(cmd=""):
+    package_commands: list[list[str]] = []
+
+    if shutil.which("rpm"):
+        package_commands.append(["rpm", "-qa"])
+
+    if shutil.which("dpkg-query"):
+        package_commands.append(["dpkg-query", "-W"])
+    elif shutil.which("dpkg"):
+        package_commands.append(["dpkg", "-l"])
+
+    if not package_commands:
+        return (
+            "['packages']\nNo supported package manager (rpm or dpkg) available.",
+            None,
+        )
+
+    sections: list[str] = []
+
+    for pkg_cmd in package_commands:
+        section = f"['{' '.join(pkg_cmd)}']"
+        o, e = util.shell_command(pkg_cmd)
+        if o:
+            section += "\n" + o.strip()
+        if e:
+            section += "\nError: " + e.strip()
+        sections.append(section)
+
+    return "\n\n".join(sections), None
+
+
 def _collect_ip_link_details(cmd=""):
     out = "['ip -s link']"
 
@@ -2721,7 +2753,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
         ["hostname -I", "hostname"],
         ["top -n3 -b", "top -l 3"],
         ["lsb_release -a", "ls /etc|grep release|xargs -I f cat /etc/f"],
-        ["sudo lshw -class system"],
+        ["sudo lshw"],
         ["cat /proc/meminfo", "vmstat -s"],
         ["cat /proc/interrupts"],
         ["iostat -y -x 5 4"],
@@ -2965,6 +2997,13 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
             f"Collecting information about the environment and writing to syslog.log"
         )
         o = _collectinfo_content(func=_collect_env_variables)
+        util.write_to_file(outfile, o)
+    except Exception as e:
+        util.write_to_file(outfile, str(e))
+
+    try:
+        logger.info("Collecting installed packages and writing to syslog.log")
+        o = _collectinfo_content(func=_collect_installed_packages)
         util.write_to_file(outfile, o)
     except Exception as e:
         util.write_to_file(outfile, str(e))
