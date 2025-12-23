@@ -1340,3 +1340,78 @@ class ConnectionFlowEdgeCasesTest(asynctest.TestCase):
         # Connection call SHOULD have been made for 8.1+ servers
         self.assertIn("connection", call_log)
         self.assertFalse(node.is_admin_node)  # admin=false
+
+    async def test_node_refresh_updates_build_cache(self):
+        """Test that node.refresh_connection() updates build cache (e.g., after server upgrade)"""
+        call_phase = {"phase": "initial"}
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            phase = call_phase["phase"]
+
+            # Phase 1: Initial connection with version 7.0.0.0
+            if phase == "initial":
+                if cmd == ["node", "build"]:
+                    return {
+                        "node": "NODE000000000",
+                        "build": "7.0.0.0",
+                    }
+                elif cmd == ["service-clear-std", "peers-clear-std"]:
+                    return {
+                        "service-clear-std": "127.0.0.1:3000",
+                        "peers-clear-std": "",
+                    }
+                elif cmd == "node":
+                    return "NODE000000000"
+            # Phase 2: After refresh, server upgraded to 8.1.0.0
+            elif phase == "refresh":
+                if cmd == ["node", "build"]:
+                    return {
+                        "node": "NODE000000000",
+                        "build": "8.1.0.0",  # Server upgraded!
+                    }
+                elif cmd == "connection":
+                    return "admin=false"
+                elif cmd == ["service-clear-std", "peers-clear-std"]:
+                    return {
+                        "service-clear-std": "127.0.0.1:3000",
+                        "peers-clear-std": "",
+                    }
+                elif cmd == "node":
+                    return "NODE000000000"
+            return ""
+
+        # Mock all necessary components for node initialization
+        with patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name",
+            return_value="test.local",
+        ), patch(
+            "lib.live_cluster.client.node.util.async_shell_command",
+            AsyncMock(return_value=None),
+        ), patch(
+            "socket.getaddrinfo", return_value=[(2, 1, 6, "", ("127.0.0.1", 3000))]
+        ), patch(
+            "lib.live_cluster.client.node.Node.info_build",
+            AsyncMock(return_value="7.0.0.0"),
+        ), patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+
+            # Create node with initial version 7.0.0.0
+            node = await Node("127.0.0.1", timeout=0)
+
+            # Verify initial build version was set by _node_connect
+            self.assertEqual(node.build, "7.0.0.0")
+            self.assertFalse(node.is_admin_node)  # Pre-8.1
+
+            # Simulate server upgrade - change phase for subsequent calls
+            call_phase["phase"] = "refresh"
+
+            # Refresh connection (this is what cluster.find_new_nodes() calls)
+            await node.refresh_connection()
+
+            # Build cache should now be updated to 8.1.0.0
+            self.assertEqual(node.build, "8.1.0.0")
+            # Connection info should have been checked for 8.1+
+            self.assertFalse(node.is_admin_node)  # admin=false in mock
