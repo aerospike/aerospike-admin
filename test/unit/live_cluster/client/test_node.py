@@ -303,6 +303,16 @@ class NodeTest(asynctest.TestCase):
 
         self.assertTrue(await self.node.login())
 
+    async def test_is_new_histogram_version_uses_disable_cache(self):
+        lib.live_cluster.client.node.Node.info_build.reset_mock()
+        lib.live_cluster.client.node.Node.info_build.return_value = "8.1.0.0"
+
+        await self.node._is_new_histogram_version()
+
+        lib.live_cluster.client.node.Node.info_build.assert_awaited_once_with(
+            disable_cache=True
+        )
+
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_login_returns_true_if_login_was_successful(self, as_socket_mock):
         as_socket_mock = as_socket_mock.return_value
@@ -5347,6 +5357,16 @@ class NodeErrorHandlingTest(asynctest.TestCase):
             self.assertIsInstance(result, ASInfoResponseError)
             self.assertEqual(result.message, "Failed to get XDR statistics")
 
+    async def test_info_xdr_statistics_build_exception(self):
+        """info_XDR_statistics should return build exception without calling info"""
+        build_exc = Exception("build failed")
+        with patch.object(self.node, "info_build", AsyncMock(return_value=build_exc)):
+            with patch.object(self.node, "_info", AsyncMock()) as info_mock:
+                result = await self.node.info_XDR_statistics()
+
+        self.assertEqual(result, build_exc)
+        info_mock.assert_not_called()
+
     async def test_info_logs_ids_error_response(self):
         """Test info_logs_ids handles ERROR response correctly"""
         self.info_mock.return_value = "ERROR::logs not accessible"
@@ -5585,6 +5605,17 @@ class NodeBuildCachingTest(asynctest.TestCase):
 
         # Verify cache is set
         self.assertEqual(self.node.build, "6.2.0.5")
+
+    async def test_info_build_retries_when_cache_is_exception(self):
+        """Cached exceptions should not block refresh; a new call should fetch fresh"""
+        self.node.build = Exception("previous failure")
+        self.info_mock.return_value = "6.2.1.0"
+
+        result = await self.node.info_build()
+
+        self.assertEqual(result, "6.2.1.0")
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertEqual(self.node.build, "6.2.1.0")
 
     async def test_info_build_disable_cache_forces_fresh_call(self):
         """Test that disable_cache=True bypasses cache"""
@@ -5890,6 +5921,26 @@ class NodeEdgeCasesTest(asynctest.TestCase):
 
         # Build should still be set
         self.assertEqual(self.node.build, "6.0.0.0")
+
+    async def test_set_user_agent_skips_when_build_exception(self):
+        """_set_user_agent should no-op when build is an exception"""
+        self.node.build = Exception("build lookup failed")
+        self.node.user_agent = "test-agent"
+
+        with patch.object(self.node, "_info_cinfo", AsyncMock()) as info_cinfo_mock:
+            await self.node._set_user_agent()
+
+        info_cinfo_mock.assert_not_called()
+
+    async def test_info_all_xdr_namespaces_statistics_build_exception(self):
+        """info_all_xdr_namespaces_statistics returns build exception without work"""
+        build_exc = Exception("build failed")
+        with patch.object(self.node, "info_build", AsyncMock(return_value=build_exc)):
+            with patch.object(self.node, "info_dcs", AsyncMock()) as info_dcs_mock:
+                result = await self.node.info_all_xdr_namespaces_statistics()
+
+        self.assertEqual(result, build_exc)
+        info_dcs_mock.assert_not_called()
 
 
 if __name__ == "__main__":

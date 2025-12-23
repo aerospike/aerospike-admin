@@ -833,7 +833,8 @@ class Node(AsyncObject):
             return True
 
     async def _is_new_histogram_version(self):
-        as_version = await self.info_build()
+        # Always fetch a fresh build for histogram compatibility checks
+        as_version = await self.info_build(disable_cache=True)
         if isinstance(as_version, Exception):
             logger.error("failed to get histogram version: %s", as_version)
             return False
@@ -844,9 +845,12 @@ class Node(AsyncObject):
         Sets user agent on the Aerospike connection socket.
         """
 
-        if self.build is None:
+        if self.build is None or isinstance(self.build, Exception):
             logger.debug(
-                "build version not available for node %s:%s", self.ip, self.port
+                "build version not available for node %s:%s: %s",
+                self.ip,
+                self.port,
+                self.build,
             )
             return
 
@@ -1600,6 +1604,10 @@ class Node(AsyncObject):
         """
         build = await self.info_build()
 
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         # XDR 5 does not have statistics at the xdr context level.  It requires a dc.
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_NEW_XDR5_VERSION
@@ -1629,6 +1637,10 @@ class Node(AsyncObject):
         self, namespaces: list[str] | None = None, dcs: list[str] | None = None
     ):
         build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
 
         # New in XDR5. These stats used to be stored at the namespace level
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1673,6 +1685,10 @@ class Node(AsyncObject):
             raise ASInfoResponseError(ErrorsMsgs.DC_CREATE_FAIL, ErrorsMsgs.DC_EXISTS)
 
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};action=create"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1698,6 +1714,10 @@ class Node(AsyncObject):
             raise ASInfoResponseError(ErrorsMsgs.DC_DELETE_FAIL, "DC does not exist")
 
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};action=delete"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1716,6 +1736,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};namespace={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1746,6 +1770,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_remove_namespace(self, dc, namespace):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};namespace={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1764,6 +1792,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_add_node(self, dc, node):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};node-address-port={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1782,6 +1814,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_remove_node(self, dc, node):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};node-address-port={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1806,6 +1842,9 @@ class Node(AsyncObject):
 
         if dc:
             build = await self.info_build()
+            if isinstance(build, Exception):
+                logger.error(build)
+                return build
 
             if version.LooseVersion(build) < version.LooseVersion(
                 constants.SERVER_NEW_XDR5_VERSION
@@ -1947,6 +1986,10 @@ class Node(AsyncObject):
         namespace_info_selector = "id"
 
         build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
 
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
@@ -2102,6 +2145,10 @@ class Node(AsyncObject):
     async def info_namespace_config(self, namespace=""):
         build = await self.info_build()
 
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         namespace_info_selector = "id"
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
@@ -2157,6 +2204,10 @@ class Node(AsyncObject):
             build = await self.info_build()
         else:
             build, dcs = await asyncio.gather(self.info_build(), self.info_dcs())
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
 
         # New in XDR5. These stats used to be stored at the namespace level
         if version.LooseVersion(build) < version.LooseVersion(
@@ -2233,6 +2284,10 @@ class Node(AsyncObject):
         is skipped.
         """
         build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
 
         # New in XDR5. XDR Namespace configs used to be defined inside the namespace context.
         # Now they are defined in the xdr.dc context.
@@ -2628,6 +2683,10 @@ class Node(AsyncObject):
         list -- list of dcs
         """
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         xdr_major_version = int(build[0])
 
         # for server versions >= 5 using XDR5.0
@@ -3188,6 +3247,10 @@ class Node(AsyncObject):
         """
         build = await self.info_build()
 
+        if isinstance(build, Exception):
+            logger.error(build)
+            return False
+
         for version_ in constants.SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS:
             if version_[1] is not None:
                 if version.LooseVersion(version_[0]) <= version.LooseVersion(
@@ -3349,6 +3412,10 @@ class Node(AsyncObject):
 
         build = await self.info_build()
 
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_JOBS_REMOVAL_VERSION
         ):
@@ -3382,6 +3449,10 @@ class Node(AsyncObject):
         Returns: {<trid1>: {trid: <trid1>, . . .}, <trid2>: {trid: <trid2>, . . .}}
         """
         build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
 
         # scan-show removed in 6.4, jobs removed in 6.3
         if version.LooseVersion(build) >= version.LooseVersion(
