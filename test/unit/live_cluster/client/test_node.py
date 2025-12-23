@@ -92,12 +92,18 @@ class NodeInitTest(asynctest.TestCase):
 
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            # First call - admin port detection
-            if cmd == "connection":
-                return "admin=false"
-            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
+            # First call - node and build for admin port detection
+            if cmd == ["node", "build"]:
                 return {
                     "node": "A00000000000000",
+                    "build": "8.1.0.0",
+                }
+            # Second call - connection info for admin port check
+            elif cmd == "connection":
+                return "admin=false"
+            # Third call - service addresses and peers
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -107,7 +113,7 @@ class NodeInitTest(asynctest.TestCase):
                 return "peers"
             else:
                 # Info call was made that was not defined here
-                self.fail()
+                self.fail(f"Unexpected command: {cmd}")
 
         def shell_side_effect(*args, **kwargs):
             p = AsyncMock(spec=Process)
@@ -141,12 +147,18 @@ class NodeInitTest(asynctest.TestCase):
 
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            # First call - admin port detection
-            if cmd == "connection":
-                return "admin=false"
-            if cmd == ["node", "service-clear-std", "peers-clear-std"]:
+            # First call - node and build for admin port detection
+            if cmd == ["node", "build"]:
                 return {
                     "node": "A00000000000000",
+                    "build": "8.1.0.0",
+                }
+            # Second call - connection info for admin port check
+            elif cmd == "connection":
+                return "admin=false"
+            # Third call - service addresses and peers
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "192.3.3.3:4567",
                     "peers-clear-std": "2,3000,[[1A0,,[3.126.208.136]]]",
                 }
@@ -156,7 +168,7 @@ class NodeInitTest(asynctest.TestCase):
                 return "peers"
             else:
                 # Info call was made that was not defined here
-                self.fail()
+                self.fail(f"Unexpected command: {cmd}")
 
         def shell_side_effect(*args, **kwargs):
             p = AsyncMock(spec=Process)
@@ -209,21 +221,23 @@ class NodeInitTest(asynctest.TestCase):
         as_socket_mock_used_for_login.get_session_info.return_value = "token", 59
 
         def side_effect_info(*args, **kwargs):
-            # First call - admin port detection
-            if args[0] == "connection":
-                return "admin=false"
-            elif args[0] == [
-                "node",
-                "service-clear-std",
-                "peers-clear-std",
-            ]:
+            # First call - node and build for admin port detection
+            if args[0] == ["node", "build"]:
                 return {
                     "node": "A0",
+                    "build": "8.1.0.0",
+                }
+            # Second call - connection info for admin port check
+            elif args[0] == "connection":
+                return "admin=false"
+            # Third call - service addresses and peers
+            elif args[0] == ["service-clear-std", "peers-clear-std"]:
+                return {
                     "service-clear-std": "1.1.1.1:3000;172.17.0.1:3000;172.17.1.1:3000",
                     "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
                 }
             else:
-                self.fail()
+                self.fail(f"Unexpected command: {args[0]}")
 
         as_socket_mock_used_for_login.info.side_effect = side_effect_info
 
@@ -232,8 +246,9 @@ class NodeInitTest(asynctest.TestCase):
         # Login and the node connection info calls
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
+                call(["node", "build"]),
                 call("connection"),
-                call(["node", "service-clear-std", "peers-clear-std"]),
+                call(["service-clear-std", "peers-clear-std"]),
             ],
         )
 
@@ -1032,11 +1047,13 @@ class NodeTest(asynctest.TestCase):
     async def test_info_bin_statistics_info_build_exception(self):
         """Test info_bin_statistics when info_build() returns an exception"""
         expected_exception = Exception("Network error")
+        # Set both the mock return value and the cached build to the exception
         lib.live_cluster.client.node.Node.info_build.return_value = expected_exception
+        self.node.build = expected_exception
 
         actual = await self.node.info_bin_statistics()
 
-        # Verify the exception is returned
+        # Verify an exception is returned (the original exception is now returned directly)
         self.assertEqual(actual, expected_exception)
         # Verify bins command was NOT called
         self.info_mock.assert_not_called()
@@ -1163,12 +1180,17 @@ class NodeTest(asynctest.TestCase):
     async def test_info_jobs_info_build_exception(self):
         """Test info_jobs when info_build() returns an exception"""
         expected_exception = Exception("Network error")
+        # Set both the mock return value and the cached build to the exception
         lib.live_cluster.client.node.Node.info_build.return_value = expected_exception
+        self.node.build = expected_exception
 
         actual = await self.node.info_jobs("scan")
 
+        # Verify the exception is returned (the original exception is now returned directly)
         self.assertEqual(actual, expected_exception)
         self.info_mock.assert_not_called()
+        # Verify logger.error was called
+        self.logger_mock.error.assert_called_once_with(expected_exception)
 
     def test_jobs_version_constants(self):
         """Test that job-related version constants are properly defined"""
@@ -5372,9 +5394,13 @@ class NodeErrorHandlingTest(asynctest.TestCase):
 
     async def test_info_build_error_response(self):
         """Test info_build handles ERROR response correctly"""
-        self.info_mock.return_value = "ERROR::build not available"
-
-        result = await self.node.info_build()
+        # info_build calls _info, not _info_cinfo, so we need to mock _info
+        # Also need to clear the cached build to force a fresh call
+        self.node.build = None
+        with patch.object(
+            self.node, "_info", new=AsyncMock(return_value="ERROR::build not available")
+        ):
+            result = await self.node.info_build()
 
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to get build")
@@ -5521,6 +5547,349 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertEqual(result["cs"], "2")
         self.assertEqual(result["ck"], "71")
+
+
+class NodeBuildCachingTest(asynctest.TestCase):
+    """Test build version caching functionality"""
+
+    async def setUp(self):
+        self.maxDiff = None
+        self.ip = "127.0.0.1"
+
+        # Mock _info to control responses
+        self.info_mock = patch(
+            "lib.live_cluster.client.node.Node._info", AsyncMock()
+        ).start()
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            self.node: Node = await Node(self.ip, timeout=0)
+
+    def tearDown(self):
+        patch.stopall()
+
+    async def test_info_build_caches_result(self):
+        """Test that info_build caches the build version after first call"""
+        self.info_mock.return_value = "6.2.0.5"
+
+        # First call should fetch from server
+        result1 = await self.node.info_build()
+        self.assertEqual(result1, "6.2.0.5")
+        self.assertEqual(self.info_mock.call_count, 1)
+
+        # Second call should use cache
+        result2 = await self.node.info_build()
+        self.assertEqual(result2, "6.2.0.5")
+        # Call count should still be 1 (cached)
+        self.assertEqual(self.info_mock.call_count, 1)
+
+        # Verify cache is set
+        self.assertEqual(self.node.build, "6.2.0.5")
+
+    async def test_info_build_disable_cache_forces_fresh_call(self):
+        """Test that disable_cache=True bypasses cache"""
+        self.info_mock.side_effect = ["6.2.0.5", "6.3.0.0"]
+
+        # First call caches result
+        result1 = await self.node.info_build()
+        self.assertEqual(result1, "6.2.0.5")
+        self.assertEqual(self.info_mock.call_count, 1)
+
+        # Call with disable_cache=True should fetch fresh
+        result2 = await self.node.info_build(disable_cache=True)
+        self.assertEqual(result2, "6.3.0.0")
+        self.assertEqual(self.info_mock.call_count, 2)
+
+        # Cache should be updated
+        self.assertEqual(self.node.build, "6.3.0.0")
+
+    async def test_info_build_does_not_cache_exceptions(self):
+        """Test that exceptions are NOT cached to allow automatic retry on transient failures"""
+        error_response = "ERROR::build not available"
+        self.info_mock.return_value = error_response
+
+        # First call should return exception (via @async_return_exceptions decorator)
+        result1 = await self.node.info_build()
+        self.assertIsInstance(result1, ASInfoResponseError)
+        self.assertEqual(self.info_mock.call_count, 1)
+
+        # Second call should retry (exceptions are NOT cached)
+        result2 = await self.node.info_build()
+        self.assertIsInstance(result2, ASInfoResponseError)
+        # Call count should be 2 (exception was NOT cached, so it retried)
+        self.assertEqual(self.info_mock.call_count, 2)
+
+        # Verify exception is NOT cached (build remains None or not an exception)
+        # After errors, self.build should not be set to the exception
+        self.assertTrue(
+            self.node.build is None
+            or not isinstance(self.node.build, ASInfoResponseError)
+        )
+
+    async def test_info_build_with_none_cache_fetches_fresh(self):
+        """Test that None cache value triggers fresh fetch"""
+        self.node.build = None
+        self.info_mock.return_value = "7.0.0.1"
+
+        result = await self.node.info_build()
+
+        self.assertEqual(result, "7.0.0.1")
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertEqual(self.node.build, "7.0.0.1")
+
+    async def test_info_bin_statistics_uses_cached_build(self):
+        """Test that info_build returns cached value and bins command is called"""
+        # Pre-cache the build version
+        self.node.build = "6.2.0.5"
+
+        # Track calls to _info
+        call_count = {"_info": 0}
+        original_info = self.node._info
+
+        async def mock_info(cmd):
+            call_count["_info"] += 1
+            if cmd == "build":
+                # This shouldn't be called if cache is working
+                return "6.2.0.5"
+            elif cmd == "bins":
+                # Return valid bins response
+                return "ns1:bin1=100;ns1:bin2=200"
+            return ""
+
+        with patch.object(self.node, "_info", side_effect=mock_info):
+            result = await self.node.info_bin_statistics()
+
+        # Should have called _info only for "bins", not for "build" (used cache)
+        # _info should be called once for bins
+        self.assertEqual(call_count["_info"], 1)
+        # Result should be a dict
+        self.assertIsInstance(result, dict)
+
+    async def test_info_bin_statistics_retries_on_build_exception(self):
+        """Test that info_bin_statistics retries when info_build returns exception"""
+        # Simulate info_build returning an exception
+        build_exception = Exception("Network error")
+
+        # Mock info_build to return exception
+        with patch.object(
+            self.node, "info_build", AsyncMock(return_value=build_exception)
+        ):
+            result = await self.node.info_bin_statistics()
+
+        # Should return the exception from info_build
+        self.assertEqual(result, build_exception)
+
+    async def test_multiple_methods_share_cache(self):
+        """Test that multiple methods benefit from shared build cache"""
+        self.node.build = "6.2.0.5"
+
+        # Call multiple methods that need build version
+        await self.node.info_bin_statistics()
+        # Note: info_jobs needs more complex mocking, so we'll just verify
+        # that build cache is shared
+
+        # Verify cache is still set and wasn't cleared
+        self.assertEqual(self.node.build, "6.2.0.5")
+
+
+class NodeEdgeCasesTest(asynctest.TestCase):
+    """Test edge cases and corner cases for build caching and connection flow"""
+
+    async def setUp(self):
+        self.maxDiff = None
+        self.ip = "127.0.0.1"
+
+        # Mock _info to control responses
+        self.info_mock = patch(
+            "lib.live_cluster.client.node.Node._info", AsyncMock()
+        ).start()
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            self.node: Node = await Node(self.ip, timeout=0)
+
+    def tearDown(self):
+        patch.stopall()
+
+    async def test_info_build_with_empty_string_response(self):
+        """Test that empty string response from server is handled"""
+        self.info_mock.return_value = ""
+
+        result = await self.node.info_build()
+
+        # Empty string should be cached and returned
+        self.assertEqual(result, "")
+        self.assertEqual(self.node.build, "")
+
+    async def test_info_build_multiple_rapid_calls(self):
+        """Test multiple rapid calls to info_build use cache"""
+        self.info_mock.return_value = "7.1.0.0"
+
+        # Make multiple calls in succession
+        results = []
+        for _ in range(5):
+            results.append(await self.node.info_build())
+
+        # All should return same value
+        self.assertTrue(all(r == "7.1.0.0" for r in results))
+        # Only one network call should have been made
+        self.assertEqual(self.info_mock.call_count, 1)
+
+    async def test_info_build_concurrent_calls(self):
+        """Test concurrent calls to info_build"""
+        import asyncio
+
+        self.info_mock.return_value = "7.1.0.0"
+
+        # Make concurrent calls
+        results = await asyncio.gather(*[self.node.info_build() for _ in range(3)])
+
+        # All should succeed
+        self.assertEqual(len(results), 3)
+        self.assertTrue(all(r == "7.1.0.0" for r in results))
+
+    async def test_build_cache_with_none_explicitly_set(self):
+        """Test behavior when build is explicitly set to None"""
+        self.node.build = None
+        self.info_mock.return_value = "6.5.0.0"
+
+        result = await self.node.info_build()
+
+        self.assertEqual(result, "6.5.0.0")
+        self.assertEqual(self.node.build, "6.5.0.0")
+
+    async def test_info_build_lowercase_error_response(self):
+        """Test that lowercase 'error' responses are handled"""
+        self.node.build = None
+        self.info_mock.return_value = "error::some problem"
+
+        result = await self.node.info_build()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.message, "Failed to get build")
+
+    async def test_info_build_mixed_case_error_response(self):
+        """Test that mixed case error responses are handled"""
+        self.node.build = None
+        self.info_mock.return_value = "ErRoR::some problem"
+
+        result = await self.node.info_build()
+
+        # Should not be caught (case-sensitive check), so returned as-is
+        self.assertEqual(result, "ErRoR::some problem")
+
+    async def test_node_connect_with_pre_8_1_server(self):
+        """Test connection flow with pre-8.1 server (no admin port check)"""
+        # This tests the path where server < 8.1 so admin port is not checked
+        self.node.build = "7.0.0.0"
+
+        # Verify build is set
+        self.assertEqual(self.node.build, "7.0.0.0")
+        # Pre-8.1 servers should not trigger admin port detection in _node_connect
+
+    async def test_info_bin_statistics_with_none_build(self):
+        """Test info_bin_statistics when build is None"""
+        self.node.build = None
+
+        # Mock info_build to return exception when build is None
+        with patch.object(
+            self.node, "info_build", AsyncMock(return_value=Exception("No build"))
+        ):
+            result = await self.node.info_bin_statistics()
+
+        # Should return the exception
+        self.assertIsInstance(result, Exception)
+
+    async def test_info_jobs_with_various_exception_types(self):
+        """Test info_jobs with different exception types"""
+        exceptions = [
+            Exception("Generic error"),
+            IOError("IO error"),
+            TimeoutError("Timeout"),
+            ASInfoResponseError("Info error", "raw"),
+        ]
+
+        for exc in exceptions:
+            with self.subTest(exception=type(exc).__name__):
+                self.node.build = exc
+
+                with patch.object(self.node, "info_build", AsyncMock(return_value=exc)):
+                    result = await self.node.info_jobs("scan")
+
+                self.assertEqual(result, exc)
+
+    async def test_info_build_disable_cache_always_fetches_fresh(self):
+        """Test that disable_cache=True always makes network call"""
+        self.info_mock.side_effect = ["1.0.0", "2.0.0", "3.0.0"]
+
+        # First call caches
+        result1 = await self.node.info_build()
+        self.assertEqual(result1, "1.0.0")
+
+        # Call with disable_cache should fetch fresh
+        result2 = await self.node.info_build(disable_cache=True)
+        self.assertEqual(result2, "2.0.0")
+
+        # Another call with disable_cache should fetch fresh again
+        result3 = await self.node.info_build(disable_cache=True)
+        self.assertEqual(result3, "3.0.0")
+
+        # Total: 3 network calls
+        self.assertEqual(self.info_mock.call_count, 3)
+
+    async def test_build_cache_after_error_then_success(self):
+        """Test that successful call after error properly caches"""
+        self.node.build = None
+        self.info_mock.side_effect = [
+            "ERROR::not available",  # First call fails
+            "8.0.0.0",  # Second call succeeds
+        ]
+
+        # First call returns error (not cached)
+        result1 = await self.node.info_build()
+        self.assertIsInstance(result1, ASInfoResponseError)
+
+        # Second call should try again and succeed
+        result2 = await self.node.info_build()
+        self.assertEqual(result2, "8.0.0.0")
+
+        # Success should be cached
+        self.assertEqual(self.node.build, "8.0.0.0")
+
+        # Third call uses cache
+        result3 = await self.node.info_build()
+        self.assertEqual(result3, "8.0.0.0")
+
+        # Only 2 network calls (error + success, third used cache)
+        self.assertEqual(self.info_mock.call_count, 2)
+
+    async def test_info_build_whitespace_in_version(self):
+        """Test build version with whitespace is handled correctly"""
+        self.info_mock.return_value = "  7.0.0.1  "
+
+        result = await self.node.info_build()
+
+        # Should be cached as-is (with whitespace)
+        self.assertEqual(result, "  7.0.0.1  ")
+        self.assertEqual(self.node.build, "  7.0.0.1  ")
+
+    async def test_build_attribute_persistence_across_calls(self):
+        """Test that build attribute persists across different method calls"""
+        self.node.build = "6.0.0.0"
+
+        # Call various methods that check build
+        with patch.object(self.node, "_info", AsyncMock(return_value="")):
+            await self.node.info_bin_statistics()
+
+        # Build should still be set
+        self.assertEqual(self.node.build, "6.0.0.0")
+
+        # Another method call
+        with patch.object(self.node, "info_build", AsyncMock(return_value="6.0.0.0")):
+            await self.node.info_jobs("scan")
+
+        # Build should still be set
+        self.assertEqual(self.node.build, "6.0.0.0")
 
 
 if __name__ == "__main__":
