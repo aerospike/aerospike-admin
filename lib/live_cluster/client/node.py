@@ -3109,6 +3109,23 @@ class Node(AsyncObject):
         return resp
 
     @async_return_exceptions
+    async def info_release(self):
+        """
+        Get detailed release information (8.1.1 or later).
+        Parses the release response into key/value pairs.
+        """
+        resp = await self._info("release")
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get release info", resp)
+
+        release_info = client_util.info_to_dict(resp)
+
+        if isinstance(release_info, Exception):
+            raise ASInfoResponseError("Failed to parse release info", resp)
+
+        return release_info
+
+    @async_return_exceptions
     async def info_feature_key(self):
         """
         Get feature-key information for this node. asinfo -v "feature-key"
