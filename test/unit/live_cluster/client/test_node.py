@@ -439,28 +439,93 @@ class NodeTest(asynctest.TestCase):
         self.node.user = "admin"
         self.node.perform_login = False
         as_socket_mock = as_socket_mock.return_value
-        self.node.session_token = None
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 1
         as_socket_mock.connect.return_value = True
         session_token = "new-token"
 
-        def side_effect(token):
-            if token is None:
-                raise ASProtocolExcFactory.create_exc(
-                    ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
-                )
-            elif token == session_token:
-                return True
-
-            return False
-
-        as_socket_mock.authenticate.side_effect = side_effect
-        as_socket_mock.get_session_info.return_value = session_token, 0
+        as_socket_mock.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        )
+        as_socket_mock.login.return_value = True
+        as_socket_mock.get_session_info.return_value = session_token, 123
 
         sock = await self.node._get_connection(self.node.ip, self.node.port)
 
-        # just making sure the correct one was returned since we are dealing with a set.
         self.assertEqual(sock, as_socket_mock)
         self.assertEqual(self.node.session_token, session_token)
+        self.assertEqual(self.node.session_expiration, 123)
+        as_socket_mock.login.assert_awaited_once()
+        as_socket_mock.authenticate.assert_awaited_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_auth_success_does_not_relogin(self, as_socket_mock):
+        self.node.user = "admin"
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 55
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.return_value = True
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        self.assertEqual(self.node.session_token, "old-token")
+        self.assertEqual(self.node.session_expiration, 55)
+        as_socket.authenticate.assert_awaited_once()
+        as_socket.login.assert_not_awaited()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_relogin_clears_token_before_login(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 42
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        )
+
+        async def login_side_effect():
+            # token should be cleared before relogin
+            self.assertIsNone(self.node.session_token)
+            self.assertEqual(self.node.session_expiration, 0)
+            return True
+
+        as_socket.login.side_effect = login_side_effect
+        as_socket.get_session_info.return_value = ("new-token", 99)
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        self.assertEqual(self.node.session_token, "new-token")
+        self.assertEqual(self.node.session_expiration, 99)
+        as_socket.authenticate.assert_awaited_once()
+        as_socket.login.assert_awaited_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_relogin_fails_raises_and_clears_token(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 1
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        )
+        as_socket.login.return_value = False
+
+        with self.assertRaises(ASProtocolError):
+            await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIsNone(self.node.session_token)
+        self.assertEqual(self.node.session_expiration, 0)
+        as_socket.login.assert_awaited_once()
+        as_socket.authenticate.assert_awaited_once()
 
     ###### Services ######
 
