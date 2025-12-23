@@ -408,10 +408,9 @@ class Node(AsyncObject):
         server_supports_admin_info_call = False
 
         try:
-            if self.build and not isinstance(self.build, Exception):
-                server_supports_admin_info_call = version.LooseVersion(self.build) >= (
-                    version.LooseVersion(constants.SERVER_ADMIN_PORT_FIRST_VERSION)
-                )
+            server_supports_admin_info_call = version.LooseVersion(self.build) >= (
+                version.LooseVersion(constants.SERVER_ADMIN_PORT_FIRST_VERSION)
+            )
         except Exception as e:
             logger.debug(
                 "unable to parse build version '%s' for node %s:%s error:%s",
