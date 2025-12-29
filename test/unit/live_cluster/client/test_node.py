@@ -5383,39 +5383,41 @@ class NodeErrorHandlingTest(asynctest.TestCase):
     async def test_info_release_unsupported_version(self):
         """Test info_release raises error for unsupported server versions"""
         # Mock info_build to return older version
-        with patch.object(self.node, 'info_build', return_value="8.0.0.1"):
+        with patch.object(self.node, "info_build", return_value="8.0.0.1"):
             result = await self.node.info_release()
             self.assertIsInstance(result, ASInfoError)
-            self.assertEqual(result.message, "'release' command requires server version 8.1.1+")
+            self.assertEqual(
+                result.message, "'release' command requires server version 8.1.1+"
+            )
 
     async def test_info_release_error_response(self):
         """Test info_release handles ERROR response correctly"""
         # Mock info_build to return supported version
-        with patch.object(self.node, 'info_build', return_value="8.1.1.0"):
+        with patch.object(self.node, "info_build", return_value="8.1.1.0"):
             # Mock _info to return error response
             self.info_mock.return_value = "ERROR::release not accessible"
-            
+
             result = await self.node.info_release()
-            
+
             self.assertIsInstance(result, ASInfoResponseError)
             self.assertEqual(result.message, "Failed to get release info")
 
     async def test_info_release_success(self):
         """Test info_release parses response correctly for supported versions"""
         # Mock info_build to return supported version
-        with patch.object(self.node, 'info_build', return_value="8.1.1.0"):
+        with patch.object(self.node, "info_build", return_value="8.1.1.0"):
             # Mock _info to return valid release response
             self.info_mock.return_value = "arch=x86_64;edition=Aerospike Enterprise Edition;os=linux;version=8.1.1.0;sha=abc123;ee-sha=def456"
-            
+
             result = await self.node.info_release()
-            
+
             expected = {
                 "arch": "x86_64",
-                "edition": "Aerospike Enterprise Edition", 
+                "edition": "Aerospike Enterprise Edition",
                 "os": "linux",
                 "version": "8.1.1.0",
                 "sha": "abc123",
-                "ee-sha": "def456"
+                "ee-sha": "def456",
             }
             self.assertEqual(result, expected)
 
@@ -5424,7 +5426,7 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         # Mock info_build to return a valid older version
         self.info_mock.side_effect = [
             "8.0.0.1",  # info_build response (< 8.1.1)
-            "ERROR::version not accessible"  # info("version") response
+            "ERROR::version not accessible",  # info("version") response
         ]
 
         result = await self.node.info_version()
@@ -5444,26 +5446,32 @@ class NodeErrorHandlingTest(asynctest.TestCase):
     async def test_info_version_enhanced_server_success(self):
         """Test info_version uses info_release for 8.1.1+ servers"""
         # Mock info_build to return 8.1.1+ version
-        with patch.object(self.node, 'info_build', return_value="8.1.1.0"):
+        with patch.object(self.node, "info_build", return_value="8.1.1.0"):
             # Mock info_release to return structured data
-            with patch.object(self.node, 'info_release', return_value={
-                "arch": "x86_64",
-                "edition": "Aerospike Enterprise Edition",
-                "os": "linux", 
-                "version": "8.1.1.0",
-                "sha": "abc123",
-                "ee-sha": "def456"
-            }):
+            with patch.object(
+                self.node,
+                "info_release",
+                return_value={
+                    "arch": "x86_64",
+                    "edition": "Aerospike Enterprise Edition",
+                    "os": "linux",
+                    "version": "8.1.1.0",
+                    "sha": "abc123",
+                    "ee-sha": "def456",
+                },
+            ):
                 result = await self.node.info_version()
                 self.assertEqual(result, "Aerospike Enterprise Edition build 8.1.1.0")
 
     async def test_info_version_enhanced_server_release_error(self):
         """Test info_version handles info_release error for 8.1.1+ servers"""
         # Mock info_build to return 8.1.1+ version
-        with patch.object(self.node, 'info_build', return_value="8.1.1.0"):
+        with patch.object(self.node, "info_build", return_value="8.1.1.0"):
             # Mock info_release to return an error
-            error = ASInfoResponseError("Failed to get release info", "ERROR::release not accessible")
-            with patch.object(self.node, 'info_release', return_value=error):
+            error = ASInfoResponseError(
+                "Failed to get release info", "ERROR::release not accessible"
+            )
+            with patch.object(self.node, "info_release", return_value=error):
                 result = await self.node.info_version()
                 self.assertIsInstance(result, ASInfoResponseError)
                 self.assertEqual(result.message, "Failed to get release info")
@@ -5471,13 +5479,13 @@ class NodeErrorHandlingTest(asynctest.TestCase):
     async def test_info_version_enhanced_server_incomplete_data(self):
         """Test info_version handles incomplete release data for 8.1.1+ servers"""
         # Mock info_build to return 8.1.1+ version
-        with patch.object(self.node, 'info_build', return_value="8.1.1.0"):
+        with patch.object(self.node, "info_build", return_value="8.1.1.0"):
             # Mock info_release to return incomplete data (missing edition and version)
-            with patch.object(self.node, 'info_release', return_value={
-                "arch": "x86_64",
-                "os": "linux",
-                "sha": "abc123"
-            }):
+            with patch.object(
+                self.node,
+                "info_release",
+                return_value={"arch": "x86_64", "os": "linux", "sha": "abc123"},
+            ):
                 result = await self.node.info_version()
                 self.assertIsInstance(result, ASInfoError)
                 self.assertEqual(result.message, "Incomplete release info data")
@@ -5487,7 +5495,7 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         # Mock responses for older server
         self.info_mock.side_effect = [
             "8.0.0.1",  # info_build response (< 8.1.1)
-            "Aerospike Community Edition build 8.0.0.1"  # info("version") response
+            "Aerospike Community Edition build 8.0.0.1",  # info("version") response
         ]
 
         result = await self.node.info_version()

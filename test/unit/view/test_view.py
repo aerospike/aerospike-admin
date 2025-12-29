@@ -2212,14 +2212,14 @@ class CliViewInfoReleaseTest(unittest.TestCase):
         cluster_mock = MagicMock()
         cluster_mock.get_node_names.return_value = {
             "node1": "192.168.1.1:3000",
-            "node2": "192.168.1.2:3000"
+            "node2": "192.168.1.2:3000",
         }
         cluster_mock.get_node_ids.return_value = {
             "node1": "BB9070016AE4202",
-            "node2": "BB9060016AE4202"
+            "node2": "BB9060016AE4202",
         }
         cluster_mock.get_expected_principal.return_value = "BB9070016AE4202"
-        
+
         # Mock release data
         release_data = {
             "node1": {
@@ -2228,54 +2228,56 @@ class CliViewInfoReleaseTest(unittest.TestCase):
                 "os": "linux",
                 "version": "8.1.1.0",
                 "sha": "abc123",
-                "ee-sha": "def456"
+                "ee-sha": "def456",
             },
             "node2": {
                 "arch": "x86_64",
-                "edition": "Aerospike Community Edition", 
+                "edition": "Aerospike Community Edition",
                 "os": "linux",
                 "version": "8.1.1.0",
                 "sha": "xyz789",
-                "ee-sha": ""
-            }
+                "ee-sha": "",
+            },
         }
-        
+
         # Call the method
-        CliView.info_release(release_data, cluster_mock, timestamp="2025-01-01 12:00:00")
-        
+        CliView.info_release(
+            release_data, cluster_mock, timestamp="2025-01-01 12:00:00"
+        )
+
         # Verify render was called
         self.render_mock.assert_called_once()
-        
+
         # Verify print_result was called
         self.print_result_mock.assert_called_once()
-        
+
         # Get the render call arguments
         render_args = self.render_mock.call_args
         args, kwargs = render_args
         template, title, sources = args
         common = kwargs.get("common", {})
-        
+
         # Verify template is correct
         self.assertEqual(template, templates.info_release_sheet)
-        
+
         # Verify title
         self.assertEqual(title, "Release Information (2025-01-01 12:00:00)")
-        
+
         # Verify sources contain expected data
         self.assertEqual(sources["release_data"], release_data)
         self.assertIn("node_names", sources)
         self.assertIn("node_ids", sources)
-        
+
         # Verify common data
         self.assertEqual(common["principal"], "BB9070016AE4202")
 
     def test_info_release_empty_data(self):
         """Test info_release view method handles empty data"""
         cluster_mock = MagicMock()
-        
+
         # Call with empty data
         CliView.info_release({}, cluster_mock)
-        
+
         # Verify render and print_result were not called
         self.render_mock.assert_not_called()
         self.print_result_mock.assert_not_called()
@@ -2286,25 +2288,22 @@ class CliViewInfoReleaseTest(unittest.TestCase):
         cluster_mock.get_node_names.return_value = {"node1": "192.168.1.1:3000"}
         cluster_mock.get_node_ids.return_value = {"node1": "BB9070016AE4202"}
         cluster_mock.get_expected_principal.return_value = "BB9070016AE4202"
-        
+
         release_data = {
-            "node1": {
-                "edition": "Aerospike Enterprise Edition",
-                "version": "8.1.1.0"
-            }
+            "node1": {"edition": "Aerospike Enterprise Edition", "version": "8.1.1.0"}
         }
-        
+
         # Call without timestamp
         CliView.info_release(release_data, cluster_mock)
-        
+
         # Verify render was called
         self.render_mock.assert_called_once()
-        
+
         # Get the render call arguments
         render_args = self.render_mock.call_args
         args, kwargs = render_args
         template, title, sources = args
-        
+
         # Verify title starts with "Release Information" (may have timestamp)
         self.assertTrue(title.startswith("Release Information"))
 
@@ -2314,17 +2313,14 @@ class CliViewInfoReleaseTest(unittest.TestCase):
         cluster_mock.get_node_names.return_value = {"node1": "192.168.1.1:3000"}
         cluster_mock.get_node_ids.return_value = {"node1": "BB9070016AE4202"}
         cluster_mock.get_expected_principal.return_value = "BB9070016AE4202"
-        
+
         release_data = {
-            "node1": {
-                "edition": "Aerospike Enterprise Edition",
-                "version": "8.1.1.0"
-            }
+            "node1": {"edition": "Aerospike Enterprise Edition", "version": "8.1.1.0"}
         }
-        
+
         # Call with node filter
         CliView.info_release(release_data, cluster_mock, with_=["node1"])
-        
+
         # Verify cluster methods were called with filter
         cluster_mock.get_node_names.assert_called_once_with(["node1"])
         cluster_mock.get_node_ids.assert_called_once_with(["node1"])

@@ -247,7 +247,7 @@ class TestInfo(asynctest.TestCase):
         exp_heading = "Release Information"
         exp_header = [
             "Node",
-            "Node ID", 
+            "Node ID",
             "Architecture",
             "Edition",
             "OS",
@@ -264,17 +264,19 @@ class TestInfo(asynctest.TestCase):
                 actual_header,
                 actual_data,
                 actual_num_records,
-            ) = await test_util.capture_separate_and_parse_output(self.rc, ["info", "release"])
-            
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["info", "release"]
+            )
+
             self.assertTrue(exp_heading in actual_heading)
             self.assertListEqual(exp_header, actual_header)
             self.assertEqual(expected_num_records, actual_num_records)
-            
+
             # Verify data structure - each row should have values for edition and version
             for row in actual_data:
                 self.assertIsNotNone(row.get("Edition"))
                 self.assertIsNotNone(row.get("Version"))
-                
+
         except Exception as e:
             # Skip test if server doesn't support release info
             if "not supported" in str(e).lower():
