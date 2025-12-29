@@ -239,6 +239,49 @@ class TestInfo(asynctest.TestCase):
             str(context.exception),
         )
 
+    async def test_release(self):
+        """
+        This test will assert info release output for heading, header, and data structure.
+        Note: This test may be skipped if server version < 8.1.1
+        """
+        exp_heading = "Release Information"
+        exp_header = [
+            "Node",
+            "Node ID", 
+            "Architecture",
+            "Edition",
+            "OS",
+            "Version",
+            "SHA",
+            "EE SHA",
+        ]
+        expected_num_records = len(self.rc.cluster.nodes)
+
+        try:
+            (
+                actual_heading,
+                actual_description,
+                actual_header,
+                actual_data,
+                actual_num_records,
+            ) = await test_util.capture_separate_and_parse_output(self.rc, ["info", "release"])
+            
+            self.assertTrue(exp_heading in actual_heading)
+            self.assertListEqual(exp_header, actual_header)
+            self.assertEqual(expected_num_records, actual_num_records)
+            
+            # Verify data structure - each row should have values for edition and version
+            for row in actual_data:
+                self.assertIsNotNone(row.get("Edition"))
+                self.assertIsNotNone(row.get("Version"))
+                
+        except Exception as e:
+            # Skip test if server doesn't support release info
+            if "not supported" in str(e).lower():
+                self.skipTest(f"Server version doesn't support release info: {e}")
+            else:
+                raise
+
 
 if __name__ == "__main__":
     unittest.main()
