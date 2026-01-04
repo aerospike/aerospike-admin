@@ -219,6 +219,7 @@ class Node(AsyncObject):
         self.session_expiration = 0
         self.perform_login = True
         self.user_agent = user_agent
+        self.build = None
 
         # TODO: Remove remote sys stats from Node class
         _SysCmd.set_uid(os.getuid())
@@ -392,45 +393,94 @@ class Node(AsyncObject):
         return False
 
     async def _node_connect(self):
-        connection_info_call = "connection"
+        node_info_cmd = "node"
+        build_info_cmd = "build"
+
+        # First call: minimal info to determine build and node id.
+        node_info_response = await self._info_cinfo(
+            [node_info_cmd, build_info_cmd],
+            self.ip,
+            self.port,
+            disable_cache=True,
+        )
+
+        self.build = node_info_response.get(build_info_cmd)
+        server_supports_admin_info_call = False
+
         try:
-            connection_info = await self._info_cinfo(
-                connection_info_call, self.ip, self.port, disable_cache=True
+            server_supports_admin_info_call = version.LooseVersion(self.build) >= (
+                version.LooseVersion(constants.SERVER_ADMIN_PORT_FIRST_VERSION)
             )
-        except ASInfoError as e:
+        except Exception as e:
             logger.debug(
-                "unable to get connection info for node %s:%s error:%s",
+                "unable to parse build version '%s' for node %s:%s error:%s",
+                self.build,
                 self.ip,
                 self.port,
                 e,
             )
-            connection_info = None
 
-        # Info calls for node id, features
-        commands = ["node"]
+        if server_supports_admin_info_call:
+            logger.debug("build version %s supports admin port", self.build)
+            connection_info_response = None
+            connection_info_cmd = "connection"
+            try:
+                connection_info_response = await self._info_cinfo(
+                    connection_info_cmd, self.ip, self.port, disable_cache=True
+                )
+            except ASInfoError as e:
+                logger.debug(
+                    "unable to get connection info for node %s:%s error:%s",
+                    self.ip,
+                    self.port,
+                    e,
+                )
 
-        # Check if the node is an admin node
-        if self._is_admin_port_enabled(connection_info):
-            logger.debug("admin port is enabled for ip %s", self.ip)
-            self.is_admin_node = True
-            # use admin info call instead of service info call
-            info_address_call = self._get_admin_info_call()
-            # disable peer discovery for admin node
-            peers_info_calls = []
+            if self._is_admin_port_enabled(connection_info_response):
+                logger.debug("admin port is enabled for ip %s", self.ip)
+                self.is_admin_node = True
+
+                # Disable peer discovery for admin node
+                peers = []
+
+                # Use admin info call instead of service info call
+                admin_info_cmd = self._get_admin_info_call()
+                admin_info_response = await self._info_cinfo(
+                    admin_info_cmd, self.ip, disable_cache=True
+                )
+                admin_addresses = self._info_service_helper(admin_info_response)
+                logger.debug(
+                    "admin address discovered for node %s: %s",
+                    node_info_response[node_info_cmd],
+                    admin_addresses,
+                )
+
+                return node_info_response[node_info_cmd], admin_addresses, peers
         else:
-            # Get service addresses and peers info calls for non-admin node
-            info_address_call = self._get_service_info_call()
-            peers_info_calls = self._get_info_peers_list_calls()
+            logger.debug("build version %s does not support admin port", self.build)
 
-        commands += [info_address_call] + peers_info_calls
-        results = await self._info_cinfo(commands, self.ip, disable_cache=True)
-        service_addresses = self._info_service_helper(results[info_address_call])
+        service_info_cmd = self._get_service_info_call()
+        peers_info_cmds = self._get_info_peers_list_calls()
+
+        # Non-admin path: fetch service addresses and peers in a single call.
+        service_peers_response = await self._info_cinfo(
+            [service_info_cmd] + peers_info_cmds,
+            self.ip,
+            self.port,
+            disable_cache=True,
+        )
+        service_addresses = self._info_service_helper(
+            service_peers_response[service_info_cmd]
+        )
         peers = (
-            self._aggregate_peers([results[call] for call in peers_info_calls])
-            if peers_info_calls
+            self._aggregate_peers(
+                [service_peers_response[call] for call in peers_info_cmds]
+            )
+            if peers_info_cmds
             else []
         )
-        return results["node"], service_addresses, peers
+
+        return node_info_response[node_info_cmd], service_addresses, peers
 
     async def connect(self, address, port):
         try:
@@ -482,10 +532,13 @@ class Node(AsyncObject):
                         break
 
                     # IP address have changed. Not common.
-                    self.node_id, _, self.peers = await asyncio.gather(
+                    # Re-fetch all node info including build version, as this could be
+                    # a different server or the same server upgraded/replaced at new IP
+                    self.node_id, _, self.peers, self.build = await asyncio.gather(
                         self.info_node(),
                         self._update_IP(self.ip, self.port),
                         self.info_peers_list(),
+                        self.info_build(disable_cache=True),
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -779,16 +832,34 @@ class Node(AsyncObject):
             return True
 
     async def _is_new_histogram_version(self):
-        as_version = await self.info_build()
+        # Always fetch a fresh build for histogram compatibility checks
+        as_version = await self.info_build(disable_cache=True)
         if isinstance(as_version, Exception):
+            logger.error("failed to get histogram version: %s", as_version)
             return False
-
         return common.is_new_histogram_version(as_version)
 
     async def _set_user_agent(self):
         """
         Sets user agent on the Aerospike connection socket.
         """
+
+        if self.build is None or isinstance(self.build, Exception):
+            logger.debug(
+                "build version not available for node %s:%s: %s",
+                self.ip,
+                self.port,
+                self.build,
+            )
+            return
+
+        # user agent was added in 8.1
+        if version.LooseVersion(self.build) < version.LooseVersion(
+            constants.SERVER_USER_AGENT_FIRST_VERSION
+        ):
+            logger.debug("build version %s does not support user agent", self.build)
+            return
+
         if self.user_agent is None:
             logger.debug(
                 "user agent string not available for node %s:%s",
@@ -796,6 +867,7 @@ class Node(AsyncObject):
                 self.port,
             )
             return
+
         try:
             user_agent_b64 = base64.b64encode(self.user_agent.encode()).decode()
             await self._info_cinfo(
@@ -1612,6 +1684,10 @@ class Node(AsyncObject):
             raise ASInfoResponseError(ErrorsMsgs.DC_CREATE_FAIL, ErrorsMsgs.DC_EXISTS)
 
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};action=create"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1637,6 +1713,10 @@ class Node(AsyncObject):
             raise ASInfoResponseError(ErrorsMsgs.DC_DELETE_FAIL, "DC does not exist")
 
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};action=delete"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1655,6 +1735,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_add_namespace(self, dc, namespace, rewind=None):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};namespace={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1685,6 +1769,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_remove_namespace(self, dc, namespace):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};namespace={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1703,6 +1791,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_add_node(self, dc, node):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};node-address-port={};action=add"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1721,6 +1813,10 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_set_config_xdr_remove_node(self, dc, node):
         build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
         req = "set-config:context=xdr;dc={};node-address-port={};action=remove"
 
         if version.LooseVersion(build) < version.LooseVersion(
@@ -1745,6 +1841,9 @@ class Node(AsyncObject):
 
         if dc:
             build = await self.info_build()
+            if isinstance(build, Exception):
+                logger.error(build)
+                return build
 
             if version.LooseVersion(build) < version.LooseVersion(
                 constants.SERVER_NEW_XDR5_VERSION
@@ -2582,7 +2681,12 @@ class Node(AsyncObject):
         Returns:
         list -- list of dcs
         """
-        xdr_major_version = int((await self.info_build())[0])
+        build = await self.info_build()
+        if isinstance(build, Exception):
+            logger.error(build)
+            return build
+
+        xdr_major_version = int(build[0])
 
         # for server versions >= 5 using XDR5.0
         if xdr_major_version >= 5:
@@ -3083,16 +3187,29 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_build(self):
+    async def info_build(self, disable_cache=False):
         """
         Get Build Version. i.e. w.x.y.z
 
+        Caches the build version after first successful fetch to minimize network calls.
+        Exceptions are NOT cached to allow automatic retry on transient failures.
+
+        Args:
+            disable_cache: If True, bypass cache and fetch fresh from server
+
         Returns:
-        string -- build version
+        string -- build version or Exception
         """
+        # Return cached version if available, not disabled, and not an exception
+        if not disable_cache and self.build and not isinstance(self.build, Exception):
+            return self.build
+
         resp = await self._info("build")
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get build", resp)
+
+        # Cache only successful results
+        self.build = resp
         return resp
 
     @async_return_exceptions
@@ -3128,6 +3245,10 @@ class Node(AsyncObject):
         4.3.x, 4.4.x, and 4.5.x but not all
         """
         build = await self.info_build()
+
+        if isinstance(build, Exception):
+            logger.error(build)
+            return False
 
         for version_ in constants.SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS:
             if version_[1] is not None:

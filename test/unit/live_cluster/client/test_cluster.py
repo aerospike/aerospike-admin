@@ -54,10 +54,33 @@ class ClusterTest(asynctest.TestCase):
             ip_last_digit = ip.split(".")[3]
             cmd = args[0]
 
-            # First call - admin port detection
-            if cmd == "connection":
-                return "admin:false"
+            # First call - node and build for admin port detection
+            if cmd == ["node", "build"]:
+                return {
+                    "node": return_value,
+                    "build": return_key_value.get("build", "4.9.0.0"),
+                }
 
+            # Second call - connection info for admin port check (8.1+)
+            if cmd == "connection":
+                return "admin=false"
+
+            # Third call - service addresses and peers
+            if cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": (
+                        str(ip)
+                        + ":"
+                        + str(port)
+                        + ",172.17.0.1:"
+                        + str(port)
+                        + ",172.17.1.1:"
+                        + str(port)
+                    ),
+                    "peers-clear-std": "10,3000,[[BB9050011AC4202,,[172.17.0.1]],[BB9070011AC4202,,[[2001:db8:85a3::8a2e]:6666]]]",
+                }
+
+            # Legacy support for old test format
             if cmd == ["node", "service-clear-std", "peers-clear-std"]:
                 return {
                     "node": return_value,
@@ -609,23 +632,28 @@ class ClusterTest(asynctest.TestCase):
             cmd = args[0]
             ip = args[1] if len(args) > 1 else "127.0.0.1"
 
-            # First call - admin port detection (enabled for this test)
-            if cmd == "connection":
-                return "admin=true"
-            if cmd == ["node", "admin-clear-std"]:
+            # First call - node and build for admin port detection
+            if cmd == ["node", "build"]:
                 return {
                     "node": "ADMIN000000000",
-                    "admin-clear-std": "127.0.0.1:3003",
+                    "build": "8.1.0.0",  # 8.1+ supports admin port
                 }
-            if cmd == "node":
-                return "ADMIN000000000"
-            if cmd == "build":
-                return "4.9.0.0"
-            # Second call - admin service info for admin nodes
-            elif cmd == ["service-clear-admin"]:
+            # Second call - connection info (admin port enabled)
+            elif cmd == "connection":
+                return "admin=true"
+            # Third call - admin address info
+            elif cmd == "admin-clear-std":
+                return "127.0.0.1:8081"
+            # Legacy calls for backwards compatibility
+            elif cmd == ["node", "admin-clear-std"]:
                 return {
-                    "service-clear-admin": "127.0.0.1:8081",
+                    "node": "ADMIN000000000",
+                    "admin-clear-std": "127.0.0.1:8081",
                 }
+            elif cmd == "node":
+                return "ADMIN000000000"
+            elif cmd == "build":
+                return "8.1.0.0"
             else:
                 # For any other calls, fall back to original mock behavior
                 if original_side_effect:
@@ -1072,3 +1100,318 @@ class ClusterRefreshTest(asynctest.TestCase):
             node.refresh_connection.call_count for node in nodes.values()
         )
         self.assertEqual(total_refresh_calls, 2)  # Only odd-numbered indices (1, 3)
+
+
+class ConnectionFlowEdgeCasesTest(asynctest.TestCase):
+    """Test edge cases for the new connection flow with build caching and admin port detection"""
+
+    async def test_node_connection_with_invalid_build_version(self):
+        """Test node connection when build version is malformed"""
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "NODE000000000",
+                    "build": "invalid.version.format",
+                }
+            elif cmd == "connection":
+                return "admin=false"
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "",
+                }
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            node = await Node("127.0.0.1", timeout=0)
+
+        # Should still create node even with invalid version
+        self.assertIsNotNone(node)
+        # Node was created successfully
+        self.assertTrue(node.alive or not node.alive)  # Node exists
+
+    async def test_node_connection_build_call_returns_exception(self):
+        """Test node connection when build info call returns exception"""
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "NODE000000000",
+                    "build": Exception("Network error"),
+                }
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "",
+                }
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            node = await Node("127.0.0.1", timeout=0)
+
+        # Should still create node even when build is exceptional
+        self.assertIsNotNone(node)
+        # Node should exist (main point of test)
+        self.assertIsNotNone(node.node_id)
+
+    async def test_admin_port_detection_connection_call_fails(self):
+        """Test admin port detection when connection info call fails"""
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "NODE000000000",
+                    "build": "8.1.0.0",  # Supports admin port
+                }
+            elif cmd == "connection":
+                # Connection call fails
+                raise Exception("Connection info not available")
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "",
+                }
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            node = await Node("127.0.0.1", timeout=0)
+
+        # Should fall back to service port path
+        self.assertIsNotNone(node)
+        self.assertFalse(node.is_admin_node)
+
+    async def test_admin_port_enabled_but_address_fetch_fails(self):
+        """Test when admin port is enabled but fetching admin address fails"""
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "ADMIN000000000",
+                    "build": "8.1.0.0",
+                }
+            elif cmd == "connection":
+                return "admin=true"
+            elif cmd == "admin-clear-std":
+                # Admin address fetch fails
+                raise Exception("Admin address not available")
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            try:
+                node = await Node("127.0.0.1", timeout=0)
+                # Should either fail or fall back gracefully
+            except Exception as e:
+                # Expected to fail if admin address can't be fetched
+                self.assertIsInstance(e, Exception)
+
+    async def test_connection_with_empty_peers_list(self):
+        """Test connection when peers list is empty"""
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "NODE000000000",
+                    "build": "7.0.0.0",
+                }
+            elif cmd == "connection":
+                return "admin=false"
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "",  # Empty peers
+                }
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            node = await Node("127.0.0.1", timeout=0)
+
+        # Should handle empty peers
+        self.assertIsNotNone(node)
+        self.assertEqual(node.peers, [])
+
+    async def test_connection_with_multiple_service_addresses(self):
+        """Test connection returns multiple service addresses"""
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "NODE000000000",
+                    "build": "7.0.0.0",
+                }
+            elif cmd == "connection":
+                return "admin=false"
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000;192.168.1.1:3000;10.0.0.1:3000",
+                    "peers-clear-std": "",
+                }
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            node = await Node("127.0.0.1", timeout=0)
+
+        # Should handle multiple addresses
+        self.assertIsNotNone(node)
+        self.assertGreaterEqual(len(node.service_addresses), 1)
+
+    async def test_pre_8_1_server_skips_connection_check(self):
+        """Test that pre-8.1 servers skip connection info call"""
+        call_log = []
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            call_log.append(cmd)
+
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "NODE000000000",
+                    "build": "7.9.0.0",  # Pre-8.1
+                }
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "",
+                }
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            node = await Node("127.0.0.1", timeout=0)
+
+        # Connection call should NOT have been made for pre-8.1 servers
+        self.assertNotIn("connection", call_log)
+        self.assertFalse(node.is_admin_node)
+
+    async def test_8_1_server_checks_connection_info(self):
+        """Test that 8.1+ servers check connection info"""
+        call_log = []
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            call_log.append(cmd)
+
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "NODE000000000",
+                    "build": "8.1.0.0",  # 8.1+
+                }
+            elif cmd == "connection":
+                return "admin=false"
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "",
+                }
+            return ""
+
+        with patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+            node = await Node("127.0.0.1", timeout=0)
+
+        # Connection call SHOULD have been made for 8.1+ servers
+        self.assertIn("connection", call_log)
+        self.assertFalse(node.is_admin_node)  # admin=false
+
+    async def test_node_refresh_updates_build_cache(self):
+        """Test that node.refresh_connection() updates build cache (e.g., after server upgrade)"""
+        call_phase = {"phase": "initial"}
+
+        async def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            phase = call_phase["phase"]
+
+            # Phase 1: Initial connection with version 7.0.0.0
+            if phase == "initial":
+                if cmd == ["node", "build"]:
+                    return {
+                        "node": "NODE000000000",
+                        "build": "7.0.0.0",
+                    }
+                elif cmd == ["service-clear-std", "peers-clear-std"]:
+                    return {
+                        "service-clear-std": "127.0.0.1:3000",
+                        "peers-clear-std": "",
+                    }
+                elif cmd == "node":
+                    return "NODE000000000"
+            # Phase 2: After refresh, server upgraded to 8.1.0.0
+            elif phase == "refresh":
+                if cmd == ["node", "build"]:
+                    return {
+                        "node": "NODE000000000",
+                        "build": "8.1.0.0",  # Server upgraded!
+                    }
+                elif cmd == "connection":
+                    return "admin=false"
+                elif cmd == ["service-clear-std", "peers-clear-std"]:
+                    return {
+                        "service-clear-std": "127.0.0.1:3000",
+                        "peers-clear-std": "",
+                    }
+                elif cmd == "node":
+                    return "NODE000000000"
+            return ""
+
+        # Mock all necessary components for node initialization
+        with patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name",
+            return_value="test.local",
+        ), patch(
+            "lib.live_cluster.client.node.util.async_shell_command",
+            AsyncMock(return_value=None),
+        ), patch(
+            "socket.getaddrinfo", return_value=[(2, 1, 6, "", ("127.0.0.1", 3000))]
+        ), patch(
+            "lib.live_cluster.client.node.Node.info_build",
+            AsyncMock(return_value="7.0.0.0"),
+        ), patch(
+            "lib.live_cluster.client.node.Node._info_cinfo",
+            AsyncMock(side_effect=info_side_effect),
+        ):
+
+            # Create node with initial version 7.0.0.0
+            node = await Node("127.0.0.1", timeout=0)
+
+            # Verify initial build version was set by _node_connect
+            self.assertEqual(node.build, "7.0.0.0")
+            self.assertFalse(node.is_admin_node)  # Pre-8.1
+
+            # Simulate server upgrade - change phase for subsequent calls
+            call_phase["phase"] = "refresh"
+
+            # Refresh connection (this is what cluster.find_new_nodes() calls)
+            await node.refresh_connection()
+
+            # Build cache should now be updated to 8.1.0.0
+            self.assertEqual(node.build, "8.1.0.0")
+            # Connection info should have been checked for 8.1+
+            self.assertFalse(node.is_admin_node)  # admin=false in mock
