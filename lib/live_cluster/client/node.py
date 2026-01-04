@@ -498,6 +498,14 @@ class Node(AsyncObject):
                 service_addresses,
                 self.peers,
             ) = await self._node_connect()
+            logger.debug(
+                "%s:%s connect discovered node_id=%s service_addresses=%s peers=%s",
+                self.ip,
+                self.port,
+                self.node_id,
+                service_addresses,
+                self.peers,
+            )
 
             if isinstance(self.node_id, Exception):
                 raise self.node_id
@@ -519,6 +527,15 @@ class Node(AsyncObject):
 
             for i, s in enumerate(self.service_addresses):
                 try:
+                    logger.debug(
+                        "%s:%s attempting service address idx=%s addr=%s "
+                        "original_host=%s",
+                        self.ip,
+                        self.port,
+                        i,
+                        s,
+                        current_host,
+                    )
                     # calling update ip again because info_service may have provided a
                     # different IP than what was seeded.
                     self.ip = s[0]
@@ -545,6 +562,13 @@ class Node(AsyncObject):
                         break
 
                 except Exception:
+                    logger.debug(
+                        "%s:%s service address %s failed during connect",
+                        self.ip,
+                        self.port,
+                        s,
+                        exc_info=True,
+                    )
                     # Sometime unavailable address might be present in service
                     # list, for ex. Down NIC address (server < 3.10).
                     # In such scenario, we want to try all addresses from
@@ -688,11 +712,24 @@ class Node(AsyncObject):
         stage rather than a two step login() -> token -> auth().
         """
         if self.auth_mode != constants.AuthMode.PKI and self.user is None:
+            logger.debug(
+                "%s:%s skipping login because auth_mode=%s and no user provided",
+                self.ip,
+                self.port,
+                self.auth_mode,
+            )
             return True
 
         if not self.perform_login and (
             self.session_expiration == 0 or self.session_expiration > time.time()
         ):
+            logger.debug(
+                "%s:%s skipping login because session is still valid exp=%s now=%s",
+                self.ip,
+                self.port,
+                self.session_expiration,
+                time.time(),
+            )
             return True
 
         sock = ASSocket(
@@ -915,12 +952,27 @@ class Node(AsyncObject):
         logger.debug("%s:%s created new sock %s", ip, port, id(sock))
 
         if await sock.connect():
+            logger.debug(
+                "%s:%s authenticating sock=%s auth_mode=%s has_token=%s "
+                "token_exp_in=%ss",
+                ip,
+                port,
+                id(sock),
+                self.auth_mode,
+                self.session_token is not None,
+                self.session_expiration - time.time(),
+            )
             try:
                 if await sock.authenticate(self.session_token):
                     logger.debug("sock auth successful %s", id(sock))
                     return sock
             except ASProtocolError as e:
-                logger.debug("sock auth failed %s", id(sock))
+                logger.debug(
+                    "sock auth failed %s response=%s auth_mode=%s",
+                    id(sock),
+                    getattr(e, "as_response", None),
+                    self.auth_mode,
+                )
                 if e.as_response == ASResponse.SECURITY_NOT_ENABLED:
                     # A user/pass was provided and security is disabled. This is OK
                     # and a warning should have been displayed at login
@@ -932,13 +984,36 @@ class Node(AsyncObject):
                 ):
                     # A node likely switched from security disabled to security enable.
                     # In which case the error is caused by login never being called.
-                    logger.debug("trying to sock login again %s", id(sock))
-                    self.perform_login = True
-                    await self.login()
-                    if await sock.authenticate(self.session_token):
-                        logger.debug("sock auth successful on second try %s", id(sock))
-
+                    logger.debug(
+                        "trying to sock login again %s ip=%s port=%s auth_mode=%s",
+                        id(sock),
+                        ip,
+                        port,
+                        self.auth_mode,
+                    )
+                    # Re-login on the same socket so the token matches this backend,
+                    # invalidate cached token before retry.
+                    self.session_token = None
+                    self.session_expiration = 0
+                    if await sock.login():
+                        (
+                            self.session_token,
+                            self.session_expiration,
+                        ) = sock.get_session_info()
+                        logger.debug(
+                            "sock login refreshed token %s exp=%s",
+                            id(sock),
+                            self.session_expiration,
+                        )
                         return sock
+                    else:
+                        logger.debug(
+                            "sock login retry failed %s ip=%s port=%s auth_mode=%s",
+                            id(sock),
+                            ip,
+                            port,
+                            self.auth_mode,
+                        )
 
                 logger.debug("closing sock %s as auth failed", id(sock))
                 await sock.close()
