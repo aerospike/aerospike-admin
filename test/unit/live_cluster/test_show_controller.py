@@ -1856,3 +1856,126 @@ class ShowMaskingControllerTest(asynctest.TestCase):
         self.view_mock.show_masking_rules.assert_called_once_with(
             [], **self.controller.mods
         )
+
+
+class InfoControllerTest(asynctest.TestCase):
+    """Test InfoController methods"""
+
+    async def setUp(self):
+        self.maxDiff = None
+
+        # Mock cluster and view
+        self.cluster_mock = MagicMock()
+        self.view_mock = MagicMock()
+
+        # Import and create controller instance
+        from lib.live_cluster.info_controller import InfoController
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            self.controller = InfoController()
+            self.controller.cluster = self.cluster_mock
+            self.controller.view = self.view_mock
+            self.controller.nodes = ["node1", "node2"]
+            self.controller.mods = {}
+
+    def tearDown(self):
+        patch.stopall()
+
+    async def test_do_release_success(self):
+        """Test do_release with supported server versions"""
+        # Mock build versions that support release info
+        build_data = {"node1": "8.1.1.0", "node2": "8.2.0.0"}
+        self.cluster_mock.info_build = AsyncMock(return_value=build_data)
+
+        # Mock release data
+        release_data = {
+            "node1": {
+                "arch": "x86_64",
+                "edition": "Aerospike Enterprise Edition",
+                "os": "linux",
+                "version": "8.1.1.0",
+                "sha": "abc123",
+                "ee-sha": "def456",
+            },
+            "node2": {
+                "arch": "x86_64",
+                "edition": "Aerospike Community Edition",
+                "os": "linux",
+                "version": "8.2.0.0",
+                "sha": "xyz789",
+                "ee-sha": "",
+            },
+        }
+        self.cluster_mock.info_release = AsyncMock(return_value=release_data)
+
+        # Mock view method
+        self.view_mock.info_release = MagicMock()
+
+        with patch("lib.utils.util.filter_exceptions", return_value=build_data):
+            with patch("lib.utils.util.callable") as callable_mock:
+                result = await self.controller.do_release("")
+
+                # Verify cluster methods were called
+                self.cluster_mock.info_build.assert_called_once_with(
+                    nodes=["node1", "node2"]
+                )
+                self.cluster_mock.info_release.assert_called_once_with(
+                    nodes=["node1", "node2"]
+                )
+
+                # Verify view method was called via util.callable
+                callable_mock.assert_called_once()
+
+    async def test_do_release_unsupported_versions(self):
+        """Test do_release with unsupported server versions"""
+        # Mock build versions that don't support release info
+        build_data = {"node1": "8.0.0.1", "node2": "7.5.0.0"}
+        self.cluster_mock.info_build = AsyncMock(return_value=build_data)
+
+        with patch("lib.utils.util.filter_exceptions", return_value=build_data):
+            with patch("lib.live_cluster.info_controller.logger") as logger_mock:
+                result = await self.controller.do_release("")
+
+                # Verify warning was logged
+                logger_mock.warning.assert_called_once_with(
+                    "'info release' is not supported on aerospike versions < %s",
+                    "8.1.1",
+                )
+
+                # Verify early return (no release info call)
+                self.cluster_mock.info_build.assert_called_once()
+                self.assertIsNone(result)
+
+    async def test_do_network_enhanced_version_success(self):
+        """Test do_network uses enhanced version info for 8.1.1+ servers"""
+        # Mock all required data
+        stats_data = {"node1": {"stat1": "value1"}}
+        cluster_names = {"node1": "test-cluster"}
+        builds_data = {"node1": "8.1.1.0"}
+        versions_data = {"node1": "Aerospike Enterprise Edition build 8.1.1.0"}
+
+        self.cluster_mock.info_statistics = AsyncMock(return_value=stats_data)
+        self.cluster_mock.info = AsyncMock(return_value=cluster_names)
+        self.cluster_mock.info_build = AsyncMock(return_value=builds_data)
+        self.cluster_mock.info_version = AsyncMock(return_value=versions_data)
+
+        with patch("lib.utils.util.callable") as callable_mock:
+            result = await self.controller.do_network("")
+
+            # Verify all required data was fetched
+            self.cluster_mock.info_statistics.assert_called_once_with(
+                nodes=["node1", "node2"]
+            )
+            self.cluster_mock.info.assert_called_once_with(
+                "cluster-name", nodes=["node1", "node2"]
+            )
+            self.cluster_mock.info_build.assert_called_once_with(
+                nodes=["node1", "node2"]
+            )
+            self.cluster_mock.info_version.assert_called_once_with(
+                nodes=["node1", "node2"]
+            )
+
+            # Verify view method was called
+            callable_mock.assert_called_once()

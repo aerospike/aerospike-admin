@@ -1007,6 +1007,21 @@ info_dc_sheet = Sheet(
     order_by=FieldSorter("Node"),
 )
 
+info_release_sheet = Sheet(
+    (
+        node_field,
+        hidden_node_id_field,
+        Field("Architecture", Projectors.String("release_data", "arch")),
+        Field("Edition", Projectors.String("release_data", "edition")),
+        Field("Version", Projectors.String("release_data", "version")),
+        Field("OS", Projectors.String("release_data", "os")),
+        Field("SHA", Projectors.String("release_data", "sha")),
+        Field("EE SHA", Projectors.String("release_data", "ee-sha")),
+    ),
+    from_source=("node_ids", "node_names", "release_data"),
+    order_by=FieldSorter("Node"),
+)
+
 info_xdr_sheet = Sheet(
     (
         Field("XDR Enabled", Projectors.Boolean("xdr_enable", None), hidden=True),

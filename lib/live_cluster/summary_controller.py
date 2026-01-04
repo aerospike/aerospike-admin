@@ -106,7 +106,7 @@ class SummaryController(LiveClusterCommandController):
             self.cluster.info("build", nodes=self.nodes)
         )
         server_edition = asyncio.create_task(
-            self.cluster.info("version", nodes=self.nodes)
+            self.cluster.info_version(nodes=self.nodes)
         )
         cluster_name = asyncio.create_task(
             self.cluster.info("cluster-name", nodes=self.nodes)

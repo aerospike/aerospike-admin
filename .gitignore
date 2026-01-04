@@ -158,3 +158,5 @@ tramp
 
 docker_logs
 test/e2e/work/*
+*.lua
+*_input.txt

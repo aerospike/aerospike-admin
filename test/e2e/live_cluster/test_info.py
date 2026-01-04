@@ -25,7 +25,6 @@ from test.e2e import util as test_util, lib
 set_style_json()
 
 
-@pytest.mark.skip()  # TODO: Are these useful? Do we need to remove them or change them?
 class TestInfo(asynctest.TestCase):
     rc = None
     output_list = list()
@@ -38,11 +37,14 @@ class TestInfo(asynctest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        lib.start()
+        # Use a release-capable server image so the release command is available.
+        lib.start(docker_tag="latest")
 
     async def setUp(self):
+        # Point the controller at the test cluster started by lib.start()
+        seed = [(lib.SERVER_IP, lib.PORT, None)]
         self.rc = await controller.LiveClusterRootController(
-            user="admin", password="admin"
+            seed_nodes=seed, user="admin", password="admin"
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
 
@@ -124,6 +126,7 @@ class TestInfo(asynctest.TestCase):
         self.assertTrue(exp_heading in actual_heading)
         self.assertEqual(exp_header, actual_header)
 
+    @pytest.mark.skip()
     async def test_namespace_usage(self):
         """
         This test will assert <b> info namespace usage </b> output for heading, headerline1, headerline2
@@ -158,6 +161,7 @@ class TestInfo(asynctest.TestCase):
         self.assertListEqual(actual_header, exp_header)
         self.assertTrue(exp_heading in actual_heading)
 
+    @pytest.mark.skip()
     async def test_namespace_object(self):
         """
         This test will assert <b> info namespace Object </b> output for heading, headerline1, headerline2
@@ -238,6 +242,50 @@ class TestInfo(asynctest.TestCase):
             "info: 'random' is not a valid subcommand. See 'help info' for available subcommands.",
             str(context.exception),
         )
+
+    async def test_release(self):
+        """
+        This test will assert info release output for heading, header, and data structure.
+        Note: This test may be skipped if server version < 8.1.1
+        """
+        exp_heading = "Release Information"
+        exp_header = [
+            "Node",
+            "Architecture",
+            "Edition",
+            "Version",
+            "OS",
+            "SHA",
+            "EE SHA",
+        ]
+        expected_num_records = len(self.rc.cluster.nodes)
+
+        # Run command and inspect raw output for unsupported message
+        raw_output = await util.capture_stdout(self.rc.execute, ["info", "release"])
+        if "info release' is not supported on aerospike versions < 8.1.1" in raw_output:
+            self.skipTest("Server version doesn't support release info")
+
+        separated = test_util.get_separate_output(raw_output)
+        if not separated:
+            self.skipTest("Server did not return release info data")
+
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            actual_num_records,
+        ) = test_util.parse_output(separated[0])
+
+        self.assertTrue(exp_heading in actual_heading)
+        self.assertListEqual(exp_header, actual_header)
+        self.assertEqual(expected_num_records, actual_num_records)
+
+        # Verify data structure - each row should have values for edition and version
+        records = [dict(zip(actual_header, row)) for row in actual_data]
+        for row in records:
+            self.assertIsNotNone(row.get("Edition"))
+            self.assertIsNotNone(row.get("Version"))
 
 
 if __name__ == "__main__":

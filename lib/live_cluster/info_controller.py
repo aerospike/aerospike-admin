@@ -83,7 +83,7 @@ class InfoController(LiveClusterCommandController):
             self.cluster.info_statistics(nodes=self.nodes),
             self.cluster.info("cluster-name", nodes=self.nodes),
             self.cluster.info_build(nodes=self.nodes),
-            self.cluster.info("version", nodes=self.nodes),
+            self.cluster.info_version(nodes=self.nodes),
         )
 
         return util.callable(
@@ -238,6 +238,40 @@ class InfoController(LiveClusterCommandController):
         )
         return util.callable(
             self.view.info_sindex, sindex_stats, ns_configs, self.cluster, **self.mods
+        )
+
+    @CommandHelp(
+        "Displays detailed release information for the cluster (8.1.1 or later)",
+        usage=f"[{ModifierUsageHelp.WITH}]",
+        modifiers=(with_modifier_help,),
+    )
+    async def do_release(self, line):
+        # Check if release info is supported on all nodes
+        versions = await self.cluster.info_build(nodes=self.nodes)
+        versions = util.filter_exceptions(versions)
+
+        fully_supported = all(
+            [
+                (
+                    True
+                    if version.LooseVersion(v)
+                    >= version.LooseVersion(constants.SERVER_RELEASE_INFO_FIRST_VERSION)
+                    else False
+                )
+                for v in versions.values()
+            ]
+        )
+
+        if not fully_supported:
+            logger.warning(
+                "'info release' is not supported on aerospike versions < %s",
+                constants.SERVER_RELEASE_INFO_FIRST_VERSION,
+            )
+            return
+
+        release_data = await self.cluster.info_release(nodes=self.nodes)
+        return util.callable(
+            self.view.info_release, release_data, self.cluster, **self.mods
         )
 
 
