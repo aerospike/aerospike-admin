@@ -5313,14 +5313,19 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         self.ip = "127.0.0.1"
 
         # Mock _info_cinfo to control responses
-        def mock_info_cinfo_side_effect(command, ip=None, port=None, disable_cache=False):
+        def mock_info_cinfo_side_effect(
+            command, ip=None, port=None, disable_cache=False
+        ):
             if isinstance(command, list):
                 # During node initialization, return a dict with valid responses
                 return {"node": "test_node_id", "build": "8.0.0.1"}
             else:
                 # During individual test calls, return the configured response
                 # Check if we have a specific response for this command
-                if hasattr(self.info_mock, 'command_responses') and command in self.info_mock.command_responses:
+                if (
+                    hasattr(self.info_mock, "command_responses")
+                    and command in self.info_mock.command_responses
+                ):
                     return self.info_mock.command_responses[command]
                 return self.info_mock.return_value
 
@@ -5546,8 +5551,12 @@ class NodeErrorHandlingTest(asynctest.TestCase):
     async def test_info_version_error_response(self):
         """Test info_version handles ERROR response correctly for older servers"""
         # Mock info_build to return a valid older version
-        self.info_mock.command_responses["build"] = "8.0.0.1"  # info_build response (< 8.1.1)
-        self.info_mock.command_responses["version"] = "ERROR::version not accessible"  # info("version") response
+        self.info_mock.command_responses["build"] = (
+            "8.0.0.1"  # info_build response (< 8.1.1)
+        )
+        self.info_mock.command_responses["version"] = (
+            "ERROR::version not accessible"  # info("version") response
+        )
 
         result = await self.node.info_version()
 
@@ -5615,8 +5624,12 @@ class NodeErrorHandlingTest(asynctest.TestCase):
     async def test_info_version_older_server_success(self):
         """Test info_version uses traditional method for older servers"""
         # Mock responses for older server
-        self.info_mock.command_responses["build"] = "8.0.0.1"  # info_build response (< 8.1.1)
-        self.info_mock.command_responses["version"] = "Aerospike Community Edition build 8.0.0.1"  # info("version") response
+        self.info_mock.command_responses["build"] = (
+            "8.0.0.1"  # info_build response (< 8.1.1)
+        )
+        self.info_mock.command_responses["version"] = (
+            "Aerospike Community Edition build 8.0.0.1"  # info("version") response
+        )
 
         result = await self.node.info_version()
 
