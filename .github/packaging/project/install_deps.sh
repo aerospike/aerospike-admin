@@ -4,7 +4,8 @@ set -xeuo pipefail
 export PYTHON_VERSION="3.10.18"
 export ASDF_VERSION="v0.18.0"
 export GOLANG_VERSION="1.24.6"
-CURL_RETRY_OPTS=(--retry 5 --retry-delay 5 --retry-all-errors --fail)
+# --retry-all-errors is not available on older curl; keep portable opts only.
+CURL_RETRY_OPTS=(--retry 5 --retry-delay 5 --fail)
 
 DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++"
 DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils"
