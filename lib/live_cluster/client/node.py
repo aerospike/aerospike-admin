@@ -3290,15 +3290,79 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_version(self):
         """
-        Get String describing the server version and edition.
+        Get server version and edition information. For servers >= 8.1.1, uses info_release
+        to get structured edition data. For older servers, uses the traditional
+        info("version") command.
 
         Returns:
-        string -- build edition and version
+        string -- Version string (e.g., "Aerospike Enterprise Edition build 8.1.1.0")
         """
-        resp = await self._info("version")
+
+        build = await self.info_build()
+        if isinstance(build, Exception):
+            return build
+
+        # Check if server supports release info (8.1.1+)
+        if version.LooseVersion(build) >= version.LooseVersion(
+            constants.SERVER_RELEASE_INFO_FIRST_VERSION
+        ):
+
+            # For 8.1.1+ servers, use info_release
+            release_info = await self.info_release()
+            if isinstance(release_info, Exception):
+                return release_info
+
+            # Reconstruct version string from release info
+            edition = release_info.get("edition", "")
+            version_num = release_info.get("version", "")
+            logger.debug(
+                f"Using release info command to extract edition='{edition}' and version='{version_num}'"
+            )
+
+            if edition and version_num:
+                return f"{edition} build {version_num}"
+            else:
+                # Return error if data is incomplete
+                logger.debug(f"Incomplete release data: {release_info}")
+                raise ASInfoError(
+                    "Incomplete release info data",
+                    f"Missing edition or version fields in release info: {release_info}",
+                )
+        else:
+            logger.debug(
+                f"Using version info command for server {build} (< {constants.SERVER_RELEASE_INFO_FIRST_VERSION})"
+            )
+
+            # Use traditional version command for older servers only
+            resp = await self._info("version")
+            if resp.startswith("ERROR") or resp.startswith("error"):
+                raise ASInfoResponseError("Failed to get version", resp)
+            return resp
+
+    @async_return_exceptions
+    async def info_release(self):
+        """
+        Get detailed release information (8.1.1 or later).
+        Parses the release response into key/value pairs.
+        """
+
+        build = await self.info_build()
+        if isinstance(build, Exception):
+            return build
+
+        if version.LooseVersion(build) < version.LooseVersion(
+            constants.SERVER_RELEASE_INFO_FIRST_VERSION
+        ):
+            raise ASInfoError(
+                f"'release' command requires server version {constants.SERVER_RELEASE_INFO_FIRST_VERSION}+",
+                f"current version: {build}",
+            )
+
+        resp = await self._info("release")
         if resp.startswith("ERROR") or resp.startswith("error"):
-            raise ASInfoResponseError("Failed to get version", resp)
-        return resp
+            raise ASInfoResponseError("Failed to get release info", resp)
+
+        return client_util.info_to_dict(resp)
 
     @async_return_exceptions
     async def info_feature_key(self):

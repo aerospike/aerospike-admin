@@ -2661,3 +2661,24 @@ class CliView(object):
         sources = dict(data=flattened_data)
 
         CliView.print_result(sheet.render(templates.user_agents_sheet, title, sources))
+
+    @staticmethod
+    def info_release(release_data, cluster, timestamp="", with_=None, **ignore):
+        """Display release information for each node in a table format."""
+        if not release_data:
+            return
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "Release Information" + title_suffix
+        sources = dict(
+            release_data=release_data,
+            node_names=node_names,
+            node_ids=node_ids,
+        )
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(templates.info_release_sheet, title, sources, common=common)
+        )

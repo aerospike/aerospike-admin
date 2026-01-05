@@ -603,6 +603,7 @@ class CollectinfoController(LiveClusterCommandController):
                 "xdr",
                 "dc",
                 "sindex",
+                "release",
             ]
 
             dignostic_features_params = ["features"]
