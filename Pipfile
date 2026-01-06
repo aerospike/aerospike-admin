@@ -31,12 +31,11 @@ pytest = "*"
 mock = "*"
 coverage = "*"
 macholib = {version = "*", sys_platform = "== 'darwin'"}
-asynctest = "*"
 aerospike = "*"
 docker = "*"
 
 [requires]
-python_version = "3.10"
+python_version = "3.12"
 
 [pipenv]
 allow_prereleases = true

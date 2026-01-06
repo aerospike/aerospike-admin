@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-export PYTHON_VERSION="3.10.18"
+export PYTHON_VERSION="3.12.11"
 export ASDF_VERSION="v0.18.0"
 export GOLANG_VERSION="1.24.6"
 
