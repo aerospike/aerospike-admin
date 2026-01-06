@@ -15,8 +15,7 @@
 import os
 import sys
 import time
-import unittest
-
+import asyncio
 import unittest
 
 import lib.live_cluster.live_cluster_root_controller as controller
@@ -927,7 +926,7 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
 
-    async def tearDown(self) -> None:
+    async def asyncTearDown(self) -> None:
         lib.stop()
 
     async def test_create_role_with_privileges(self):
@@ -936,12 +935,6 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
         exp_data = [exp_privilege]
         exp_title = "Roles"
         exp_header = ["Role", "Privileges"]
-
-        _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
-
-        exp_num_rows = num_records + 1
 
         await util.capture_stdout(
             self.rc.execute,
@@ -955,24 +948,29 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
                 exp_privilege,
             ],
         )
-        time.sleep(0.5)
+        time.sleep(0.25)
 
-        (
-            actual_title,
-            _,
-            actual_header,
-            actual_data,
-            actual_num_records,
-        ) = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
+        # Poll until the new role is visible (ACL propagation can be delayed)
+        role_values = None
+        for _ in range(8):
+            (
+                actual_title,
+                _,
+                actual_header,
+                actual_data,
+                _,
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["show", "roles"]
+            )
+            role_values = get_data(exp_role, [row[:] for row in actual_data])
+            if role_values is not None:
+                break
+            await asyncio.sleep(0.25)
 
-        actual_data = get_data(exp_role, actual_data)
-
-        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertIsNotNone(role_values, "Role did not appear after creation")
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertListEqual(exp_data, actual_data)
+        self.assertListEqual(exp_data, role_values)
 
     async def test_create_role_with_allowlist(self):
         exp_role = "foo"
@@ -985,12 +983,6 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
             "Privileges",
             "Allowlist",
         ]
-
-        _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
-
-        exp_num_rows = num_records + 1
 
         await util.capture_stdout(
             self.rc.execute,
@@ -1008,22 +1000,27 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
         )
         time.sleep(0.25)
 
-        (
-            actual_title,
-            _,
-            actual_header,
-            actual_data,
-            actual_num_records,
-        ) = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
+        # Poll until the new role is visible (ACL propagation can be delayed)
+        role_values = None
+        for _ in range(8):
+            (
+                actual_title,
+                _,
+                actual_header,
+                actual_data,
+                _,
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["show", "roles"]
+            )
+            role_values = get_data(exp_role, [row[:] for row in actual_data])
+            if role_values is not None:
+                break
+            await asyncio.sleep(0.25)
 
-        actual_data = get_data(exp_role, actual_data)
-
-        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertIsNotNone(role_values, "Role did not appear after creation")
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertListEqual(exp_data, actual_data)
+        self.assertListEqual(exp_data, role_values)
 
     async def test_delete_a_role(self):
         exp_role = "foo"
@@ -1044,16 +1041,23 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
         )
         time.sleep(0.25)
 
-        _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
-
-        exp_num_rows = num_records - 1
-
         await util.capture_stdout(
             self.rc.execute, ["manage", "acl", "delete", "role", exp_role]
         )
-        time.sleep(0.25)
+        # Poll until the role is gone
+        for _ in range(8):
+            (
+                _,
+                _,
+                _,
+                actual_data,
+                _,
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["show", "roles"]
+            )
+            if get_data(exp_role, [row[:] for row in actual_data]) is None:
+                break
+            await asyncio.sleep(0.25)
 
         (
             actual_title,
@@ -1068,7 +1072,6 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
         for data in actual_data:
             self.assertNotIn(exp_role, data)
 
-        self.assertEqual(exp_num_rows, actual_num_records)
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 

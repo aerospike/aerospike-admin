@@ -300,6 +300,7 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock = patch(
             "lib.live_cluster.client.cluster.Cluster", AsyncMock()
         ).start()
+        self.partition_info = {}
         self.cluster_mock.info = AsyncMock()
         self.cluster_mock.info.side_effect = self.mock_info_call
         self.controller = GetStatisticsController(self.cluster_mock)
@@ -499,6 +500,7 @@ class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
         cluster_mock = patch(
             "lib.live_cluster.client.cluster.Cluster", AsyncMock()
         ).start()
+        self.partition_info = {}
         cluster_mock.info_statistics.return_value = {
             "10.71.71.169:3000": {"cluster_key": "ck"}
         }
@@ -586,6 +588,7 @@ class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock = patch(
             "lib.live_cluster.client.cluster.Cluster", AsyncMock()
         ).start()
+        self.partition_info = {}
         self.controller = GetConfigController(self.cluster_mock)
         self.addCleanup(patch.stopall)
         warnings.filterwarnings("error", category=RuntimeWarning)

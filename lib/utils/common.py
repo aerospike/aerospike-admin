@@ -238,8 +238,7 @@ class FeatureCheck:
         return False
 
     def __str__(self):
-        for field_check in self._field_checks:
-            return True
+        return self.display_key
 
 
 # Please update the following page when feature checks are updated:
@@ -2899,7 +2898,7 @@ def archive_dir(logdir):
         return archive, False
 
     _zip_files(logdir)
-    util.shell_command(["tar -czvf " + archive + " " + logdir])
+    util.shell_command(["tar", "-czvf", archive, logdir])
     logger.info("Files in " + logdir + " are now archived in " + archive + ".")
     return archive, True
 
@@ -2932,7 +2931,9 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         cluster_online = False
         ts = time.gmtime()
         file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", ts)
-        aslogdir, as_logfile_prefix = get_collectinfo_path(ts)
+        cf_path_info = get_collectinfo_path(ts)
+        aslogdir = cf_path_info.cf_dir
+        as_logfile_prefix = os.path.join(cf_path_info.cf_dir, cf_path_info.files_prefix)
         outfile = as_logfile_prefix + "sysinfo.log"
 
     util.write_to_file(outfile, file_header)
