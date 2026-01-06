@@ -77,7 +77,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm"
-
+      gh-workflows-ref: v2.0.2
   sign-artifacts:
     needs:
        - get-version
