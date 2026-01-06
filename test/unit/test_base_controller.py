@@ -13,12 +13,8 @@
 # limitations under the License.
 
 import unittest
-import warnings
-from parameterized import parameterized
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+from parameterized import parameterized
 
 from lib.base_controller import (
     BaseController,
@@ -106,7 +102,7 @@ class FakeCommand2(CommandController):
         return "zoo", line
 
 
-class BaseControllerTest(asynctest.TestCase):
+class BaseControllerTest(unittest.IsolatedAsyncioTestCase):
     maxDiff = None
 
     def test_complete(self):

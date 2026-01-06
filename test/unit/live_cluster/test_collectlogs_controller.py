@@ -13,22 +13,18 @@
 # limitations under the License.
 
 import time
+import unittest
+import warnings
+from unittest.mock import AsyncMock, Mock, patch, create_autospec
+
 from pytest import PytestUnraisableExceptionWarning
-from mock import AsyncMock, Mock, patch, create_autospec
-from mock.mock import call
 from lib.live_cluster import ssh
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.collectlogs_controller import CollectlogsController
 
-import warnings
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
-
-
-class CollectLogsControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class CollectLogsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         patch(

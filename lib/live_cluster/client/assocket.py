@@ -17,7 +17,7 @@ import socket
 import warnings
 import asyncio
 
-from .types import ASProtocolExcFactory, ASResponse, ASProtocolError
+from .types import ASProtocolExcFactory, ASResponse
 from .info import (
     add_privileges,
     authenticate_new,

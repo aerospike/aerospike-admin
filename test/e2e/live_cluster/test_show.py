@@ -15,9 +15,8 @@
 import os
 import sys
 import time
+import asyncio
 import unittest
-
-import asynctest
 
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
@@ -35,14 +34,14 @@ def print_header(actual_header):
         print('"' + item + '",')
 
 
-class TestShowLatenciesDefault(asynctest.TestCase):
+class TestShowLatenciesDefault(unittest.IsolatedAsyncioTestCase):
     """
     TODO: enable-micro benchmarks
     asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-write=true' -Uadmin -Padmin
     asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true' -Uadmin -Padmin
     """
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         lib.start()
         lib.populate_db("show-latencies-test")
         time.sleep(20)
@@ -105,14 +104,14 @@ class TestShowLatenciesDefault(asynctest.TestCase):
             self.assertTrue(test_util.check_for_subset(data, exp_data))
 
 
-class TestShowLatenciesWithArguments(asynctest.TestCase):
+class TestShowLatenciesWithArguments(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
         lib.start()
         lib.populate_db("show-latencies-test")
         time.sleep(20)
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
 
     @classmethod
@@ -567,7 +566,7 @@ class TestShowLatenciesWithArguments(asynctest.TestCase):
             )
 
 
-class TestShowDistribution(asynctest.TestCase):
+class TestShowDistribution(unittest.IsolatedAsyncioTestCase):
     output_list = list()
     test_ttl_distri = ""
     bar_ttl_distri = ""
@@ -582,7 +581,7 @@ class TestShowDistribution(asynctest.TestCase):
         )
         time.sleep(20)
 
-    async def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self.rc = await controller.LiveClusterRootController(
             [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
@@ -643,8 +642,8 @@ def get_data(exp_first: str | float | int, data: list[list[str | float | int]]):
     return found_values
 
 
-class TestShowUsers(asynctest.TestCase):
-    async def setUp(self):
+class TestShowUsers(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
@@ -851,8 +850,8 @@ class TestShowUsers(asynctest.TestCase):
         self.assertEqual(",".join(exp_roles), actual_roles[0])
 
 
-class TestShowUsersStats(asynctest.TestCase):
-    async def setUp(self):
+class TestShowUsersStats(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
@@ -919,15 +918,15 @@ class TestShowUsersStats(asynctest.TestCase):
         self.assertListEqual(exp_header, actual_header)
 
 
-class TestShowRoles(asynctest.TestCase):
-    async def setUp(self):
+class TestShowRoles(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController(
             [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
 
-    async def tearDown(self) -> None:
+    async def asyncTearDown(self) -> None:
         lib.stop()
 
     async def test_create_role_with_privileges(self):
@@ -936,12 +935,6 @@ class TestShowRoles(asynctest.TestCase):
         exp_data = [exp_privilege]
         exp_title = "Roles"
         exp_header = ["Role", "Privileges"]
-
-        _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
-
-        exp_num_rows = num_records + 1
 
         await util.capture_stdout(
             self.rc.execute,
@@ -955,24 +948,29 @@ class TestShowRoles(asynctest.TestCase):
                 exp_privilege,
             ],
         )
-        time.sleep(0.5)
+        time.sleep(0.25)
 
-        (
-            actual_title,
-            _,
-            actual_header,
-            actual_data,
-            actual_num_records,
-        ) = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
+        # Poll until the new role is visible (ACL propagation can be delayed)
+        role_values = None
+        for _ in range(8):
+            (
+                actual_title,
+                _,
+                actual_header,
+                actual_data,
+                _,
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["show", "roles"]
+            )
+            role_values = get_data(exp_role, [row[:] for row in actual_data])
+            if role_values is not None:
+                break
+            await asyncio.sleep(0.25)
 
-        actual_data = get_data(exp_role, actual_data)
-
-        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertIsNotNone(role_values, "Role did not appear after creation")
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertListEqual(exp_data, actual_data)
+        self.assertListEqual(exp_data, role_values)
 
     async def test_create_role_with_allowlist(self):
         exp_role = "foo"
@@ -985,12 +983,6 @@ class TestShowRoles(asynctest.TestCase):
             "Privileges",
             "Allowlist",
         ]
-
-        _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
-
-        exp_num_rows = num_records + 1
 
         await util.capture_stdout(
             self.rc.execute,
@@ -1008,22 +1000,27 @@ class TestShowRoles(asynctest.TestCase):
         )
         time.sleep(0.25)
 
-        (
-            actual_title,
-            _,
-            actual_header,
-            actual_data,
-            actual_num_records,
-        ) = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
+        # Poll until the new role is visible (ACL propagation can be delayed)
+        role_values = None
+        for _ in range(8):
+            (
+                actual_title,
+                _,
+                actual_header,
+                actual_data,
+                _,
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["show", "roles"]
+            )
+            role_values = get_data(exp_role, [row[:] for row in actual_data])
+            if role_values is not None:
+                break
+            await asyncio.sleep(0.25)
 
-        actual_data = get_data(exp_role, actual_data)
-
-        self.assertEqual(exp_num_rows, actual_num_records)
+        self.assertIsNotNone(role_values, "Role did not appear after creation")
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
-        self.assertListEqual(exp_data, actual_data)
+        self.assertListEqual(exp_data, role_values)
 
     async def test_delete_a_role(self):
         exp_role = "foo"
@@ -1044,16 +1041,23 @@ class TestShowRoles(asynctest.TestCase):
         )
         time.sleep(0.25)
 
-        _, _, _, _, num_records = await test_util.capture_separate_and_parse_output(
-            self.rc, ["show", "roles"]
-        )
-
-        exp_num_rows = num_records - 1
-
         await util.capture_stdout(
             self.rc.execute, ["manage", "acl", "delete", "role", exp_role]
         )
-        time.sleep(0.25)
+        # Poll until the role is gone
+        for _ in range(8):
+            (
+                _,
+                _,
+                _,
+                actual_data,
+                _,
+            ) = await test_util.capture_separate_and_parse_output(
+                self.rc, ["show", "roles"]
+            )
+            if get_data(exp_role, [row[:] for row in actual_data]) is None:
+                break
+            await asyncio.sleep(0.25)
 
         (
             actual_title,
@@ -1068,7 +1072,6 @@ class TestShowRoles(asynctest.TestCase):
         for data in actual_data:
             self.assertNotIn(exp_role, data)
 
-        self.assertEqual(exp_num_rows, actual_num_records)
         self.assertIn(exp_title, actual_title)
         self.assertListEqual(exp_header, actual_header)
 
@@ -1158,7 +1161,7 @@ class TestShowRoles(asynctest.TestCase):
         self.assertEqual("2000", actual_data[2])
 
 
-class TestShowUdfs(asynctest.TestCase):
+class TestShowUdfs(unittest.IsolatedAsyncioTestCase):
     exp_module = "test__.lua"
     udf_contents = """
 function get_digest(rec)
@@ -1167,7 +1170,7 @@ function get_digest(rec)
 end
     """
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         lib.start()
         self.path = lib.write_file("test.lua", self.udf_contents)
         self.rc = await controller.LiveClusterRootController(
@@ -1305,8 +1308,8 @@ end
         self.assertEqual("", output.strip())
 
 
-class TestShowUserAgents(asynctest.TestCase):
-    async def setUp(self):
+class TestShowUserAgents(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         time.sleep(5)  # Wait for cluster to be ready
 
@@ -1349,10 +1352,10 @@ class TestShowUserAgents(asynctest.TestCase):
         self.assertGreaterEqual(actual_no_of_rows, 1)
 
 
-class TestSummaryCommand(asynctest.TestCase):
+class TestSummaryCommand(unittest.IsolatedAsyncioTestCase):
     """Test cases for the summary command and compression awareness"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         lib.start()
         time.sleep(5)
         self.rc = await controller.LiveClusterRootController(

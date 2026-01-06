@@ -15,14 +15,12 @@
 import asyncio
 import warnings
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+import unittest
 
 from lib.utils import util
 
 
-class UtilTest(asynctest.TestCase):
+class UtilTest(unittest.IsolatedAsyncioTestCase):
     def test_get_value_from_dict(self):
         value = {"a": 123, "b": "8.9", "c": "abc"}
 
@@ -32,7 +30,7 @@ class UtilTest(asynctest.TestCase):
             "get_value_from_dict did not return the expected result",
         )
         self.assertEqual(
-            util.get_value_from_dict(value, ("b",), return_type=float),
+            util.get_value_from_dict(value, ("b"), return_type=float),
             8.9,
             "get_value_from_dict did not return the expected result",
         )
@@ -78,15 +76,13 @@ class UtilTest(asynctest.TestCase):
         self.assertEqual(5, await asyncio.wait_for(cached_tester(3, 2, 0.2), 0.1))
 
         # not in the cache because it has a different sleep value
-        await self.assertAsyncRaises(
-            asyncio.TimeoutError, asyncio.wait_for(cached_tester(1, 2, 5), 0.1)
-        )
+        with self.assertRaises(asyncio.TimeoutError):
+            await asyncio.wait_for(cached_tester(1, 2, 5), 0.1)
 
         # Key is in the cache but it is dirty because of the sleep. So it is a miss.
         await asyncio.sleep(5)
-        await self.assertAsyncRaises(
-            asyncio.TimeoutError, asyncio.wait_for(cached_tester(1, 2, 0.2), 0.1)
-        )
+        with self.assertRaises(asyncio.TimeoutError):
+            await asyncio.wait_for(cached_tester(1, 2, 0.2), 0.1)
         self.assertEqual(tester_count, 5)
 
         tester_exc_count = 0
@@ -101,9 +97,8 @@ class UtilTest(asynctest.TestCase):
             return True
 
         cached_tester_exc = util.async_cached(tester_exc, ttl=5.0)
-        await self.assertAsyncRaises(
-            Exception, asyncio.wait_for(cached_tester_exc(), 0.1)
-        )
+        with self.assertRaises(Exception):
+            await cached_tester_exc()
         self.assertTrue(await cached_tester_exc())
 
     def test_deep_merge_dicts(self):

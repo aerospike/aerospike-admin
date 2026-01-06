@@ -15,7 +15,6 @@
 from collections.abc import Iterator
 import datetime
 import locale
-import logging
 from os import path
 import sys
 import time

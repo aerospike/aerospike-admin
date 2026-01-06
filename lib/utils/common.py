@@ -238,8 +238,7 @@ class FeatureCheck:
         return False
 
     def __str__(self):
-        for field_check in self._field_checks:
-            return True
+        return self.display_key
 
 
 # Please update the following page when feature checks are updated:
@@ -1505,8 +1504,8 @@ def _format_ns_stop_writes_metrics(
             threshold: int | float | None = cluster_clock_skew_stop_writes_sec
 
             """
-            For Available mode (AP) namespaces running versions 4.5.1 or above and where 
-            NSUP is enabled (i.e. nsup-period not zero), will be true if the cluster 
+            For Available mode (AP) namespaces running versions 4.5.1 or above and where
+            NSUP is enabled (i.e. nsup-period not zero), will be true if the cluster
             clock skew exceeds 40 seconds.
             """
             if usage is not None and threshold is not None and stop_writes is not None:
@@ -2830,7 +2829,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
 
     """
     Some distros and most containers do not have sudo installed by default. If running
-    as root don't use it. 
+    as root don't use it.
     """
     if uid == 0:
         for cmd_list in sys_shell_cmds:
@@ -2899,7 +2898,7 @@ def archive_dir(logdir):
         return archive, False
 
     _zip_files(logdir)
-    util.shell_command(["tar -czvf " + archive + " " + logdir])
+    util.shell_command(["tar", "-czvf", archive, logdir])
     logger.info("Files in " + logdir + " are now archived in " + archive + ".")
     return archive, True
 
@@ -2932,7 +2931,9 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         cluster_online = False
         ts = time.gmtime()
         file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", ts)
-        aslogdir, as_logfile_prefix = get_collectinfo_path(ts)
+        cf_path_info = get_collectinfo_path(ts)
+        aslogdir = cf_path_info.cf_dir
+        as_logfile_prefix = os.path.join(cf_path_info.cf_dir, cf_path_info.files_prefix)
         outfile = as_logfile_prefix + "sysinfo.log"
 
     util.write_to_file(outfile, file_header)

@@ -14,7 +14,6 @@
 
 from enum import IntEnum, unique
 import logging
-from typing import Literal, Union
 
 logger = logging.getLogger(__name__)
 

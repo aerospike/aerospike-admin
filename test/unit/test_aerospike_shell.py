@@ -1,15 +1,15 @@
 from asadm import AerospikeShell
 import asadm
 
-import asynctest
 import asyncio
+import unittest
 from mock import AsyncMock, Mock, patch
 from mock.mock import call
 from lib.utils import async_object
 from lib.utils.constants import AdminMode
 
 
-class AerospikeShellTest(asynctest.TestCase):
+class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
     async def test_live_cluster_init_successful(self):
         class ClusterMock:
             def get_live_nodes(*args, **kwargs):
@@ -347,7 +347,7 @@ class AerospikeShellTest(asynctest.TestCase):
         mock_write_history.assert_not_called()
 
 
-class AdminHomeDirTest(asynctest.TestCase):
+class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
     """Test ADMIN_HOME directory creation behavior"""
 
     def test_admin_home_creation_success_in_interactive_mode(self):

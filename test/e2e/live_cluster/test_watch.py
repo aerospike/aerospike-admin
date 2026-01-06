@@ -14,7 +14,7 @@
 
 import unittest
 
-import asynctest
+import unittest
 
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
@@ -24,8 +24,8 @@ from lib.view.sheet import set_style_json
 set_style_json()
 
 
-class TestWatch(asynctest.TestCase):
-    async def setUp(self):
+class TestWatch(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController(
             [(lib.SERVER_IP, lib.PORT, None)],

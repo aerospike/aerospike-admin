@@ -19,12 +19,12 @@ import os
 import time
 import unittest
 
-import asynctest
+import unittest
 from parameterized import parameterized
 from test.e2e import lib, util as test_util
 
 
-class TestManage(asynctest.TestCase):
+class TestManage(unittest.IsolatedAsyncioTestCase):
     def assertStdErrEqual(self, expected, actual):
         split = actual.split("\n")
         actual = []
@@ -46,7 +46,7 @@ class TestManageACLUsers(TestManage):
     def get_args(self, cmd):
         return self._args.format(cmd)
 
-    async def setUp(self):
+    def setUp(self):
         lib.start()
         self._args = (
             f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"

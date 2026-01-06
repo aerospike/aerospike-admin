@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import sys
-from typing import Union
 
 _add_it = None
 _remove_it = None

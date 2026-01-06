@@ -1,8 +1,8 @@
 import asyncio
 import unittest
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
 import asyncssh
-import asynctest
-from mock import AsyncMock, MagicMock, call, patch
 
 from lib.live_cluster.ssh import (
     FileTransfer,
@@ -16,9 +16,8 @@ from lib.live_cluster.ssh import (
 )
 
 
-@asynctest.fail_on(active_handles=True)
-class SSHConnectionTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class SSHConnectionTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self._conn = MagicMock(
             spec=asyncssh.SSHClientConnection,
         )
@@ -92,7 +91,7 @@ class SSHConnectionTest(asynctest.TestCase):
         self.conn.close.assert_called_once_with()
 
 
-class SSHConnectionConfigTest(asynctest.TestCase):
+class SSHConnectionConfigTest(unittest.IsolatedAsyncioTestCase):
     def test_init(self):
         self.config = SSHConnectionConfig(8080, "user", "pass", "key", "key_pwd")
         self.assertEqual(self.config.port, 8080)
@@ -106,8 +105,8 @@ class MockSSHConnection:
     pass
 
 
-class TestSSHConnectionFactory(asynctest.TestCase):
-    async def setUp(self):
+class TestSSHConnectionFactory(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         self.mock_connect = patch("asyncssh.connect", AsyncMock()).start()
         self.mock_connect.return_value = MockSSHConnection()
 
@@ -205,8 +204,8 @@ class TestSSHConnectionFactory(asynctest.TestCase):
         self.assertEqual(factory.opts.passphrase, "key_pwd")
 
 
-class TestFileTransfer(asynctest.TestCase):
-    def setUp(self) -> None:
+class TestFileTransfer(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.src_conn = AsyncMock(SSHConnection)
         self.src_conn._conn = AsyncMock(asyncssh.SSHClientConnection)
         self.src_conn._conn.start_sftp_client = MagicMock()

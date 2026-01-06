@@ -514,10 +514,10 @@ class ServerLog:
         return m1.group(1)
 
     def diff(self):
-        latency_pattern1 = "%s (\d+)"
-        latency_pattern2 = "%s \(([0-9,\s]+)\)"
-        latency_pattern3 = "(\d+)\((\d+)\) %s"
-        latency_pattern4 = "%s \((\d+)"
+        latency_pattern1 = r"%s (\d+)"
+        latency_pattern2 = r"%s \(([0-9,\s]+)\)"
+        latency_pattern3 = r"(\d+)\((\d+)\) %s"
+        latency_pattern4 = r"%s \((\d+)"
 
         different_writer_info = False
 
