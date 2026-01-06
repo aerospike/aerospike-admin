@@ -1,8 +1,8 @@
 import asyncio
 import unittest
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
 import asyncssh
-import unittest
-from mock import AsyncMock, MagicMock, call, patch
 
 from lib.live_cluster.ssh import (
     FileTransfer,

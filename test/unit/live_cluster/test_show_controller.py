@@ -18,7 +18,6 @@ import unittest
 import warnings
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
-import unittest
 from pytest import PytestUnraisableExceptionWarning
 
 from lib.base_controller import ShellException
@@ -52,8 +51,6 @@ from lib.live_cluster.show_controller import (
 )
 from lib.view.view import CliView
 from test.unit import util as test_util
-
-import unittest
 
 
 class ShowConfigControllerTest(unittest.IsolatedAsyncioTestCase):

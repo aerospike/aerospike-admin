@@ -12,16 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import unittest
 import warnings
-import unittest
-
-import unittest
+from socket import error as SocketError
+from unittest.mock import AsyncMock, Mock
 
 from pytest import PytestUnraisableExceptionWarning
-from mock.mock import AsyncMock
-from mock import Mock
-from socket import error as SocketError
-
 
 from lib.utils.constants import AuthMode
 from lib.live_cluster.client.info import (

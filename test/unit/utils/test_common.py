@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from datetime import datetime
 import unittest
+from unittest.mock import patch
+
 from parameterized import parameterized
-import unittest
-from mock import patch
 
 from lib.utils import common, util
 

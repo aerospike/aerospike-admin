@@ -13,17 +13,13 @@
 # limitations under the License.
 
 import socket
-from mock.mock import AsyncMock
-from mock import patch
-
-from test.unit import util
-from lib.live_cluster.client.assocket import ASSocket
-from lib.live_cluster.client import ASProtocolError, ASResponse
-from lib.utils.constants import AuthMode
-
-import warnings
-
 import unittest
+from unittest.mock import AsyncMock, patch
+
+from lib.live_cluster.client import ASProtocolError, ASResponse
+from lib.live_cluster.client.assocket import ASSocket
+from lib.utils.constants import AuthMode
+from test.unit import util
 
 
 class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
@@ -46,7 +42,7 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         self.info_mock = patch("lib.live_cluster.client.assocket.info").start()
 
         # warnings.filterwarnings("error", category=RuntimeWarning)
-        # warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+    
 
         self.addCleanup(patch.stopall)
 

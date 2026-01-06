@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import unittest
-import warnings
-from parameterized import parameterized
 
-import unittest
+from parameterized import parameterized
 
 from lib.base_controller import (
     BaseController,

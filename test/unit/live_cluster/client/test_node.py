@@ -12,43 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import socket
+import time
+import unittest
+import warnings
 from asyncio import StreamReader
 from asyncio.subprocess import Process
-from ctypes import ArgumentError
-import time
-from typing import Any
-from unittest.mock import call
-import warnings
-from pytest import PytestUnraisableExceptionWarning
-from mock import MagicMock, patch
-import socket
-import unittest
 from collections import deque
-
-from mock.mock import AsyncMock, Mock, call
-import pytest
+from ctypes import ArgumentError
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
 import lib
-from lib.live_cluster.client.ctx import CDTContext, CTXItem, CTXItems
-from lib.live_cluster.client.types import (
-    ASProtocolError,
-    ASProtocolExcFactory,
-    ASResponse,
-)
-
-from lib.live_cluster.client.constants import ErrorsMsgs
-from test.unit import util
-from lib.utils import constants
-from lib.live_cluster.client.assocket import ASSocket
-from lib.live_cluster.client.node import _SysCmd, Node
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoConfigError,
     ASInfoError,
     ASInfoResponseError,
 )
-
-import unittest
+from lib.live_cluster.client.assocket import ASSocket
+from lib.live_cluster.client.constants import ErrorsMsgs
+from lib.live_cluster.client.ctx import CDTContext, CTXItems
+from lib.live_cluster.client.node import _SysCmd, Node
+from lib.live_cluster.client.types import (
+    ASProtocolError,
+    ASProtocolExcFactory,
+    ASResponse,
+)
+from lib.utils import constants
+from test.unit import util
 
 
 class NodeInitTest(unittest.IsolatedAsyncioTestCase):
@@ -76,7 +68,6 @@ class NodeInitTest(unittest.IsolatedAsyncioTestCase):
         socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
 
         warnings.filterwarnings("error", category=RuntimeWarning)
-        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         # Here so call count does not include Node initialization
 
@@ -277,7 +268,6 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             self.node: Node = await Node(self.ip, timeout=0)
 
         warnings.filterwarnings("error", category=RuntimeWarning)
-        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         # Here so call count does not include Node initialization
         self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(

@@ -13,7 +13,12 @@
 # limitations under the License.
 
 import unittest
+from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
+
+import warnings
+from parameterized import parameterized
 from pytest import PytestUnraisableExceptionWarning
+
 from lib.base_controller import (
     BaseController,
     CommandController,
@@ -21,9 +26,6 @@ from lib.base_controller import (
     ModifierHelp,
     ShellException,
 )
-from mock import MagicMock, create_autospec, patch
-from mock.mock import AsyncMock, call
-from parameterized import parameterized
 
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
@@ -67,10 +69,6 @@ from lib.live_cluster.manage_controller import (
 )
 from lib.utils import constants
 from test.unit import util as test_util
-
-import warnings
-
-import unittest
 
 
 @CommandHelp(

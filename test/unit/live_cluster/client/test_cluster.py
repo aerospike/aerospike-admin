@@ -13,19 +13,18 @@
 # limitations under the License.
 
 
-from pytest import PytestUnraisableExceptionWarning
-from mock import patch, AsyncMock
 import socket
+import unittest
+import warnings
 from collections import deque
+from unittest.mock import AsyncMock, patch
+
+from pytest import PytestUnraisableExceptionWarning
 
 import lib
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
 from lib.utils import constants
-
-import warnings
-
-import unittest
 
 
 class ClusterTest(unittest.IsolatedAsyncioTestCase):

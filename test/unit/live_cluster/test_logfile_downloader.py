@@ -1,10 +1,8 @@
 import asyncio
-from asyncio.subprocess import Process
 import datetime
 import unittest
-
-import unittest
-from mock import AsyncMock, MagicMock, call, patch
+from asyncio.subprocess import Process
+from unittest.mock import AsyncMock, MagicMock, call, patch
 from lib.live_cluster.client.node import Node
 
 from lib.live_cluster.logfile_downloader import (
