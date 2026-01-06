@@ -5334,7 +5334,7 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             self.node: Node = await Node(self.ip, timeout=0)
-        
+
         # After node creation, clear side_effect so tests can use return_value
         self.info_mock.side_effect = None
 

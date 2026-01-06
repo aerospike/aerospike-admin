@@ -42,7 +42,6 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         self.info_mock = patch("lib.live_cluster.client.assocket.info").start()
 
         # warnings.filterwarnings("error", category=RuntimeWarning)
-    
 
         self.addCleanup(patch.stopall)
 
