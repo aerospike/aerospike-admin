@@ -78,6 +78,9 @@ jobs:
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm"
       gh-workflows-ref: v2.0.2
+    secrets:
+      ghcr-pat: ${{ secrets.GHCR_PAT }}
+            
   sign-artifacts:
     needs:
        - get-version
