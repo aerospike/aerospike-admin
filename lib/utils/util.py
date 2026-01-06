@@ -15,7 +15,6 @@
 import asyncio
 from asyncio.subprocess import Process
 import base64
-import contextlib
 import copy
 import functools
 import inspect
@@ -36,7 +35,6 @@ from typing import (
     Generic,
     Iterable,
     Literal,
-    Optional,
     Tuple,
     Type,
     TypeVar,

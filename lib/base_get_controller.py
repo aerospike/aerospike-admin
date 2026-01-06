@@ -1,5 +1,3 @@
-from typing import Any
-
 from lib.utils import constants
 
 

@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 from operator import itemgetter
-from typing import Any, Callable, Iterable, Literal, TypeVar
+from typing import Any, Callable, Iterable, TypeVar
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )

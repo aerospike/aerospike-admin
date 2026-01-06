@@ -48,7 +48,6 @@ from .types import (
     ASInfoResponseError,
     ASINFO_RESPONSE_OK,
     ASInfoNotAuthenticatedError,
-    ASInfoClusterStableError,
     ASProtocolConnectionError,
     ASProtocolError,
     ASResponse,
