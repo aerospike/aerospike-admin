@@ -2477,8 +2477,7 @@ class ManageTruncateController(ManageLeafCommandController):
 
     def _parse_lut(self) -> tuple[Optional[datetime], Optional[str]]:
         lut_datetime = None  # datetime object
-        lut_epoch_time = None  #
-        error = None
+        lut_epoch_time = None  # epoch time string
         before = self.mods["before"]
 
         if len(before):
@@ -2496,7 +2495,9 @@ class ManageTruncateController(ManageLeafCommandController):
 
                 try:
                     # Create a timezone-aware datetime object in UTC.
-                    lut_datetime = datetime.fromtimestamp(float(lut_time), tz=timezone.utc)
+                    lut_datetime = datetime.fromtimestamp(
+                        float(lut_time), tz=timezone.utc
+                    )
                 except ValueError as e:
                     raise ShellException(e)
 

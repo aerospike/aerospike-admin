@@ -55,7 +55,7 @@ def callable(func, *args, **kwargs):
 def shell_command(command) -> tuple[str, str]:
     """
     command is a list of ['cmd','arg1','arg2',...] or a single shell command string
-    
+
     If command has one element, it's treated as a shell command string (may contain pipes, redirects, etc.)
     If command has multiple elements, each element is quoted and joined with spaces
     """
@@ -65,7 +65,7 @@ def shell_command(command) -> tuple[str, str]:
     else:
         # Multiple arguments - quote each and join
         cmd_str = " ".join(shlex.quote(part) for part in command)
-    
+
     command = ["bash", "-c", cmd_str]
     try:
         p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

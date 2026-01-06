@@ -1504,8 +1504,8 @@ def _format_ns_stop_writes_metrics(
             threshold: int | float | None = cluster_clock_skew_stop_writes_sec
 
             """
-            For Available mode (AP) namespaces running versions 4.5.1 or above and where 
-            NSUP is enabled (i.e. nsup-period not zero), will be true if the cluster 
+            For Available mode (AP) namespaces running versions 4.5.1 or above and where
+            NSUP is enabled (i.e. nsup-period not zero), will be true if the cluster
             clock skew exceeds 40 seconds.
             """
             if usage is not None and threshold is not None and stop_writes is not None:
@@ -2829,7 +2829,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
 
     """
     Some distros and most containers do not have sudo installed by default. If running
-    as root don't use it. 
+    as root don't use it.
     """
     if uid == 0:
         for cmd_list in sys_shell_cmds:
