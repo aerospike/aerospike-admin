@@ -12,14 +12,8 @@ on:
   push:
     branches:
       # yamllint disable-line rule:quoted-strings
-      - "release/*"
-      # yamllint disable-line rule:quoted-strings
-      - "main"
-      # yamllint disable-line rule:quoted-strings
       - "master"
-      # yamllint disable-line rule:quoted-strings
-      - "develop"
-      - 'pvinh/SERVER-513'
+      - "pvinh/SERVER-513"
 
 jobs:
   get-version:
@@ -67,25 +61,22 @@ jobs:
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
       build-script: |
-        ARCH=${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }} \
+        ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
         USE_REMOTE_BUILDER_IMAGES=false \
-        BUILDER_IMAGE_PREFIX=ghcr.io/aerospike/asadm-pkg-builder \
+        BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/asadm-pkg-builder" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
-      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }}
+      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
       gh-retention-days: 1
       dry-run: false
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm"
-      
-    secrets:
-      ghcr-pat: ${{ secrets.GHCR_PAT }}
-            
+
   sign-artifacts:
     needs:
-       - get-version
-       - build-artifacts
+      - get-version
+      - build-artifacts
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
     with:
       gh-artifact-name: signed-artifacts
@@ -97,8 +88,8 @@ jobs:
 
   upload-artifacts-to-jfrog:
     needs:
-       - get-version
-       - sign-artifacts
+      - get-version
+      - sign-artifacts
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@pvinh/SERVER-475 # v2.0.2
     with:
       jf-project: database
@@ -112,12 +103,12 @@ jobs:
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
       gh-workflows-ref: "v2.0.2"
-      
+
   create-release-bundle:
     permissions:
       contents: read
       id-token: write
-      attestations: write    
+      attestations: write
     needs:
       - upload-artifacts-to-jfrog
       - get-version
@@ -131,7 +122,7 @@ jobs:
       version: ${{ needs.get-version.outputs.VERSION }}
       gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
       dry-run: false
-          
+
   test-install-from-jfrog-and-execute:
     strategy:
       matrix:
@@ -149,15 +140,15 @@ jobs:
           - ubuntu-24.04
           - ubuntu-24.04-arm
     needs:
-       - get-version 
-       - create-release-bundle
+      - get-version
+      - create-release-bundle
     env:
       JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
       PACKAGE_NAME: asadm
-      ARCH: ${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }}
+      ARCH: ${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
       USE_REMOTE_BUILDER_IMAGES: false
-      BUILDER_IMAGE_PREFIX: "ghcr.io/aerospike/asadm-pkg-tester"
+      BUILDER_IMAGE_PREFIX: "artifact.aerospike.io/database-container-dev-local/aerospike-tools/asadm-pkg-tester"
     runs-on: ${{ matrix.host }}
     permissions:
       contents: read
