@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from datetime import datetime
-import asynctest
+import unittest
 from parameterized import parameterized
 import unittest
 from mock import patch
@@ -21,7 +21,7 @@ from mock import patch
 from lib.utils import common, util
 
 
-class ComputeLicenseDataSizeTest(asynctest.TestCase):
+class ComputeLicenseDataSizeTest(unittest.IsolatedAsyncioTestCase):
     maxDiff = None
 
     def run_test_case(
@@ -350,7 +350,7 @@ class ComputeLicenseDataSizeTest(asynctest.TestCase):
         )
 
 
-class CreateStopWritesSummaryTests(asynctest.TestCase):
+class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
     maxDiff = None
 
     @staticmethod

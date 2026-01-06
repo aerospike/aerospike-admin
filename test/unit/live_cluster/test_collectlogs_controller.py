@@ -24,11 +24,11 @@ import warnings
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 
-class CollectLogsControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class CollectLogsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         patch(

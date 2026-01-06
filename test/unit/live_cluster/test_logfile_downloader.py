@@ -3,7 +3,7 @@ from asyncio.subprocess import Process
 import datetime
 import unittest
 
-import asynctest
+import unittest
 from mock import AsyncMock, MagicMock, call, patch
 from lib.live_cluster.client.node import Node
 
@@ -59,9 +59,8 @@ class MockCluster:
         return self.nodes
 
 
-@asynctest.fail_on(active_handles=True)
-class LocalLogFileDownloaderNoExcHandlerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.node_mock = MockNode(
             "1.1.1.1", 3000, ["stderr", "log2.log"], localhost=True
         )
@@ -231,8 +230,7 @@ class LocalLogFileDownloaderNoExcHandlerTest(asynctest.TestCase):
             )
 
 
-@asynctest.fail_on(active_handles=True)
-class RemoteLogFileDownloadersTest(asynctest.TestCase):
+class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
     def path_gen_func_side_effect(self, node, log) -> str:
         if log == "stderr":
             log = log + ".log"
@@ -254,7 +252,7 @@ class RemoteLogFileDownloadersTest(asynctest.TestCase):
 
         return conn_run_side_effect
 
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self.datatime_mock = patch(
             "lib.live_cluster.logfile_downloader.datetime"
         ).start()

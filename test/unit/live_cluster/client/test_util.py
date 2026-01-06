@@ -17,12 +17,12 @@ import warnings
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 from lib.live_cluster.client import client_util
 
 
-class UtilTest(asynctest.TestCase):
+class UtilTest(unittest.IsolatedAsyncioTestCase):
     def test_info_to_dict(self):
         value = "a=1;b=@;c=c;d=1@"
         expected = {"a": "1", "b": "@", "c": "c", "d": "1@"}

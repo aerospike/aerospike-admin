@@ -18,7 +18,7 @@ import unittest
 import warnings
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
-import asynctest
+import unittest
 from pytest import PytestUnraisableExceptionWarning
 
 from lib.base_controller import ShellException
@@ -55,11 +55,11 @@ from test.unit import util as test_util
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 
-class ShowConfigControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowConfigControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowConfigController()
@@ -159,9 +159,8 @@ class ShowConfigControllerTest(asynctest.TestCase):
         )
 
 
-@asynctest.fail_on(active_handles=True)
-class ShowConfigXDRControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowConfigXDRControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowConfigXDRController()
@@ -290,8 +289,8 @@ class ShowConfigXDRControllerTest(asynctest.TestCase):
         )
 
 
-class ShowStatisticsControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowStatisticsController()
@@ -517,8 +516,8 @@ class ShowStatisticsControllerTest(asynctest.TestCase):
         )
 
 
-class ShowStatisticsXDRControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowStatisticsXDRControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowStatisticsXDRController()
@@ -599,8 +598,8 @@ class ShowStatisticsXDRControllerTest(asynctest.TestCase):
         )
 
 
-class ShowUsersControllerTest(asynctest.TestCase):
-    async def setUp(self) -> None:
+class ShowUsersControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowUsersController()
@@ -708,8 +707,8 @@ class ShowUsersControllerTest(asynctest.TestCase):
         self.view_mock.show_users.assert_not_called()
 
 
-class ShowUsersStatsControllerTest(asynctest.TestCase):
-    async def setUp(self) -> None:
+class ShowUsersStatsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowUsersStatsController()
@@ -852,8 +851,8 @@ class ShowUsersStatsControllerTest(asynctest.TestCase):
         )
 
 
-class ShowRolesControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowRolesControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRolesController()
@@ -961,8 +960,8 @@ class ShowRolesControllerTest(asynctest.TestCase):
         self.view_mock.assert_not_called()
 
 
-class ShowBestPracticesControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowBestPracticesControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowBestPracticesController()
@@ -1010,8 +1009,8 @@ class ShowBestPracticesControllerTest(asynctest.TestCase):
         )
 
 
-class ShowJobsControllerTest(asynctest.TestCase):
-    def setUp(self):
+class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowJobsController()
@@ -1155,8 +1154,8 @@ class ShowJobsControllerTest(asynctest.TestCase):
         )
 
 
-class ShowRosterControllerTest(asynctest.TestCase):
-    async def setUp(self) -> None:
+class ShowRosterControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRosterController()
@@ -1169,7 +1168,6 @@ class ShowRosterControllerTest(asynctest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    @asynctest.fail_on(active_handles=True)
     async def test_no_mods(self):
         resp = {
             "1.1.1.1": {
@@ -1196,7 +1194,6 @@ class ShowRosterControllerTest(asynctest.TestCase):
             resp, self.cluster_mock, flip=False, **self.controller.mods
         )
 
-    @asynctest.fail_on(active_handles=True)
     async def test_with_flip(self):
         resp = {
             "1.1.1.1": {
@@ -1225,8 +1222,8 @@ class ShowRosterControllerTest(asynctest.TestCase):
         )
 
 
-class ShowRacksControllerTest(asynctest.TestCase):
-    async def setUp(self) -> None:
+class ShowRacksControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowRacksController()
@@ -1238,7 +1235,6 @@ class ShowRacksControllerTest(asynctest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    @asynctest.fail_on(active_handles=True)
     async def test_default(self):
         resp = {"1.1.1.1": "FOO"}
         self.getter_mock.get_racks.return_value = resp
@@ -1249,8 +1245,8 @@ class ShowRacksControllerTest(asynctest.TestCase):
         self.view_mock.show_racks.assert_called_with(resp, **self.controller.mods)
 
 
-class ShowStopWritesControllerTest(asynctest.TestCase):
-    async def setUp(self) -> None:
+class ShowStopWritesControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowStopWritesController()
@@ -1271,7 +1267,6 @@ class ShowStopWritesControllerTest(asynctest.TestCase):
 
         self.addCleanup(patch.stopall)
 
-    @asynctest.fail_on(active_handles=True)
     async def test_default(self):
         self.config_getter_mock.get_namespace.return_value = conf_ns_resp = {
             "1.1.1.1": "a"
@@ -1297,7 +1292,6 @@ class ShowStopWritesControllerTest(asynctest.TestCase):
             summary_resp, self.cluster_mock, **self.controller.mods
         )
 
-    @asynctest.fail_on(active_handles=True)
     async def test_for_mod(self):
         self.config_getter_mock.get_namespace.return_value = conf_ns_resp = {
             "1.1.1.1": "a"
@@ -1324,8 +1318,8 @@ class ShowStopWritesControllerTest(asynctest.TestCase):
         )
 
 
-class ShowUserAgentsControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowUserAgentsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowUserAgentsController()
@@ -1402,8 +1396,8 @@ class ShowUserAgentsControllerTest(asynctest.TestCase):
         self.getter_mock.get_user_agents.assert_called_with(nodes="all")
 
 
-class ShowUdfsControllerTest(unittest.TestCase):
-    def setUp(self):
+class ShowUdfsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = MagicMock(spec=Cluster)
         self.view_mock = MagicMock(spec=CliView)
@@ -1713,8 +1707,8 @@ class ShowUdfsControllerTest(unittest.TestCase):
         asyncio.run(async_test())
 
 
-class ShowMaskingControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.controller = ShowMaskingController()
@@ -1858,10 +1852,10 @@ class ShowMaskingControllerTest(asynctest.TestCase):
         )
 
 
-class InfoControllerTest(asynctest.TestCase):
+class InfoControllerTest(unittest.IsolatedAsyncioTestCase):
     """Test InfoController methods"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.maxDiff = None
 
         # Mock cluster and view

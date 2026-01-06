@@ -14,7 +14,7 @@
 
 import unittest
 
-import asynctest
+import unittest
 import pytest
 
 from lib.view.sheet import set_style_json
@@ -25,7 +25,7 @@ from test.e2e import util as test_util, lib
 set_style_json()
 
 
-class TestInfo(asynctest.TestCase):
+class TestInfo(unittest.IsolatedAsyncioTestCase):
     rc = None
     output_list = list()
     service_info = ""
@@ -40,7 +40,7 @@ class TestInfo(asynctest.TestCase):
         # Use a release-capable server image so the release command is available.
         lib.start(docker_tag="latest")
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         # Point the controller at the test cluster started by lib.start()
         seed = [(lib.SERVER_IP, lib.PORT, None)]
         self.rc = await controller.LiveClusterRootController(

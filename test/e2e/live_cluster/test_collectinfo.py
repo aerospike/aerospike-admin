@@ -16,10 +16,9 @@ import json
 import re
 import time
 from typing import Any, Callable
-import unittest
 
 from parameterized import parameterized
-import asynctest
+import unittest
 from test.e2e import lib, util
 
 TEST_UDF = """
@@ -30,7 +29,7 @@ end
 """
 
 
-class TestCollectinfo(asynctest.TestCase):
+class TestCollectinfo(unittest.IsolatedAsyncioTestCase):
     # Formate: (cmd to run, [keys to ignore when comparing collectinfo vs live mode])
     CMDS = [
         ("info network", ["Uptime", "Client Conns"], None),

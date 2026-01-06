@@ -17,7 +17,7 @@ import sys
 import time
 import unittest
 
-import asynctest
+import unittest
 
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
@@ -35,14 +35,14 @@ def print_header(actual_header):
         print('"' + item + '",')
 
 
-class TestShowLatenciesDefault(asynctest.TestCase):
+class TestShowLatenciesDefault(unittest.IsolatedAsyncioTestCase):
     """
     TODO: enable-micro benchmarks
     asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-write=true' -Uadmin -Padmin
     asinfo -v 'set-config:context=namespace;id=test;enable-benchmarks-read=true' -Uadmin -Padmin
     """
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         lib.start()
         lib.populate_db("show-latencies-test")
         time.sleep(20)
@@ -105,14 +105,14 @@ class TestShowLatenciesDefault(asynctest.TestCase):
             self.assertTrue(test_util.check_for_subset(data, exp_data))
 
 
-class TestShowLatenciesWithArguments(asynctest.TestCase):
+class TestShowLatenciesWithArguments(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
         lib.start()
         lib.populate_db("show-latencies-test")
         time.sleep(20)
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
 
     @classmethod
@@ -567,7 +567,7 @@ class TestShowLatenciesWithArguments(asynctest.TestCase):
             )
 
 
-class TestShowDistribution(asynctest.TestCase):
+class TestShowDistribution(unittest.IsolatedAsyncioTestCase):
     output_list = list()
     test_ttl_distri = ""
     bar_ttl_distri = ""
@@ -582,7 +582,7 @@ class TestShowDistribution(asynctest.TestCase):
         )
         time.sleep(20)
 
-    async def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self.rc = await controller.LiveClusterRootController(
             [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
         )  # type: ignore
@@ -643,8 +643,8 @@ def get_data(exp_first: str | float | int, data: list[list[str | float | int]]):
     return found_values
 
 
-class TestShowUsers(asynctest.TestCase):
-    async def setUp(self):
+class TestShowUsers(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
@@ -851,8 +851,8 @@ class TestShowUsers(asynctest.TestCase):
         self.assertEqual(",".join(exp_roles), actual_roles[0])
 
 
-class TestShowUsersStats(asynctest.TestCase):
-    async def setUp(self):
+class TestShowUsersStats(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController([(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin")  # type: ignore
         await util.capture_stdout(self.rc.execute, ["enable"])
@@ -919,8 +919,8 @@ class TestShowUsersStats(asynctest.TestCase):
         self.assertListEqual(exp_header, actual_header)
 
 
-class TestShowRoles(asynctest.TestCase):
-    async def setUp(self):
+class TestShowRoles(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         self.rc = await controller.LiveClusterRootController(
             [(lib.SERVER_IP, lib.PORT, None)], user="admin", password="admin"
@@ -1158,7 +1158,7 @@ class TestShowRoles(asynctest.TestCase):
         self.assertEqual("2000", actual_data[2])
 
 
-class TestShowUdfs(asynctest.TestCase):
+class TestShowUdfs(unittest.IsolatedAsyncioTestCase):
     exp_module = "test__.lua"
     udf_contents = """
 function get_digest(rec)
@@ -1167,7 +1167,7 @@ function get_digest(rec)
 end
     """
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         lib.start()
         self.path = lib.write_file("test.lua", self.udf_contents)
         self.rc = await controller.LiveClusterRootController(
@@ -1305,8 +1305,8 @@ end
         self.assertEqual("", output.strip())
 
 
-class TestShowUserAgents(asynctest.TestCase):
-    async def setUp(self):
+class TestShowUserAgents(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         lib.start()
         time.sleep(5)  # Wait for cluster to be ready
 
@@ -1349,10 +1349,10 @@ class TestShowUserAgents(asynctest.TestCase):
         self.assertGreaterEqual(actual_no_of_rows, 1)
 
 
-class TestSummaryCommand(asynctest.TestCase):
+class TestSummaryCommand(unittest.IsolatedAsyncioTestCase):
     """Test cases for the summary command and compression awareness"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         lib.start()
         time.sleep(5)
         self.rc = await controller.LiveClusterRootController(

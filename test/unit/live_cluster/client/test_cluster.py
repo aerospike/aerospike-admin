@@ -27,10 +27,10 @@ import warnings
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 
-class ClusterTest(asynctest.TestCase):
+class ClusterTest(unittest.IsolatedAsyncioTestCase):
     async def get_cluster_mock(self, node_count, return_key_value={}):
         cl: Cluster = await Cluster([("127.0.0.0", 3000, None)])
         cl.clear_node_list()
@@ -203,7 +203,7 @@ class ClusterTest(asynctest.TestCase):
         n = await Node(ip, port=port)
         return n
 
-    def setUp(self):
+    async def asyncSetUp(self):
         patch("lib.live_cluster.client.node.JsonDynamicConfigHandler").start()
         lib.live_cluster.client.node.Node._info_cinfo = patch(
             "lib.live_cluster.client.node.Node._info_cinfo"
@@ -515,7 +515,6 @@ class ClusterTest(asynctest.TestCase):
         )
         cl.aliases = aliases
 
-    @asynctest.fail_on(active_handles=True)
     async def test_call_node_method(self):
         cl = await self.get_cluster_mock(2)
 
@@ -773,10 +772,10 @@ class ClusterTest(asynctest.TestCase):
         self.assertNotIn(constants.ADMIN_PORT_VISUAL_CUE_MSG, cluster_str)
 
 
-class ClusterRefreshTest(asynctest.TestCase):
+class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
     """Test cases for cluster refresh and socket reuse optimization"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         # Mock dependencies
         self.get_fully_qualified_domain_name = patch(
             "lib.live_cluster.client.node.get_fully_qualified_domain_name"
@@ -1102,7 +1101,7 @@ class ClusterRefreshTest(asynctest.TestCase):
         self.assertEqual(total_refresh_calls, 2)  # Only odd-numbered indices (1, 3)
 
 
-class ConnectionFlowEdgeCasesTest(asynctest.TestCase):
+class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
     """Test edge cases for the new connection flow with build caching and admin port detection"""
 
     async def test_node_connection_with_invalid_build_version(self):

@@ -50,11 +50,11 @@ from lib.live_cluster.client import (
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 
-class NodeInitTest(asynctest.TestCase):
-    async def setUp(self):
+class NodeInitTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "192.1.1.1"
         self.get_fully_qualified_domain_name = patch(
@@ -254,8 +254,8 @@ class NodeInitTest(asynctest.TestCase):
         )
 
 
-class NodeTest(asynctest.TestCase):
-    async def setUp(self):
+class NodeTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "192.1.1.1"
         self.get_fully_qualified_domain_name = patch(
@@ -354,7 +354,8 @@ class NodeTest(asynctest.TestCase):
             ASResponse.BAD_RATE_QUOTA, ""
         )
 
-        await self.assertAsyncRaises(ASProtocolError, self.node.login())
+        with self.assertRaises(ASProtocolError):
+            await self.node.login()
 
         as_socket_mock.close.assert_called_once()
 
@@ -4789,10 +4790,10 @@ class SyscmdTest(unittest.TestCase):
         self.assertDictEqual(expected, result)
 
 
-class NeedsRefreshTest(asynctest.TestCase):
+class NeedsRefreshTest(unittest.IsolatedAsyncioTestCase):
     """Test cases for the needs_refresh method"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.ip = "192.1.1.1"
         self.port = 3000
 
@@ -5187,10 +5188,10 @@ class NeedsRefreshTest(asynctest.TestCase):
         self.info_mock.assert_called_with("feature-key", self.ip)
 
 
-class SocketPoolTest(asynctest.TestCase):
+class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
     """Test cases for socket pool FIFO behavior and edge cases"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.ip = "192.1.1.1"
         self.port = 3000
 
@@ -5305,10 +5306,10 @@ class SocketPoolTest(asynctest.TestCase):
         self.assertEqual(result.name, "connected")
 
 
-class NodeErrorHandlingTest(asynctest.TestCase):
+class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
     """Test error handling for info functions"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "127.0.0.1"
 
@@ -5748,10 +5749,10 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         self.assertEqual(result["ck"], "71")
 
 
-class NodeBuildCachingTest(asynctest.TestCase):
+class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):
     """Test build version caching functionality"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "127.0.0.1"
 
@@ -5902,10 +5903,10 @@ class NodeBuildCachingTest(asynctest.TestCase):
         self.assertEqual(self.node.build, "6.2.0.5")
 
 
-class NodeEdgeCasesTest(asynctest.TestCase):
+class NodeEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
     """Test edge cases and corner cases for build caching and connection flow"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "127.0.0.1"
 

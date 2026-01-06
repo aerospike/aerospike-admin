@@ -72,7 +72,7 @@ import warnings
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 
 @CommandHelp(
@@ -145,7 +145,7 @@ class FakeCommand2(LiveClusterManageCommandController):
         return "zoo", line
 
 
-class BaseControllerTest(asynctest.TestCase):
+class BaseControllerTest(unittest.IsolatedAsyncioTestCase):
     maxDiff = None
 
     @parameterized.expand(
@@ -229,9 +229,8 @@ Usage:  fakeb2 <arg2> foo <foo usage>
             self.assertListEqual(expected_result.split("\n"), actual_result.split("\n"))
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageACLCreateUserControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageACLCreateUserControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageACLCreateUserController.cluster",
             AsyncMock(),
@@ -465,9 +464,8 @@ class ManageACLCreateUserControllerTest(asynctest.TestCase):
         )
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageACLCreateRoleControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageACLCreateRoleControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -908,9 +906,8 @@ class ManageACLCreateRoleControllerTest(asynctest.TestCase):
         )
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageACLQuotasControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageACLQuotasControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -1071,9 +1068,8 @@ class ManageACLQuotasControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageConfigControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageConfigControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -1639,9 +1635,8 @@ class ManageConfigControllerTest(asynctest.TestCase):
         )
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageConfigAutoCompleteTest(asynctest.TestCase):
-    async def setUp(self) -> None:
+class ManageConfigAutoCompleteTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster = await Cluster([("1.1.1.1", 3000, None)], timeout=0)
@@ -1946,8 +1941,8 @@ class ManageSIndexCreateStrToCTXTest(unittest.TestCase):
         )
 
 
-class ManageSIndexCreateControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
             AsyncMock(),
@@ -2014,39 +2009,29 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
             "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
         }
 
-        await self.assertAsyncRaisesRegex(
-            ASInfoResponseError, "bar", self.controller.execute(line)
-        )
+        with self.assertRaisesRegex(ASInfoResponseError, "bar"):
+            await self.controller.execute(line)
 
     async def test_ctx_invalid_format(self):
         line = "numeric a-index ns test bin a ctx foo".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Unable to parse ctx item foo",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Unable to parse ctx item foo"):
+            await self.controller.execute(line)
 
     async def test_ctx_not_supported(self):
         line = "numeric a-index ns test bin a ctx [foo]".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.0.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "One or more servers does not support 'ctx'.",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "One or more servers does not support 'ctx'."):
+            await self.controller.execute(line)
 
     async def test_blob_not_supported(self):
         line = "blob a-index ns test bin a ctx [foo]".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.4.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Blob type secondary index is not supported on server version < 7.0",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Blob type secondary index is not supported on server version < 7.0"):
+            await self.controller.execute(line)
 
     async def test_create_successful_with_exp_base64(self):
         line = "string exp-index ns test exp_base64 dGVzdA==".split()
@@ -2123,11 +2108,8 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         line = "string exp-index ns test exp_base64 invalid_base64!".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Unable to parse expression 'invalid_base64!'",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Unable to parse expression 'invalid_base64!'"):
+            await self.controller.execute(line)
 
     async def test_ctx_and_ctx_base64_conflict(self):
         line = (
@@ -2135,11 +2117,8 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         )
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Cannot use both 'ctx' and 'ctx_base64' modifiers together",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Cannot use both 'ctx' and 'ctx_base64' modifiers together"):
+            await self.controller.execute(line)
 
     async def test_ctx_and_exp_base64_conflict(self):
         line = (
@@ -2147,65 +2126,47 @@ class ManageSIndexCreateControllerTest(asynctest.TestCase):
         )
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Cannot use both 'ctx' and 'exp_base64' modifiers together",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Cannot use both 'ctx' and 'exp_base64' modifiers together"):
+            await self.controller.execute(line)
 
     async def test_ctx_base64_and_exp_base64_conflict(self):
         line = "string idx ns test bin mybin ctx_base64 dGVzdA== exp_base64 ZXhwcmVzc2lvbg==".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Cannot use both 'ctx_base64' and 'exp_base64' modifiers together",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Cannot use both 'ctx_base64' and 'exp_base64' modifiers together"):
+            await self.controller.execute(line)
 
     async def test_bin_and_exp_base64_conflict(self):
         line = "string idx ns test bin mybin exp_base64 dGVzdA==".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Cannot use both 'bin' and 'exp_base64' modifiers together",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Cannot use both 'bin' and 'exp_base64' modifiers together"):
+            await self.controller.execute(line)
 
     async def test_missing_bin_and_exp_base64(self):
         line = "string idx ns test".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Either 'bin' or 'exp_base64' modifier is required",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Either 'bin' or 'exp_base64' modifier is required"):
+            await self.controller.execute(line)
 
     async def test_ctx_base64_not_supported(self):
         line = "string idx ns test bin mybin ctx_base64 dGVzdA==".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.0.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "One or more servers does not support 'ctx_base64'",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "One or more servers does not support 'ctx_base64'"):
+            await self.controller.execute(line)
 
     async def test_ctx_base64_invalid_base64(self):
         line = "string idx ns test bin mybin ctx_base64 invalid_base64!".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
 
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Unable to parse ctx_base64 'invalid_base64!'",
-            self.controller.execute(line),
-        )
+        with self.assertRaisesRegex(ShellException, "Unable to parse ctx_base64 'invalid_base64!'"):
+            await self.controller.execute(line)
 
 
-class ManageSIndexDeleteControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageSIndexDeleteControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
             AsyncMock(),
@@ -2262,14 +2223,12 @@ class ManageSIndexDeleteControllerTest(asynctest.TestCase):
             "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
         }
 
-        await self.assertAsyncRaisesRegex(
-            ASInfoResponseError, "bar", self.controller.execute(line)
-        )
+        with self.assertRaisesRegex(ASInfoResponseError, "bar"):
+            await self.controller.execute(line)
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageTruncateControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageTruncateControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -2474,11 +2433,8 @@ class ManageTruncateControllerTest(asynctest.TestCase):
 
     async def test_returns_on_lut_error(self):
         line = "ns test before 123456789 unix-epoch"
-        await self.assertAsyncRaisesRegex(
-            ShellException,
-            "Date provided is too far in the past.",
-            self.controller.execute(line.split()),
-        )
+        with self.assertRaisesRegex(ShellException, "Date provided is too far in the past."):
+            await self.controller.execute(line.split())
         # await awaitable
         self.cluster_mock.info_truncate.assert_not_called()
 
@@ -2584,9 +2540,8 @@ class ManageTruncateControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageTruncateUndoControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageTruncateUndoControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -2673,9 +2628,8 @@ class ManageTruncateUndoControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageReclusterControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageReclusterControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -2727,9 +2681,8 @@ class ManageReclusterControllerTest(asynctest.TestCase):
         self.view_mock.print_result.assert_not_called()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageQuiesceControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageQuiesceControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -2782,9 +2735,8 @@ class ManageQuiesceControllerTest(asynctest.TestCase):
         )
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageReviveControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageReviveControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -2844,9 +2796,8 @@ class ManageReviveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_revive.assert_called_once()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageJobsKillTridControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageJobsKillTridControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -2992,9 +2943,8 @@ class ManageJobsKillTridControllerTest(asynctest.TestCase):
         self.controller._kill_trid.assert_not_called()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageJobsKillAllScansControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -3043,9 +2993,8 @@ class ManageJobsKillAllScansControllerTest(asynctest.TestCase):
         )
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageJobsKillAllQueriesControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -3094,9 +3043,8 @@ class ManageJobsKillAllQueriesControllerTest(asynctest.TestCase):
         )
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
-    def setUp(self):
+class ManageRosterLeafCommandControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -3193,9 +3141,8 @@ class ManageRosterLeafCommandControllerTest(asynctest.TestCase):
                 self.logger_mock.warning.assert_called_once()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageRosterAddControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageRosterAddControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -3424,9 +3371,8 @@ class ManageRosterAddControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.assert_called_once()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageRosterRemoveControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageRosterRemoveControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -3705,9 +3651,8 @@ class ManageRosterRemoveControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.assert_called_once()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageRosterStageNodesControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageRosterStageNodesControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -3935,9 +3880,8 @@ class ManageRosterStageNodesControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.assert_called_once()
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageRosterStageObservedControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageRosterStageObservedControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -4096,8 +4040,8 @@ class ManageRosterStageObservedControllerTest(asynctest.TestCase):
         self.cluster_mock.info_namespace_statistics.assert_called_once()
 
 
-class ManageMaskingAddControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
             AsyncMock(),
@@ -4302,8 +4246,8 @@ class ManageMaskingAddControllerTest(asynctest.TestCase):
             self.assertIn("Unexpected parameter parsing state", str(context.exception))
 
 
-class ManageMaskingDropControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.cluster_mock = patch(
             "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
             AsyncMock(),
@@ -4382,9 +4326,8 @@ class ManageMaskingDropControllerTest(asynctest.TestCase):
         self.assertIn("Network timeout", str(context.exception))
 
 
-@asynctest.fail_on(active_handles=True)
-class ManageACLGrantUserControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class ManageACLGrantUserControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(

@@ -17,7 +17,7 @@ import unittest
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 from pytest import PytestUnraisableExceptionWarning
 from mock.mock import AsyncMock
@@ -105,9 +105,8 @@ refactoring that they have made had not broken anything new.
 """
 
 
-@asynctest.fail_on(active_handles=True)
-class SecurityTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class SecurityTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         # self.reader_mock, self.writer_mock = Mock()
@@ -177,9 +176,8 @@ class SecurityTest(asynctest.TestCase):
     async def test_create_user_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError, create_user(self.reader_mock, self.writer_mock, "nick", "pass", [])
-        )
+        with self.assertRaises(IOError):
+            await create_user(self.reader_mock, self.writer_mock, "nick", "pass", [])
 
     async def test_drop_user_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x18\x00\x00\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x00bob"
@@ -204,9 +202,8 @@ class SecurityTest(asynctest.TestCase):
     async def test_drop_user_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError, drop_user(self.reader_mock, self.writer_mock, "nick")
-        )
+        with self.assertRaises(IOError):
+            await drop_user(self.reader_mock, self.writer_mock, "nick")
 
     async def test_set_password_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\\\x00\x00\x03\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x00George\x00\x00\x00=\x01$2a$10$7EqJtq98hPqEX7fNZaFWoOo55z4.5EHedKkIBS22sgiJDvgvldAGm"
@@ -223,9 +220,8 @@ class SecurityTest(asynctest.TestCase):
     async def test_set_password_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError, set_password(self.reader_mock, self.writer_mock, "bob", "a")
-        )
+        with self.assertRaises(IOError):
+            await set_password(self.reader_mock, self.writer_mock, "bob", "a")
 
     async def test_change_password_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x9d\x00\x00\x04\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x00George\x00\x00\x00=\x02$2a$10$7EqJtq98hPqEX7fNZaFWoObi7T3EgttdiPRlkqhOALhpE/VOPU7Oi\x00\x00\x00=\x01$2a$10$7EqJtq98hPqEX7fNZaFWoOMUpJ9.8mF3fu.DNqcXCqdekYy8261c6"
@@ -242,10 +238,8 @@ class SecurityTest(asynctest.TestCase):
     async def test_change_password_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            change_password(self.reader_mock, self.writer_mock, "bob", "a", "z"),
-        )
+        with self.assertRaises(IOError):
+            await change_password(self.reader_mock, self.writer_mock, "bob", "a", "z")
 
     async def test_grant_roles_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00<\x00\x00\x05\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x00George\x00\x00\x00\x1d\n\x03\nuser-admin\tsys-admin\x05write"
@@ -265,15 +259,13 @@ class SecurityTest(asynctest.TestCase):
     async def test_grant_roles_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            grant_roles(
+        with self.assertRaises(IOError):
+            await grant_roles(
                 self.reader_mock,
                 self.writer_mock,
                 "George",
                 ["user-admin", "sys-admin", "write"],
-            ),
-        )
+            )
 
     async def test_revoke_roles_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00<\x00\x00\x06\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x00George\x00\x00\x00\x1d\n\x03\nuser-admin\tsys-admin\x05write"
@@ -293,15 +285,13 @@ class SecurityTest(asynctest.TestCase):
     async def test_revoke_roles_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            revoke_roles(
+        with self.assertRaises(IOError):
+            await revoke_roles(
                 self.reader_mock,
                 self.writer_mock,
                 "George",
                 ["user-admin", "sys-admin", "write"],
-            ),
-        )
+            )
 
     async def test_query_users_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x10\x00\x00\t\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -583,9 +573,8 @@ class SecurityTest(asynctest.TestCase):
     async def test_query_users_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError, query_users(self.reader_mock, self.writer_mock)
-        )
+        with self.assertRaises(IOError):
+            await query_users(self.reader_mock, self.writer_mock)
 
     async def test_create_role_with_scoped_priv(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x002\x00\x00\n\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role\x00\x00\x00\x10\x0c\x01\r\x04test\x07testset"
@@ -695,12 +684,10 @@ class SecurityTest(asynctest.TestCase):
     async def test_create_role_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            create_role(
+        with self.assertRaises(IOError):
+            await create_role(
                 self.reader_mock, self.writer_mock, "test-role", ["write.test.testset"]
-            ),
-        )
+            )
 
     async def test_delete_role_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x1e\x00\x00\x0b\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role"
@@ -717,9 +704,8 @@ class SecurityTest(asynctest.TestCase):
     async def test_delete_role_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError, delete_role(self.reader_mock, self.writer_mock, "test-role")
-        )
+        with self.assertRaises(IOError):
+            await delete_role(self.reader_mock, self.writer_mock, "test-role")
 
     async def test_add_privileges_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x002\x00\x00\x0c\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role\x00\x00\x00\x10\x0c\x01\n\x04test\x07testset"
@@ -736,10 +722,10 @@ class SecurityTest(asynctest.TestCase):
     async def test_add_privileges_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            add_privileges(self.reader_mock, self.writer_mock, "test-role", "write"),
-        )
+        with self.assertRaises(IOError):
+            await add_privileges(
+                self.reader_mock, self.writer_mock, "test-role", "write"
+            )
 
     async def test_delete_privileges_ok(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x002\x00\x00\r\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role\x00\x00\x00\x10\x0c\x01\n\x04test\x07testset"
@@ -756,10 +742,10 @@ class SecurityTest(asynctest.TestCase):
     async def test_delete_privileges_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            delete_privileges(self.reader_mock, self.writer_mock, "test-role", "write"),
-        )
+        with self.assertRaises(IOError):
+            await delete_privileges(
+                self.reader_mock, self.writer_mock, "test-role", "write"
+            )
 
     async def test_set_whitelist(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00*\x00\x00\x0e\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role\x00\x00\x00\x08\r3.3.3.3"
@@ -776,10 +762,10 @@ class SecurityTest(asynctest.TestCase):
     async def test_set_whitelist_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            set_whitelist(self.reader_mock, self.writer_mock, "test-role", ["3.3.3.3"]),
-        )
+        with self.assertRaises(IOError):
+            await set_whitelist(
+                self.reader_mock, self.writer_mock, "test-role", ["3.3.3.3"]
+            )
 
     async def test_delete_whitelist(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\x1e\x00\x00\x0e\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\x0btest-role"
@@ -796,10 +782,10 @@ class SecurityTest(asynctest.TestCase):
     async def test_delete_whitelist_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError,
-            set_whitelist(self.reader_mock, self.writer_mock, "test-role", ["3.3.3.3"]),
-        )
+        with self.assertRaises(IOError):
+            await set_whitelist(
+                self.reader_mock, self.writer_mock, "test-role", ["3.3.3.3"]
+            )
 
     async def test_set_quotas(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00-\x00\x00\x0f\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0bwriter\x00\x00\x00\x05\x0e\x00\x00\x00o\x00\x00\x00\x05\x0f\x00\x00\x00\xde"
@@ -820,16 +806,14 @@ class SecurityTest(asynctest.TestCase):
     async def test_set_quotas_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            OSError,
-            set_quotas(
+        with self.assertRaises(OSError):
+            await set_quotas(
                 self.reader_mock,
                 self.writer_mock,
                 "test-role",
                 read_quota="111",
                 write_quota="222",
-            ),
-        )
+            )
 
     # Currently not in use and that is why there is not test yet since we record
     # input/output on the buffer.
@@ -911,9 +895,8 @@ class SecurityTest(asynctest.TestCase):
     async def test_query_roles_exception(self):
         self.writer_mock.write.side_effect = SocketError("message")
 
-        await self.assertAsyncRaises(
-            IOError, query_roles(self.reader_mock, self.writer_mock)
-        )
+        with self.assertRaises(IOError):
+            await query_roles(self.reader_mock, self.writer_mock)
 
 
 class DummyReader:
@@ -931,7 +914,7 @@ class DummyReader:
         return b""
 
 
-class ReceiveDataTest(asynctest.TestCase):
+class ReceiveDataTest(unittest.IsolatedAsyncioTestCase):
     async def test_receive_data_success(self):
         reader = DummyReader([b"hello", b"world"])
         data = await _receive_data(reader, 10)

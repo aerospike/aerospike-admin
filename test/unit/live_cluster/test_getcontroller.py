@@ -33,10 +33,10 @@ from lib.live_cluster.get_controller import (
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+    import unittest
 
 
-class GetLatenciesControllerTest(asynctest.TestCase):
+class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
     latency_return_value = {
         "2.2.2.2": {
             "batch-index": {
@@ -103,7 +103,7 @@ class GetLatenciesControllerTest(asynctest.TestCase):
         }
     }
 
-    def setUp(self):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = self.cluster_mock = patch(
@@ -250,8 +250,8 @@ class GetLatenciesControllerTest(asynctest.TestCase):
         )
 
 
-class GetControllerStaticHelpersTest(asynctest.TestCase):
-    def setUp(self):
+class GetControllerStaticHelpersTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = AsyncMock()
@@ -283,7 +283,7 @@ class GetControllerStaticHelpersTest(asynctest.TestCase):
         self.assertSetEqual(actual, expected)
 
 
-class GetStatisticsControllerTest(asynctest.TestCase):
+class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
     def mock_info_call(self, cmd, nodes="all"):
         if cmd == "version":
             return {"10.71.71.169:3000": "3.6.0"}
@@ -296,7 +296,7 @@ class GetStatisticsControllerTest(asynctest.TestCase):
 
         return {}
 
-    def setUp(self):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -482,7 +482,7 @@ class GetStatisticsControllerTest(asynctest.TestCase):
         self.assertDictEqual(actual, {})
 
 
-class GetPmapControllerTest(asynctest.TestCase):
+class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
     def mock_info_call(self, cmd, nodes="all"):
         if cmd == "version":
             return {"10.71.71.169:3000": "3.6.0"}
@@ -495,7 +495,7 @@ class GetPmapControllerTest(asynctest.TestCase):
 
         return {}
 
-    def setUp(self):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         cluster_mock = patch(
@@ -571,7 +571,7 @@ class GetPmapControllerTest(asynctest.TestCase):
         self.assertEqual(expected_output, actual_output)
 
 
-class GetConfigControllerTest(asynctest.TestCase):
+class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
     def mock_info_call(self, cmd, nodes="all"):
         if cmd == "version":
             return {"10.71.71.169:3000": "3.6.0"}
@@ -584,7 +584,7 @@ class GetConfigControllerTest(asynctest.TestCase):
 
         return {}
 
-    def setUp(self):
+    async def asyncSetUp(self):
         self.cluster_mock = patch(
             "lib.live_cluster.client.cluster.Cluster", AsyncMock()
         ).start()
@@ -852,8 +852,8 @@ class GetConfigControllerTest(asynctest.TestCase):
         self.assertDictEqual(actual, expected)
 
 
-class GetJobsControllerTest(asynctest.TestCase):
-    def setUp(self):
+class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -903,8 +903,8 @@ class GetJobsControllerTest(asynctest.TestCase):
         self.assertDictEqual(actual, expected)
 
 
-class GetACLControllerTest(asynctest.TestCase):
-    def setUp(self):
+class GetACLControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
         self.cluster_mock = patch(
@@ -966,8 +966,8 @@ class GetACLControllerTest(asynctest.TestCase):
         self.assertEqual(actual, expected)
 
 
-class GetUserAgentsControllerTest(asynctest.TestCase):
-    def setUp(self) -> None:
+class GetUserAgentsControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
         warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
