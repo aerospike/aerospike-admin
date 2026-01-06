@@ -70,9 +70,7 @@ from test.unit import util as test_util
 
 import warnings
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 
 @CommandHelp(
@@ -2023,14 +2021,19 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         line = "numeric a-index ns test bin a ctx [foo]".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.0.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "One or more servers does not support 'ctx'."):
+        with self.assertRaisesRegex(
+            ShellException, "One or more servers does not support 'ctx'."
+        ):
             await self.controller.execute(line)
 
     async def test_blob_not_supported(self):
         line = "blob a-index ns test bin a ctx [foo]".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.4.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Blob type secondary index is not supported on server version < 7.0"):
+        with self.assertRaisesRegex(
+            ShellException,
+            "Blob type secondary index is not supported on server version < 7.0",
+        ):
             await self.controller.execute(line)
 
     async def test_create_successful_with_exp_base64(self):
@@ -2108,7 +2111,9 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         line = "string exp-index ns test exp_base64 invalid_base64!".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Unable to parse expression 'invalid_base64!'"):
+        with self.assertRaisesRegex(
+            ShellException, "Unable to parse expression 'invalid_base64!'"
+        ):
             await self.controller.execute(line)
 
     async def test_ctx_and_ctx_base64_conflict(self):
@@ -2117,7 +2122,9 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Cannot use both 'ctx' and 'ctx_base64' modifiers together"):
+        with self.assertRaisesRegex(
+            ShellException, "Cannot use both 'ctx' and 'ctx_base64' modifiers together"
+        ):
             await self.controller.execute(line)
 
     async def test_ctx_and_exp_base64_conflict(self):
@@ -2126,42 +2133,55 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Cannot use both 'ctx' and 'exp_base64' modifiers together"):
+        with self.assertRaisesRegex(
+            ShellException, "Cannot use both 'ctx' and 'exp_base64' modifiers together"
+        ):
             await self.controller.execute(line)
 
     async def test_ctx_base64_and_exp_base64_conflict(self):
         line = "string idx ns test bin mybin ctx_base64 dGVzdA== exp_base64 ZXhwcmVzc2lvbg==".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Cannot use both 'ctx_base64' and 'exp_base64' modifiers together"):
+        with self.assertRaisesRegex(
+            ShellException,
+            "Cannot use both 'ctx_base64' and 'exp_base64' modifiers together",
+        ):
             await self.controller.execute(line)
 
     async def test_bin_and_exp_base64_conflict(self):
         line = "string idx ns test bin mybin exp_base64 dGVzdA==".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Cannot use both 'bin' and 'exp_base64' modifiers together"):
+        with self.assertRaisesRegex(
+            ShellException, "Cannot use both 'bin' and 'exp_base64' modifiers together"
+        ):
             await self.controller.execute(line)
 
     async def test_missing_bin_and_exp_base64(self):
         line = "string idx ns test".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Either 'bin' or 'exp_base64' modifier is required"):
+        with self.assertRaisesRegex(
+            ShellException, "Either 'bin' or 'exp_base64' modifier is required"
+        ):
             await self.controller.execute(line)
 
     async def test_ctx_base64_not_supported(self):
         line = "string idx ns test bin mybin ctx_base64 dGVzdA==".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.0.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "One or more servers does not support 'ctx_base64'"):
+        with self.assertRaisesRegex(
+            ShellException, "One or more servers does not support 'ctx_base64'"
+        ):
             await self.controller.execute(line)
 
     async def test_ctx_base64_invalid_base64(self):
         line = "string idx ns test bin mybin ctx_base64 invalid_base64!".split()
         self.meta_mock.get_builds.return_value = {"principal": "6.1.0.0"}
 
-        with self.assertRaisesRegex(ShellException, "Unable to parse ctx_base64 'invalid_base64!'"):
+        with self.assertRaisesRegex(
+            ShellException, "Unable to parse ctx_base64 'invalid_base64!'"
+        ):
             await self.controller.execute(line)
 
 
@@ -2433,7 +2453,9 @@ class ManageTruncateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_returns_on_lut_error(self):
         line = "ns test before 123456789 unix-epoch"
-        with self.assertRaisesRegex(ShellException, "Date provided is too far in the past."):
+        with self.assertRaisesRegex(
+            ShellException, "Date provided is too far in the past."
+        ):
             await self.controller.execute(line.split())
         # await awaitable
         self.cluster_mock.info_truncate.assert_not_called()

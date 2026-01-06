@@ -23,9 +23,7 @@ from lib.utils.constants import AuthMode
 
 import warnings
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 
 class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
@@ -57,7 +55,11 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
     @patch("asyncio.open_connection", new_callable=AsyncMock)
     @patch("asyncio.get_event_loop")
     async def test_can_connect(
-        self, event_loop_mock, open_connection_mock, getaddrinfo_mock, socket_module_mock
+        self,
+        event_loop_mock,
+        open_connection_mock,
+        getaddrinfo_mock,
+        socket_module_mock,
     ):
         open_connection_mock.return_value = AsyncMock(), AsyncMock()
         event_loop_mock.return_value.sock_connect = AsyncMock()
@@ -70,7 +72,9 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
 
         socket_module_mock.assert_called_with("family1", socket.SOCK_STREAM)
         socket_mock = socket_module_mock.return_value
-        event_loop_mock.return_value.sock_connect.assert_called_with(socket_mock, "sockaddr1")
+        event_loop_mock.return_value.sock_connect.assert_called_with(
+            socket_mock, "sockaddr1"
+        )
         self.assertEqual(self.as_socket.sock, socket_mock)
 
     @patch("socket.socket")
@@ -100,7 +104,9 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         socket_mock = socket_module_mock.return_value
         ssl_connect_mock.assert_called_with(True, socket_mock)
         wrapped_socket_mock = ssl_connect_mock.return_value
-        event_loop_mock.return_value.sock_connect.assert_called_with(wrapped_socket_mock, "sockaddr1")
+        event_loop_mock.return_value.sock_connect.assert_called_with(
+            wrapped_socket_mock, "sockaddr1"
+        )
         wrapped_socket_mock.set_app_data.assert_called_with("tls-name")
         wrapped_socket_mock.do_handshake.assert_called_once()
         self.assertEqual(self.as_socket.sock, wrapped_socket_mock)

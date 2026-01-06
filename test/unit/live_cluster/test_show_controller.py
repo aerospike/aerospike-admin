@@ -53,9 +53,7 @@ from lib.live_cluster.show_controller import (
 from lib.view.view import CliView
 from test.unit import util as test_util
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 
 class ShowConfigControllerTest(unittest.IsolatedAsyncioTestCase):

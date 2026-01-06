@@ -15,9 +15,7 @@
 import warnings
 import unittest
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 from pytest import PytestUnraisableExceptionWarning
 from mock.mock import AsyncMock

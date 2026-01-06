@@ -25,9 +25,7 @@ from lib.utils import constants
 
 import warnings
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 
 class ClusterTest(unittest.IsolatedAsyncioTestCase):

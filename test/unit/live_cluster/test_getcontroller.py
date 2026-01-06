@@ -31,9 +31,7 @@ from lib.live_cluster.get_controller import (
     _get_all_namespaces,
 )
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 
 class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):

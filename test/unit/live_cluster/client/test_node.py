@@ -48,9 +48,7 @@ from lib.live_cluster.client import (
     ASInfoResponseError,
 )
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 
 class NodeInitTest(unittest.IsolatedAsyncioTestCase):
@@ -5318,9 +5316,37 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
             "lib.live_cluster.client.node.Node._info_cinfo", AsyncMock()
         ).start()
 
+        # Set up default responses for node initialization only
+        # This will be used during node creation, then tests can override with return_value or side_effect
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # First call - node and build for admin port detection
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "test_node_id",
+                    "build": "8.0.0.1",
+                }
+            # Second call - connection info for admin port check
+            elif cmd == "connection":
+                return "admin=false"
+            # Third call - service addresses and peers
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "1,3000,[[test_node_id,,[127.0.0.1]]]",
+                }
+            else:
+                # Return empty string for any other calls during initialization
+                return ""
+
+        self.info_mock.side_effect = info_side_effect
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             self.node: Node = await Node(self.ip, timeout=0)
+        
+        # After node creation, clear side_effect so tests can use return_value
+        self.info_mock.side_effect = None
 
     def tearDown(self):
         patch.stopall()
@@ -5535,7 +5561,7 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_info_version_error_response(self):
         """Test info_version handles ERROR response correctly for older servers"""
-        # Mock info_build to return a valid older version
+        # Set up specific responses for this test
         self.info_mock.side_effect = [
             "8.0.0.1",  # info_build response (< 8.1.1)
             "ERROR::version not accessible",  # info("version") response
@@ -5548,6 +5574,7 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_info_version_build_error_response(self):
         """Test info_version handles build error correctly"""
+        # Set up specific responses for this test
         self.info_mock.return_value = "ERROR::build not accessible"
 
         result = await self.node.info_version()
@@ -5604,7 +5631,7 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_info_version_older_server_success(self):
         """Test info_version uses traditional method for older servers"""
-        # Mock responses for older server
+        # Set up specific responses for this test
         self.info_mock.side_effect = [
             "8.0.0.1",  # info_build response (< 8.1.1)
             "Aerospike Community Edition build 8.0.0.1",  # info("version") response

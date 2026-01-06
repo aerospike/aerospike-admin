@@ -16,9 +16,7 @@ import unittest
 import warnings
 from parameterized import parameterized
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 from lib.base_controller import (
     BaseController,

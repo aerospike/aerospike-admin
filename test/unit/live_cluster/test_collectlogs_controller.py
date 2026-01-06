@@ -22,9 +22,7 @@ from lib.live_cluster.collectlogs_controller import CollectlogsController
 
 import warnings
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 
 class CollectLogsControllerTest(unittest.IsolatedAsyncioTestCase):

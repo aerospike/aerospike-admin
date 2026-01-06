@@ -15,9 +15,7 @@
 import asyncio
 import warnings
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import unittest
+import unittest
 
 from lib.utils import util
 
