@@ -5,6 +5,17 @@ permissions:
   attestations: write
 on:
   workflow_dispatch:
+    inputs:
+      BUILD_BUILDER_IMAGES:
+        description: "Build and push remote builder images to JFrog"
+        required: true
+        type: boolean
+        default: false
+      TAG:
+        description: "Tag to use for remote builder images (e.g. v1, 4.0.2-rc1)"
+        required: true
+        type: string
+        default: latest
   pull_request:
     # yamllint disable-line rule:quoted-strings
     branches:
@@ -14,6 +25,11 @@ on:
       # yamllint disable-line rule:quoted-strings
       - "master"
       - "pvinh/SERVER-513"
+
+env:
+  # Expose manual inputs as env for later use
+  BUILD_BUILDER_IMAGES: ${{ inputs.BUILD_BUILDER_IMAGES || 'false' }}
+  TAG: ${{ inputs.TAG || '' }}
 
 jobs:
   get-version:
@@ -62,6 +78,8 @@ jobs:
       # gh-source-ref: ${{ github.ref }}
       build-script: |
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
+        BUILD_BUILDER_IMAGES=${{ env.BUILD_BUILDER_IMAGES }} \
+        IMAGE_TAG=${{ env.TAG }} \
         USE_REMOTE_BUILDER_IMAGES=false \
         BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/asadm-pkg-builder" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
