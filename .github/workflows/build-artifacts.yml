@@ -27,9 +27,9 @@ on:
       - "pvinh/SERVER-513"
 
 env:
-  # Expose manual inputs as env for later use
-  BUILD_BUILDER_IMAGES: ${{ inputs.BUILD_BUILDER_IMAGES || 'false' }}
-  TAG: ${{ inputs.TAG || '' }}
+  # Safe across all triggers (push/pr have no inputs)
+  BUILD_BUILDER_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES) || 'false' }}
+  TAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.TAG) || 'latest' }}
 
 jobs:
   get-version:
@@ -78,8 +78,8 @@ jobs:
       # gh-source-ref: ${{ github.ref }}
       build-script: |
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
-        BUILD_BUILDER_IMAGES=${{ env.BUILD_BUILDER_IMAGES }} \
-        IMAGE_TAG=${{ env.TAG }} \
+        BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
+        IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
         USE_REMOTE_BUILDER_IMAGES=false \
         BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/asadm-pkg-builder" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
