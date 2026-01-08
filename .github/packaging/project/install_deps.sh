@@ -16,8 +16,8 @@ EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel
 AMZN2023_DEPS="readline-devel ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs"
 
 function install_deps_debian12() {
-	apt update
-	apt -y install $DEBIAN_12_DEPS
+	apt-get update
+	apt-get -y install $DEBIAN_12_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -45,8 +45,8 @@ function install_deps_debian12() {
 }
 
 function install_deps_debian13() {
-	apt update
-	apt -y install $DEBIAN_13_DEPS
+	apt-get update
+	apt-get -y install $DEBIAN_13_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -75,8 +75,8 @@ function install_deps_debian13() {
 }
 
 function install_deps_ubuntu20.04() {
-	apt update
-	apt -y install $UBUNTU_2004_DEPS
+	apt-get update
+	apt-get -y install $UBUNTU_2004_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -104,8 +104,8 @@ function install_deps_ubuntu20.04() {
 }
 
 function install_deps_ubuntu22.04() {
-	apt update
-	apt -y install $UBUNTU_2204_DEPS
+	apt-get update
+	apt-get -y install $UBUNTU_2204_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -133,8 +133,8 @@ function install_deps_ubuntu22.04() {
 }
 
 function install_deps_ubuntu24.04() {
-	apt update
-	apt -y install $UBUNTU_2404_DEPS
+	apt-get update
+	apt-get -y install $UBUNTU_2404_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
