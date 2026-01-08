@@ -16,8 +16,10 @@ EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel
 AMZN2023_DEPS="readline-devel ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs"
 
 function install_deps_debian12() {
-	apt-get update
-	apt-get -y install $DEBIAN_12_DEPS
+	rm -rf /var/lib/apt/lists/*
+	apt-get clean
+	apt-get update -o Acquire::Retries=5
+	apt-get install -y --no-install-recommends $DEBIAN_12_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -42,11 +44,14 @@ function install_deps_debian12() {
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
+	rm -rf /var/lib/apt/lists/*
 }
 
 function install_deps_debian13() {
-	apt-get update
-	apt-get -y install $DEBIAN_13_DEPS
+	rm -rf /var/lib/apt/lists/*
+	apt-get clean
+	apt-get update -o Acquire::Retries=5
+	apt-get install -y --no-install-recommends $DEBIAN_13_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -70,13 +75,15 @@ function install_deps_debian13() {
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
-
 	gem install fpm -v 1.17.0
+	rm -rf /var/lib/apt/lists/*
 }
 
 function install_deps_ubuntu20.04() {
-	apt-get update
-	apt-get -y install $UBUNTU_2004_DEPS
+	rm -rf /var/lib/apt/lists/*
+	apt-get clean
+	apt-get update -o Acquire::Retries=5
+	apt-get install -y --no-install-recommends $UBUNTU_2004_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -101,11 +108,14 @@ function install_deps_ubuntu20.04() {
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
+	rm -rf /var/lib/apt/lists/*
 }
 
 function install_deps_ubuntu22.04() {
-	apt-get update
-	apt-get -y install $UBUNTU_2204_DEPS
+	rm -rf /var/lib/apt/lists/*
+	apt-get clean
+	apt-get update -o Acquire::Retries=5
+	apt-get install -y --no-install-recommends $UBUNTU_2204_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -130,11 +140,14 @@ function install_deps_ubuntu22.04() {
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
+	rm -rf /var/lib/apt/lists/*
 }
 
 function install_deps_ubuntu24.04() {
-	apt-get update
-	apt-get -y install $UBUNTU_2404_DEPS
+	rm -rf /var/lib/apt/lists/*
+	apt-get clean
+	apt-get update -o Acquire::Retries=5
+	apt-get install -y --no-install-recommends $UBUNTU_2404_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -160,6 +173,7 @@ function install_deps_ubuntu24.04() {
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
 	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
+	rm -rf /var/lib/apt/lists/*
 }
 
 function install_deps_el8() {
