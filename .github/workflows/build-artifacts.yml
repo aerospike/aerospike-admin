@@ -196,6 +196,6 @@ jobs:
         run: |
           PACKAGE_NAME=${PACKAGE_NAME} \
           ARCH=${ARCH} \
-          USE_REMOTE_BUILDER_IMAGES=${USE_REMOTE_BUILDER_IMAGES} \
+          USE_REMOTE_BUILDER_IMAGES=false \
           BUILDER_IMAGE_PREFIX=${BUILDER_IMAGE_PREFIX} \
           .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }} ${{ needs.get-version.outputs.VERSION }} ${PACKAGE_NAME}
