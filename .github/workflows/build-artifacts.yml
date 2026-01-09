@@ -80,7 +80,7 @@ jobs:
         set -euo pipefail
 
         echo "Logging in to artifact.aerospike.io for Docker pulls/pushes..."
-        jf rt docker-login artifact.aerospike.io
+        jf docker login artifact.aerospike.io
 
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
         BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
