@@ -81,7 +81,7 @@ jobs:
         BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
         IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
         USE_REMOTE_BUILDER_IMAGES=false \
-        BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/asadm-pkg-builder" \
+        BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
       gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
