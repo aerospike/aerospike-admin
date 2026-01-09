@@ -67,7 +67,7 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@SERVER-475
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@pvinh/SERVER-475
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
@@ -77,6 +77,11 @@ jobs:
       # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
       # gh-source-ref: ${{ github.ref }}
       build-script: |
+        set -euo pipefail
+
+        echo "Logging in to artifact.aerospike.io for Docker pulls/pushes..."
+        jf rt docker-login artifact.aerospike.io
+
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
         BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
         IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
@@ -90,6 +95,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm"
+      #jf-registry: "artifact.aerospike.io/database-container-dev-local/aerospike-tools"
 
   sign-artifacts:
     needs:
