@@ -133,13 +133,12 @@ jobs:
         BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
-      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
+      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}-${{ needs.get-version.outputs.VERSION }}
       gh-retention-days: 1
       dry-run: false
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm"
-      #jf-registry: "artifact.aerospike.io/database-container-dev-local/aerospike-tools"
 
   sign-artifacts:
     needs:
@@ -147,7 +146,8 @@ jobs:
       - build-artifacts
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
     with:
-      gh-artifact-name: signed-artifacts
+      runs-on: ubuntu-24.04
+      gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-unsigned-artifacts: "" # set empty string to download all
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
