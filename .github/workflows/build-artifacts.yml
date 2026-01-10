@@ -32,7 +32,54 @@ env:
   TAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.TAG) || 'latest' }}
 
 jobs:
+  create-tag:
+    name: Create git tag (x.y.z)
+    runs-on: ubuntu-24.04
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/master' &&
+      github.event.inputs.TAG != ''
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create and push tag
+        id: tag
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.TAG }}"
+
+          # Must be x.y.z
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: TAG must be in format x.y.z (e.g. 4.0.2). Got: '$TAG'" >&2
+            exit 1
+          fi
+
+          git fetch --tags --force
+
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "ERROR: Tag '$TAG' already exists. Refusing to overwrite." >&2
+            exit 1
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Creating annotated tag $TAG at $GITHUB_SHA"
+          git tag -a "$TAG" -m "Release $TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   get-version:
+    needs: create-tag
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -50,7 +97,7 @@ jobs:
         run: echo "version=$(git describe --tags --always --abbrev=7)" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
-    needs: get-version
+    needs: [create-tag, get-version]
     if: ${{ github.repository_owner == 'aerospike' }}
     strategy:
       matrix:
@@ -85,7 +132,6 @@ jobs:
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
         BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
         IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
-        USE_REMOTE_BUILDER_IMAGES=false \
         BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
@@ -171,8 +217,8 @@ jobs:
       JFROG_CLI_LOG_LEVEL: INFO
       PACKAGE_NAME: asadm
       ARCH: ${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
-      USE_REMOTE_BUILDER_IMAGES: false
-      BUILDER_IMAGE_PREFIX: "artifact.aerospike.io/database-container-dev-local/aerospike-tools/asadm-pkg-tester"
+      BUILD_BUILDER_IMAGES: false
+      BUILDER_IMAGE_PREFIX: ""
     runs-on: ${{ matrix.host }}
     permissions:
       contents: read
@@ -202,6 +248,6 @@ jobs:
         run: |
           PACKAGE_NAME=${PACKAGE_NAME} \
           ARCH=${ARCH} \
-          USE_REMOTE_BUILDER_IMAGES=false \
+          BUILD_BUILDER_IMAGES=${BUILD_BUILDER_IMAGES} \
           BUILDER_IMAGE_PREFIX=${BUILDER_IMAGE_PREFIX} \
           .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }} ${{ needs.get-version.outputs.VERSION }} ${PACKAGE_NAME}
