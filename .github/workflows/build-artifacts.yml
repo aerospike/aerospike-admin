@@ -35,14 +35,9 @@ jobs:
   create-tag:
     name: Create git tag (x.y.z)
     runs-on: ubuntu-24.04
-    if: >
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/master' &&
-      github.event.inputs.TAG != ''
+    continue-on-error: true
     permissions:
       contents: write
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -50,33 +45,36 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Create and push tag
-        id: tag
+      - name: Create and push tag (conditional)
         run: |
           set -euo pipefail
+
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ||
+                "${{ github.ref }}" != "refs/heads/master" ||
+                -z "${{ github.event.inputs.TAG }}" ]]; then
+            echo "Skipping tag creation."
+            exit 0
+          fi
+
           TAG="${{ github.event.inputs.TAG }}"
 
-          # Must be x.y.z
           if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "ERROR: TAG must be in format x.y.z (e.g. 4.0.2). Got: '$TAG'" >&2
+            echo "ERROR: TAG must be x.y.z (e.g. 4.0.2). Got: '$TAG'" >&2
             exit 1
           fi
 
           git fetch --tags --force
 
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "ERROR: Tag '$TAG' already exists. Refusing to overwrite." >&2
-            exit 1
+            echo "Tag '$TAG' already exists; skipping creation."
+            exit 0
           fi
 
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          echo "Creating annotated tag $TAG at $GITHUB_SHA"
           git tag -a "$TAG" -m "Release $TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$TAG"
-
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   get-version:
     needs: create-tag
@@ -97,7 +95,7 @@ jobs:
         run: echo "version=$(git describe --tags --always --abbrev=7)" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
-    needs: [create-tag, get-version]
+    needs: get-version
     if: ${{ github.repository_owner == 'aerospike' }}
     strategy:
       matrix:
