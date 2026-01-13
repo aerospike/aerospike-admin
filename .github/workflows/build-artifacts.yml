@@ -131,10 +131,8 @@ jobs:
         mkdir -p dist
 
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
-        #BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
-        #IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
-        BUILD_BUILDER_IMAGES=true \
-        IMAGE_TAG="4.0.2" \
+        BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
+        IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
         BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
@@ -170,7 +168,7 @@ jobs:
       version: ${{ needs.get-version.outputs.VERSION }}
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      gh-artifact-name: "" # set empty string to download all
+      gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-retention-days: 1
       dry-run: false
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
