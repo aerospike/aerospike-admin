@@ -183,7 +183,7 @@ jobs:
     needs:
       - upload-artifacts-to-jfrog
       - get-version
-    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@vpvinh/use-pattern-in-download
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@pvinh/use-pattern-in-download
     with:
       jf-project: "database"
       jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }}"
