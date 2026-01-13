@@ -112,7 +112,7 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@pvinh/SERVER-475
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@SERVER-475
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
@@ -133,7 +133,7 @@ jobs:
         BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
-      gh-artifact-name: unsigned-artifacts-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}-${{ needs.get-version.outputs.VERSION }}
+      gh-artifact-name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
       gh-retention-days: 1
       dry-run: false
       oidc-provider-name: database-gh-aerospike
@@ -144,11 +144,11 @@ jobs:
     needs:
       - get-version
       - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@SERVER-475
     with:
       runs-on: ubuntu-22.04
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
-      gh-unsigned-artifacts: "" # set empty string to download all
+      gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
@@ -158,7 +158,7 @@ jobs:
     needs:
       - get-version
       - sign-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@pvinh/SERVER-475 # v2.0.2
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@SERVER-475 # v2.0.2
     with:
       jf-project: database
       jf-build-name: "aerospike-asadm"
