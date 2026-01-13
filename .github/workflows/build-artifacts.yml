@@ -127,6 +127,9 @@ jobs:
         echo "Logging in to artifact.aerospike.io for Docker pulls/pushes..."
         jf docker login artifact.aerospike.io
 
+        rm -rf dist
+        mkdir -p dist
+
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
         BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
         IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
