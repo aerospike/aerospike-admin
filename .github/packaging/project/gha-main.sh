@@ -5,9 +5,6 @@ DISTRO="$1"
 env
 cd local
 git fetch --unshallow --tags --force 2>/dev/null || git fetch --tags --force
-
-#git fetch --unshallow --tags --no-recurse-submodules
-#git submodule update --init
 ls -laht
 git branch -v
 
