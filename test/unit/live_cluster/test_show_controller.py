@@ -1897,6 +1897,7 @@ class InfoControllerTest(asynctest.TestCase):
                 "version": "8.1.1.0",
                 "sha": "abc123",
                 "ee-sha": "def456",
+                "fips-sha": "ghi789",
             },
             "node2": {
                 "arch": "x86_64",
@@ -1905,6 +1906,7 @@ class InfoControllerTest(asynctest.TestCase):
                 "version": "8.2.0.0",
                 "sha": "xyz789",
                 "ee-sha": "",
+                "fips-sha": "",
             },
         }
         self.cluster_mock.info_release = AsyncMock(return_value=release_data)
