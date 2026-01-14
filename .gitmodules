@@ -4,4 +4,4 @@
 [submodule ".github/packaging/common"]
 	path = .github/packaging/common
 	url = https://github.com/aerospike/tools-packaging-common.git
-	branch = pvinh/SERVER-516
+	branch = pvinh/enable-prebuild-runner
