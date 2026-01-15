@@ -24,7 +24,6 @@ on:
     branches:
       # yamllint disable-line rule:quoted-strings
       - "master"
-      - "pvinh/sign-deploy-bundle-prebuilt-runner"
 
 env:
   # Safe across all triggers (push/pr have no inputs)
