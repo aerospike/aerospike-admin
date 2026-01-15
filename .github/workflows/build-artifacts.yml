@@ -92,7 +92,7 @@ jobs:
 
       - name: Compute version from git describe
         id: git_describe
-        run: echo "version=$(git describe --tags --always --abbrev=7)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(git describe --tags --always --abbrev=9)" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
     needs: get-version
@@ -104,6 +104,7 @@ jobs:
           - el9
           - el10
           - amzn2023
+          - debian11
           - debian12
           - debian13
           - ubuntu20.04
@@ -112,7 +113,7 @@ jobs:
         host:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@pvinh/use-pattern-in-download
+    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.2
     with:
       runs-on: ${{ matrix.host }}
       jf-project: database
@@ -143,11 +144,39 @@ jobs:
       oidc-audience: database-gh-aerospike
       jf-build-name: "aerospike-asadm"
 
+  organize-built-artifacts:
+    needs: [build-artifacts, get-version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+      - name: Download All Matrix Artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: build-artifacts
+          pattern: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
+          merge-multiple: true
+ 
+      - name: Upload packaged Artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
+          path: build-artifacts
+          overwrite: true
+          retention-days: 1
+
   sign-artifacts:
     needs:
       - get-version
-      - build-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@pvinh/use-pattern-in-download
+      - organize-built-artifacts
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
@@ -161,7 +190,7 @@ jobs:
     needs:
       - get-version
       - sign-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@pvinh/use-pattern-in-download
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
       jf-build-name: "aerospike-asadm"
@@ -183,7 +212,7 @@ jobs:
     needs:
       - upload-artifacts-to-jfrog
       - get-version
-    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@pvinh/use-pattern-in-download
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
     with:
       jf-project: "database"
       jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }}"
@@ -202,6 +231,7 @@ jobs:
           - el9
           - el10
           - amzn2023
+          - debian11
           - debian12
           - debian13
           - ubuntu20.04
