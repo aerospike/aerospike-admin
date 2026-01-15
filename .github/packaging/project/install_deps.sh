@@ -7,7 +7,7 @@ export GOLANG_VERSION="1.24.6"
 
 export CURL_RETRY_OPTS=(--retry 5 --retry-delay 5)
 
-DEBIAN_11_DEPS='libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl1.1 libssl-dev xz-utils liblzma-dev libffi-dev build-essential gcc g++ less'
+DEBIAN_11_DEPS='ca-certificates curl git rsync make gcc g++ build-essential xz-utils liblzma-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev libncursesw5-dev uuid-dev tk-dev libssl1.1 libssl-dev ruby-rubygems rpm less'
 DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils less"
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
@@ -23,6 +23,7 @@ function install_deps_debian11() {
         apt-get clean
         apt-get update -o Acquire::Retries=5
         apt-get install -y --no-install-recommends $DEBIAN_11_DEPS
+	update-ca-certificates
         if [ "$(uname -m)" = "x86_64" ]; then
                 curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
                 mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
