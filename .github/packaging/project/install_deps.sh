@@ -5,6 +5,9 @@ export PYTHON_VERSION="3.10.18"
 export ASDF_VERSION="v0.18.0"
 export GOLANG_VERSION="1.24.6"
 
+export CURL_RETRY_OPTS=(--retry 5 --retry-delay 5)
+
+DEBIAN_11_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils less"
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
@@ -15,16 +18,48 @@ EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel 
 EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 AMZN2023_DEPS="readline-devel ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 
+function install_deps_debian11() {
+        rm -rf /var/lib/apt/lists/*
+        apt-get clean
+        apt-get update -o Acquire::Retries=5
+        apt-get install -y --no-install-recommends $DEBIAN_12_DEPS
+        if [ "$(uname -m)" = "x86_64" ]; then
+                curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+                mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
+        elif [ "$(uname -m)" = "aarch64" ]; then
+                curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+                mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
+        else
+                echo "unknown arch $(uname -m)"
+                exit 1
+        fi
+        /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
+        install /root/go/bin/asdf /usr/local/bin/asdf
+        asdf plugin add python https://github.com/asdf-community/asdf-python.git
+        asdf install python $PYTHON_VERSION
+        asdf set python $PYTHON_VERSION
+        echo "python $PYTHON_VERSION" >/.tool-versions
+        echo "python $PYTHON_VERSION" >/root/.tool-versions
+        asdf exec python -m pip install --break-system-packages pipenv
+        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+        gem install fpm -v 1.17.0
+        rm -rf /var/lib/apt/lists/*
+}
+
 function install_deps_debian12() {
 	rm -rf /var/lib/apt/lists/*
 	apt-get clean
 	apt-get update -o Acquire::Retries=5
 	apt-get install -y --no-install-recommends $DEBIAN_12_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -53,10 +88,10 @@ function install_deps_debian13() {
 	apt-get update -o Acquire::Retries=5
 	apt-get install -y --no-install-recommends $DEBIAN_13_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -85,10 +120,10 @@ function install_deps_ubuntu20.04() {
 	apt-get update -o Acquire::Retries=5
 	apt-get install -y --no-install-recommends $UBUNTU_2004_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -117,10 +152,10 @@ function install_deps_ubuntu22.04() {
 	apt-get update -o Acquire::Retries=5
 	apt-get install -y --no-install-recommends $UBUNTU_2204_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -149,10 +184,10 @@ function install_deps_ubuntu24.04() {
 	apt-get update -o Acquire::Retries=5
 	apt-get install -y --no-install-recommends $UBUNTU_2404_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -183,10 +218,10 @@ function install_deps_el8() {
 	dnf -y install $EL8_DEPS
 	gem install --no-document fpm
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -215,10 +250,10 @@ function install_deps_el9() {
 	dnf -y install $EL9_DEPS
 
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -245,10 +280,10 @@ function install_deps_el10() {
 	yum install -y "https://dl.rockylinux.org/vault/rocky/10.0/devel/$(uname -m)/os/Packages/r/readline-devel-8.2-11.el10.$(uname -m).rpm"
 	dnf -y install $EL10_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"
@@ -274,10 +309,10 @@ function install_deps_amzn2023() {
 	dnf -y update
 	dnf -y install $AMZN2023_DEPS
 	if [ "$(uname -m)" = "x86_64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
 	elif [ "$(uname -m)" = "aarch64" ]; then
-		curl -L https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
+		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-arm64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-arm64.tar.gz -C /opt/golang
 	else
 		echo "unknown arch $(uname -m)"

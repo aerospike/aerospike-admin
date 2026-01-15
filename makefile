@@ -38,14 +38,14 @@ define make_build
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
-	(git describe --tags --always --abbrev=7 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=7`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=7`/g" $(BUILD_ROOT)tmp/asadm.py) || true
+	(git describe --tags --always --abbrev=9 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g" $(BUILD_ROOT)tmp/asadm.py) || true
 	)
 	
 
 	$(if $(filter $(OS),Darwin),
-	(git describe --tags --always --abbrev=7 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=7`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=7`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
+	(git describe --tags --always --abbrev=9 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
 	)
 
 endef

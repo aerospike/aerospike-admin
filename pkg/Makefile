@@ -6,12 +6,12 @@ TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
 # Package variables
 PACKAGE_NAME = asadm
-VERSION ?= $(shell git describe --tags --always --abbrev=7)
+VERSION ?= $(shell git describe --tags --always --abbrev=9)
 RPM_VERSION := $(subst -,_,$(VERSION))
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/packaging/common/os_version.sh)
 NAME = aerospike-$(PACKAGE_NAME)
 MAINTAINER = "Aerospike"
-DESCRIPTION = "Aerospike Admin, a tool for managing Aerospike database."
+DESCRIPTION = "asadm and asinfo, tools for managing Aerospike database."
 LICENSE = "Apache License 2.0"
 URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."

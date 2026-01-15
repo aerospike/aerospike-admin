@@ -14,8 +14,8 @@ function build_packages() {
 	make clean
 	make
 
-	echo "build_package.sh version: $(git describe --tags --always --abbrev=7)"
-	VERSION=${PKG_VERSION:-$(git describe --tags --always --abbrev=7)}
+	echo "build_package.sh version: $(git describe --tags --always --abbrev=9)"
+	VERSION=${PKG_VERSION:-$(git describe --tags --always --abbrev=9)}
 	export VERSION
 
 	# package
