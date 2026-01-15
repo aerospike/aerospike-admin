@@ -22,7 +22,7 @@ function install_deps_debian11() {
         rm -rf /var/lib/apt/lists/*
         apt-get clean
         apt-get update -o Acquire::Retries=5
-        apt-get install -y --no-install-recommends $DEBIAN_12_DEPS
+        apt-get install -y --no-install-recommends $DEBIAN_11_DEPS
         if [ "$(uname -m)" = "x86_64" ]; then
                 curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
                 mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
