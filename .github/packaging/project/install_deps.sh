@@ -7,7 +7,7 @@ export GOLANG_VERSION="1.24.6"
 
 export CURL_RETRY_OPTS=(--retry 5 --retry-delay 5)
 
-DEBIAN_11_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
+DEBIAN_11_DEPS='libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl1.1 libssl-dev xz-utils liblzma-dev libffi-dev build-essential gcc g++ less'
 DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils less"
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
