@@ -175,9 +175,9 @@ jobs:
         mkdir -p dist
 
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
-        BUILD_BUILDER_IMAGES=${{ env.BUILD_BUILDER_IMAGES }} \
-        IMAGE_TAG=${{ env.DOCKER_TAG }} \
-        BUILDER_IMAGE_PREFIX=${{ env.BUILDER_IMAGE_PREFIX }} \
+        BUILD_BUILDER_IMAGES=${BUILD_BUILDER_IMAGES} \
+        IMAGE_TAG=${DOCKER_TAG} \
+        BUILDER_IMAGE_PREFIX=${BUILDER_IMAGE_PREFIX} \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
       gh-artifact-name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
