@@ -57,8 +57,7 @@ jobs:
 
           # Validate: if BUILD_BUILDER_IMAGES is true, DOCKER_TAG must not be the default 'latest'
           if [[ "$BUILD_BUILDER_IMAGES" == "true" && "$DOCKER_TAG" == "latest" ]]; then
-            echo "ERROR: BUILD_BUILDER_IMAGES is true but DOCKER_TAG is not provided" >&2
-            echo "When BUILD_BUILDER_IMAGES=true, you must explicitly specify a DOCKER_TAG (not 'latest')" >&2
+            echo "ERROR: when BUILD_BUILDER_IMAGES=true, you must explicitly specify a DOCKER_TAG (not 'latest')" >&2
             exit 1
           fi
 
@@ -174,9 +173,9 @@ jobs:
         mkdir -p dist
 
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
-        BUILD_BUILDER_IMAGES=${BUILD_BUILDER_IMAGES} \
-        IMAGE_TAG=${DOCKER_TAG} \
-        BUILDER_IMAGE_PREFIX=${BUILDER_IMAGE_PREFIX} \
+        BUILD_BUILDER_IMAGES="${BUILD_BUILDER_IMAGES:-false}" \
+        IMAGE_TAG="${DOCKER_TAG:-latest}" \
+        BUILDER_IMAGE_PREFIX="${BUILDER_IMAGE_PREFIX:-}" \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
       gh-artifact-name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
@@ -191,23 +190,23 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
 
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
       - name: Download All Matrix Artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@v7
         with:
           path: build-artifacts
           pattern: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}*
           merge-multiple: true
  
       - name: Upload packaged Artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@v6
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: build-artifacts
@@ -301,7 +300,7 @@ jobs:
     steps:
       - name: Install JFrog CLI
         id: jf
-        uses: jfrog/setup-jfrog-cli@5b06f730cc5a6f55d78b30753f8583454b08c0aa # v4.8.1
+        uses: jfrog/setup-jfrog-cli@v4
         env:
           JF_URL: https://artifact.aerospike.io
           JF_PROJECT: database
