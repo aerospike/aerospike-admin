@@ -6,13 +6,18 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      GIT_TAG:
+        description: "git tag on master branch (tag must be x.y.z)"
+        required: false
+        type: string
+        default: ""
       BUILD_BUILDER_IMAGES:
         description: "Build and push remote builder images to JFrog"
         required: true
         type: boolean
         default: false
-      TAG:
-        description: "Tag to use for remote builder images (e.g. v1, 4.0.2-rc1)"
+      DOCKER_TAG:
+        description: "Tag to use for remote builder images"
         required: true
         type: string
         default: latest
@@ -27,13 +32,57 @@ on:
 
 env:
   # Safe across all triggers (push/pr have no inputs)
+  DOCKER_TAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.DOCKER_TAG) || 'latest' }}
   BUILD_BUILDER_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES) || 'false' }}
-  TAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.TAG) || 'latest' }}
+  BUILDER_IMAGE_PREFIX: artifact.aerospike.io/database-container-dev-local/aerospike-tools/
 
 jobs:
+  validate-inputs:
+    name: Validate workflow inputs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate BUILD_BUILDER_IMAGES and DOCKER_TAG
+        run: |
+          set -euo pipefail
+
+          # Only validate on workflow_dispatch
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            echo "Skipping input validation (not a workflow_dispatch)"
+            exit 0
+          fi
+
+          BUILD_BUILDER_IMAGES="${{ github.event.inputs.BUILD_BUILDER_IMAGES }}"
+          DOCKER_TAG="${{ github.event.inputs.DOCKER_TAG }}"
+          GIT_TAG="${{ github.event.inputs.GIT_TAG }}"
+
+          # Validate: if BUILD_BUILDER_IMAGES is true, DOCKER_TAG must not be the default 'latest'
+          if [[ "$BUILD_BUILDER_IMAGES" == "true" && "$DOCKER_TAG" == "latest" ]]; then
+            echo "ERROR: BUILD_BUILDER_IMAGES is true but DOCKER_TAG is not provided" >&2
+            echo "When BUILD_BUILDER_IMAGES=true, you must explicitly specify a DOCKER_TAG (not 'latest')" >&2
+            exit 1
+          fi
+
+          # Validate: if GIT_TAG is provided, it must match x.y.z format and we must be on master branch
+          if [[ -n "$GIT_TAG" ]]; then
+            if ! [[ "$GIT_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: GIT_TAG must be in x.y.z format (e.g. 1.2.3). Got: '$GIT_TAG'" >&2
+              exit 1
+            fi
+            
+            if [[ "${{ github.ref }}" != "refs/heads/master" ]]; then
+              echo "ERROR: GIT_TAG can only be provided when running on master branch" >&2
+              echo "Current branch: ${{ github.ref }}" >&2
+              exit 1
+            fi
+          fi
+
+          echo "✓ Input validation passed"
+
   create-tag:
     name: Create git tag (x.y.z)
+    needs: validate-inputs
     runs-on: ubuntu-24.04
+    environment: deploy-to-master
     continue-on-error: true
     permissions:
       contents: write
@@ -50,31 +99,26 @@ jobs:
 
           if [[ "${{ github.event_name }}" != "workflow_dispatch" ||
                 "${{ github.ref }}" != "refs/heads/master" ||
-                -z "${{ github.event.inputs.TAG }}" ]]; then
+                -z "${{ github.event.inputs.GIT_TAG }}" ]]; then
             echo "Skipping tag creation."
             exit 0
           fi
 
-          TAG="${{ github.event.inputs.TAG }}"
-
-          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "ERROR: TAG must be x.y.z (e.g. 4.0.2). Got: '$TAG'" >&2
-            exit 1
-          fi
+          GIT_TAG="${{ github.event.inputs.GIT_TAG }}"
 
           git fetch --tags --force
 
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "Tag '$TAG' already exists; skipping creation."
+          if git rev-parse -q --verify "refs/tags/$GIT_TAG" >/dev/null; then
+            echo "Tag '$GIT_TAG' already exists; skipping creation."
             exit 0
           fi
 
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git tag -a "$TAG" -m "Release $TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$TAG"
-
+          git tag -a "$GIT_TAG" -m "$GIT_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$GIT_TAG"
+ 
   get-version:
     needs: create-tag
     runs-on: ubuntu-24.04
@@ -131,9 +175,9 @@ jobs:
         mkdir -p dist
 
         ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
-        BUILD_BUILDER_IMAGES=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES || 'false' }} \
-        IMAGE_TAG=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.TAG || 'latest' }} \
-        BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/" \
+        BUILD_BUILDER_IMAGES=${{ env.BUILD_BUILDER_IMAGES }} \
+        IMAGE_TAG=${{ env.DOCKER_TAG }} \
+        BUILDER_IMAGE_PREFIX=${{ env.BUILDER_IMAGE_PREFIX }} \
         local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
       gh-artifact-directory: dist
       gh-artifact-name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
@@ -145,7 +189,7 @@ jobs:
 
   organize-built-artifacts:
     needs: [build-artifacts, get-version]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
