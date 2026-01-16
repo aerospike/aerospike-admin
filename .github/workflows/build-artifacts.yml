@@ -121,8 +121,7 @@ jobs:
           git push origin "refs/tags/$GIT_TAG"
  
   get-version:
-    needs: [validate-inputs, create-tag]
-    if: always()
+    needs: create-tag
     runs-on: ubuntu-24.04
     permissions:
       contents: read
