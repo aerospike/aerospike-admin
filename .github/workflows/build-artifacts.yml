@@ -141,7 +141,7 @@ jobs:
 
   build-artifacts:
     needs: get-version
-    if: ${{ github.repository_owner == 'aerospike' }}
+      #if: ${{ github.repository_owner == 'aerospike' }}
     strategy:
       matrix:
         distro:
