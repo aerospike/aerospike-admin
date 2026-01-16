@@ -81,7 +81,6 @@ jobs:
   create-tag:
     name: Create git tag (x.y.z)
     needs: validate-inputs
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' && github.event.inputs.GIT_TAG != ''
     runs-on: ubuntu-24.04
     environment: deploy-to-master
     continue-on-error: true
