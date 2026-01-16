@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       GIT_TAG:
-        description: "git tag on master branch (tag must be x.y.z)"
+        description: "git tag on master branch only (tag must be x.y.z format, e.g. 1.2.3). Will be ignored on other branches."
         required: false
         type: string
         default: ""
