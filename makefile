@@ -38,14 +38,14 @@ define make_build
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
-	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asadm.py) || true
+	(git describe --tags --always --abbrev=9 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g" $(BUILD_ROOT)tmp/asadm.py) || true
 	)
 	
 
 	$(if $(filter $(OS),Darwin),
-	(git describe && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
+	(git describe --tags --always --abbrev=9 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
+	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
 	)
 
 endef
@@ -67,6 +67,22 @@ one-dir: init
 	mv $(BUILD_ROOT)bin/asinfo/asinfo $(BUILD_ROOT)bin/asadm/asinfo 
 	rm -r $(BUILD_ROOT)bin/asinfo
 	@echo Check $(BUILD_ROOT)bin for bundle
+
+.PHONY: deb
+deb: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
+.PHONY: rpm
+rpm: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
+.PHONY: tar
+tar: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
+.PHONY: prep
+prep: one-dir
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
 
 .PHONY: init
 init:

@@ -53,8 +53,8 @@ jobs:
         working-directory: ${{ steps.working-dir.outputs.value }}
         id: tag
         run: |
-          git describe --tags --always
-          echo "tag=$(git describe --tags --always)" >> $GITHUB_OUTPUT
+          git describe --tags --always --abbrev=9
+          echo "tag=$(git describe --tags --always --abbrev=9)" >> $GITHUB_OUTPUT
       - uses: kenchan0130/actions-system-info@b98fe44bc35efcc60a9828cf4a04783a8b370bde # v1.3.0
         id: system-info
       - name: Get Python version from Pipfile
