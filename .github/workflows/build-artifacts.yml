@@ -1,5 +1,4 @@
 name: build-artifacts.yml
-# Trigger: full pipeline test
 permissions:
   contents: read
   id-token: write
@@ -252,12 +251,8 @@ jobs:
     needs:
       - upload-artifacts-to-jfrog
       - get-version
-    # Only create release bundle on workflow_dispatch with GIT_TAG (actual releases)
-    if: >-
-      always() && 
-      needs.upload-artifacts-to-jfrog.result == 'success' &&
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.GIT_TAG != ''
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
     with:
       jf-project: "database"
