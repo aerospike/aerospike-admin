@@ -1,4 +1,5 @@
 name: build-artifacts.yml
+# Trigger: full pipeline test
 permissions:
   contents: read
   id-token: write
