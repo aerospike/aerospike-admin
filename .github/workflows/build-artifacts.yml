@@ -111,8 +111,8 @@ jobs:
 
   get-version:
     needs: create-tag
-    # Always run - even if create-tag was skipped (PRs, non-master, no GIT_TAG)
-    if: ${{ always() }}
+    # Run if create-tag succeeded OR was skipped (but not if it failed/cancelled)
+    if: ${{ always() && (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -148,6 +148,8 @@ jobs:
 
   build-artifacts:
     needs: get-version
+    # Only run if get-version succeeded
+    if: ${{ needs.get-version.result == 'success' }}
     strategy:
       fail-fast: false  # Run all OS builds to see full status, but fail overall if any fails
       matrix:
