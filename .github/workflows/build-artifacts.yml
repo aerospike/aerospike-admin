@@ -146,10 +146,27 @@ jobs:
         id: git_describe
         run: echo "version=$(git describe --tags --always --abbrev=9)" >> "$GITHUB_OUTPUT"
 
+  debug-job-status:
+    needs: [create-tag, get-version]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Debug job results
+        run: |
+          echo "=== DEBUG: Job Results ==="
+          echo "create-tag.result: ${{ needs.create-tag.result }}"
+          echo "get-version.result: ${{ needs.get-version.result }}"
+          echo ""
+          echo "=== Condition Evaluations ==="
+          echo "needs.get-version.result == 'success': ${{ needs.get-version.result == 'success' }}"
+          echo ""
+          echo "=== get-version outputs ==="
+          echo "VERSION: ${{ needs.get-version.outputs.VERSION }}"
+
   build-artifacts:
-    needs: get-version
+    needs: [get-version, debug-job-status]
     # Only run if get-version succeeded
-    if: ${{ needs.get-version.result == 'success' }}
+    if: ${{ always() && needs.get-version.result == 'success' }}
     strategy:
       fail-fast: false  # Run all OS builds to see full status, but fail overall if any fails
       matrix:
