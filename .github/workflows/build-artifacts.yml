@@ -111,8 +111,8 @@ jobs:
 
   get-version:
     needs: create-tag
-    # Run even if create-tag was skipped (PRs, non-master, no GIT_TAG)
-    if: ${{ !cancelled() }}
+    # Always run - even if create-tag was skipped (PRs, non-master, no GIT_TAG)
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
