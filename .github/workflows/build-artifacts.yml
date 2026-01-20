@@ -74,9 +74,13 @@ jobs:
   create-tag:
     name: Create git tag (x.y.z)
     needs: validate-inputs
+    # Only run on workflow_dispatch on master with GIT_TAG provided
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/master' &&
+      github.event.inputs.GIT_TAG != ''
     runs-on: ubuntu-24.04
     environment: deploy-to-master
-    continue-on-error: true
     permissions:
       contents: write
     steps:
@@ -86,16 +90,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Create and push tag (conditional)
+      - name: Create and push tag
         run: |
           set -euo pipefail
-
-          if [[ "${{ github.event_name }}" != "workflow_dispatch" ||
-                "${{ github.ref }}" != "refs/heads/master" ||
-                -z "${{ github.event.inputs.GIT_TAG }}" ]]; then
-            echo "Skipping tag creation."
-            exit 0
-          fi
 
           GIT_TAG="${{ github.event.inputs.GIT_TAG }}"
 
@@ -111,9 +108,11 @@ jobs:
 
           git tag -a "$GIT_TAG" -m "$GIT_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$GIT_TAG"
- 
+
   get-version:
     needs: create-tag
+    # Run even if create-tag was skipped (PRs, non-master, no GIT_TAG)
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -134,6 +133,7 @@ jobs:
     needs: get-version
     if: ${{ github.repository_owner == 'aerospike' }}  
     strategy:
+      fail-fast: false  # Run all OS builds to see full status, but fail overall if any fails
       matrix:
         distro:
           - el8
@@ -189,10 +189,6 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
       - name: Download All Matrix Artifacts
         uses: actions/download-artifact@v7
         with:
@@ -261,6 +257,7 @@ jobs:
 
   test-install-from-jfrog-and-execute:
     strategy:
+      fail-fast: false  # Run all OS tests to see full status, but fail overall if any fails
       matrix:
         distro:
           - el8
@@ -280,7 +277,7 @@ jobs:
       - get-version
       - create-release-bundle
     env:
-      JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
+      JFROG_CLI_BUILD_NAME: ${{ github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
       PACKAGE_NAME: asadm
       ARCH: ${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
