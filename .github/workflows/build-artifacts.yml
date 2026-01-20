@@ -183,6 +183,8 @@ jobs:
 
   organize-built-artifacts:
     needs: [build-artifacts, get-version]
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.build-artifacts.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -209,6 +211,8 @@ jobs:
     needs:
       - get-version
       - organize-built-artifacts
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.organize-built-artifacts.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
@@ -223,6 +227,8 @@ jobs:
     needs:
       - get-version
       - sign-artifacts
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.sign-artifacts.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
@@ -245,6 +251,12 @@ jobs:
     needs:
       - upload-artifacts-to-jfrog
       - get-version
+    # Only create release bundle on workflow_dispatch with GIT_TAG (actual releases)
+    if: >-
+      always() && 
+      needs.upload-artifacts-to-jfrog.result == 'success' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.GIT_TAG != ''
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
     with:
       jf-project: "database"
@@ -276,7 +288,9 @@ jobs:
           - ubuntu-24.04-arm
     needs:
       - get-version
-      - create-release-bundle
+      - upload-artifacts-to-jfrog
+    # always() needed because upstream jobs use always(); run after upload (not release bundle)
+    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
     env:
       JFROG_CLI_BUILD_NAME: ${{ github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
