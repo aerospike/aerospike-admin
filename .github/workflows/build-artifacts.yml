@@ -119,6 +119,23 @@ jobs:
     outputs:
       VERSION: ${{ steps.git_describe.outputs.version }}
     steps:
+      - name: Log create-tag skip reason
+        run: |
+          echo "=== create-tag job status ==="
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "GIT_TAG input: '${{ github.event.inputs.GIT_TAG }}'"
+          echo ""
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            echo "ℹ️  create-tag SKIPPED: Not a workflow_dispatch event (event=${{ github.event_name }})"
+          elif [[ "${{ github.ref }}" != "refs/heads/master" ]]; then
+            echo "ℹ️  create-tag SKIPPED: Not on master branch (branch=${{ github.ref }})"
+          elif [[ -z "${{ github.event.inputs.GIT_TAG }}" ]]; then
+            echo "ℹ️  create-tag SKIPPED: No GIT_TAG provided"
+          else
+            echo "✅ create-tag should have RUN (dispatch + master + GIT_TAG=${{ github.event.inputs.GIT_TAG }})"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
@@ -131,7 +148,6 @@ jobs:
 
   build-artifacts:
     needs: get-version
-    if: ${{ github.repository_owner == 'aerospike' }}  
     strategy:
       fail-fast: false  # Run all OS builds to see full status, but fail overall if any fails
       matrix:
