@@ -74,9 +74,13 @@ jobs:
   create-tag:
     name: Create git tag (x.y.z)
     needs: validate-inputs
+    # Only run on workflow_dispatch on master with GIT_TAG provided
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/master' &&
+      github.event.inputs.GIT_TAG != ''
     runs-on: ubuntu-24.04
     environment: deploy-to-master
-    continue-on-error: true
     permissions:
       contents: write
     steps:
@@ -86,16 +90,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Create and push tag (conditional)
+      - name: Create and push tag
         run: |
           set -euo pipefail
-
-          if [[ "${{ github.event_name }}" != "workflow_dispatch" ||
-                "${{ github.ref }}" != "refs/heads/master" ||
-                -z "${{ github.event.inputs.GIT_TAG }}" ]]; then
-            echo "Skipping tag creation."
-            exit 0
-          fi
 
           GIT_TAG="${{ github.event.inputs.GIT_TAG }}"
 
@@ -111,9 +108,11 @@ jobs:
 
           git tag -a "$GIT_TAG" -m "$GIT_TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$GIT_TAG"
- 
+
   get-version:
     needs: create-tag
+    # Run if create-tag succeeded OR was skipped (but not if it failed/cancelled)
+    if: ${{ always() && (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -132,8 +131,10 @@ jobs:
 
   build-artifacts:
     needs: get-version
-    if: ${{ github.repository_owner == 'aerospike' }}  
+    # always() needed because get-version uses always() - without it, this job would be skipped
+    if: ${{ always() && needs.get-version.result == 'success' }}
     strategy:
+      fail-fast: false  # Run all OS builds to see full status, but fail overall if any fails
       matrix:
         distro:
           - el8
@@ -182,6 +183,8 @@ jobs:
 
   organize-built-artifacts:
     needs: [build-artifacts, get-version]
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.build-artifacts.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -189,10 +192,6 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
       - name: Download All Matrix Artifacts
         uses: actions/download-artifact@v7
         with:
@@ -212,6 +211,8 @@ jobs:
     needs:
       - get-version
       - organize-built-artifacts
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.organize-built-artifacts.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
@@ -226,6 +227,8 @@ jobs:
     needs:
       - get-version
       - sign-artifacts
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.sign-artifacts.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
     with:
       jf-project: database
@@ -248,6 +251,8 @@ jobs:
     needs:
       - upload-artifacts-to-jfrog
       - get-version
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
     with:
       jf-project: "database"
@@ -261,6 +266,7 @@ jobs:
 
   test-install-from-jfrog-and-execute:
     strategy:
+      fail-fast: false  # Run all OS tests to see full status, but fail overall if any fails
       matrix:
         distro:
           - el8
@@ -278,9 +284,11 @@ jobs:
           - ubuntu-24.04-arm
     needs:
       - get-version
-      - create-release-bundle
+      - upload-artifacts-to-jfrog
+    # always() needed because upstream jobs use always(); run after upload (not release bundle)
+    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
     env:
-      JFROG_CLI_BUILD_NAME: ${{ inputs.jf-build-name || github.workflow }}
+      JFROG_CLI_BUILD_NAME: ${{ github.workflow }}
       JFROG_CLI_LOG_LEVEL: INFO
       PACKAGE_NAME: asadm
       ARCH: ${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
