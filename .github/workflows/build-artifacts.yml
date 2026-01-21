@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       GIT_TAG:
-        description: "git tag on master branch only (tag must be x.y.z format, e.g. 1.2.3). Will be ignored on other branches."
+        description: "git tag on master branch only (x.y.z or x.y.z-suffix format, e.g. 1.2.3, 1.2.3-rc1). Will be ignored on other branches."
         required: false
         type: string
         default: ""
@@ -55,10 +55,10 @@ jobs:
             exit 1
           fi
 
-          # Validate: if GIT_TAG is provided, it must match x.y.z format and we must be on master branch
+          # Validate: if GIT_TAG is provided, it must match x.y.z or x.y.z-suffix format and we must be on master branch
           if [[ -n "$GIT_TAG" ]]; then
-            if ! [[ "$GIT_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "ERROR: GIT_TAG must be in x.y.z format (e.g. 1.2.3). Got: '$GIT_TAG'" >&2
+            if ! [[ "$GIT_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+              echo "ERROR: GIT_TAG must be in x.y.z or x.y.z-suffix format (e.g. 1.2.3, 1.2.3-rc1). Got: '$GIT_TAG'" >&2
               exit 1
             fi
             
@@ -110,9 +110,12 @@ jobs:
           git push origin "refs/tags/$GIT_TAG"
 
   get-version:
-    needs: create-tag
-    # Run if create-tag succeeded OR was skipped (but not if it failed/cancelled)
-    if: ${{ always() && (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped') }}
+    needs: [validate-inputs, create-tag]
+    # Run if validate-inputs succeeded AND create-tag succeeded or was skipped
+    if: >-
+      always() && 
+      needs.validate-inputs.result == 'success' &&
+      (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
