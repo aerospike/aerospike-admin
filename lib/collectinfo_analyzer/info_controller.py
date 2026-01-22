@@ -271,7 +271,9 @@ class InfoController(CollectinfoCommandController):
                     (
                         True
                         if version.LooseVersion(v)
-                        >= version.LooseVersion(constants.SERVER_RELEASE_INFO_FIRST_VERSION)
+                        >= version.LooseVersion(
+                            constants.SERVER_RELEASE_INFO_FIRST_VERSION
+                        )
                         else False
                     )
                     for v in builds_at_ts.values()
