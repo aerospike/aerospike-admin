@@ -130,7 +130,10 @@ jobs:
 
       - name: Compute version from git describe
         id: git_describe
-        run: echo "version=$(git describe --tags --always --abbrev=9)" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(git describe --tags --always --abbrev=9)
+          echo "VERSION: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
     needs: get-version
