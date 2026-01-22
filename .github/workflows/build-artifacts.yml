@@ -35,6 +35,11 @@ jobs:
     name: Validate workflow inputs
     runs-on: ubuntu-24.04
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
       - name: Validate BUILD_BUILDER_IMAGES and DOCKER_TAG
         run: |
           set -euo pipefail
@@ -84,8 +89,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -122,8 +132,13 @@ jobs:
     outputs:
       VERSION: ${{ steps.git_describe.outputs.version }}
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -194,19 +209,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@v2
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Download All Matrix Artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: build-artifacts
           pattern: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}*
           merge-multiple: true
  
       - name: Upload packaged Artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: build-artifacts
@@ -307,9 +322,14 @@ jobs:
       attestations: write
       id-token: write
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
       - name: Install JFrog CLI
         id: jf
-        uses: jfrog/setup-jfrog-cli@v4
+        uses: step-security/setup-jfrog-cli@a6b41f8338bea0983ddff6bd4ede7d2dcd81e1fa # v4.8.1
         env:
           JF_URL: https://artifact.aerospike.io
           JF_PROJECT: database
@@ -317,7 +337,7 @@ jobs:
           oidc-provider-name: database-gh-aerospike
           oidc-audience: database-gh-aerospike
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ github.ref }}
           submodules: recursive
