@@ -488,7 +488,7 @@ class ManageACLGrantUserController(ManageLeafCommandController):
         ModifierHelp("username", "User to have roles revoked"),
         ModifierHelp("roles", "Roles to delete from the user"),
     ),
-    usage="user <username> roles <role1> [<role2> [...]]",
+    usage="<username> roles <role1> [<role2> [...]]",
 )
 class ManageACLRevokeUserController(ManageLeafCommandController):
     def __init__(self):
@@ -651,7 +651,7 @@ class ManageACLCreateRoleController(ManageACLRolesLeafCommandController):
 
 @CommandHelp(
     "Delete a role",
-    usage="role <role-name>",
+    usage="<role-name>",
     modifiers=(ModifierHelp("role", "Role to delete."),),
 )
 class ManageACLDeleteRoleController(ManageLeafCommandController):
@@ -679,7 +679,7 @@ class ManageACLDeleteRoleController(ManageLeafCommandController):
 
 @CommandHelp(
     "Grant a role one or more privileges",
-    usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    usage="<role-name> priv <privilege> [ns <namespace> [set <set>]]>",
     modifiers=(
         ModifierHelp("role", "Role to have the privilege granted."),
         ModifierHelp("priv", "Privilege to be added to the role"),
@@ -732,7 +732,7 @@ class ManageACLGrantRoleController(ManageLeafCommandController):
 
 @CommandHelp(
     "Revoke one or more privileges from a role",
-    usage="role <role-name> priv <privilege> [ns <namespace> [set <set>]]>",
+    usage="<role-name> priv <privilege> [ns <namespace> [set <set>]]>",
     modifiers=(
         ModifierHelp("role", "Role to have privilege revoked."),
         ModifierHelp("priv", "Privilege to delete from the role."),
