@@ -252,6 +252,49 @@ class InfoController(CollectinfoCommandController):
                 **self.mods,
             )
 
+    @CommandHelp(
+        "Displays detailed release information for the cluster (8.1.1 or later)",
+    )
+    def do_release(self, line):
+        release_data = self.log_handler.info_release()
+        builds = self.log_handler.info_meta_data(stanza="asd_build")
+
+        for timestamp in sorted(release_data.keys()):
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+
+            # Check if release info is supported on all nodes
+            builds_at_ts = builds.get(timestamp, {})
+            builds_at_ts = util.filter_exceptions(builds_at_ts)
+
+            fully_supported = all(
+                [
+                    (
+                        True
+                        if version.LooseVersion(v)
+                        >= version.LooseVersion(constants.SERVER_RELEASE_INFO_FIRST_VERSION)
+                        else False
+                    )
+                    for v in builds_at_ts.values()
+                ]
+            )
+
+            if not fully_supported:
+                logger.warning(
+                    "'info release' is not supported on aerospike versions < %s",
+                    constants.SERVER_RELEASE_INFO_FIRST_VERSION,
+                )
+                continue
+
+            if not release_data[timestamp]:
+                continue
+
+            self.view.info_release(
+                release_data[timestamp],
+                cinfo_log,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
 
 @CommandHelp(
     "A collection of commands that display summary tables for various aspects of Aerospike namespaces",
