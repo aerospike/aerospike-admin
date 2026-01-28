@@ -1593,6 +1593,7 @@ class ShowRolesController(LiveClusterCommandController):
 @CommandHelp(
     "Displays UDF modules along with metadata.",
     modifiers=(
+        ModifierHelp("filename", "Show the source code of a specific UDF module"),
         ModifierHelp(Modifiers.LIKE, "Filter UDFs by name using a substring match"),
     ),
     usage=f"[<filename>] [{ModifierUsage.LIKE}]",
