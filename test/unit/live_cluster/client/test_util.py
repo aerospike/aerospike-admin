@@ -49,6 +49,68 @@ class UtilTest(asynctest.TestCase):
             result, expected, "info_to_dict did not return the expected result"
         )
 
+    def test_info_to_dict_trailing_semicolon(self):
+        """Test that trailing semicolons in server responses are handled correctly.
+
+        Some server responses like udf-get end with a semicolon (e.g., "type=LUA;content=...;")
+        which creates an empty string after splitting. This should be filtered out.
+        """
+        # Response with trailing semicolon (like udf-get response)
+        value = "type=LUA;content=base64encodedcontent;"
+        expected = {"type": "LUA", "content": "base64encodedcontent"}
+        result = client_util.info_to_dict(value)
+        self.assertEqual(
+            result,
+            expected,
+            "info_to_dict should handle trailing semicolons correctly",
+        )
+
+        # Response with multiple trailing semicolons
+        value = "a=1;b=2;;"
+        expected = {"a": "1", "b": "2"}
+        result = client_util.info_to_dict(value)
+        self.assertEqual(
+            result,
+            expected,
+            "info_to_dict should handle multiple trailing semicolons",
+        )
+
+        # Response with leading semicolon
+        value = ";a=1;b=2"
+        expected = {"a": "1", "b": "2"}
+        result = client_util.info_to_dict(value)
+        self.assertEqual(
+            result,
+            expected,
+            "info_to_dict should handle leading semicolons",
+        )
+
+    def test_info_to_dict_ignores_malformed_entries(self):
+        """Test that entries without key-value delimiter are ignored by default.
+
+        When ignore_field_without_key_value_delimiter=True (default), any entry
+        that doesn't contain the delimiter should be filtered out.
+        """
+        # Entry without = should be ignored
+        value = "a=1;malformed;b=2"
+        expected = {"a": "1", "b": "2"}
+        result = client_util.info_to_dict(value)
+        self.assertEqual(
+            result,
+            expected,
+            "info_to_dict should ignore entries without delimiter by default",
+        )
+
+        # Empty string entries should be ignored
+        value = "a=1;;b=2"
+        expected = {"a": "1", "b": "2"}
+        result = client_util.info_to_dict(value)
+        self.assertEqual(
+            result,
+            expected,
+            "info_to_dict should ignore empty entries",
+        )
+
     def test_info_to_dict_multi_level(self):
         value = "ns=test:rack_1=BCD10DFA9290C00,BB910DFA9290C00:rack_2=BD710DFA9290C00,BC310DFA9290C00;ns=bar:rack_1=BD710DFA9290C00,BB910DFA9290C00:rack_2=BC310DFA9290C00,BCD10DFA9290C00"
         expected = {
