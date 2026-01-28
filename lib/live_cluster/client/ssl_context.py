@@ -27,135 +27,9 @@ try:
     HAVE_PYOPENSSL = True
 except ImportError:
     HAVE_PYOPENSSL = False
-try:
-    from pyasn1.type import univ, constraint, char, namedtype, tag
-    from pyasn1.codec.der import decoder as der_decoder
 
-    HAVE_PYASN1 = True
-except ImportError:
-    HAVE_PYASN1 = False
-
-if HAVE_PYASN1:
-    # Helper code for ASN.1 decoding
-    MAX = 64
-
-    class DirectoryString(univ.Choice):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType(
-                "teletexString",
-                char.TeletexString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "printableString",
-                char.PrintableString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "universalString",
-                char.UniversalString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "utf8String",
-                char.UTF8String().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "bmpString",
-                char.BMPString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "ia5String",
-                char.IA5String().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-        )
-
-    class AttributeTypeAndValue(univ.Sequence):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType("type", univ.ObjectIdentifier()),
-            namedtype.NamedType("value", DirectoryString()),
-        )
-
-    class RelativeDistinguishedName(univ.SetOf):
-        componentType = AttributeTypeAndValue()
-
-    class RDNSequence(univ.SequenceOf):
-        componentType = RelativeDistinguishedName()
-
-    class AnotherName(univ.Sequence):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType("type-id", univ.ObjectIdentifier()),
-            namedtype.NamedType(
-                "value",
-                univ.Any().subtype(
-                    explicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 0)
-                ),
-            ),
-        )
-
-    class Name(univ.Choice):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType("", RDNSequence()),
-        )
-
-    class GeneralName(univ.Choice):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType(
-                "otherName",
-                AnotherName().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 0)
-                ),
-            ),
-            namedtype.NamedType(
-                "rfc822Name",
-                char.IA5String().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 1)
-                ),
-            ),
-            namedtype.NamedType(
-                "dNSName",
-                char.IA5String().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 2)
-                ),
-            ),
-            namedtype.NamedType(
-                "directoryName",
-                Name().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 4)
-                ),
-            ),
-            namedtype.NamedType(
-                "uniformResourceIdentifier",
-                char.IA5String().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 6)
-                ),
-            ),
-            namedtype.NamedType(
-                "iPAddress",
-                univ.OctetString().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 7)
-                ),
-            ),
-            namedtype.NamedType(
-                "registeredID",
-                univ.ObjectIdentifier().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 8)
-                ),
-            ),
-        )
-
-    class SubjectAltGeneralNames(univ.SequenceOf):
-        componentType = GeneralName()
-        sizeSpec = univ.SequenceOf.sizeSpec + constraint.ValueSizeConstraint(1, MAX)
+from cryptography.x509.oid import ExtensionOID
+from cryptography.x509 import DNSName, IPAddress, load_pem_x509_crl
 
 
 class SSLContext(object):
@@ -217,17 +91,14 @@ class SSLContext(object):
 
         crl_checklist = []
         for f in files:
-            fs = None
             try:
-                fs = open(f, "r").read()
-                crl = crypto.load_crl(crypto.FILETYPE_PEM, fs)
-                revoked = crl.get_revoked()
-                if not revoked:
-                    continue
-                for r in revoked:
+                with open(f, "rb") as crl_file:
+                    crl_data = crl_file.read()
+                crl = load_pem_x509_crl(crl_data)
+                # Iterate through revoked certificates
+                for revoked_cert in crl:
                     try:
-                        r_serial = int(r.get_serial(), 16)
-                        crl_checklist.append(r_serial)
+                        crl_checklist.append(revoked_cert.serial_number)
                     except Exception:
                         pass
             except Exception:
@@ -361,18 +232,32 @@ class SSLContext(object):
         return common_names
 
     def _get_subject_alt_names(self, cert):
+        """
+        Get Subject Alternative Names from certificate using cryptography library.
+        Converts pyOpenSSL cert to cryptography cert for cleaner SAN extraction.
+        """
         alt_names = []
-        for i in range(cert.get_extension_count()):
-            e = cert.get_extension(i)
-            e_name = util.bytes_to_str(e.get_short_name())
-            if e_name == "subjectAltName":
-                e_data = e.get_data()
-                decoded_data = der_decoder.decode(e_data, SubjectAltGeneralNames())
-                for name in decoded_data:
-                    if isinstance(name, SubjectAltGeneralNames):
-                        for entry in range(len(name)):
-                            component = name.getComponentByPosition(entry)
-                            alt_names.append(str(component.getComponent()))
+        try:
+            # Convert pyOpenSSL X509 cert to cryptography cert
+            crypto_cert = cert.to_cryptography()
+
+            # Get SAN extension using cryptography's clean API
+            san_ext = crypto_cert.extensions.get_extension_for_oid(
+                ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            )
+
+            for name in san_ext.value:
+                if isinstance(name, DNSName):
+                    alt_names.append(name.value)
+                elif isinstance(name, IPAddress):
+                    alt_names.append(str(name.value))
+                else:
+                    # Handle other types (RFC822Name, URI, etc.)
+                    alt_names.append(str(name.value))
+        except Exception:
+            # No SAN extension found or error parsing
+            pass
+
         return alt_names
 
     def _match_tlsname(self, cert, tls_name):
@@ -399,18 +284,13 @@ class SSLContext(object):
                 pass
             cnnames.add(value)
 
-        if HAVE_PYASN1:
-            for value in self._get_subject_alt_names(cert):
-                try:
-                    if ssl_util.dnsname_match(value, tls_name):
-                        return
-                except Exception:
-                    pass
-                cnnames.add(value)
-        else:
-            raise ImportError(
-                "No module named pyasn1. It is required for dnsname_match."
-            )
+        for value in self._get_subject_alt_names(cert):
+            try:
+                if ssl_util.dnsname_match(value, tls_name):
+                    return
+            except Exception:
+                pass
+            cnnames.add(value)
 
         if len(cnnames) > 1:
             raise Exception("Wrong tls_name %r" % tls_name)
