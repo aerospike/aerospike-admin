@@ -4886,12 +4886,12 @@ class NeedsRefreshTest(asynctest.TestCase):
     async def test_needs_refresh_no_connection_available(self):
         """Test that needs_refresh returns True when no socket connection is available"""
         self.node.alive = True
-        self.get_connection_mock.return_value = None
+        # When _info_cinfo can't connect, it raises IOError
+        self.info_mock.side_effect = IOError("Could not connect to node")
 
         result = await self.node.needs_refresh()
 
         self.assertTrue(result)
-        self.get_connection_mock.assert_called_once_with(self.ip, self.port)
 
     async def test_needs_refresh_service_addresses_changed(self):
         """Test that needs_refresh returns True when service addresses have changed"""
@@ -5305,60 +5305,41 @@ class SocketPoolTest(asynctest.TestCase):
         # Should return connected socket
         self.assertEqual(result.name, "connected")
 
-    async def test_needs_refresh_returns_socket_to_pool(self):
-        """Test that needs_refresh returns socket to pool after connectivity check"""
-        # Setup mock socket
-        mock_sock = AsyncMock()
-        mock_sock.is_connected.return_value = True
-
-        # Clear pool and verify it's empty
-        self.node.socket_pool[self.node.port].clear()
-        self.assertEqual(len(self.node.socket_pool[self.node.port]), 0)
-
+    async def test_needs_refresh_returns_false_when_no_changes(self):
+        """Test that needs_refresh returns False when service addresses haven't changed"""
         # Ensure node has correct state
         self.node.alive = True
         self.node.tls_name = None
         self.node.node_id = "A00000000000000"
         self.node.service_addresses = [(self.node.ip, self.node.port, None)]
 
-        # Mock _get_connection to return our mock socket
+        # Mock _info_cinfo to return valid response matching node state
         with patch.object(
-            self.node, "_get_connection", new_callable=AsyncMock
-        ) as get_conn_mock:
-            get_conn_mock.return_value = mock_sock
-
-            # Mock _info_cinfo to return valid response matching node state
+            self.node, "_info_cinfo", new_callable=AsyncMock
+        ) as info_mock:
+            info_mock.return_value = {
+                "node": "A00000000000000",  # Must match self.node.node_id
+                "service-clear-std": f"{self.node.ip}:{self.node.port}",
+            }
             with patch.object(
-                self.node, "_info_cinfo", new_callable=AsyncMock
-            ) as info_mock:
-                info_mock.return_value = {
-                    "node": "A00000000000000",  # Must match self.node.node_id
-                    "service-clear-std": f"{self.node.ip}:{self.node.port}",
-                }
+                self.node,
+                "_get_service_info_call",
+                return_value="service-clear-std",
+            ):
                 with patch.object(
                     self.node,
-                    "_get_service_info_call",
-                    return_value="service-clear-std",
+                    "_info_service_helper",
+                    return_value=[(self.node.ip, self.node.port, None)],
                 ):
                     with patch.object(
                         self.node,
-                        "_info_service_helper",
-                        return_value=[(self.node.ip, self.node.port, None)],
+                        "_service_addresses_compatible",
+                        return_value=True,
                     ):
-                        with patch.object(
-                            self.node,
-                            "_service_addresses_compatible",
-                            return_value=True,
-                        ):
-                            result = await self.node.needs_refresh()
+                        result = await self.node.needs_refresh()
 
         # Should return False (no refresh needed)
         self.assertFalse(result)
-
-        # Socket should be in pool (returned after connectivity check)
-        # needs_refresh calls _get_connection, then appends to pool
-        self.assertEqual(len(self.node.socket_pool[self.node.port]), 1)
-        self.assertIn(mock_sock, self.node.socket_pool[self.node.port])
 
 
 class SocketLeakPreventionTest(asynctest.TestCase):

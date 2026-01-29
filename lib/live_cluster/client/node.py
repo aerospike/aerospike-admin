@@ -621,15 +621,6 @@ class Node(AsyncObject):
             return True
 
         try:
-            # Verify we can get a valid socket connection
-            temp_sock = await self._get_connection(self.ip, self.port)
-            if not temp_sock:
-                logger.debug("Node %s:%s no socket, need refresh", self.ip, self.port)
-                return True
-
-            # Return socket to pool immediately so _info_cinfo can reuse it
-            self.socket_pool[self.port].append(temp_sock)
-
             # Get current service addresses
             info_address_call = (
                 self._get_admin_info_call()
