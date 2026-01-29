@@ -5425,18 +5425,10 @@ class SocketLeakPreventionTest(asynctest.TestCase):
         # Socket should be closed on exception
         as_socket_mock.close.assert_called_once()
 
-    async def test_info_cinfo_no_double_close_on_none_result(self):
-        """Test that _info_cinfo doesn't double-close socket when result is None
-
-        This test verifies that when sock.info() returns None (causing ASInfoError),
-        the socket is properly returned to pool before the exception is raised,
-        and not closed in the exception handler (preventing double-close).
-        """
+    async def test_admin_cadmin_returns_socket_to_pool_on_success(self):
+        """Test that _admin_cadmin returns socket to pool on successful call."""
         mock_sock = AsyncMock()
-        mock_sock.info.return_value = None  # Returns None
-
-        # Create a fresh test by directly testing the socket handling logic
-        # When result is None, socket should be in pool, not closed
+        mock_admin_func = AsyncMock(return_value="admin_result")
         self.node._initialize_socket_pool()
 
         with patch.object(
@@ -5444,39 +5436,23 @@ class SocketLeakPreventionTest(asynctest.TestCase):
         ) as get_conn_mock:
             get_conn_mock.return_value = mock_sock
 
-            # Call the underlying method directly (bypass cache decorator)
-            try:
-                # Directly invoke the core logic
-                sock = await self.node._get_connection(self.ip, self.port)
-                result = await sock.info("test_command")
+            # Actually call _admin_cadmin
+            result = await self.node._admin_cadmin(
+                mock_admin_func, ("arg1", "arg2"), self.ip, self.port
+            )
 
-                # Simulate what _info_cinfo does
-                sock_returned_to_pool = False
-                self.node.socket_pool[self.port].append(sock)
-                sock_returned_to_pool = True
-
-                if result is None:
-                    raise ASInfoError("Invalid command")
-            except ASInfoError:
-                pass  # Expected
-            except Exception:
-                if not sock_returned_to_pool:
-                    await sock.close()
-
-        # Socket should NOT be closed (it was returned to pool before exception)
+        # Verify the result
+        self.assertEqual(result, "admin_result")
+        # Admin func should have been called with socket and args
+        mock_admin_func.assert_called_once_with(mock_sock, "arg1", "arg2")
+        # Socket should be in pool, not closed
         self.assertEqual(mock_sock.close.call_count, 0)
-        # Socket should be in pool
         self.assertIn(mock_sock, self.node.socket_pool[self.port])
 
-    async def test_info_cinfo_closes_socket_on_info_exception(self):
-        """Test that _info_cinfo closes socket when sock.info() raises exception
-
-        This test verifies that when sock.info() raises an exception,
-        the socket is properly closed since it was never added to the pool.
-        """
+    async def test_admin_cadmin_closes_socket_on_exception(self):
+        """Test that _admin_cadmin closes socket when admin_func raises exception."""
         mock_sock = AsyncMock()
-        mock_sock.info.side_effect = IOError("Connection lost")
-
+        mock_admin_func = AsyncMock(side_effect=IOError("Admin operation failed"))
         self.node._initialize_socket_pool()
 
         with patch.object(
@@ -5484,19 +5460,128 @@ class SocketLeakPreventionTest(asynctest.TestCase):
         ) as get_conn_mock:
             get_conn_mock.return_value = mock_sock
 
-            # Simulate the core logic of _info_cinfo
-            sock_returned_to_pool = False
-            try:
-                sock = await self.node._get_connection(self.ip, self.port)
-                result = await sock.info("test_command")  # This raises IOError
-                self.node.socket_pool[self.port].append(sock)
-                sock_returned_to_pool = True
-            except IOError:
-                if not sock_returned_to_pool:
-                    await mock_sock.close()
+            # Actually call _admin_cadmin - should raise IOError
+            with self.assertRaises(IOError):
+                await self.node._admin_cadmin(
+                    mock_admin_func, ("arg1",), self.ip, self.port
+                )
 
-        # Socket should be closed since exception happened before adding to pool
+        # Socket should be closed since exception occurred
         mock_sock.close.assert_called_once()
+        # Socket should NOT be in pool
+        self.assertNotIn(mock_sock, self.node.socket_pool[self.port])
+
+    async def test_admin_cadmin_raises_on_connection_failure(self):
+        """Test that _admin_cadmin raises IOError when connection fails."""
+        mock_admin_func = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = None  # Connection failed
+
+            with self.assertRaises(IOError) as context:
+                await self.node._admin_cadmin(mock_admin_func, (), self.ip, self.port)
+
+            self.assertIn("Could not connect to node", str(context.exception))
+
+        # Admin func should not have been called
+        mock_admin_func.assert_not_called()
+
+    async def test_borrow_socket_returns_to_pool_on_success(self):
+        """Test that _borrow_socket returns socket to pool on successful operation"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            async with self.node._borrow_socket(self.ip, self.port) as sock:
+                # Simulate successful operation
+                self.assertEqual(sock, mock_sock)
+
+        # Socket should be in pool, not closed
+        self.assertEqual(mock_sock.close.call_count, 0)
+        self.assertIn(mock_sock, self.node.socket_pool[self.port])
+
+    async def test_borrow_socket_closes_on_exception(self):
+        """Test that _borrow_socket closes socket when exception is raised inside context"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            with self.assertRaises(IOError):
+                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                    raise IOError("Connection lost")
+
+        # Socket should be closed, not in pool
+        mock_sock.close.assert_called_once()
+        self.assertNotIn(mock_sock, self.node.socket_pool[self.port])
+
+    async def test_borrow_socket_closes_on_pool_append_failure(self):
+        """Test that _borrow_socket closes socket if adding to pool fails"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            # Replace the socket_pool dict entry with a mock that fails on append
+            original_pool = self.node.socket_pool[self.port]
+            mock_pool = MagicMock()
+            mock_pool.append.side_effect = Exception("Pool error")
+            self.node.socket_pool[self.port] = mock_pool
+
+            try:
+                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                    # Simulate successful operation inside context
+                    self.assertEqual(sock, mock_sock)
+            finally:
+                # Restore original pool
+                self.node.socket_pool[self.port] = original_pool
+
+        # Socket should be closed due to pool append failure
+        mock_sock.close.assert_called_once()
+
+    async def test_borrow_socket_raises_on_connection_failure(self):
+        """Test that _borrow_socket raises IOError when connection fails"""
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = None  # Connection failed
+
+            with self.assertRaises(IOError) as context:
+                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                    pass  # Should not reach here
+
+            self.assertIn("Could not connect to node", str(context.exception))
+
+    async def test_borrow_socket_uses_default_ip_port(self):
+        """Test that _borrow_socket uses node's default ip and port when not specified"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            async with self.node._borrow_socket() as sock:
+                self.assertEqual(sock, mock_sock)
+
+        # Verify _get_connection was called with node's default ip and port
+        get_conn_mock.assert_called_once_with(self.node.ip, self.node.port)
 
 
 class NodeErrorHandlingTest(asynctest.TestCase):

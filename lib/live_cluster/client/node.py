@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+from contextlib import asynccontextmanager
 from ctypes import ArgumentError
 import copy
 import logging
@@ -1027,6 +1028,44 @@ class Node(AsyncObject):
         logger.debug("sock connect failed %s", id(sock))
         return None
 
+    @asynccontextmanager
+    async def _borrow_socket(self, ip=None, port=None):
+        """
+        Async context manager for borrowing a socket from the pool.
+
+        On successful exit, the socket is returned to the pool.
+        On exception, the socket is closed.
+
+        Usage:
+            async with self._borrow_socket(ip, port) as sock:
+                result = await sock.info(command)
+        """
+        if ip is None:
+            ip = self.ip
+        if port is None:
+            port = self.port
+
+        sock = await self._get_connection(ip, port)
+        if not sock:
+            raise IOError("Could not connect to node %s" % ip)
+
+        try:
+            yield sock
+            # Success path: return socket to pool
+            try:
+                self.socket_pool[port].append(sock)
+                logger.debug("returned sock %s to pool for port %s", id(sock), port)
+            except Exception as e:
+                logger.debug(
+                    "error adding sock %s to pool %s, closing sock", id(sock), e
+                )
+                await sock.close()
+        except Exception as ex:
+            # Error path: close socket and re-raise
+            logger.debug("closing sock %s due to exception: %s", id(sock), ex)
+            await sock.close()
+            raise
+
     async def close(self):
         try:
             while (
@@ -1060,32 +1099,9 @@ class Node(AsyncObject):
             ip = self.ip
         if port is None:
             port = self.port
-        result = None
 
-        sock = await self._get_connection(ip, port)
-        if not sock:
-            raise IOError("Could not connect to node %s" % ip)
-
-        sock_returned_to_pool = False
-        try:
+        async with self._borrow_socket(ip, port) as sock:
             result = await sock.info(command)
-
-            # Return socket to pool before checking result
-            # This ensures socket is in pool OR closed, never both
-            try:
-                # TODO: same code is in _admin_cadmin. management of socket_pool should
-                # be abstracted.
-                # Deque automatically handles maxlen, so we can always append
-                self.socket_pool[port].append(
-                    sock
-                )  # FIFO: add to end (most recently used)
-                sock_returned_to_pool = True
-            except Exception as e:
-                logger.debug(
-                    "error adding sock %s to pool %s, closing sock", id(sock), e
-                )
-                await sock.close()
-                sock_returned_to_pool = True  # Socket is handled (closed)
 
             if result is not None:
                 logger.debug(
@@ -1099,27 +1115,6 @@ class Node(AsyncObject):
                 return result
             else:
                 raise ASInfoError("Invalid command '%s'" % command)
-
-        except Exception as ex:
-            # Only close socket if it wasn't already returned to pool or closed
-            if sock and not sock_returned_to_pool:
-                logger.debug(
-                    "closing sock %s as exception was raised in _info_cinfo %s",
-                    id(sock),
-                    ex,
-                )
-                await sock.close()
-
-            logger.debug(
-                "%s:%s info cmd '%s' and sock %s raised %s for %s",
-                self.ip,
-                self.port,
-                command,
-                id(sock),
-                ex,
-                command,
-            )
-            raise ex
 
     @async_return_exceptions
     async def info(self, command):
@@ -3788,31 +3783,8 @@ class Node(AsyncObject):
         if port is None:
             port = self.port
 
-        result = None
-        sock = await self._get_connection(ip, port)
-
-        if not sock:
-            raise IOError("Could not connect to node %s" % ip)
-
-        try:
-            result = await admin_func(sock, *args)
-
-            # Deque automatically handles maxlen, so we can always append
-            self.socket_pool[port].append(sock)
-
-        except Exception as e:
-            if sock:
-                logger.debug(
-                    "closing sock %s as exception was raised in _admin_cadmin %s",
-                    id(sock),
-                    e,
-                )
-                await sock.close()
-
-            # Re-raise the last exception
-            raise
-
-        return result
+        async with self._borrow_socket(ip, port) as sock:
+            return await admin_func(sock, *args)
 
     @async_return_exceptions
     async def admin_create_user(self, user, password, roles):
