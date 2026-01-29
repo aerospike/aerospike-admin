@@ -621,11 +621,14 @@ class Node(AsyncObject):
             return True
 
         try:
-            # Get current node info using existing socket
+            # Verify we can get a valid socket connection
             temp_sock = await self._get_connection(self.ip, self.port)
             if not temp_sock:
                 logger.debug("Node %s:%s no socket, need refresh", self.ip, self.port)
                 return True
+
+            # Return socket to pool immediately so _info_cinfo can reuse it
+            self.socket_pool[self.port].append(temp_sock)
 
             # Get current service addresses
             info_address_call = (
@@ -784,6 +787,17 @@ class Node(AsyncObject):
                 )
                 await sock.close()
                 raise
+        except Exception as e:
+            # Handle non-ASProtocolError exceptions (e.g., asyncio.TimeoutError)
+            logger.debug(
+                "%s:%s unexpected exception during login %s, exc: %s, closing sock",
+                self.ip,
+                self.port,
+                sock,
+                e,
+            )
+            await sock.close()
+            raise
 
         self.socket_pool[self.port].append(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
@@ -1061,22 +1075,26 @@ class Node(AsyncObject):
         if not sock:
             raise IOError("Could not connect to node %s" % ip)
 
+        sock_returned_to_pool = False
         try:
-            if sock:
-                result = await sock.info(command)
-                try:
-                    # TODO: same code is in _admin_cadmin. management of socket_pool should
-                    # be abstracted.
-                    # Deque automatically handles maxlen, so we can always append
-                    self.socket_pool[port].append(
-                        sock
-                    )  # FIFO: add to end (most recently used)
+            result = await sock.info(command)
 
-                except Exception as e:
-                    logger.debug(
-                        "error adding sock %s to pool %s, closing sock", id(sock), e
-                    )
-                    await sock.close()
+            # Return socket to pool before checking result
+            # This ensures socket is in pool OR closed, never both
+            try:
+                # TODO: same code is in _admin_cadmin. management of socket_pool should
+                # be abstracted.
+                # Deque automatically handles maxlen, so we can always append
+                self.socket_pool[port].append(
+                    sock
+                )  # FIFO: add to end (most recently used)
+                sock_returned_to_pool = True
+            except Exception as e:
+                logger.debug(
+                    "error adding sock %s to pool %s, closing sock", id(sock), e
+                )
+                await sock.close()
+                sock_returned_to_pool = True  # Socket is handled (closed)
 
             if result is not None:
                 logger.debug(
@@ -1088,12 +1106,12 @@ class Node(AsyncObject):
                     result,
                 )
                 return result
-
             else:
                 raise ASInfoError("Invalid command '%s'" % command)
 
         except Exception as ex:
-            if sock:
+            # Only close socket if it wasn't already returned to pool or closed
+            if sock and not sock_returned_to_pool:
                 logger.debug(
                     "closing sock %s as exception was raised in _info_cinfo %s",
                     id(sock),
