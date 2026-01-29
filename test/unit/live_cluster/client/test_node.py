@@ -5336,7 +5336,9 @@ class SocketPoolTest(asynctest.TestCase):
                     "service-clear-std": f"{self.node.ip}:{self.node.port}",
                 }
                 with patch.object(
-                    self.node, "_get_service_info_call", return_value="service-clear-std"
+                    self.node,
+                    "_get_service_info_call",
+                    return_value="service-clear-std",
                 ):
                     with patch.object(
                         self.node,
@@ -5444,7 +5446,7 @@ class SocketLeakPreventionTest(asynctest.TestCase):
 
     async def test_info_cinfo_no_double_close_on_none_result(self):
         """Test that _info_cinfo doesn't double-close socket when result is None
-        
+
         This test verifies that when sock.info() returns None (causing ASInfoError),
         the socket is properly returned to pool before the exception is raised,
         and not closed in the exception handler (preventing double-close).
@@ -5487,7 +5489,7 @@ class SocketLeakPreventionTest(asynctest.TestCase):
 
     async def test_info_cinfo_closes_socket_on_info_exception(self):
         """Test that _info_cinfo closes socket when sock.info() raises exception
-        
+
         This test verifies that when sock.info() raises an exception,
         the socket is properly closed since it was never added to the pool.
         """
