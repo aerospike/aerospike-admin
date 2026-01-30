@@ -673,7 +673,7 @@ class Node(AsyncObject):
         self, refreshed_service_addresses, info_address_call
     ):
         """Check if current address and service addresses are compatible with newly refreshed service addresses.
-        
+
         Returns:
             True if compatible (no refresh needed) - current connection is in refreshed addresses
             False if not compatible (refresh needed) - current connection is not in refreshed addresses
