@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import asyncio
-from asyncio import StreamReader
-from asyncio.subprocess import Process
 from ctypes import ArgumentError
 import time
 from typing import Any
@@ -119,9 +117,9 @@ class NodeInitTest(asynctest.TestCase):
                 self.fail(f"Unexpected command: {cmd}")
 
         def shell_side_effect(*args, **kwargs):
-            p = AsyncMock(spec=Process)
+            p = AsyncMock(spec=asyncio.subprocess.Process)
             p.returncode = 0
-            p.stdout = MagicMock(spec=StreamReader)
+            p.stdout = MagicMock(spec=asyncio.StreamReader)
             p.stdout.read.return_value = b"192.3.3.3"
             return p
 
@@ -175,7 +173,7 @@ class NodeInitTest(asynctest.TestCase):
                 self.fail(f"Unexpected command: {cmd}")
 
         def shell_side_effect(*args, **kwargs):
-            p = AsyncMock(spec=Process)
+            p = AsyncMock(spec=asyncio.subprocess.Process)
             p.returncode = 1
             return p
 
@@ -5641,7 +5639,11 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         ):
             if isinstance(command, list):
                 # During node initialization, return a dict with valid responses
-                return {"node": "test_node_id", "build": "8.0.0.1"}
+                return {
+                    "node": "test_node_id",
+                    "build": "8.0.0.1",
+                    "peers-generation": "1",
+                }
             else:
                 # During individual test calls, return the configured response
                 # Check if we have a specific response for this command

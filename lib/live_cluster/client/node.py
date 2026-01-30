@@ -1088,7 +1088,9 @@ class Node(AsyncObject):
             yield sock
             # Success path: return socket to pool
             try:
-                self.socket_pool[port].append(sock)
+                self.socket_pool.setdefault(
+                    port, deque(maxlen=MAX_SOCKET_POOL_SIZE)
+                ).append(sock)
                 logger.debug("returned sock %s to pool for port %s", id(sock), port)
             except Exception as e:
                 logger.debug(
