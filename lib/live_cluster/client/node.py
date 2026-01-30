@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+from contextlib import asynccontextmanager
 from ctypes import ArgumentError
 import copy
 import logging
@@ -395,10 +396,11 @@ class Node(AsyncObject):
     async def _node_connect(self):
         node_info_cmd = "node"
         build_info_cmd = "build"
+        peers_generation_info_cmd = "peers-generation"
 
         # First call: minimal info to determine build and node id.
         node_info_response = await self._info_cinfo(
-            [node_info_cmd, build_info_cmd],
+            [node_info_cmd, build_info_cmd, peers_generation_info_cmd],
             self.ip,
             self.port,
             disable_cache=True,
@@ -455,7 +457,12 @@ class Node(AsyncObject):
                     admin_addresses,
                 )
 
-                return node_info_response[node_info_cmd], admin_addresses, peers
+                return (
+                    node_info_response[node_info_cmd],
+                    admin_addresses,
+                    peers,
+                    node_info_response[peers_generation_info_cmd],
+                )
         else:
             logger.debug("build version %s does not support admin port", self.build)
 
@@ -480,7 +487,12 @@ class Node(AsyncObject):
             else []
         )
 
-        return node_info_response[node_info_cmd], service_addresses, peers
+        return (
+            node_info_response[node_info_cmd],
+            service_addresses,
+            peers,
+            node_info_response[peers_generation_info_cmd],
+        )
 
     async def connect(self, address, port):
         try:
@@ -497,6 +509,7 @@ class Node(AsyncObject):
                 self.node_id,
                 service_addresses,
                 self.peers,
+                self.peers_generation,
             ) = await self._node_connect()
             logger.debug(
                 "%s:%s connect discovered node_id=%s service_addresses=%s peers=%s",
@@ -551,11 +564,14 @@ class Node(AsyncObject):
                     # IP address have changed. Not common.
                     # Re-fetch all node info including build version, as this could be
                     # a different server or the same server upgraded/replaced at new IP
-                    self.node_id, _, self.peers, self.build = await asyncio.gather(
-                        self.info_node(),
-                        self._update_IP(self.ip, self.port),
-                        self.info_peers_list(),
-                        self.info_build(disable_cache=True),
+                    self.node_id, _, self.peers, self.build, self.peers_generation = (
+                        await asyncio.gather(
+                            self.info_node(),
+                            self._update_IP(self.ip, self.port),
+                            self.info_peers_list(),
+                            self.info_build(disable_cache=True),
+                            self.info_peers_generation(),
+                        )
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -607,8 +623,8 @@ class Node(AsyncObject):
 
     async def needs_refresh(self) -> bool:
         """
-        Check if node needs refresh based on its service addresses changes.
-        Returns True only if node IP, port, or service addresses have changed.
+        Check if node needs refresh based on its service addresses or peers changes.
+        Returns True if node IP, port, service addresses, or peers generation have changed.
         """
         # If node is not alive, definitely need refresh
         if not self.alive:
@@ -621,12 +637,6 @@ class Node(AsyncObject):
             return True
 
         try:
-            # Get current node info using existing socket
-            temp_sock = await self._get_connection(self.ip, self.port)
-            if not temp_sock:
-                logger.debug("Node %s:%s no socket, need refresh", self.ip, self.port)
-                return True
-
             # Get current service addresses
             info_address_call = (
                 self._get_admin_info_call()
@@ -652,6 +662,15 @@ class Node(AsyncObject):
             ):
                 return True
 
+            # Check if peers have changed (new nodes added to cluster)
+            if await self.has_peers_changed():
+                logger.debug(
+                    "Node %s:%s peers generation changed, need refresh",
+                    self.ip,
+                    self.port,
+                )
+                return True
+
             # No service address changes detected
             logger.debug(
                 "Node %s:%s no service address changes detected", self.ip, self.port
@@ -668,7 +687,12 @@ class Node(AsyncObject):
     def _service_addresses_compatible(
         self, refreshed_service_addresses, info_address_call
     ):
-        """Check if current address and service addresses are compatible with newly refreshed service addresses"""
+        """Check if current address and service addresses are compatible with newly refreshed service addresses.
+
+        Returns:
+            True if compatible (no refresh needed) - current connection is in refreshed addresses
+            False if not compatible (refresh needed) - current connection is not in refreshed addresses
+        """
         refreshed_service_addresses_set = set(refreshed_service_addresses)
 
         # Get the address we're currently connected to
@@ -692,7 +716,7 @@ class Node(AsyncObject):
                 self.port,
                 info_address_call,
             )
-            return False
+            return False  # Not compatible - needs refresh
 
         # current addresses are a subset of refreshed service addresses
         # no need to refresh
@@ -702,7 +726,7 @@ class Node(AsyncObject):
             self.port,
             info_address_call,
         )
-        return True
+        return True  # Compatible - no refresh needed
 
     async def login(self):
         """
@@ -784,6 +808,17 @@ class Node(AsyncObject):
                 )
                 await sock.close()
                 raise
+        except Exception as e:
+            # Handle non-ASProtocolError exceptions (e.g., asyncio.TimeoutError)
+            logger.debug(
+                "%s:%s unexpected exception during login %s, exc: %s, closing sock",
+                self.ip,
+                self.port,
+                sock,
+                e,
+            )
+            await sock.close()
+            raise
 
         self.socket_pool[self.port].append(sock)
         self.session_token, self.session_expiration = sock.get_session_info()
@@ -854,14 +889,20 @@ class Node(AsyncObject):
         return False
 
     async def has_peers_changed(self):
+        """
+        Check if peers have changed by comparing peers-generation.
+        Note: Does NOT update peers_generation - that happens in connect() after successful refresh.
+        """
         # Admin nodes don't track peer changes
         if getattr(self, "is_admin_node", False):
             return False
 
         try:
-            new_generation = await self._info("peers-generation")
+            new_generation = await self.info_peers_generation()
             if self.peers_generation != new_generation:
-                self.peers_generation = new_generation
+                # Don't update peers_generation here - it should only be updated
+                # after a successful refresh_connection() or node_connect() to avoid missing updates
+                # if the refresh fails
                 return True
             else:
                 return False
@@ -1022,6 +1063,46 @@ class Node(AsyncObject):
         logger.debug("sock connect failed %s", id(sock))
         return None
 
+    @asynccontextmanager
+    async def _borrow_socket(self, ip=None, port=None):
+        """
+        Async context manager for borrowing a socket from the pool.
+
+        On successful exit, the socket is returned to the pool.
+        On exception, the socket is closed.
+
+        Usage:
+            async with self._borrow_socket(ip, port) as sock:
+                result = await sock.info(command)
+        """
+        if ip is None:
+            ip = self.ip
+        if port is None:
+            port = self.port
+
+        sock = await self._get_connection(ip, port)
+        if not sock:
+            raise IOError("Could not connect to node %s" % ip)
+
+        try:
+            yield sock
+            # Success path: return socket to pool
+            try:
+                self.socket_pool.setdefault(
+                    port, deque(maxlen=MAX_SOCKET_POOL_SIZE)
+                ).append(sock)
+                logger.debug("returned sock %s to pool for port %s", id(sock), port)
+            except Exception as e:
+                logger.debug(
+                    "error adding sock %s to pool %s, closing sock", id(sock), e
+                )
+                await sock.close()
+        except Exception as ex:
+            # Error path: close socket and re-raise
+            logger.debug("closing sock %s due to exception: %s", id(sock), ex)
+            await sock.close()
+            raise
+
     async def close(self):
         try:
             while (
@@ -1055,28 +1136,9 @@ class Node(AsyncObject):
             ip = self.ip
         if port is None:
             port = self.port
-        result = None
 
-        sock = await self._get_connection(ip, port)
-        if not sock:
-            raise IOError("Could not connect to node %s" % ip)
-
-        try:
-            if sock:
-                result = await sock.info(command)
-                try:
-                    # TODO: same code is in _admin_cadmin. management of socket_pool should
-                    # be abstracted.
-                    # Deque automatically handles maxlen, so we can always append
-                    self.socket_pool[port].append(
-                        sock
-                    )  # FIFO: add to end (most recently used)
-
-                except Exception as e:
-                    logger.debug(
-                        "error adding sock %s to pool %s, closing sock", id(sock), e
-                    )
-                    await sock.close()
+        async with self._borrow_socket(ip, port) as sock:
+            result = await sock.info(command)
 
             if result is not None:
                 logger.debug(
@@ -1088,29 +1150,8 @@ class Node(AsyncObject):
                     result,
                 )
                 return result
-
             else:
                 raise ASInfoError("Invalid command '%s'" % command)
-
-        except Exception as ex:
-            if sock:
-                logger.debug(
-                    "closing sock %s as exception was raised in _info_cinfo %s",
-                    id(sock),
-                    ex,
-                )
-                await sock.close()
-
-            logger.debug(
-                "%s:%s info cmd '%s' and sock %s raised %s for %s",
-                self.ip,
-                self.port,
-                command,
-                id(sock),
-                ex,
-                command,
-            )
-            raise ex
 
     @async_return_exceptions
     async def info(self, command):
@@ -3288,6 +3329,16 @@ class Node(AsyncObject):
         return resp
 
     @async_return_exceptions
+    async def info_peers_generation(self):
+        """
+        Get peers generation.
+        """
+        resp = await self._info("peers-generation")
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get peers generation", resp)
+        return resp
+
+    @async_return_exceptions
     async def info_version(self):
         """
         Get server version and edition information. For servers >= 8.1.1, uses info_release
@@ -3779,31 +3830,8 @@ class Node(AsyncObject):
         if port is None:
             port = self.port
 
-        result = None
-        sock = await self._get_connection(ip, port)
-
-        if not sock:
-            raise IOError("Could not connect to node %s" % ip)
-
-        try:
-            result = await admin_func(sock, *args)
-
-            # Deque automatically handles maxlen, so we can always append
-            self.socket_pool[port].append(sock)
-
-        except Exception as e:
-            if sock:
-                logger.debug(
-                    "closing sock %s as exception was raised in _admin_cadmin %s",
-                    id(sock),
-                    e,
-                )
-                await sock.close()
-
-            # Re-raise the last exception
-            raise
-
-        return result
+        async with self._borrow_socket(ip, port) as sock:
+            return await admin_func(sock, *args)
 
     @async_return_exceptions
     async def admin_create_user(self, user, password, roles):

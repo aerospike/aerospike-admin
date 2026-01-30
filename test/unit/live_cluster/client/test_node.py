@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from asyncio import StreamReader
-from asyncio.subprocess import Process
+import asyncio
 from ctypes import ArgumentError
 import time
 from typing import Any
@@ -94,10 +93,11 @@ class NodeInitTest(asynctest.TestCase):
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
             # First call - node and build for admin port detection
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "A00000000000000",
                     "build": "8.1.0.0",
+                    "peers-generation": "1",
                 }
             # Second call - connection info for admin port check
             elif cmd == "connection":
@@ -117,9 +117,9 @@ class NodeInitTest(asynctest.TestCase):
                 self.fail(f"Unexpected command: {cmd}")
 
         def shell_side_effect(*args, **kwargs):
-            p = AsyncMock(spec=Process)
+            p = AsyncMock(spec=asyncio.subprocess.Process)
             p.returncode = 0
-            p.stdout = MagicMock(spec=StreamReader)
+            p.stdout = MagicMock(spec=asyncio.StreamReader)
             p.stdout.read.return_value = b"192.3.3.3"
             return p
 
@@ -149,10 +149,11 @@ class NodeInitTest(asynctest.TestCase):
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
             # First call - node and build for admin port detection
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "A00000000000000",
                     "build": "8.1.0.0",
+                    "peers-generation": "1",
                 }
             # Second call - connection info for admin port check
             elif cmd == "connection":
@@ -172,7 +173,7 @@ class NodeInitTest(asynctest.TestCase):
                 self.fail(f"Unexpected command: {cmd}")
 
         def shell_side_effect(*args, **kwargs):
-            p = AsyncMock(spec=Process)
+            p = AsyncMock(spec=asyncio.subprocess.Process)
             p.returncode = 1
             return p
 
@@ -223,10 +224,11 @@ class NodeInitTest(asynctest.TestCase):
 
         def side_effect_info(*args, **kwargs):
             # First call - node and build for admin port detection
-            if args[0] == ["node", "build"]:
+            if args[0] == ["node", "build", "peers-generation"]:
                 return {
                     "node": "A0",
                     "build": "8.1.0.0",
+                    "peers-generation": "1",
                 }
             # Second call - connection info for admin port check
             elif args[0] == "connection":
@@ -247,7 +249,7 @@ class NodeInitTest(asynctest.TestCase):
         # Login and the node connection info calls
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
-                call(["node", "build"]),
+                call(["node", "build", "peers-generation"]),
                 call("connection"),
                 call(["service-clear-std", "peers-clear-std"]),
             ],
@@ -4885,12 +4887,12 @@ class NeedsRefreshTest(asynctest.TestCase):
     async def test_needs_refresh_no_connection_available(self):
         """Test that needs_refresh returns True when no socket connection is available"""
         self.node.alive = True
-        self.get_connection_mock.return_value = None
+        # When _info_cinfo can't connect, it raises IOError
+        self.info_mock.side_effect = IOError("Could not connect to node")
 
         result = await self.node.needs_refresh()
 
         self.assertTrue(result)
-        self.get_connection_mock.assert_called_once_with(self.ip, self.port)
 
     async def test_needs_refresh_service_addresses_changed(self):
         """Test that needs_refresh returns True when service addresses have changed"""
@@ -4948,7 +4950,12 @@ class NeedsRefreshTest(asynctest.TestCase):
             ("192.1.1.2", 3000, None),
         ]  # Same addresses including current connection
 
-        result = await self.node.needs_refresh()
+        # Mock has_peers_changed to return False (no new nodes)
+        with patch.object(
+            self.node, "has_peers_changed", new_callable=AsyncMock
+        ) as has_peers_changed_mock:
+            has_peers_changed_mock.return_value = False
+            result = await self.node.needs_refresh()
 
         self.assertFalse(result)
 
@@ -5105,6 +5112,36 @@ class NeedsRefreshTest(asynctest.TestCase):
         result = await self.node.needs_refresh()
 
         self.assertTrue(result)  # Should refresh due to node ID change
+
+    async def test_needs_refresh_peers_changed(self):
+        """Test needs_refresh returns True when peers have changed (new nodes added)"""
+        self.node.alive = True
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+        self.node.node_id = "A00000000000000"  # Set node ID to match
+
+        # Mock successful connection
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # Mock service info calls - current connection is in refreshed addresses
+        self.get_service_info_call_mock.return_value = "service-clear-std"
+        self.info_mock.return_value = {
+            "node": "A00000000000000",
+            "service-clear-std": "192.1.1.1:3000",
+        }
+        self.info_service_helper_mock.return_value = [("192.1.1.1", 3000, None)]
+
+        # Mock has_peers_changed to return True (new nodes added to cluster)
+        with patch.object(
+            self.node, "has_peers_changed", new_callable=AsyncMock
+        ) as has_peers_changed_mock:
+            has_peers_changed_mock.return_value = True
+            result = await self.node.needs_refresh()
+
+        # Should return True because peers have changed
+        self.assertTrue(result)
 
     async def test_service_addresses_compatible_empty_refreshed_addresses(self):
         """Test handling of empty refreshed service addresses"""
@@ -5304,6 +5341,290 @@ class SocketPoolTest(asynctest.TestCase):
         # Should return connected socket
         self.assertEqual(result.name, "connected")
 
+    async def test_needs_refresh_returns_false_when_no_changes(self):
+        """Test that needs_refresh returns False when service addresses haven't changed"""
+        # Ensure node has correct state
+        self.node.alive = True
+        self.node.tls_name = None
+        self.node.node_id = "A00000000000000"
+        self.node.service_addresses = [(self.node.ip, self.node.port, None)]
+
+        # Mock _info_cinfo to return valid response matching node state
+        with patch.object(
+            self.node, "_info_cinfo", new_callable=AsyncMock
+        ) as info_mock:
+            info_mock.return_value = {
+                "node": "A00000000000000",  # Must match self.node.node_id
+                "service-clear-std": f"{self.node.ip}:{self.node.port}",
+            }
+            with patch.object(
+                self.node,
+                "_get_service_info_call",
+                return_value="service-clear-std",
+            ):
+                with patch.object(
+                    self.node,
+                    "_info_service_helper",
+                    return_value=[(self.node.ip, self.node.port, None)],
+                ):
+                    with patch.object(
+                        self.node,
+                        "_service_addresses_compatible",
+                        return_value=True,
+                    ):
+                        with patch.object(
+                            self.node,
+                            "has_peers_changed",
+                            new_callable=AsyncMock,
+                            return_value=False,
+                        ):
+                            result = await self.node.needs_refresh()
+
+        # Should return False (no refresh needed)
+        self.assertFalse(result)
+
+
+class SocketLeakPreventionTest(asynctest.TestCase):
+    """Tests for socket leak prevention fixes"""
+
+    async def setUp(self):
+        self.ip = "192.1.1.1"
+        self.port = 3000
+
+        # Mock dependencies
+        self.get_fully_qualified_domain_name = patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start()
+        self.async_shell_cmd_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command"
+        ).start()
+        getaddrinfo = patch("socket.getaddrinfo")
+        self.addCleanup(patch.stopall)
+
+        lib.live_cluster.client.node.Node.info_build = patch(
+            "lib.live_cluster.client.node.Node.info_build", AsyncMock()
+        ).start()
+        socket.getaddrinfo = getaddrinfo.start()
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+        self.get_fully_qualified_domain_name.return_value = "host.domain.local"
+        socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
+
+        # Mock _info_cinfo for Node initialization
+        self.init_info_mock = patch.object(
+            lib.live_cluster.client.node.Node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if cmd == ["node", "features", "connection"]:
+                return {
+                    "node": "A00000000000000",
+                    "features": "features",
+                    "connection": "admin=false",
+                }
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "192.1.1.1:3000",
+                    "peers-clear-std": "2,3000,[[1A0,,[192.1.1.1]]]",
+                }
+            else:
+                return "mock_response"
+
+        self.init_info_mock.side_effect = info_side_effect
+
+        # Create node
+        self.node = await Node(self.ip, self.port)
+        self.node._initialize_socket_pool()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_login_closes_socket_on_timeout_error(self, as_socket_mock):
+        """Test that login closes socket when asyncio.TimeoutError is raised"""
+        as_socket_mock = as_socket_mock.return_value
+        self.node.user = "test_user"
+        self.node.perform_login = True
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.side_effect = asyncio.TimeoutError("Connection timed out")
+
+        with self.assertRaises(asyncio.TimeoutError):
+            await self.node.login()
+
+        # Socket should be closed on timeout
+        as_socket_mock.close.assert_called_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_login_closes_socket_on_generic_exception(self, as_socket_mock):
+        """Test that login closes socket when a generic Exception is raised"""
+        as_socket_mock = as_socket_mock.return_value
+        self.node.user = "test_user"
+        self.node.perform_login = True
+        as_socket_mock.connect.return_value = True
+        as_socket_mock.login.side_effect = Exception("Unexpected error")
+
+        with self.assertRaises(Exception):
+            await self.node.login()
+
+        # Socket should be closed on exception
+        as_socket_mock.close.assert_called_once()
+
+    async def test_admin_cadmin_returns_socket_to_pool_on_success(self):
+        """Test that _admin_cadmin returns socket to pool on successful call."""
+        mock_sock = AsyncMock()
+        mock_admin_func = AsyncMock(return_value="admin_result")
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            # Actually call _admin_cadmin
+            result = await self.node._admin_cadmin(
+                mock_admin_func, ("arg1", "arg2"), self.ip, self.port
+            )
+
+        # Verify the result
+        self.assertEqual(result, "admin_result")
+        # Admin func should have been called with socket and args
+        mock_admin_func.assert_called_once_with(mock_sock, "arg1", "arg2")
+        # Socket should be in pool, not closed
+        self.assertEqual(mock_sock.close.call_count, 0)
+        self.assertIn(mock_sock, self.node.socket_pool[self.port])
+
+    async def test_admin_cadmin_closes_socket_on_exception(self):
+        """Test that _admin_cadmin closes socket when admin_func raises exception."""
+        mock_sock = AsyncMock()
+        mock_admin_func = AsyncMock(side_effect=IOError("Admin operation failed"))
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            # Actually call _admin_cadmin - should raise IOError
+            with self.assertRaises(IOError):
+                await self.node._admin_cadmin(
+                    mock_admin_func, ("arg1",), self.ip, self.port
+                )
+
+        # Socket should be closed since exception occurred
+        mock_sock.close.assert_called_once()
+        # Socket should NOT be in pool
+        self.assertNotIn(mock_sock, self.node.socket_pool[self.port])
+
+    async def test_admin_cadmin_raises_on_connection_failure(self):
+        """Test that _admin_cadmin raises IOError when connection fails."""
+        mock_admin_func = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = None  # Connection failed
+
+            with self.assertRaises(IOError) as context:
+                await self.node._admin_cadmin(mock_admin_func, (), self.ip, self.port)
+
+            self.assertIn("Could not connect to node", str(context.exception))
+
+        # Admin func should not have been called
+        mock_admin_func.assert_not_called()
+
+    async def test_borrow_socket_returns_to_pool_on_success(self):
+        """Test that _borrow_socket returns socket to pool on successful operation"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            async with self.node._borrow_socket(self.ip, self.port) as sock:
+                # Simulate successful operation
+                self.assertEqual(sock, mock_sock)
+
+        # Socket should be in pool, not closed
+        self.assertEqual(mock_sock.close.call_count, 0)
+        self.assertIn(mock_sock, self.node.socket_pool[self.port])
+
+    async def test_borrow_socket_closes_on_exception(self):
+        """Test that _borrow_socket closes socket when exception is raised inside context"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            with self.assertRaises(IOError):
+                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                    raise IOError("Connection lost")
+
+        # Socket should be closed, not in pool
+        mock_sock.close.assert_called_once()
+        self.assertNotIn(mock_sock, self.node.socket_pool[self.port])
+
+    async def test_borrow_socket_closes_on_pool_append_failure(self):
+        """Test that _borrow_socket closes socket if adding to pool fails"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            # Replace the socket_pool dict entry with a mock that fails on append
+            original_pool = self.node.socket_pool[self.port]
+            mock_pool = MagicMock()
+            mock_pool.append.side_effect = Exception("Pool error")
+            self.node.socket_pool[self.port] = mock_pool
+
+            try:
+                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                    # Simulate successful operation inside context
+                    self.assertEqual(sock, mock_sock)
+            finally:
+                # Restore original pool
+                self.node.socket_pool[self.port] = original_pool
+
+        # Socket should be closed due to pool append failure
+        mock_sock.close.assert_called_once()
+
+    async def test_borrow_socket_raises_on_connection_failure(self):
+        """Test that _borrow_socket raises IOError when connection fails"""
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = None  # Connection failed
+
+            with self.assertRaises(IOError) as context:
+                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                    pass  # Should not reach here
+
+            self.assertIn("Could not connect to node", str(context.exception))
+
+    async def test_borrow_socket_uses_default_ip_port(self):
+        """Test that _borrow_socket uses node's default ip and port when not specified"""
+        mock_sock = AsyncMock()
+        self.node._initialize_socket_pool()
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = mock_sock
+
+            async with self.node._borrow_socket() as sock:
+                self.assertEqual(sock, mock_sock)
+
+        # Verify _get_connection was called with node's default ip and port
+        get_conn_mock.assert_called_once_with(self.node.ip, self.node.port)
+
 
 class NodeErrorHandlingTest(asynctest.TestCase):
     """Test error handling for info functions"""
@@ -5318,7 +5639,11 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         ):
             if isinstance(command, list):
                 # During node initialization, return a dict with valid responses
-                return {"node": "test_node_id", "build": "8.0.0.1"}
+                return {
+                    "node": "test_node_id",
+                    "build": "8.0.0.1",
+                    "peers-generation": "1",
+                }
             else:
                 # During individual test calls, return the configured response
                 # Check if we have a specific response for this command
