@@ -4949,7 +4949,12 @@ class NeedsRefreshTest(asynctest.TestCase):
             ("192.1.1.2", 3000, None),
         ]  # Same addresses including current connection
 
-        result = await self.node.needs_refresh()
+        # Mock has_peers_changed to return False (no new nodes)
+        with patch.object(
+            self.node, "has_peers_changed", new_callable=AsyncMock
+        ) as has_peers_changed_mock:
+            has_peers_changed_mock.return_value = False
+            result = await self.node.needs_refresh()
 
         self.assertFalse(result)
 
@@ -5106,6 +5111,36 @@ class NeedsRefreshTest(asynctest.TestCase):
         result = await self.node.needs_refresh()
 
         self.assertTrue(result)  # Should refresh due to node ID change
+
+    async def test_needs_refresh_peers_changed(self):
+        """Test needs_refresh returns True when peers have changed (new nodes added)"""
+        self.node.alive = True
+        self.node.ip = "192.1.1.1"
+        self.node.port = 3000
+        self.node.tls_name = None
+        self.node.node_id = "A00000000000000"  # Set node ID to match
+
+        # Mock successful connection
+        mock_socket = AsyncMock()
+        self.get_connection_mock.return_value = mock_socket
+
+        # Mock service info calls - current connection is in refreshed addresses
+        self.get_service_info_call_mock.return_value = "service-clear-std"
+        self.info_mock.return_value = {
+            "node": "A00000000000000",
+            "service-clear-std": "192.1.1.1:3000",
+        }
+        self.info_service_helper_mock.return_value = [("192.1.1.1", 3000, None)]
+
+        # Mock has_peers_changed to return True (new nodes added to cluster)
+        with patch.object(
+            self.node, "has_peers_changed", new_callable=AsyncMock
+        ) as has_peers_changed_mock:
+            has_peers_changed_mock.return_value = True
+            result = await self.node.needs_refresh()
+
+        # Should return True because peers have changed
+        self.assertTrue(result)
 
     async def test_service_addresses_compatible_empty_refreshed_addresses(self):
         """Test handling of empty refreshed service addresses"""
@@ -5336,7 +5371,13 @@ class SocketPoolTest(asynctest.TestCase):
                         "_service_addresses_compatible",
                         return_value=True,
                     ):
-                        result = await self.node.needs_refresh()
+                        with patch.object(
+                            self.node,
+                            "has_peers_changed",
+                            new_callable=AsyncMock,
+                            return_value=False,
+                        ):
+                            result = await self.node.needs_refresh()
 
         # Should return False (no refresh needed)
         self.assertFalse(result)

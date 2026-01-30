@@ -608,8 +608,8 @@ class Node(AsyncObject):
 
     async def needs_refresh(self) -> bool:
         """
-        Check if node needs refresh based on its service addresses changes.
-        Returns True only if node IP, port, or service addresses have changed.
+        Check if node needs refresh based on its service addresses or peers changes.
+        Returns True if node IP, port, service addresses, or peers generation have changed.
         """
         # If node is not alive, definitely need refresh
         if not self.alive:
@@ -647,6 +647,15 @@ class Node(AsyncObject):
             ):
                 return True
 
+            # Check if peers have changed (new nodes added to cluster)
+            if await self.has_peers_changed():
+                logger.debug(
+                    "Node %s:%s peers generation changed, need refresh",
+                    self.ip,
+                    self.port,
+                )
+                return True
+
             # No service address changes detected
             logger.debug(
                 "Node %s:%s no service address changes detected", self.ip, self.port
@@ -663,7 +672,12 @@ class Node(AsyncObject):
     def _service_addresses_compatible(
         self, refreshed_service_addresses, info_address_call
     ):
-        """Check if current address and service addresses are compatible with newly refreshed service addresses"""
+        """Check if current address and service addresses are compatible with newly refreshed service addresses.
+        
+        Returns:
+            True if compatible (no refresh needed) - current connection is in refreshed addresses
+            False if not compatible (refresh needed) - current connection is not in refreshed addresses
+        """
         refreshed_service_addresses_set = set(refreshed_service_addresses)
 
         # Get the address we're currently connected to
@@ -687,7 +701,7 @@ class Node(AsyncObject):
                 self.port,
                 info_address_call,
             )
-            return False
+            return False  # Not compatible - needs refresh
 
         # current addresses are a subset of refreshed service addresses
         # no need to refresh
@@ -697,7 +711,7 @@ class Node(AsyncObject):
             self.port,
             info_address_call,
         )
-        return True
+        return True  # Compatible - no refresh needed
 
     async def login(self):
         """
