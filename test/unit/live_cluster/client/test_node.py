@@ -95,10 +95,11 @@ class NodeInitTest(asynctest.TestCase):
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
             # First call - node and build for admin port detection
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "A00000000000000",
                     "build": "8.1.0.0",
+                    "peers-generation": "1",
                 }
             # Second call - connection info for admin port check
             elif cmd == "connection":
@@ -150,10 +151,11 @@ class NodeInitTest(asynctest.TestCase):
         def info_side_effect(*args, **kwargs):
             cmd = args[0]
             # First call - node and build for admin port detection
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "A00000000000000",
                     "build": "8.1.0.0",
+                    "peers-generation": "1",
                 }
             # Second call - connection info for admin port check
             elif cmd == "connection":
@@ -224,10 +226,11 @@ class NodeInitTest(asynctest.TestCase):
 
         def side_effect_info(*args, **kwargs):
             # First call - node and build for admin port detection
-            if args[0] == ["node", "build"]:
+            if args[0] == ["node", "build", "peers-generation"]:
                 return {
                     "node": "A0",
                     "build": "8.1.0.0",
+                    "peers-generation": "1",
                 }
             # Second call - connection info for admin port check
             elif args[0] == "connection":
@@ -248,7 +251,7 @@ class NodeInitTest(asynctest.TestCase):
         # Login and the node connection info calls
         as_socket_mock_used_for_login.info.assert_has_calls(
             [
-                call(["node", "build"]),
+                call(["node", "build", "peers-generation"]),
                 call("connection"),
                 call(["service-clear-std", "peers-clear-std"]),
             ],

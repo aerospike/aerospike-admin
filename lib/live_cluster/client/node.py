@@ -396,10 +396,11 @@ class Node(AsyncObject):
     async def _node_connect(self):
         node_info_cmd = "node"
         build_info_cmd = "build"
+        peers_generation_info_cmd = "peers-generation"
 
         # First call: minimal info to determine build and node id.
         node_info_response = await self._info_cinfo(
-            [node_info_cmd, build_info_cmd],
+            [node_info_cmd, build_info_cmd, peers_generation_info_cmd],
             self.ip,
             self.port,
             disable_cache=True,
@@ -456,7 +457,12 @@ class Node(AsyncObject):
                     admin_addresses,
                 )
 
-                return node_info_response[node_info_cmd], admin_addresses, peers
+                return (
+                    node_info_response[node_info_cmd],
+                    admin_addresses,
+                    peers,
+                    node_info_response[peers_generation_info_cmd],
+                )
         else:
             logger.debug("build version %s does not support admin port", self.build)
 
@@ -481,7 +487,12 @@ class Node(AsyncObject):
             else []
         )
 
-        return node_info_response[node_info_cmd], service_addresses, peers
+        return (
+            node_info_response[node_info_cmd],
+            service_addresses,
+            peers,
+            node_info_response[peers_generation_info_cmd],
+        )
 
     async def connect(self, address, port):
         try:
@@ -498,6 +509,7 @@ class Node(AsyncObject):
                 self.node_id,
                 service_addresses,
                 self.peers,
+                self.peers_generation,
             ) = await self._node_connect()
             logger.debug(
                 "%s:%s connect discovered node_id=%s service_addresses=%s peers=%s",
@@ -552,11 +564,14 @@ class Node(AsyncObject):
                     # IP address have changed. Not common.
                     # Re-fetch all node info including build version, as this could be
                     # a different server or the same server upgraded/replaced at new IP
-                    self.node_id, _, self.peers, self.build = await asyncio.gather(
-                        self.info_node(),
-                        self._update_IP(self.ip, self.port),
-                        self.info_peers_list(),
-                        self.info_build(disable_cache=True),
+                    self.node_id, _, self.peers, self.build, self.peers_generation = (
+                        await asyncio.gather(
+                            self.info_node(),
+                            self._update_IP(self.ip, self.port),
+                            self.info_peers_list(),
+                            self.info_build(disable_cache=True),
+                            self.info_peers_generation(),
+                        )
                     )
 
                     if not isinstance(self.node_id, Exception):
@@ -874,14 +889,20 @@ class Node(AsyncObject):
         return False
 
     async def has_peers_changed(self):
+        """
+        Check if peers have changed by comparing peers-generation.
+        Note: Does NOT update peers_generation - that happens in connect() after successful refresh.
+        """
         # Admin nodes don't track peer changes
         if getattr(self, "is_admin_node", False):
             return False
 
         try:
-            new_generation = await self._info("peers-generation")
+            new_generation = await self.info_peers_generation()
             if self.peers_generation != new_generation:
-                self.peers_generation = new_generation
+                # Don't update peers_generation here - it should only be updated
+                # after a successful refresh_connection() or node_connect() to avoid missing updates
+                # if the refresh fails
                 return True
             else:
                 return False
@@ -3303,6 +3324,16 @@ class Node(AsyncObject):
 
         # Cache only successful results
         self.build = resp
+        return resp
+
+    @async_return_exceptions
+    async def info_peers_generation(self):
+        """
+        Get peers generation.
+        """
+        resp = await self._info("peers-generation")
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get peers generation", resp)
         return resp
 
     @async_return_exceptions
