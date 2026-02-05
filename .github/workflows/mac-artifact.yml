@@ -42,8 +42,6 @@ jobs:
           if_false: admin
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
-        with:
-          detached: true
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           path: ${{ steps.checkout-dir.outputs.value }}
