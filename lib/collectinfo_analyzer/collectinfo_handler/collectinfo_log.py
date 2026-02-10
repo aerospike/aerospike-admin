@@ -320,6 +320,12 @@ class _CollectinfoSnapshot:
                         edition = copy.deepcopy(d[stanza])
                         data[node] = util.convert_edition_to_shortform(edition)
 
+                    elif type == "meta_data" and stanza == "release":
+                        if stanza in d:
+                            data[node] = copy.deepcopy(d[stanza])
+                        else:
+                            data[node] = {}
+
                     elif type == "histogram" and stanza == "object-size":
                         if stanza in d:
                             data[node] = copy.deepcopy(d[stanza])

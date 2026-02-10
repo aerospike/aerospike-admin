@@ -42,7 +42,11 @@ def info_to_dict(
     delimiter2 = key_value_delimter
 
     if ignore_field_without_key_value_delimiter:
-        _value_list = _tmp_value_list
+        # Filter out entries that don't contain the key-value delimiter.
+        # This handles cases like trailing semicolons in server responses
+        # (e.g., "type=LUA;content=...;") which create empty strings after splitting,
+        # as well as any other malformed entries without the delimiter.
+        _value_list = [v for v in _tmp_value_list if delimiter2 in v]
 
     else:
         # Sometimes value contains confusing delimiter

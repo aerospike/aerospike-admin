@@ -1017,6 +1017,7 @@ info_release_sheet = Sheet(
         Field("OS", Projectors.String("release_data", "os")),
         Field("SHA", Projectors.String("release_data", "sha")),
         Field("EE SHA", Projectors.String("release_data", "ee-sha")),
+        Field("FIPS SHA", Projectors.String("release_data", "fips-sha")),
     ),
     from_source=("node_ids", "node_names", "release_data"),
     order_by=FieldSorter("Node"),

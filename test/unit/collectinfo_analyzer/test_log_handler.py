@@ -101,3 +101,38 @@ class CollectinfoLogHandlerTest(unittest.TestCase):
 
         # Verify it was called with the correct type
         fetch_mock.assert_called_once_with(type="masking")
+
+    def test_info_release_method_exists(self):
+        """Test that info_release method exists"""
+        # Just test that the method exists and is callable
+        self.assertTrue(hasattr(CollectinfoLogHandler, "info_release"))
+        self.assertTrue(callable(getattr(CollectinfoLogHandler, "info_release")))
+
+    @patch(
+        "lib.collectinfo_analyzer.collectinfo_handler.log_handler.CollectinfoLogHandler._fetch_from_cinfo_log"
+    )
+    def test_info_release_calls_fetch(self, fetch_mock):
+        """Test that info_release calls _fetch_from_cinfo_log with correct type and stanza"""
+        from mock import MagicMock
+
+        # Mock the _fetch_from_cinfo_log method
+        fetch_mock.return_value = {
+            "timestamp": {
+                "node1": {
+                    "arch": "linux-x64",
+                    "edition": "enterprise",
+                    "version": "8.1.1",
+                    "os": "el9",
+                }
+            }
+        }
+
+        # Create a mock handler instance
+        handler = MagicMock(spec=CollectinfoLogHandler)
+        handler._fetch_from_cinfo_log = fetch_mock
+
+        # Call the actual method
+        CollectinfoLogHandler.info_release(handler)
+
+        # Verify it was called with the correct type and stanza
+        fetch_mock.assert_called_once_with(type="meta_data", stanza="release")

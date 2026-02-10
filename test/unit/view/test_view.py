@@ -2229,6 +2229,7 @@ class CliViewInfoReleaseTest(unittest.TestCase):
                 "version": "8.1.1.0",
                 "sha": "abc123",
                 "ee-sha": "def456",
+                "fips-sha": "ghi789",
             },
             "node2": {
                 "arch": "x86_64",
@@ -2237,6 +2238,7 @@ class CliViewInfoReleaseTest(unittest.TestCase):
                 "version": "8.1.1.0",
                 "sha": "xyz789",
                 "ee-sha": "",
+                "fips-sha": "",
             },
         }
 

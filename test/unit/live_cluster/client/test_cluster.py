@@ -52,10 +52,11 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
             cmd = args[0]
 
             # First call - node and build for admin port detection
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": return_value,
                     "build": return_key_value.get("build", "4.9.0.0"),
+                    "peers-generation": "1",
                 }
 
             # Second call - connection info for admin port check (8.1+)
@@ -629,10 +630,11 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
             ip = args[1] if len(args) > 1 else "127.0.0.1"
 
             # First call - node and build for admin port detection
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "ADMIN000000000",
                     "build": "8.1.0.0",  # 8.1+ supports admin port
+                    "peers-generation": "1",
                 }
             # Second call - connection info (admin port enabled)
             elif cmd == "connection":
@@ -1106,10 +1108,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
 
         async def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "NODE000000000",
                     "build": "invalid.version.format",
+                    "peers-generation": "1",
                 }
             elif cmd == "connection":
                 return "admin=false"
@@ -1136,10 +1139,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
 
         async def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "NODE000000000",
                     "build": Exception("Network error"),
+                    "peers-generation": "1",
                 }
             elif cmd == ["service-clear-std", "peers-clear-std"]:
                 return {
@@ -1164,10 +1168,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
 
         async def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "NODE000000000",
                     "build": "8.1.0.0",  # Supports admin port
+                    "peers-generation": "1",
                 }
             elif cmd == "connection":
                 # Connection call fails
@@ -1194,10 +1199,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
 
         async def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "ADMIN000000000",
                     "build": "8.1.0.0",
+                    "peers-generation": "1",
                 }
             elif cmd == "connection":
                 return "admin=true"
@@ -1222,10 +1228,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
 
         async def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "NODE000000000",
                     "build": "7.0.0.0",
+                    "peers-generation": "1",
                 }
             elif cmd == "connection":
                 return "admin=false"
@@ -1251,10 +1258,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
 
         async def info_side_effect(*args, **kwargs):
             cmd = args[0]
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "NODE000000000",
                     "build": "7.0.0.0",
+                    "peers-generation": "1",
                 }
             elif cmd == "connection":
                 return "admin=false"
@@ -1283,10 +1291,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
             cmd = args[0]
             call_log.append(cmd)
 
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "NODE000000000",
                     "build": "7.9.0.0",  # Pre-8.1
+                    "peers-generation": "1",
                 }
             elif cmd == ["service-clear-std", "peers-clear-std"]:
                 return {
@@ -1313,10 +1322,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
             cmd = args[0]
             call_log.append(cmd)
 
-            if cmd == ["node", "build"]:
+            if cmd == ["node", "build", "peers-generation"]:
                 return {
                     "node": "NODE000000000",
                     "build": "8.1.0.0",  # 8.1+
+                    "peers-generation": "1",
                 }
             elif cmd == "connection":
                 return "admin=false"
@@ -1347,10 +1357,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
 
             # Phase 1: Initial connection with version 7.0.0.0
             if phase == "initial":
-                if cmd == ["node", "build"]:
+                if cmd == ["node", "build", "peers-generation"]:
                     return {
                         "node": "NODE000000000",
                         "build": "7.0.0.0",
+                        "peers-generation": "1",
                     }
                 elif cmd == ["service-clear-std", "peers-clear-std"]:
                     return {
@@ -1361,10 +1372,11 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
                     return "NODE000000000"
             # Phase 2: After refresh, server upgraded to 8.1.0.0
             elif phase == "refresh":
-                if cmd == ["node", "build"]:
+                if cmd == ["node", "build", "peers-generation"]:
                     return {
                         "node": "NODE000000000",
                         "build": "8.1.0.0",  # Server upgraded!
+                        "peers-generation": "2",
                     }
                 elif cmd == "connection":
                     return "admin=false"
