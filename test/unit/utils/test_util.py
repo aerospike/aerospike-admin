@@ -30,7 +30,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "get_value_from_dict did not return the expected result",
         )
         self.assertEqual(
-            util.get_value_from_dict(value, ("b"), return_type=float),
+            util.get_value_from_dict(value, ("b",), return_type=float),
             8.9,
             "get_value_from_dict did not return the expected result",
         )

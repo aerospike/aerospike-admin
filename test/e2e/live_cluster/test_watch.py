@@ -14,8 +14,6 @@
 
 import unittest
 
-import unittest
-
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
 from test.e2e import lib, util as test_util

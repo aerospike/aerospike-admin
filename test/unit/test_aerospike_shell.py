@@ -3,8 +3,7 @@ import asadm
 
 import asyncio
 import unittest
-from mock import AsyncMock, Mock, patch
-from mock.mock import call
+from unittest.mock import AsyncMock, Mock, patch, call
 from lib.utils import async_object
 from lib.utils.constants import AdminMode
 

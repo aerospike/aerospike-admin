@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from mock import patch
+from unittest.mock import patch
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.types import ASINFO_RESPONSE_OK
 import os
 import time
 import unittest
 
-import unittest
 from parameterized import parameterized
 from test.e2e import lib, util as test_util
 
