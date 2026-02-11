@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import socket
 import time
 import unittest
 import warnings
-from asyncio import StreamReader
-from asyncio.subprocess import Process
 from collections import deque
 from ctypes import ArgumentError
 from typing import Any
@@ -5374,10 +5373,10 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result)
 
 
-class SocketLeakPreventionTest(asynctest.TestCase):
+class SocketLeakPreventionTest(unittest.IsolatedAsyncioTestCase):
     """Tests for socket leak prevention fixes"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.ip = "192.1.1.1"
         self.port = 3000
 
@@ -5677,8 +5676,10 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             self.node: Node = await Node(self.ip, timeout=0)
 
-        # After node creation, clear side_effect so tests can use return_value
-        self.info_mock.side_effect = None
+        # After node creation, restore mock_info_cinfo_side_effect so tests can use
+        # both return_value (for single-command responses) and command_responses dict
+        # (for command-specific responses needed by info_version tests etc.)
+        self.info_mock.side_effect = mock_info_cinfo_side_effect
 
     def tearDown(self):
         patch.stopall()
