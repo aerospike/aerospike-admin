@@ -28,6 +28,8 @@ from lib.view.sheet import set_style_json
 
 set_style_json()
 
+RETRIES = 8
+
 
 def print_header(actual_header):
     for item in actual_header:
@@ -952,7 +954,7 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
 
         # Poll until the new role is visible (ACL propagation can be delayed)
         role_values = None
-        for _ in range(8):
+        for _ in range(RETRIES):
             (
                 actual_title,
                 _,
@@ -1002,7 +1004,7 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
 
         # Poll until the new role is visible (ACL propagation can be delayed)
         role_values = None
-        for _ in range(8):
+        for _ in range(RETRIES):
             (
                 actual_title,
                 _,
@@ -1045,7 +1047,7 @@ class TestShowRoles(unittest.IsolatedAsyncioTestCase):
             self.rc.execute, ["manage", "acl", "delete", "role", exp_role]
         )
         # Poll until the role is gone
-        for _ in range(8):
+        for _ in range(RETRIES):
             (
                 _,
                 _,

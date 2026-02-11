@@ -2933,7 +2933,7 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", ts)
         cf_path_info = get_collectinfo_path(ts)
         aslogdir = cf_path_info.cf_dir
-        as_logfile_prefix = os.path.join(cf_path_info.cf_dir, cf_path_info.files_prefix)
+        as_logfile_prefix = os.path.join(aslogdir, cf_path_info.files_prefix)
         outfile = as_logfile_prefix + "sysinfo.log"
 
     util.write_to_file(outfile, file_header)
