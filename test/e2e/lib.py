@@ -15,12 +15,10 @@
 import codecs
 import os
 import string
-import subprocess
 import sys
 import aerospike
 import docker
 import atexit
-import shutil
 import signal
 import time
 from test.e2e import util

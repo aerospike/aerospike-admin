@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Awaitable, Coroutine, Type, TypeVar
+from typing import Type, TypeVar
 
 
 class AsyncObject(object):

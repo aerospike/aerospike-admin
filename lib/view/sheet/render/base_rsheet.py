@@ -14,7 +14,6 @@
 
 from collections import OrderedDict
 from itertools import groupby
-import math
 from operator import itemgetter
 
 from lib.utils import util

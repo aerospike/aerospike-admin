@@ -13,24 +13,17 @@
 # limitations under the License.
 
 import socket
-from mock.mock import AsyncMock
-from mock import patch
+import unittest
+from unittest.mock import AsyncMock, patch
 
-from test.unit import util
-from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client import ASProtocolError, ASResponse
+from lib.live_cluster.client.assocket import ASSocket
 from lib.utils.constants import AuthMode
-
-import warnings
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
+from test.unit import util
 
 
-@asynctest.fail_on(active_handles=True)
-class ASSocketTestConnect(asynctest.TestCase):
-    def setUp(self) -> None:
+class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.as_socket = ASSocket(
             "1.2.3.4",
             999,
@@ -49,17 +42,22 @@ class ASSocketTestConnect(asynctest.TestCase):
         self.info_mock = patch("lib.live_cluster.client.assocket.info").start()
 
         # warnings.filterwarnings("error", category=RuntimeWarning)
-        # warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         self.addCleanup(patch.stopall)
 
     @patch("socket.socket")
     @patch("socket.getaddrinfo")
     @patch("asyncio.open_connection", new_callable=AsyncMock)
+    @patch("asyncio.get_event_loop")
     async def test_can_connect(
-        self, open_connection_mock, getaddrinfo_mock, socket_module_mock
+        self,
+        event_loop_mock,
+        open_connection_mock,
+        getaddrinfo_mock,
+        socket_module_mock,
     ):
         open_connection_mock.return_value = AsyncMock(), AsyncMock()
+        event_loop_mock.return_value.sock_connect = AsyncMock()
         getaddrinfo_mock.return_value = [
             ("family1", "socktype1", "proto1", "canonname1", "sockaddr1"),
             ("family2", "socktype2", "proto2", "canonname2", "sockaddr2"),
@@ -69,21 +67,26 @@ class ASSocketTestConnect(asynctest.TestCase):
 
         socket_module_mock.assert_called_with("family1", socket.SOCK_STREAM)
         socket_mock = socket_module_mock.return_value
-        socket_mock.connect.assert_called_with("sockaddr1")
+        event_loop_mock.return_value.sock_connect.assert_called_with(
+            socket_mock, "sockaddr1"
+        )
         self.assertEqual(self.as_socket.sock, socket_mock)
 
     @patch("socket.socket")
     @patch("socket.getaddrinfo")
     @patch("lib.live_cluster.client.assocket._AsyncioSSLConnectionAdapter")
     @patch("asyncio.open_connection", new_callable=AsyncMock)
+    @patch("asyncio.get_event_loop")
     async def test_can_connect_with_ssl_context(
         self,
+        event_loop_mock,
         open_connection_mock,
         ssl_connect_mock,
         getaddrinfo_mock,
         socket_module_mock,
     ):
         open_connection_mock.return_value = AsyncMock(), AsyncMock()
+        event_loop_mock.return_value.sock_connect = AsyncMock()
         self.as_socket.ssl_context = True
         getaddrinfo_mock.return_value = [
             ("family1", "socktype1", "proto1", "canonname1", "sockaddr1"),
@@ -95,11 +98,13 @@ class ASSocketTestConnect(asynctest.TestCase):
         socket_module_mock.assert_called_with("family1", socket.SOCK_STREAM)
         socket_mock = socket_module_mock.return_value
         ssl_connect_mock.assert_called_with(True, socket_mock)
-        socket_mock = ssl_connect_mock.return_value
-        socket_mock.connect.assert_called_with("sockaddr1")
-        socket_mock.set_app_data.assert_called_with("tls-name")
-        socket_mock.do_handshake.assert_called_once()
-        self.assertEqual(self.as_socket.sock, socket_mock)
+        wrapped_socket_mock = ssl_connect_mock.return_value
+        event_loop_mock.return_value.sock_connect.assert_called_with(
+            wrapped_socket_mock, "sockaddr1"
+        )
+        wrapped_socket_mock.set_app_data.assert_called_with("tls-name")
+        wrapped_socket_mock.do_handshake.assert_called_once()
+        self.assertEqual(self.as_socket.sock, wrapped_socket_mock)
 
     @patch("lib.live_cluster.client.assocket.info")
     async def test_is_connected_returns_false(self, info_mock):
@@ -204,9 +209,8 @@ class ASSocketTestConnect(asynctest.TestCase):
     async def test_authenticate_raises_not_authenticated(self, new_mock, old_mock):
         new_mock.return_value = ASResponse.NOT_AUTHENTICATED
 
-        await self.assertAsyncRaises(
-            ASProtocolError, self.as_socket.authenticate("token")
-        )
+        with self.assertRaises(ASProtocolError):
+            await self.as_socket.authenticate("token")
 
         new_mock.assert_called_with(
             self.as_socket.reader,

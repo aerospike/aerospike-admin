@@ -22,7 +22,7 @@ from lib.view.sheet.decleration import (
     NoEntryException,
     FieldSorter,
 )
-from lib.live_cluster.client.node import ASINFO_RESPONSE_OK, ASInfoResponseError
+from lib.live_cluster.client.node import ASINFO_RESPONSE_OK
 from lib.view.sheet import (
     Aggregators,
     Converters,

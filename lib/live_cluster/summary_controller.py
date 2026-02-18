@@ -13,7 +13,6 @@
 # limitations under the License.
 import asyncio
 import logging
-from typing import Union
 from lib.base_controller import CommandHelp, ModifierHelp
 from lib.live_cluster.constants import SSH_MODIFIER_HELP, SSH_MODIFIER_USAGE
 from lib.utils import common, util

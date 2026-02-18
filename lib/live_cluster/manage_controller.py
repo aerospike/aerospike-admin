@@ -17,7 +17,7 @@ import copy
 import inspect
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from dateutil import parser as date_parser
 from typing import Optional
@@ -2477,8 +2477,7 @@ class ManageTruncateController(ManageLeafCommandController):
 
     def _parse_lut(self) -> tuple[Optional[datetime], Optional[str]]:
         lut_datetime = None  # datetime object
-        lut_epoch_time = None  #
-        error = None
+        lut_epoch_time = None  # epoch time string
         before = self.mods["before"]
 
         if len(before):
@@ -2495,8 +2494,10 @@ class ManageTruncateController(ManageLeafCommandController):
                 lut_time = before[0]
 
                 try:
-                    # Create a naive datetime object.
-                    lut_datetime = datetime.utcfromtimestamp(float(lut_time))
+                    # Create a timezone-aware datetime object in UTC.
+                    lut_datetime = datetime.fromtimestamp(
+                        float(lut_time), tz=timezone.utc
+                    )
                 except ValueError as e:
                     raise ShellException(e)
 

@@ -19,7 +19,7 @@ import re
 import logging
 import inspect
 from OpenSSL import SSL
-from typing import Any, Callable, Coroutine, Literal, Union
+from typing import Any, Callable, Coroutine, Union
 from time import time
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
 from lib.live_cluster.client.types import Addr_Port_TLSName

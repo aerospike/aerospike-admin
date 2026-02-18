@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import logging
-from distutils import debug
 from enum import Enum
 import traceback
-from sys import exit
 from typing import Optional
 
 

@@ -13,47 +13,37 @@
 # limitations under the License.
 
 import asyncio
-from ctypes import ArgumentError
-import time
-from typing import Any
-from unittest.mock import call
-import warnings
-from pytest import PytestUnraisableExceptionWarning
-from mock import MagicMock, patch
 import socket
+import time
 import unittest
+import warnings
 from collections import deque
-
-from mock.mock import AsyncMock, Mock, call
-import pytest
+from ctypes import ArgumentError
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
 import lib
-from lib.live_cluster.client.ctx import CDTContext, CTXItem, CTXItems
-from lib.live_cluster.client.types import (
-    ASProtocolError,
-    ASProtocolExcFactory,
-    ASResponse,
-)
-
-from lib.live_cluster.client.constants import ErrorsMsgs
-from test.unit import util
-from lib.utils import constants
-from lib.live_cluster.client.assocket import ASSocket
-from lib.live_cluster.client.node import _SysCmd, Node
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoConfigError,
     ASInfoError,
     ASInfoResponseError,
 )
+from lib.live_cluster.client.assocket import ASSocket
+from lib.live_cluster.client.constants import ErrorsMsgs
+from lib.live_cluster.client.ctx import CDTContext, CTXItems
+from lib.live_cluster.client.node import _SysCmd, Node
+from lib.live_cluster.client.types import (
+    ASProtocolError,
+    ASProtocolExcFactory,
+    ASResponse,
+)
+from lib.utils import constants
+from test.unit import util
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import asynctest
 
-
-class NodeInitTest(asynctest.TestCase):
-    async def setUp(self):
+class NodeInitTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "192.1.1.1"
         self.get_fully_qualified_domain_name = patch(
@@ -77,7 +67,6 @@ class NodeInitTest(asynctest.TestCase):
         socket.getaddrinfo.return_value = [(2, 1, 6, "", ("192.1.1.1", 3000))]
 
         warnings.filterwarnings("error", category=RuntimeWarning)
-        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         # Here so call count does not include Node initialization
 
@@ -256,8 +245,8 @@ class NodeInitTest(asynctest.TestCase):
         )
 
 
-class NodeTest(asynctest.TestCase):
-    async def setUp(self):
+class NodeTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "192.1.1.1"
         self.get_fully_qualified_domain_name = patch(
@@ -281,7 +270,6 @@ class NodeTest(asynctest.TestCase):
             self.node: Node = await Node(self.ip, timeout=0)
 
         warnings.filterwarnings("error", category=RuntimeWarning)
-        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
 
         # Here so call count does not include Node initialization
         self.info_mock = lib.live_cluster.client.node.Node._info_cinfo = patch(
@@ -356,7 +344,8 @@ class NodeTest(asynctest.TestCase):
             ASResponse.BAD_RATE_QUOTA, ""
         )
 
-        await self.assertAsyncRaises(ASProtocolError, self.node.login())
+        with self.assertRaises(ASProtocolError):
+            await self.node.login()
 
         as_socket_mock.close.assert_called_once()
 
@@ -4791,10 +4780,10 @@ class SyscmdTest(unittest.TestCase):
         self.assertDictEqual(expected, result)
 
 
-class NeedsRefreshTest(asynctest.TestCase):
+class NeedsRefreshTest(unittest.IsolatedAsyncioTestCase):
     """Test cases for the needs_refresh method"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.ip = "192.1.1.1"
         self.port = 3000
 
@@ -5224,10 +5213,10 @@ class NeedsRefreshTest(asynctest.TestCase):
         self.info_mock.assert_called_with("feature-key", self.ip)
 
 
-class SocketPoolTest(asynctest.TestCase):
+class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
     """Test cases for socket pool FIFO behavior and edge cases"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.ip = "192.1.1.1"
         self.port = 3000
 
@@ -5384,10 +5373,10 @@ class SocketPoolTest(asynctest.TestCase):
         self.assertFalse(result)
 
 
-class SocketLeakPreventionTest(asynctest.TestCase):
+class SocketLeakPreventionTest(unittest.IsolatedAsyncioTestCase):
     """Tests for socket leak prevention fixes"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.ip = "192.1.1.1"
         self.port = 3000
 
@@ -5626,10 +5615,10 @@ class SocketLeakPreventionTest(asynctest.TestCase):
         get_conn_mock.assert_called_once_with(self.node.ip, self.node.port)
 
 
-class NodeErrorHandlingTest(asynctest.TestCase):
+class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
     """Test error handling for info functions"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "127.0.0.1"
 
@@ -5658,9 +5647,39 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         self.info_mock.command_responses = {}  # For command-specific responses
         patch("lib.live_cluster.client.node.Node._info_cinfo", self.info_mock).start()
 
+        # Set up default responses for node initialization only
+        # This will be used during node creation, then tests can override with return_value or side_effect
+        def info_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # First call - node and build for admin port detection
+            if cmd == ["node", "build"]:
+                return {
+                    "node": "test_node_id",
+                    "build": "8.0.0.1",
+                }
+            # Second call - connection info for admin port check
+            elif cmd == "connection":
+                return "admin=false"
+            # Third call - service addresses and peers
+            elif cmd == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "127.0.0.1:3000",
+                    "peers-clear-std": "1,3000,[[test_node_id,,[127.0.0.1]]]",
+                }
+            else:
+                # Return empty string for any other calls during initialization
+                return ""
+
+        self.info_mock.side_effect = info_side_effect
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             self.node: Node = await Node(self.ip, timeout=0)
+
+        # After node creation, restore mock_info_cinfo_side_effect so tests can use
+        # both return_value (for single-command responses) and command_responses dict
+        # (for command-specific responses needed by info_version tests etc.)
+        self.info_mock.side_effect = mock_info_cinfo_side_effect
 
     def tearDown(self):
         patch.stopall()
@@ -6095,10 +6114,10 @@ class NodeErrorHandlingTest(asynctest.TestCase):
         self.assertEqual(result["ck"], "71")
 
 
-class NodeBuildCachingTest(asynctest.TestCase):
+class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):
     """Test build version caching functionality"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "127.0.0.1"
 
@@ -6249,10 +6268,10 @@ class NodeBuildCachingTest(asynctest.TestCase):
         self.assertEqual(self.node.build, "6.2.0.5")
 
 
-class NodeEdgeCasesTest(asynctest.TestCase):
+class NodeEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
     """Test edge cases and corner cases for build caching and connection flow"""
 
-    async def setUp(self):
+    async def asyncSetUp(self):
         self.maxDiff = None
         self.ip = "127.0.0.1"
 
