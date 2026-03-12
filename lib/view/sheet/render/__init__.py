@@ -23,7 +23,6 @@ from .column_rsheet import ColumnRSheet
 from .row_rsheet import RowRSheet
 from .json_rsheet import JSONRSheet
 
-
 render_class = {
     SheetStyle.columns: ColumnRSheet,
     SheetStyle.rows: RowRSheet,

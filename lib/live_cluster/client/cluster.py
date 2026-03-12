@@ -32,7 +32,6 @@ from lib.utils.types import NodeDict
 from . import client_util
 from .node import Node
 
-
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
 
