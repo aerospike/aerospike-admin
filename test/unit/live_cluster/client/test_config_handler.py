@@ -274,7 +274,8 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
         pkgutil_mock.side_effect = self.pkgutil_side_effect
-        os.listdir = lambda *arg: [
+        listdir_mock = patch("os.listdir").start()
+        listdir_mock.return_value = [
             "5.5.0.json",
             "6.0.0.json",
             "4.2.0.json",
@@ -317,7 +318,8 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
         pkgutil_mock.side_effect = self.pkgutil_side_effect
-        os.listdir = lambda *arg: [
+        listdir_mock = patch("os.listdir").start()
+        listdir_mock.return_value = [
             "10.2.0.json",
             "4.0.0.json",
             "5.4.0.json",
@@ -336,6 +338,8 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         self.assertRaises(
             FileNotFoundError, JsonDynamicConfigHandler, "dir", "10.2.1", strict=True
         )
+
+        patch.stopall()
 
     def test_get_service_params(self):
         expected = [
