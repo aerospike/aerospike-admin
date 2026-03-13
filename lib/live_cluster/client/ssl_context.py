@@ -24,138 +24,18 @@ try:
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         from OpenSSL import crypto, SSL
+
     HAVE_PYOPENSSL = True
 except ImportError:
     HAVE_PYOPENSSL = False
+
 try:
-    from pyasn1.type import univ, constraint, char, namedtype, tag
-    from pyasn1.codec.der import decoder as der_decoder
+    from cryptography import x509
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-    HAVE_PYASN1 = True
+    HAVE_CRYPTOGRAPHY = True
 except ImportError:
-    HAVE_PYASN1 = False
-
-if HAVE_PYASN1:
-    # Helper code for ASN.1 decoding
-    MAX = 64
-
-    class DirectoryString(univ.Choice):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType(
-                "teletexString",
-                char.TeletexString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "printableString",
-                char.PrintableString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "universalString",
-                char.UniversalString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "utf8String",
-                char.UTF8String().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "bmpString",
-                char.BMPString().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-            namedtype.NamedType(
-                "ia5String",
-                char.IA5String().subtype(
-                    subtypeSpec=constraint.ValueSizeConstraint(1, MAX)
-                ),
-            ),
-        )
-
-    class AttributeTypeAndValue(univ.Sequence):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType("type", univ.ObjectIdentifier()),
-            namedtype.NamedType("value", DirectoryString()),
-        )
-
-    class RelativeDistinguishedName(univ.SetOf):
-        componentType = AttributeTypeAndValue()
-
-    class RDNSequence(univ.SequenceOf):
-        componentType = RelativeDistinguishedName()
-
-    class AnotherName(univ.Sequence):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType("type-id", univ.ObjectIdentifier()),
-            namedtype.NamedType(
-                "value",
-                univ.Any().subtype(
-                    explicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 0)
-                ),
-            ),
-        )
-
-    class Name(univ.Choice):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType("", RDNSequence()),
-        )
-
-    class GeneralName(univ.Choice):
-        componentType = namedtype.NamedTypes(
-            namedtype.NamedType(
-                "otherName",
-                AnotherName().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 0)
-                ),
-            ),
-            namedtype.NamedType(
-                "rfc822Name",
-                char.IA5String().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 1)
-                ),
-            ),
-            namedtype.NamedType(
-                "dNSName",
-                char.IA5String().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 2)
-                ),
-            ),
-            namedtype.NamedType(
-                "directoryName",
-                Name().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 4)
-                ),
-            ),
-            namedtype.NamedType(
-                "uniformResourceIdentifier",
-                char.IA5String().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 6)
-                ),
-            ),
-            namedtype.NamedType(
-                "iPAddress",
-                univ.OctetString().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 7)
-                ),
-            ),
-            namedtype.NamedType(
-                "registeredID",
-                univ.ObjectIdentifier().subtype(
-                    implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 8)
-                ),
-            ),
-        )
-
-    class SubjectAltGeneralNames(univ.SequenceOf):
-        componentType = GeneralName()
-        sizeSpec = univ.SequenceOf.sizeSpec + constraint.ValueSizeConstraint(1, MAX)
+    HAVE_CRYPTOGRAPHY = False
 
 
 class SSLContext(object):
@@ -217,21 +97,15 @@ class SSLContext(object):
 
         crl_checklist = []
         for f in files:
-            fs = None
             try:
-                fs = open(f, "r").read()
-                crl = crypto.load_crl(crypto.FILETYPE_PEM, fs)
-                revoked = crl.get_revoked()
-                if not revoked:
-                    continue
-                for r in revoked:
+                with open(f, "rb") as fh:
+                    crl = x509.load_pem_x509_crl(fh.read())
+                for revoked_cert in crl:
                     try:
-                        r_serial = int(r.get_serial(), 16)
-                        crl_checklist.append(r_serial)
+                        crl_checklist.append(revoked_cert.serial_number)
                     except Exception:
                         pass
             except Exception:
-                # Directory can have other files also
                 pass
         if crl_checklist:
             return crl_checklist
@@ -286,68 +160,60 @@ class SSLContext(object):
     def _verify_none_cb(self, conn, cert, errnum, depth, ok):
         return ok
 
-    def _cert_blacklist_check(self, cert: crypto.X509 = None):
-        if not cert:
+    @staticmethod
+    def _get_cert_short_name(attr):
+        """Extract RFC 4514 short name (e.g. CN, O, OU) from an x509.NameAttribute."""
+        rfc4514 = attr.rfc4514_string()
+        return rfc4514.split("=", 1)[0]
+
+    @staticmethod
+    def _get_issuer_components(issuer_name):
+        """Convert an x509.Name to a sorted list of (short_name, value) tuples."""
+        components = []
+        for attr in issuer_name:
+            short_name = SSLContext._get_cert_short_name(attr)
+            components.append((short_name, attr.value))
+        return sorted(components, key=lambda x: x[0])
+
+    def _cert_blacklist_check(self, crypto_cert=None):
+        if not crypto_cert:
             raise ValueError("Empty or no Server Certificate for authentication")
         if not self._cert_blacklist:
             return
-        try:
-            serial_number = cert.get_serial_number()
-            if serial_number is None:
-                raise Exception("Wrong Server Certificate: No Serial Number.")
-        except Exception:
-            raise Exception(
-                "Wrong Server Certificate: not able to extract Serial Number."
-            )
 
-        try:
-            issuer = cert.get_issuer().get_components()
-            issuer = sorted(issuer, key=lambda x: x[0])
-            if not issuer:
-                raise Exception("Wrong Server Certificate: No Issuer Name.")
-        except Exception:
-            raise Exception("Wrong Server Certificate: not able to extract Issuer.")
-        try:
-            serial_number_int = int(serial_number)
-        except Exception:
-            raise Exception(
-                "Wrong Server Certificate: not able to extract Serial Number in integer format."
-            )
-        if (serial_number_int, None) in self._cert_blacklist:
+        serial_number = crypto_cert.serial_number
+        if serial_number is None:
+            raise Exception("Wrong Server Certificate: No Serial Number.")
+
+        issuer = self._get_issuer_components(crypto_cert.issuer)
+        if not issuer:
+            raise Exception("Wrong Server Certificate: No Issuer Name.")
+
+        if (serial_number, None) in self._cert_blacklist:
             raise Exception(
                 "Server Certificate is in blacklist: (Serial Number: %x)"
-                % (serial_number_int)
+                % (serial_number)
             )
-        if (serial_number_int, issuer) in self._cert_blacklist:
+        if (serial_number, issuer) in self._cert_blacklist:
             raise Exception(
                 "Server Certificate is in blacklist: (Serial Number: %x, Issuer: %s)"
-                % (serial_number_int, str(issuer))
+                % (serial_number, str(issuer))
             )
 
-    def _cert_crl_check(self, cert):
-        if not cert:
+    def _cert_crl_check(self, crypto_cert):
+        if not crypto_cert:
             raise ValueError("empty or no Server Certificate chain for CRL check")
         if not self._crl_checklist:
             return
-        try:
-            serial_number = cert.get_serial_number()
-            if serial_number is None:
-                raise Exception("Wrong Server Certificate: No Serial Number.")
-        except Exception:
-            raise Exception(
-                "Wrong Server Certificate: not able to extract Serial Number."
-            )
 
-        try:
-            serial_number_int = int(serial_number)
-        except Exception:
-            raise Exception(
-                "Wrong Server Certificate: not able to extract Serial Number in integer format."
-            )
+        serial_number = crypto_cert.serial_number
+        if serial_number is None:
+            raise Exception("Wrong Server Certificate: No Serial Number.")
+
         if serial_number in self._crl_checklist:
             raise Exception(
                 "Server Certificate is in revoked list: (Serial Number: %s)"
-                % (str(hex(serial_number_int)))
+                % (str(hex(serial_number)))
             )
 
     def _get_common_names(self, components):
@@ -360,33 +226,45 @@ class SSLContext(object):
 
         return common_names
 
-    def _get_subject_alt_names(self, cert):
+    def _get_subject_alt_names(self, crypto_cert):
+        """Extract Subject Alternative Names using the cryptography library."""
         alt_names = []
-        for i in range(cert.get_extension_count()):
-            e = cert.get_extension(i)
-            e_name = util.bytes_to_str(e.get_short_name())
-            if e_name == "subjectAltName":
-                e_data = e.get_data()
-                decoded_data = der_decoder.decode(e_data, SubjectAltGeneralNames())
-                for name in decoded_data:
-                    if isinstance(name, SubjectAltGeneralNames):
-                        for entry in range(len(name)):
-                            component = name.getComponentByPosition(entry)
-                            alt_names.append(str(component.getComponent()))
+        try:
+            san_ext = crypto_cert.extensions.get_extension_for_class(
+                x509.SubjectAlternativeName
+            )
+            for name in san_ext.value:
+                if isinstance(
+                    name,
+                    (x509.DNSName, x509.RFC822Name, x509.UniformResourceIdentifier),
+                ):
+                    alt_names.append(name.value)
+                elif isinstance(name, x509.IPAddress):
+                    alt_names.append(str(name.value))
+                else:
+                    alt_names.append(str(name.value))
+        except x509.ExtensionNotFound:
+            pass
         return alt_names
 
-    def _match_tlsname(self, cert, tls_name):
-        if not cert:
+    def _match_tlsname(self, crypto_cert, tls_name):
+        if not crypto_cert:
             raise ValueError(
                 "empty or no certificate, match_tlsname needs a "
                 "SSL socket or SSL context with either "
                 "CERT_OPTIONAL or CERT_REQUIRED"
             )
+
+        if not HAVE_CRYPTOGRAPHY:
+            raise ImportError(
+                "No module named cryptography. It is required for TLS name matching."
+            )
+
         try:
             components = []
-            for component in cert.get_subject().get_components():
-                component_tuple = tuple(util.bytes_to_str(elem) for elem in component)
-                components.append(component_tuple)
+            for attr in crypto_cert.subject:
+                short_name = self._get_cert_short_name(attr)
+                components.append((short_name, attr.value))
         except Exception as e:
             raise Exception("Failed to read certificate components: " + str(e))
 
@@ -399,18 +277,13 @@ class SSLContext(object):
                 pass
             cnnames.add(value)
 
-        if HAVE_PYASN1:
-            for value in self._get_subject_alt_names(cert):
-                try:
-                    if ssl_util.dnsname_match(value, tls_name):
-                        return
-                except Exception:
-                    pass
-                cnnames.add(value)
-        else:
-            raise ImportError(
-                "No module named pyasn1. It is required for dnsname_match."
-            )
+        for value in self._get_subject_alt_names(crypto_cert):
+            try:
+                if ssl_util.dnsname_match(value, tls_name):
+                    return
+            except Exception:
+                pass
+            cnnames.add(value)
 
         if len(cnnames) > 1:
             raise Exception("Wrong tls_name %r" % tls_name)
@@ -424,13 +297,15 @@ class SSLContext(object):
             )
 
     def _verify_cb(self, conn, cert, errnum, depth, ok):
+        crypto_cert = cert.to_cryptography()
+
         if depth == 0:
             tls_name = conn.get_app_data()
-            self._match_tlsname(cert=cert, tls_name=tls_name)
+            self._match_tlsname(crypto_cert=crypto_cert, tls_name=tls_name)
 
-        self._cert_blacklist_check(cert=cert)
+        self._cert_blacklist_check(crypto_cert=crypto_cert)
         if self._crl_check_all or (self._crl_check and depth == 0):
-            self._cert_crl_check(cert=cert)
+            self._cert_crl_check(crypto_cert)
         return ok
 
     def _parse_protocols(self, protocols):
@@ -491,7 +366,6 @@ class SSLContext(object):
         protocols_to_enable = list(protocols_to_enable)
 
         if len(protocols_to_enable) > 1:
-            # Multiple protocols are enabled
             method = SSL.SSLv23_METHOD
         else:
             if protocols_to_enable[0] == "TLSv1":
@@ -610,14 +484,14 @@ class SSLContext(object):
                         )
 
                 try:
-                    pkey = crypto.load_privatekey(
-                        crypto.FILETYPE_PEM,
+                    private_key = load_pem_private_key(
                         open(keyfile, "rb").read(),
-                        pwd,
+                        password=pwd,
                     )
+                    pkey = crypto.PKey.from_cryptography_key(private_key)
                 except IOError:
                     raise Exception("Unable to locate key file {}".format(keyfile))
-                except crypto.Error:
+                except (ValueError, TypeError):
                     raise Exception(
                         "Invalid key file or bad passphrase {}".format(keyfile)
                     )
@@ -659,14 +533,12 @@ class SSLContext(object):
         keyfile_password = keyfile_password.strip()
 
         if keyfile_password.startswith("env:"):
-            # read from environment variable
             try:
                 return os.environ[keyfile_password[4:]]
             except Exception as e:
                 raise Exception("Failed to read environment variable: {}".format(e))
 
         if keyfile_password.startswith("file:"):
-            # read from file
             file = None
 
             try:
