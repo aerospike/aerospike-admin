@@ -35,6 +35,7 @@ jobs:
         run: |
           pipenv run bash -c "make coverage"
           pipenv run bash -c "coverage xml"
+          pipenv run bash -c "coverage report --format=markdown" >> $GITHUB_STEP_SUMMARY
       - name: Upload Collectinfo for Debugging
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
