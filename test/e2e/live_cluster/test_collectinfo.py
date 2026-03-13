@@ -238,7 +238,7 @@ class TestCollectinfo(unittest.IsolatedAsyncioTestCase):
         time.sleep(5)
 
         def record_set(record):
-            (key, meta, bins) = record
+            key, meta, bins = record
 
         query = lib.CLIENT.query(namespace_, set_)
         query.foreach(record_set)

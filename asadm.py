@@ -46,7 +46,6 @@ from lib.utils.async_object import AsyncObject
 
 import os
 
-
 if "libedit" in readline.__doc__:
     # BSD libedit style tab completion for OS X
     readline.parse_and_bind("bind ^I rl_complete")

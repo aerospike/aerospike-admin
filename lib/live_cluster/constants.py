@@ -1,6 +1,5 @@
 from lib.base_controller import ModifierHelp
 
-
 SSH_MODIFIER_USAGE = "--enable-ssh [--ssh-user <user>] [--ssh-pwd <pwd>] [--ssh-port <port>] [--ssh-key <key>] [--ssh-key-pwd]"
 SSH_MODIFIER_HELP = (
     ModifierHelp(
