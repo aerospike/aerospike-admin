@@ -1200,9 +1200,7 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
         mock_ssl.Context.return_value = mock_ctx
-        mock_crypto.PKey.from_cryptography_key.return_value = (
-            unittest.mock.MagicMock()
-        )
+        mock_crypto.PKey.from_cryptography_key.return_value = unittest.mock.MagicMock()
         with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as f:
             f.write(b"dummy")
             keypath = f.name
@@ -1398,9 +1396,7 @@ class TestMatchTlsNameEdgeCases(unittest.TestCase):
 
     def test_subject_read_failure_raises(self):
         mock_cert = unittest.mock.MagicMock()
-        mock_cert.subject = unittest.mock.PropertyMock(
-            side_effect=Exception("corrupt")
-        )
+        mock_cert.subject = unittest.mock.PropertyMock(side_effect=Exception("corrupt"))
         type(mock_cert).subject = unittest.mock.PropertyMock(
             side_effect=Exception("corrupt")
         )
@@ -1666,5 +1662,3 @@ class TestMatchTlsNameDnsMatchExceptions(unittest.TestCase):
         with self.assertRaises(Exception) as ctx:
             self.ssl_ctx._match_tlsname(cert, "a.b.example.com")
         self.assertIn("tls_name", str(ctx.exception))
-
-
