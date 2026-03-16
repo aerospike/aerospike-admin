@@ -311,7 +311,8 @@ class TestParseCrlCert(unittest.TestCase):
         self.assertIn(0x1234, result)
         self.assertIn(0x5678, result)
 
-    def test_empty_crl_raises(self):
+    def test_empty_crl_returns_empty_list(self):
+        """A valid CRL with zero revocations should return [] not raise."""
         crl = _generate_crl(self.ca_key, self.ca_cert, revoked_serials=[])
         crl_pem = crl.public_bytes(serialization.Encoding.PEM)
 
@@ -319,9 +320,8 @@ class TestParseCrlCert(unittest.TestCase):
             crl_path = os.path.join(tmpdir, "test.crl")
             with open(crl_path, "wb") as f:
                 f.write(crl_pem)
-            with self.assertRaises(ValueError) as ctx:
-                self.ssl_ctx._parse_crl_cert(tmpdir)
-            self.assertIn("No valid CRL", str(ctx.exception))
+            result = self.ssl_ctx._parse_crl_cert(tmpdir)
+        self.assertEqual(result, [])
 
     def test_no_capath_raises(self):
         with self.assertRaises(ValueError):

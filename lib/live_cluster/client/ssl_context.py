@@ -86,10 +86,12 @@ class SSLContext(object):
             raise ValueError("Wrong or empty capath provided to CRL check.")
 
         crl_checklist = []
+        parsed_any = False
         for f in files:
             try:
                 with open(f, "rb") as fh:
                     crl = x509.load_pem_x509_crl(fh.read())
+                parsed_any = True
                 for revoked_cert in crl:
                     try:
                         crl_checklist.append(revoked_cert.serial_number)
@@ -97,10 +99,9 @@ class SSLContext(object):
                         pass
             except (OSError, ValueError):
                 pass
-        if crl_checklist:
-            return crl_checklist
-        else:
+        if not parsed_any:
             raise ValueError("No valid CRL found at capath")
+        return crl_checklist
 
     def _verify_none_cb(self, conn, cert, errnum, depth, ok):
         return ok
