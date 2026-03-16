@@ -151,18 +151,6 @@ def print_config_file_option():
         "                      Aerospike Cluster is supporting it)."
     )
     print(
-        " --tls-cert-blacklist <path>\n"
-        "                      Path to a certificate blacklist file. The file should\n"
-        "                      contain one line for each blacklisted certificate.\n"
-        "                      Each line starts with the certificate serial number\n"
-        "                      expressed in hex. Each entry may optionally specify\n"
-        "                      the issuer name of the certificate (serial numbers are\n"
-        "                      only required to be unique per issuer).Example:\n"
-        "                      867EC87482B2\n"
-        "                      /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA"
-    )
-
-    print(
         " --tls-crl-check      Enable CRL checking for leaf certificate. An error\n"
         "                      occurs if a valid CRL files cannot be found in\n"
         "                      tls_capath."
@@ -232,7 +220,6 @@ def get_cli_args():
         const=DEFAULTPASSWORD,
     )
     add_fn("--tls-certfile", dest="tls-certfile")
-    add_fn("--tls-cert-blacklist", dest="tls-cert-blacklist")
     add_fn("--tls-crl-check", dest="tls-crl-check", action="store_true")
     add_fn("--tls-crl-check-all", dest="tls-crl-check-all", action="store_true")
 
@@ -251,7 +238,6 @@ def get_cli_args():
     add_fn("--tls_cipher_suite")
     add_fn("--tls_keyfile")
     add_fn("--tls_certfile")
-    add_fn("--tls_cert_blacklist")
     add_fn("--tls_crl_check", action="store_true")
     add_fn("--tls_crl_check_all", action="store_true")
 

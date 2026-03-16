@@ -16,6 +16,7 @@ import datetime
 import ipaddress
 import os
 import tempfile
+import types
 import unittest
 import unittest.mock
 from unittest.mock import patch
@@ -26,6 +27,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from OpenSSL import crypto, SSL
 
 from lib.live_cluster.client.ssl_context import SSLContext
 
@@ -162,28 +164,6 @@ class TestGetSubjectAltNames(unittest.TestCase):
         self.assertEqual(alt_names, [])
 
 
-class TestGetIssuerComponents(unittest.TestCase):
-    def test_single_cn(self):
-        _, ca_cert = _generate_ca(cn="My CA")
-        components = SSLContext._get_issuer_components(ca_cert.issuer)
-        self.assertEqual(components, [("CN", "My CA")])
-
-    def test_multiple_attributes_sorted(self):
-        _, ca_cert = _generate_ca(
-            cn="My CA",
-            extra_issuer_attrs=[
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "My Org"),
-                x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-            ],
-        )
-        components = SSLContext._get_issuer_components(ca_cert.issuer)
-        keys = [c[0] for c in components]
-        self.assertEqual(sorted(keys), keys)
-        self.assertIn(("CN", "My CA"), components)
-        self.assertIn(("O", "My Org"), components)
-        self.assertIn(("C", "US"), components)
-
-
 class TestGetCommonNames(unittest.TestCase):
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
@@ -210,55 +190,6 @@ class TestGetCommonNames(unittest.TestCase):
     def test_none_components(self):
         result = self.ssl_ctx._get_common_names(None)
         self.assertEqual(result, [])
-
-
-class TestCertBlacklistCheck(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca(
-            cn="Test CA",
-            extra_issuer_attrs=[
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Test Org"),
-            ],
-        )
-
-    def test_no_blacklist(self):
-        self.ssl_ctx._cert_blacklist = []
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=12345)
-        self.ssl_ctx._cert_blacklist_check(cert)
-
-    def test_serial_only_match(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0xDEAD)
-        self.ssl_ctx._cert_blacklist = [(0xDEAD, None)]
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._cert_blacklist_check(cert)
-        self.assertIn("blacklist", str(ctx.exception))
-        self.assertIn("dead", str(ctx.exception).lower())
-
-    def test_serial_and_issuer_match(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0xBEEF)
-        issuer_components = SSLContext._get_issuer_components(cert.issuer)
-        self.ssl_ctx._cert_blacklist = [(0xBEEF, issuer_components)]
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._cert_blacklist_check(cert)
-        self.assertIn("blacklist", str(ctx.exception))
-
-    def test_serial_match_wrong_issuer_passes(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0xCAFE)
-        self.ssl_ctx._cert_blacklist = [
-            (0xCAFE, [("CN", "Different CA"), ("O", "Different Org")])
-        ]
-        self.ssl_ctx._cert_blacklist_check(cert)
-
-    def test_no_match(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0x1234)
-        self.ssl_ctx._cert_blacklist = [(0x5678, None)]
-        self.ssl_ctx._cert_blacklist_check(cert)
-
-    def test_none_cert_raises(self):
-        self.ssl_ctx._cert_blacklist = [(0x1234, None)]
-        with self.assertRaises(ValueError):
-            self.ssl_ctx._cert_blacklist_check(None)
 
 
 class TestCertCrlCheck(unittest.TestCase):
@@ -403,82 +334,6 @@ class TestParseCrlCert(unittest.TestCase):
         self.assertIn(0xABCD, result)
 
 
-class TestParseBlacklistCert(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-
-    def test_serial_only(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("DEAD\n")
-            f.write("BEEF\n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._parse_blacklist_cert(path)
-            self.assertEqual(result, [(0xDEAD, None), (0xBEEF, None)])
-        finally:
-            os.unlink(path)
-
-    def test_serial_with_issuer(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("DEAD /CN=Test CA/O=Test Org\n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._parse_blacklist_cert(path)
-            self.assertEqual(len(result), 1)
-            serial, issuer = result[0]
-            self.assertEqual(serial, 0xDEAD)
-            self.assertIsNotNone(issuer)
-            self.assertIn(("CN", "Test CA"), issuer)
-            self.assertIn(("O", "Test Org"), issuer)
-        finally:
-            os.unlink(path)
-
-    def test_comments_and_blank_lines_skipped(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("# This is a comment\n")
-            f.write("\n")
-            f.write("ABCD\n")
-            f.write("  \n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._parse_blacklist_cert(path)
-            self.assertEqual(result, [(0xABCD, None)])
-        finally:
-            os.unlink(path)
-
-    def test_nonexistent_file(self):
-        result = self.ssl_ctx._parse_blacklist_cert("/nonexistent/file.txt")
-        self.assertEqual(result, [])
-
-
-class TestParseIssuer(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-
-    def test_single_component(self):
-        result = self.ssl_ctx._parse_issuer("/CN=Test CA")
-        self.assertEqual(result, [("CN", "Test CA")])
-
-    def test_multiple_components_sorted(self):
-        result = self.ssl_ctx._parse_issuer("/O=Test Org/CN=Test CA/C=US")
-        keys = [c[0] for c in result]
-        self.assertEqual(keys, sorted(keys))
-        self.assertIn(("CN", "Test CA"), result)
-        self.assertIn(("O", "Test Org"), result)
-        self.assertIn(("C", "US"), result)
-
-    def test_empty_string(self):
-        result = self.ssl_ctx._parse_issuer("")
-        self.assertIsNone(result)
-
-    def test_invalid_component_no_equals(self):
-        result = self.ssl_ctx._parse_issuer("/invalid")
-        self.assertIsNone(result)
-
-
 class TestReadKeyfilePassword(unittest.TestCase):
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
@@ -504,7 +359,7 @@ class TestReadKeyfilePassword(unittest.TestCase):
             del os.environ["TEST_SSL_PASSWORD"]
 
     def test_env_password_missing_raises(self):
-        with self.assertRaises(Exception) as ctx:
+        with self.assertRaises(KeyError) as ctx:
             self.ssl_ctx._read_keyfile_password("env:NONEXISTENT_VAR_12345")
         self.assertIn("Failed to read environment variable", str(ctx.exception))
 
@@ -520,12 +375,12 @@ class TestReadKeyfilePassword(unittest.TestCase):
             os.unlink(path)
 
     def test_file_password_missing_raises(self):
-        with self.assertRaises(Exception) as ctx:
+        with self.assertRaises(OSError) as ctx:
             self.ssl_ctx._read_keyfile_password("file:/nonexistent/path.txt")
         self.assertIn("Failed to read file", str(ctx.exception))
 
     def test_non_string_raises(self):
-        with self.assertRaises(Exception) as ctx:
+        with self.assertRaises(TypeError) as ctx:
             self.ssl_ctx._read_keyfile_password(12345)
         self.assertIn("not string", str(ctx.exception))
 
@@ -567,11 +422,10 @@ class TestParseProtocols(unittest.TestCase):
         self.assertEqual(method, "TLSv1_2_METHOD")
         self.assertNotIn("TLSv1.2", disabled)
 
-    @patch("lib.live_cluster.client.ssl_context.SSL")
-    def test_default_fallback_to_tlsv1(self, mock_ssl):
-        mock_ssl.TLSv1_METHOD = "TLSv1_METHOD"
-        del mock_ssl.TLSv1_2_METHOD
-        method, disabled = self.ssl_ctx._parse_protocols(None)
+    def test_default_fallback_to_tlsv1(self):
+        fake_ssl = types.SimpleNamespace(TLSv1_METHOD="TLSv1_METHOD")
+        with patch("lib.live_cluster.client.ssl_context.SSL", new=fake_ssl):
+            method, disabled = self.ssl_ctx._parse_protocols(None)
         self.assertEqual(method, "TLSv1_METHOD")
         self.assertNotIn("TLSv1", disabled)
 
@@ -591,11 +445,11 @@ class TestParseProtocols(unittest.TestCase):
         self.assertIn("TLSv1", disabled)
         self.assertIn("TLSv1.2", disabled)
 
-    @patch("lib.live_cluster.client.ssl_context.SSL")
-    def test_single_tlsv1_1_no_support_raises(self, mock_ssl):
-        del mock_ssl.TLSv1_1_METHOD
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._parse_protocols("TLSv1.1")
+    def test_single_tlsv1_1_no_support_raises(self):
+        fake_ssl = types.SimpleNamespace()
+        with patch("lib.live_cluster.client.ssl_context.SSL", new=fake_ssl):
+            with self.assertRaises(Exception) as ctx:
+                self.ssl_ctx._parse_protocols("TLSv1.1")
         self.assertIn("No support to protocol TLSv1.1", str(ctx.exception))
 
     @patch("lib.live_cluster.client.ssl_context.SSL")
@@ -606,11 +460,11 @@ class TestParseProtocols(unittest.TestCase):
         self.assertIn("TLSv1", disabled)
         self.assertIn("TLSv1.1", disabled)
 
-    @patch("lib.live_cluster.client.ssl_context.SSL")
-    def test_single_tlsv1_2_no_support_raises(self, mock_ssl):
-        del mock_ssl.TLSv1_2_METHOD
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._parse_protocols("TLSv1.2")
+    def test_single_tlsv1_2_no_support_raises(self):
+        fake_ssl = types.SimpleNamespace()
+        with patch("lib.live_cluster.client.ssl_context.SSL", new=fake_ssl):
+            with self.assertRaises(Exception) as ctx:
+                self.ssl_ctx._parse_protocols("TLSv1.2")
         self.assertIn("No support to protocol TLSv1.2", str(ctx.exception))
 
     @patch("lib.live_cluster.client.ssl_context.SSL")
@@ -741,7 +595,6 @@ class TestVerifyCb(unittest.TestCase):
                 x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Test Org"),
             ],
         )
-        self.ssl_ctx._cert_blacklist = []
         self.ssl_ctx._crl_checklist = []
         self.ssl_ctx._crl_check = False
         self.ssl_ctx._crl_check_all = False
@@ -770,13 +623,6 @@ class TestVerifyCb(unittest.TestCase):
         result = self.ssl_ctx._verify_cb(conn, cert, 0, 1, True)
         self.assertTrue(result)
         conn.get_app_data.assert_not_called()
-
-    def test_blacklisted_cert_at_any_depth_raises(self):
-        conn, cert = self._make_mock_conn_and_cert(serial=0xDEAD)
-        self.ssl_ctx._cert_blacklist = [(0xDEAD, None)]
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._verify_cb(conn, cert, 0, 1, True)
-        self.assertIn("blacklist", str(ctx.exception))
 
     def test_crl_check_at_depth_zero(self):
         conn, cert = self._make_mock_conn_and_cert(serial=0xABCD)
@@ -881,7 +727,7 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.load_verify_locations.side_effect = Exception("bad cert")
+        mock_ctx.load_verify_locations.side_effect = crypto.Error([("", "", "bad cert")])
         mock_ssl.Context.return_value = mock_ctx
         ssl_ctx = SSLContext.__new__(SSLContext)
         with self.assertRaises(Exception) as ctx:
@@ -899,7 +745,7 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.load_verify_locations.side_effect = Exception("bad path")
+        mock_ctx.load_verify_locations.side_effect = crypto.Error([("", "", "bad path")])
         mock_ssl.Context.return_value = mock_ctx
         ssl_ctx = SSLContext.__new__(SSLContext)
         with self.assertRaises(Exception) as ctx:
@@ -916,7 +762,7 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.load_verify_locations.side_effect = Exception("bad")
+        mock_ctx.load_verify_locations.side_effect = crypto.Error([("", "", "bad")])
         mock_ssl.Context.return_value = mock_ctx
         ssl_ctx = SSLContext.__new__(SSLContext)
         with self.assertRaises(Exception) as ctx:
@@ -953,7 +799,9 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.use_certificate_chain_file.side_effect = Exception("bad cert")
+        mock_ctx.use_certificate_chain_file.side_effect = crypto.Error(
+            [("", "", "bad cert")]
+        )
         mock_ssl.Context.return_value = mock_ctx
         ssl_ctx = SSLContext.__new__(SSLContext)
         with self.assertRaises(Exception) as ctx:
@@ -1109,8 +957,9 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.VERIFY_CLIENT_ONCE = 2
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
+        mock_ssl.Error = SSL.Error
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.use_privatekey.side_effect = Exception("ctx reject")
+        mock_ctx.use_privatekey.side_effect = SSL.Error([("", "", "ctx reject")])
         mock_ssl.Context.return_value = mock_ctx
         mock_crypto.PKey.from_cryptography_key.return_value = unittest.mock.MagicMock()
         with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as f:
@@ -1232,7 +1081,8 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
         mock_ssl.Context.return_value = mock_ctx
-        mock_load_key.side_effect = RuntimeError("unexpected")
+        mock_crypto.Error = crypto.Error
+        mock_load_key.side_effect = crypto.Error([("", "", "unexpected")])
         with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as f:
             f.write(b"dummy")
             keypath = f.name
@@ -1259,7 +1109,7 @@ class TestSSLContextInit(unittest.TestCase):
         self.assertIn("pyOpenSSL", str(ctx.exception))
 
     @patch("lib.live_cluster.client.ssl_context.SSL")
-    def test_encrypt_only_skips_blacklist_and_crl(self, mock_ssl):
+    def test_encrypt_only_skips_crl(self, mock_ssl):
         mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
         mock_ssl.VERIFY_NONE = 0
         mock_ssl.OP_NO_SSLv2 = 0x01000000
@@ -1268,14 +1118,12 @@ class TestSSLContextInit(unittest.TestCase):
         ctx = SSLContext(
             enable_tls=True,
             encrypt_only=True,
-            cert_blacklist="/some/file",
             crl_check=True,
         )
         self.assertEqual(ctx._crl_checklist, [])
-        self.assertEqual(ctx._cert_blacklist, [])
 
     @patch("lib.live_cluster.client.ssl_context.SSL")
-    def test_full_auth_no_crl_no_blacklist(self, mock_ssl):
+    def test_full_auth_no_crl(self, mock_ssl):
         mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
         mock_ssl.VERIFY_PEER = 1
         mock_ssl.VERIFY_CLIENT_ONCE = 2
@@ -1284,29 +1132,6 @@ class TestSSLContextInit(unittest.TestCase):
         mock_ssl.Context.return_value = unittest.mock.MagicMock()
         ctx = SSLContext(enable_tls=True, encrypt_only=False)
         self.assertEqual(ctx._crl_checklist, [])
-        self.assertEqual(ctx._cert_blacklist, [])
-
-    @patch("lib.live_cluster.client.ssl_context.SSL")
-    def test_full_auth_with_blacklist_file(self, mock_ssl):
-        mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
-        mock_ssl.VERIFY_PEER = 1
-        mock_ssl.VERIFY_CLIENT_ONCE = 2
-        mock_ssl.OP_NO_SSLv2 = 0x01000000
-        mock_ssl.OP_NO_SSLv3 = 0x02000000
-        mock_ssl.Context.return_value = unittest.mock.MagicMock()
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("DEAD\nBEEF\n")
-            f.flush()
-            bl_path = f.name
-        try:
-            ctx = SSLContext(
-                enable_tls=True, encrypt_only=False, cert_blacklist=bl_path
-            )
-            self.assertEqual(len(ctx._cert_blacklist), 2)
-            self.assertEqual(ctx._cert_blacklist[0], (0xDEAD, None))
-            self.assertEqual(ctx._cert_blacklist[1], (0xBEEF, None))
-        finally:
-            os.unlink(bl_path)
 
     @patch("lib.live_cluster.client.ssl_context.SSL")
     def test_full_auth_with_crl_check(self, mock_ssl):
@@ -1359,13 +1184,6 @@ class TestMatchTlsNameEdgeCases(unittest.TestCase):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
         self.ca_key, self.ca_cert = _generate_ca()
 
-    @patch("lib.live_cluster.client.ssl_context.HAVE_CRYPTOGRAPHY", False)
-    def test_no_cryptography_raises_import_error(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, cn="test.example.com")
-        with self.assertRaises(ImportError) as ctx:
-            self.ssl_ctx._match_tlsname(cert, "test.example.com")
-        self.assertIn("cryptography", str(ctx.exception))
-
     def test_cn_mismatch_single_name_raises(self):
         _, cert = _generate_cert(self.ca_key, self.ca_cert, cn="other.example.com")
         with self.assertRaises(Exception) as ctx:
@@ -1395,104 +1213,10 @@ class TestMatchTlsNameEdgeCases(unittest.TestCase):
         self.assertIn("tls_name", str(ctx.exception))
 
     def test_subject_read_failure_raises(self):
-        mock_cert = unittest.mock.MagicMock()
-        mock_cert.subject = unittest.mock.PropertyMock(side_effect=Exception("corrupt"))
-        type(mock_cert).subject = unittest.mock.PropertyMock(
-            side_effect=Exception("corrupt")
-        )
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._match_tlsname(mock_cert, "test.example.com")
+        fake_cert = types.SimpleNamespace()
+        with self.assertRaises(ValueError) as ctx:
+            self.ssl_ctx._match_tlsname(fake_cert, "test.example.com")
         self.assertIn("Failed to read certificate components", str(ctx.exception))
-
-
-class TestParseBlacklistCertEdgeCases(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-
-    def test_invalid_hex_serial_returns_partial(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("DEAD\n")
-            f.write("NOT_HEX\n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._parse_blacklist_cert(path)
-            self.assertEqual(result, [(0xDEAD, None)])
-        finally:
-            os.unlink(path)
-
-    def test_serial_with_empty_issuer_remainder(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("DEAD \n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._parse_blacklist_cert(path)
-            self.assertEqual(len(result), 1)
-            serial, issuer = result[0]
-            self.assertEqual(serial, 0xDEAD)
-        finally:
-            os.unlink(path)
-
-    def test_none_file_returns_empty(self):
-        result = self.ssl_ctx._parse_blacklist_cert(None)
-        self.assertEqual(result, [])
-
-    def test_serial_with_invalid_issuer_format(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("DEAD /invalid_no_equals\n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._parse_blacklist_cert(path)
-            self.assertEqual(len(result), 1)
-            serial, issuer = result[0]
-            self.assertEqual(serial, 0xDEAD)
-            self.assertIsNone(issuer)
-        finally:
-            os.unlink(path)
-
-    def test_multiple_serials_with_mixed_issuers(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("AAAA /CN=CA1\n")
-            f.write("BBBB\n")
-            f.write("CCCC /CN=CA2/O=Org2\n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._parse_blacklist_cert(path)
-            self.assertEqual(len(result), 3)
-            self.assertEqual(result[0][0], 0xAAAA)
-            self.assertIsNotNone(result[0][1])
-            self.assertEqual(result[1], (0xBBBB, None))
-            self.assertEqual(result[2][0], 0xCCCC)
-            self.assertIn(("CN", "CA2"), result[2][1])
-            self.assertIn(("O", "Org2"), result[2][1])
-        finally:
-            os.unlink(path)
-
-
-class TestParseIssuerEdgeCases(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-
-    def test_only_slashes_returns_none(self):
-        result = self.ssl_ctx._parse_issuer("///")
-        self.assertIsNone(result)
-
-    def test_whitespace_in_values(self):
-        result = self.ssl_ctx._parse_issuer("/CN= Test CA /O= Test Org ")
-        self.assertIsNotNone(result)
-        self.assertIn(("CN", "Test CA"), result)
-        self.assertIn(("O", "Test Org"), result)
-
-    def test_multiple_equals_in_value_raises(self):
-        with self.assertRaises(ValueError):
-            self.ssl_ctx._parse_issuer("/CN=Test=CA")
-
-    def test_single_valid_component(self):
-        result = self.ssl_ctx._parse_issuer("/OU=Engineering")
-        self.assertEqual(result, [("OU", "Engineering")])
 
 
 class TestParseCrlCertEdgeCases(unittest.TestCase):
@@ -1537,60 +1261,6 @@ class TestParseCrlCertEdgeCases(unittest.TestCase):
             self.assertIn(s, result)
 
 
-class TestCertBlacklistCheckEdgeCases(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca(
-            cn="Test CA",
-            extra_issuer_attrs=[
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Test Org"),
-                x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-            ],
-        )
-
-    def test_multiple_blacklist_entries_first_matches(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0xAAAA)
-        self.ssl_ctx._cert_blacklist = [
-            (0xAAAA, None),
-            (0xBBBB, None),
-        ]
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._cert_blacklist_check(cert)
-        self.assertIn("blacklist", str(ctx.exception))
-
-    def test_issuer_match_with_multiple_components(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0xDDDD)
-        issuer = SSLContext._get_issuer_components(cert.issuer)
-        self.ssl_ctx._cert_blacklist = [(0xDDDD, issuer)]
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._cert_blacklist_check(cert)
-        self.assertIn("blacklist", str(ctx.exception))
-        self.assertIn("Issuer", str(ctx.exception))
-
-    def test_different_serial_same_issuer_passes(self):
-        _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0xEEEE)
-        issuer = SSLContext._get_issuer_components(cert.issuer)
-        self.ssl_ctx._cert_blacklist = [(0xFFFF, issuer)]
-        self.ssl_ctx._cert_blacklist_check(cert)
-
-    def test_none_serial_number_raises(self):
-        mock_cert = unittest.mock.MagicMock()
-        mock_cert.serial_number = None
-        self.ssl_ctx._cert_blacklist = [(0x1234, None)]
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._cert_blacklist_check(mock_cert)
-        self.assertIn("No Serial Number", str(ctx.exception))
-
-    def test_empty_issuer_raises(self):
-        mock_cert = unittest.mock.MagicMock()
-        mock_cert.serial_number = 0x1234
-        mock_cert.issuer = x509.Name([])
-        self.ssl_ctx._cert_blacklist = [(0x1234, None)]
-        with self.assertRaises(Exception) as ctx:
-            self.ssl_ctx._cert_blacklist_check(mock_cert)
-        self.assertIn("No Issuer Name", str(ctx.exception))
-
-
 class TestCertCrlCheckEdgeCases(unittest.TestCase):
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
@@ -1613,7 +1283,7 @@ class TestSetContextOptionsEdgeCases(unittest.TestCase):
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.set_options.side_effect = Exception("no SSLv2 support")
+        mock_ctx.set_options.side_effect = AttributeError("no SSLv2 support")
         result = self.ssl_ctx._set_context_options(mock_ctx, [])
         self.assertEqual(result, mock_ctx)
 

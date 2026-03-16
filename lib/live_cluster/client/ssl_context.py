@@ -29,13 +29,8 @@ try:
 except ImportError:
     HAVE_PYOPENSSL = False
 
-try:
-    from cryptography import x509
-    from cryptography.hazmat.primitives.serialization import load_pem_private_key
-
-    HAVE_CRYPTOGRAPHY = True
-except ImportError:
-    HAVE_CRYPTOGRAPHY = False
+from cryptography import x509
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 
 class SSLContext(object):
@@ -50,7 +45,6 @@ class SSLContext(object):
         certfile=None,
         protocols=None,
         cipher_suite=None,
-        cert_blacklist=None,
         crl_check=False,
         crl_check_all=False,
     ):
@@ -78,10 +72,6 @@ class SSLContext(object):
             self._crl_checklist = self._parse_crl_cert(capath)
         else:
             self._crl_checklist = []
-        if enable_tls and not encrypt_only:
-            self._cert_blacklist = self._parse_blacklist_cert(cert_blacklist)
-        else:
-            self._cert_blacklist = []
 
     def _parse_crl_cert(self, crl_dir_path):
         if not crl_dir_path:
@@ -92,7 +82,7 @@ class SSLContext(object):
                 for f in os.listdir(crl_dir_path)
                 if path.isfile(path.join(crl_dir_path, f))
             ]
-        except Exception:
+        except OSError:
             raise ValueError("Wrong or empty capath provided to CRL check.")
 
         crl_checklist = []
@@ -103,59 +93,14 @@ class SSLContext(object):
                 for revoked_cert in crl:
                     try:
                         crl_checklist.append(revoked_cert.serial_number)
-                    except Exception:
+                    except (ValueError, AttributeError):
                         pass
-            except Exception:
+            except (OSError, ValueError):
                 pass
         if crl_checklist:
             return crl_checklist
         else:
             raise ValueError("No valid CRL found at capath")
-
-    def _parse_blacklist_cert(self, file):
-        blacklist = []
-        try:
-            for line in open(file, "r").readlines():
-                if not line or not line.strip():
-                    continue
-                line = line.strip()
-                if line.startswith("#"):
-                    continue
-                tokens = line.split(None, 1)
-                serial_number = tokens[0]
-                serial_number_int = int(serial_number, 16)
-                issuer = None
-                if len(tokens) > 1:
-                    reminder = tokens[1]
-                    if reminder:
-                        issuer = self._parse_issuer(reminder.strip())
-                blacklist.append((serial_number_int, issuer))
-            return blacklist
-        except Exception:
-            return blacklist
-
-    def _parse_issuer(self, issuer_string):
-        components = issuer_string.split("/")
-        if not components:
-            return None
-        comp_list = []
-        for c in components:
-            if not c or not c.strip():
-                continue
-            if "=" not in c:
-                return None
-            key, value = c.split("=")
-            try:
-                key = key.strip()
-                value = value.strip()
-            except Exception:
-                return None
-            comp_list.append((key, value))
-        if comp_list:
-            comp_list = sorted(comp_list, key=lambda x: x[0])
-        else:
-            comp_list = None
-        return comp_list
 
     def _verify_none_cb(self, conn, cert, errnum, depth, ok):
         return ok
@@ -165,40 +110,6 @@ class SSLContext(object):
         """Extract RFC 4514 short name (e.g. CN, O, OU) from an x509.NameAttribute."""
         rfc4514 = attr.rfc4514_string()
         return rfc4514.split("=", 1)[0]
-
-    @staticmethod
-    def _get_issuer_components(issuer_name):
-        """Convert an x509.Name to a sorted list of (short_name, value) tuples."""
-        components = []
-        for attr in issuer_name:
-            short_name = SSLContext._get_cert_short_name(attr)
-            components.append((short_name, attr.value))
-        return sorted(components, key=lambda x: x[0])
-
-    def _cert_blacklist_check(self, crypto_cert=None):
-        if not crypto_cert:
-            raise ValueError("Empty or no Server Certificate for authentication")
-        if not self._cert_blacklist:
-            return
-
-        serial_number = crypto_cert.serial_number
-        if serial_number is None:
-            raise Exception("Wrong Server Certificate: No Serial Number.")
-
-        issuer = self._get_issuer_components(crypto_cert.issuer)
-        if not issuer:
-            raise Exception("Wrong Server Certificate: No Issuer Name.")
-
-        if (serial_number, None) in self._cert_blacklist:
-            raise Exception(
-                "Server Certificate is in blacklist: (Serial Number: %x)"
-                % (serial_number)
-            )
-        if (serial_number, issuer) in self._cert_blacklist:
-            raise Exception(
-                "Server Certificate is in blacklist: (Serial Number: %x, Issuer: %s)"
-                % (serial_number, str(issuer))
-            )
 
     def _cert_crl_check(self, crypto_cert):
         if not crypto_cert:
@@ -239,8 +150,6 @@ class SSLContext(object):
                     (x509.DNSName, x509.RFC822Name, x509.UniformResourceIdentifier),
                 ):
                     alt_names.append(name.value)
-                elif isinstance(name, x509.IPAddress):
-                    alt_names.append(str(name.value))
                 else:
                     alt_names.append(str(name.value))
         except x509.ExtensionNotFound:
@@ -255,18 +164,13 @@ class SSLContext(object):
                 "CERT_OPTIONAL or CERT_REQUIRED"
             )
 
-        if not HAVE_CRYPTOGRAPHY:
-            raise ImportError(
-                "No module named cryptography. It is required for TLS name matching."
-            )
-
         try:
             components = []
             for attr in crypto_cert.subject:
                 short_name = self._get_cert_short_name(attr)
                 components.append((short_name, attr.value))
-        except Exception as e:
-            raise Exception("Failed to read certificate components: " + str(e))
+        except (AttributeError, ValueError) as e:
+            raise ValueError("Failed to read certificate components: " + str(e))
 
         cnnames = set()
         for value in self._get_common_names(components):
@@ -303,7 +207,6 @@ class SSLContext(object):
             tls_name = conn.get_app_data()
             self._match_tlsname(crypto_cert=crypto_cert, tls_name=tls_name)
 
-        self._cert_blacklist_check(crypto_cert=crypto_cert)
         if self._crl_check_all or (self._crl_check and depth == 0):
             self._cert_crl_check(crypto_cert)
         return ok
@@ -317,7 +220,7 @@ class SSLContext(object):
             try:
                 method = SSL.TLSv1_2_METHOD
                 protocols_to_enable.add("TLSv1.2")
-            except Exception:
+            except AttributeError:
                 method = SSL.TLSv1_METHOD
                 protocols_to_enable.add("TLSv1")
         else:
@@ -374,7 +277,7 @@ class SSLContext(object):
             elif protocols_to_enable[0] == "TLSv1.1":
                 try:
                     method = SSL.TLSv1_1_METHOD
-                except Exception:
+                except AttributeError:
                     raise Exception(
                         "No support to protocol TLSv1.1. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15."
                     )
@@ -382,7 +285,7 @@ class SSLContext(object):
             elif protocols_to_enable[0] == "TLSv1.2":
                 try:
                     method = SSL.TLSv1_2_METHOD
-                except Exception:
+                except AttributeError:
                     raise Exception(
                         "No support to protocol TLSv1.2. Wrong OpenSSL or Python version. Please use PyOpenSSL >= 0.15."
                     )
@@ -398,7 +301,7 @@ class SSLContext(object):
 
             # aerospike does not support SSLv3
             ctx.set_options(SSL.OP_NO_SSLv3)
-        except Exception:
+        except AttributeError:
             pass
 
         if not protocols_to_disable:
@@ -412,7 +315,7 @@ class SSLContext(object):
                     ctx.set_options(SSL.OP_NO_TLSv1_1)
                 elif proto == "TLSv1.2":
                     ctx.set_options(SSL.OP_NO_TLSv1_2)
-            except Exception:
+            except AttributeError:
                 pass
         return ctx
 
@@ -442,7 +345,7 @@ class SSLContext(object):
             if cafile or capath:
                 try:
                     self.ctx.load_verify_locations(cafile, capath)
-                except Exception as e:
+                except (crypto.Error, OSError) as e:
                     path = ""
 
                     if cafile:
@@ -460,7 +363,7 @@ class SSLContext(object):
             if certfile:
                 try:
                     self.ctx.use_certificate_chain_file(certfile)
-                except Exception as e:
+                except (crypto.Error, OSError) as e:
                     raise Exception(
                         "Failed to load certificate chain file %s \n %s"
                         % (certfile, str(e))
@@ -476,7 +379,7 @@ class SSLContext(object):
 
                         if pwd is not None:
                             pwd = util.str_to_bytes(pwd)
-                    except Exception as e:
+                    except (TypeError, KeyError, OSError) as e:
                         raise Exception(
                             "Invalid keyfile_password {0} \n{1}".format(
                                 keyfile_password, e
@@ -484,8 +387,10 @@ class SSLContext(object):
                         )
 
                 try:
+                    with open(keyfile, "rb") as key_fh:
+                        private_key_data = key_fh.read()
                     private_key = load_pem_private_key(
-                        open(keyfile, "rb").read(),
+                        private_key_data,
                         password=pwd,
                     )
                     pkey = crypto.PKey.from_cryptography_key(private_key)
@@ -495,7 +400,7 @@ class SSLContext(object):
                     raise Exception(
                         "Invalid key file or bad passphrase {}".format(keyfile)
                     )
-                except Exception as e:
+                except crypto.Error as e:
                     raise Exception(
                         "Failed to load private key %s \n %s" % (keyfile, str(e))
                     )
@@ -505,7 +410,7 @@ class SSLContext(object):
 
                 try:
                     self.ctx.use_privatekey(pkey)
-                except Exception as e:
+                except SSL.Error as e:
                     raise Exception(
                         "Failed to load private key %s \n %s" % (keyfile, str(e))
                     )
@@ -528,28 +433,21 @@ class SSLContext(object):
             return keyfile_password
 
         if not util.is_str(keyfile_password):
-            raise Exception("Bad keyfile_password: not string")
+            raise TypeError("Bad keyfile_password: not string")
 
         keyfile_password = keyfile_password.strip()
 
         if keyfile_password.startswith("env:"):
             try:
                 return os.environ[keyfile_password[4:]]
-            except Exception as e:
-                raise Exception("Failed to read environment variable: {}".format(e))
+            except KeyError as e:
+                raise KeyError("Failed to read environment variable: {}".format(e))
 
         if keyfile_password.startswith("file:"):
-            file = None
-
             try:
-                file = open(keyfile_password[5:], "r")
-                pwd = file.read().strip()
-                file.close()
-                return pwd
-
-            except Exception as e:
-                if file is not None:
-                    file.close()
-                raise Exception("Failed to read file: {}".format(e))
+                with open(keyfile_password[5:], "r") as pwd_file:
+                    return pwd_file.read().strip()
+            except OSError as e:
+                raise OSError("Failed to read file: {}".format(e))
 
         return keyfile_password.strip()

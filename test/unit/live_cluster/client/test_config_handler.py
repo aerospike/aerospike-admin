@@ -270,6 +270,7 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         return None
 
     def test_loads_correct_file(self):
+        self.addCleanup(patch.stopall)
         isfile_mock = patch("os.path.isfile").start()
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
@@ -311,9 +312,8 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
             "lib.live_cluster.client.config_handler", "dir/4.2.0.json"
         )
 
-        patch.stopall()
-
     def test_fails_on_strict(self):
+        self.addCleanup(patch.stopall)
         isfile_mock = patch("os.path.isfile").start()
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
@@ -338,8 +338,6 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         self.assertRaises(
             FileNotFoundError, JsonDynamicConfigHandler, "dir", "10.2.1", strict=True
         )
-
-        patch.stopall()
 
     def test_get_service_params(self):
         expected = [
