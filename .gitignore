@@ -161,3 +161,5 @@ test/e2e/work/*
 *.lua
 *_input.txt
 test/manual_tls
+test/e2e/certs/*
+!test/e2e/certs/.do_not_delete

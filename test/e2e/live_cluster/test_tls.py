@@ -32,12 +32,13 @@ class TestTLS(unittest.TestCase):
             template_file="aerospike_tls.conf",
         )
         cls.host = f"{lib.SERVER_IP}:{lib.TLS_PORT}"
-        cls.certs = lib.absolute_path("certs")
+        cls.certs = lib.CERTS_DIR
         cls.ca = os.path.join(cls.certs, "ca.pem")
 
     @classmethod
     def tearDownClass(cls):
         lib.stop()
+        lib.cleanup_tls_certs()
 
     def _run(self, extra_args: str) -> test_util.CompletedProcess:
         base = (
