@@ -727,7 +727,9 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.load_verify_locations.side_effect = crypto.Error([("", "", "bad cert")])
+        mock_ctx.load_verify_locations.side_effect = crypto.Error(
+            [("", "", "bad cert")]
+        )
         mock_ssl.Context.return_value = mock_ctx
         ssl_ctx = SSLContext.__new__(SSLContext)
         with self.assertRaises(Exception) as ctx:
@@ -745,7 +747,9 @@ class TestCreateSSLContext(unittest.TestCase):
         mock_ssl.OP_NO_SSLv2 = 0x01000000
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ctx = unittest.mock.MagicMock()
-        mock_ctx.load_verify_locations.side_effect = crypto.Error([("", "", "bad path")])
+        mock_ctx.load_verify_locations.side_effect = crypto.Error(
+            [("", "", "bad path")]
+        )
         mock_ssl.Context.return_value = mock_ctx
         ssl_ctx = SSLContext.__new__(SSLContext)
         with self.assertRaises(Exception) as ctx:
