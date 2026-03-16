@@ -13,7 +13,10 @@
 # limitations under the License.
 
 import codecs
+import datetime
+import ipaddress
 import os
+import shutil
 import string
 import sys
 import aerospike
@@ -21,12 +24,18 @@ import docker
 import atexit
 import signal
 import time
-from test.e2e import util
+
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from test.e2e import util
 
 # the port to use for one of the cluster nodes
 PORT = 10000
+TLS_PORT_OFFSET = 5
+TLS_PORT = PORT + TLS_PORT_OFFSET
 # the namespace to be used for the tests
 NAMESPACE = "test"
 # the set to be used for the tests
@@ -75,6 +84,10 @@ RUNNING = False
 
 # where to mount work directory in the docker container
 CONTAINER_DIR = "/opt/work"
+CONTAINER_CERTS_DIR = CONTAINER_DIR + "/certs"
+
+# directory where TLS certs are generated for e2e tests
+CERTS_DIR = os.path.join(os.path.dirname(__file__), "certs")
 
 # Enable docker log dumping via environment variable
 DUMP_DOCKER_LOGS = os.environ.get("DUMP_DOCKER_LOGS", "false").lower() in (
@@ -195,6 +208,181 @@ def init_state_dirs():
         os.mkdir(udf, 0o755)
 
 
+def generate_tls_certs():
+    """
+    Generates all TLS certificates needed for e2e tests into test/e2e/certs/,
+    then copies them into work/certs/ so the container sees them at /opt/work/certs/.
+    """
+    dest = CERTS_DIR
+    for entry in os.listdir(dest):
+        entry_path = os.path.join(dest, entry)
+        if entry == ".do_not_delete":
+            continue
+        if os.path.isdir(entry_path):
+            shutil.rmtree(entry_path)
+        else:
+            os.remove(entry_path)
+    os.makedirs(os.path.join(dest, "crl_dir"), exist_ok=True)
+
+    def _gen_key():
+        return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    def _write_key(key, path, password=None):
+        enc = (
+            serialization.BestAvailableEncryption(password)
+            if password
+            else serialization.NoEncryption()
+        )
+        with open(path, "wb") as f:
+            f.write(
+                key.private_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PrivateFormat.TraditionalOpenSSL,
+                    enc,
+                )
+            )
+
+    def _write_cert(cert, path):
+        with open(path, "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    # CA
+    ca_key = _gen_key()
+    ca_name = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, "TestCA"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "TestOrg"),
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+        ]
+    )
+    ca_cert = (
+        x509.CertificateBuilder()
+        .subject_name(ca_name)
+        .issuer_name(ca_name)
+        .public_key(ca_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(ca_key, hashes.SHA256())
+    )
+    _write_key(ca_key, os.path.join(dest, "ca.key"))
+    _write_cert(ca_cert, os.path.join(dest, "ca.pem"))
+
+    # Server cert (CN=localhost, SAN=DNS:localhost,IP:127.0.0.1)
+    server_key = _gen_key()
+    server_cert = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")]))
+        .issuer_name(ca_name)
+        .public_key(server_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("localhost"),
+                    x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+                ]
+            ),
+            critical=False,
+        )
+        .sign(ca_key, hashes.SHA256())
+    )
+    _write_key(server_key, os.path.join(dest, "server.key"))
+    _write_cert(server_cert, os.path.join(dest, "server.pem"))
+
+    # Client cert (for mutual TLS)
+    client_key = _gen_key()
+    client_cert = (
+        x509.CertificateBuilder()
+        .subject_name(
+            x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, "asadm-client"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "TestOrg"),
+                ]
+            )
+        )
+        .issuer_name(ca_name)
+        .public_key(client_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .sign(ca_key, hashes.SHA256())
+    )
+    _write_key(client_key, os.path.join(dest, "client.key"))
+    _write_cert(client_cert, os.path.join(dest, "client.pem"))
+
+    # Password-protected client key (password: testpass)
+    _write_key(client_key, os.path.join(dest, "client_enc.key"), password=b"testpass")
+
+    # Wrong CA (not in the trust chain, for negative tests)
+    wrong_ca_key = _gen_key()
+    wrong_ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "WrongCA")])
+    wrong_ca_cert = (
+        x509.CertificateBuilder()
+        .subject_name(wrong_ca_name)
+        .issuer_name(wrong_ca_name)
+        .public_key(wrong_ca_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(wrong_ca_key, hashes.SHA256())
+    )
+    _write_key(wrong_ca_key, os.path.join(dest, "wrong_ca.key"))
+    _write_cert(wrong_ca_cert, os.path.join(dest, "wrong_ca.pem"))
+
+    # CRL with server cert revoked
+    revoked = (
+        x509.RevokedCertificateBuilder()
+        .serial_number(server_cert.serial_number)
+        .revocation_date(now)
+        .build()
+    )
+    crl = (
+        x509.CertificateRevocationListBuilder()
+        .issuer_name(ca_cert.subject)
+        .last_update(now)
+        .next_update(now + datetime.timedelta(days=30))
+        .add_revoked_certificate(revoked)
+        .sign(ca_key, hashes.SHA256())
+    )
+    with open(os.path.join(dest, "crl_dir", "crl.pem"), "wb") as f:
+        f.write(crl.public_bytes(serialization.Encoding.PEM))
+
+    # Keyfile password file (for file: prefix test)
+    with open(os.path.join(dest, "keypass.txt"), "w") as f:
+        f.write("testpass")
+
+    print("Generated TLS certs in", dest)
+
+    work_certs = absolute_path(WORK_DIRECTORY, "certs")
+    if os.path.exists(work_certs):
+        shutil.rmtree(work_certs)
+    shutil.copytree(dest, work_certs)
+    print("Copied TLS certs to", work_certs)
+
+
+def cleanup_tls_certs():
+    """
+    Removes generated cert files from test/e2e/certs/, preserving .do_not_delete.
+    """
+    for entry in os.listdir(CERTS_DIR):
+        if entry == ".do_not_delete":
+            continue
+        entry_path = os.path.join(CERTS_DIR, entry)
+        if os.path.isdir(entry_path):
+            shutil.rmtree(entry_path)
+        else:
+            os.remove(entry_path)
+    print("Cleaned up generated TLS certs from", CERTS_DIR)
+
+
 def temporary_path(extension):
     global FILE_COUNT
     """
@@ -231,6 +419,8 @@ def create_conf_file_from_template(
         "heartbeat_port": str(port_base + 2),
         "info_port": str(port_base + 3),
         "admin_port": str(port_base + 4),
+        "tls_service_port": str(port_base + TLS_PORT_OFFSET),
+        "certs_directory": CONTAINER_CERTS_DIR,
         "access_address": access_address,
         "peer_connection": (
             "# no peer connection"
@@ -359,6 +549,7 @@ def start_server(
             str(base + 2) + "/tcp": str(base + 2),
             str(base + 3) + "/tcp": str(base + 3),
             str(base + 4) + "/tcp": str(base + 4),
+            str(base + TLS_PORT_OFFSET) + "/tcp": str(base + TLS_PORT_OFFSET),
         },
         volumes={mount_dir: {"bind": CONTAINER_DIR, "mode": "rw"}},
         tty=True,
@@ -405,6 +596,9 @@ def start(
 
             init_work_dir()
             init_state_dirs()
+
+            if template_file == "aerospike_tls.conf":
+                generate_tls_certs()
 
             first_base = PORT
             for index in range(1, num_nodes + 1):

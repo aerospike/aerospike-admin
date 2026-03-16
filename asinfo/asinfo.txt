@@ -73,15 +73,6 @@ Configuration File Allowed Options
  --tls-certfile=TLS_CERTFILE <path>
                       Path to the chain file for mutual authentication (if
                       Aerospike Cluster is supporting it).
- --tls-cert-blacklist <path>
-                      Path to a certificate blacklist file. The file should
-                      contain one line for each blacklisted certificate.
-                      Each line starts with the certificate serial number
-                      expressed in hex. Each entry may optionally specify
-                      the issuer name of the certificate (serial numbers are
-                      only required to be unique per issuer).Example:
-                      867EC87482B2
-                      /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA
  --tls-crl-check      Enable CRL checking for leaf certificate. An error
                       occurs if a valid CRL files cannot be found in
                       tls_capath.

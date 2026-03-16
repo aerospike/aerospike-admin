@@ -681,7 +681,6 @@ def parse_tls_input(cli_args):
             certfile=cli_args.tls_certfile,
             protocols=cli_args.tls_protocols,
             cipher_suite=cli_args.tls_cipher_suite,
-            cert_blacklist=cli_args.tls_cert_blacklist,
             crl_check=cli_args.tls_crl_check,
             crl_check_all=cli_args.tls_crl_check_all,
         ).ctx

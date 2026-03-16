@@ -49,7 +49,6 @@ _confdefault = {
         "tls-name": "",
         "tls-cafile": "",
         "tls-capath": "",
-        "tls-cert-blacklist": "",
         "tls-certfile": "",
         "tls-cipher-suite": "",
         "tls-crl-check": False,
@@ -144,7 +143,6 @@ _confspec = """{
                 "tls-cafile" : { "type" : "string" },
                 "tls-capath" : { "type" : "string" },
                 "tls-certfile" : { "type" : "string" },
-                "tls-cert-blacklist" : { "type" : "string" },
                 "tls-protocols" : {"type" : "string" }
             }
         }
@@ -549,18 +547,6 @@ def print_config_file_option():
         "                      Aerospike Cluster is supporting it)."
     )
     print(
-        " --tls-cert-blacklist=path (DEPRECATED)\n"
-        "                      Path to a certificate blacklist file. The file should\n"
-        "                      contain one line for each blacklisted certificate.\n"
-        "                      Each line starts with the certificate serial number\n"
-        "                      expressed in hex. Each entry may optionally specify\n"
-        "                      the issuer name of the certificate (serial numbers are\n"
-        "                      only required to be unique per issuer).Example:\n"
-        "                      867EC87482B2\n"
-        "                      /C=US/ST=CA/O=Acme/OU=Engineering/CN=TestChainCA"
-    )
-
-    print(
         " --tls-crl-check      Enable CRL checking for leaf certificate. An error\n"
         "                      occurs if a valid CRL files cannot be found in\n"
         "                      tls_capath."
@@ -627,9 +613,10 @@ def create_deprecate_action(action, optional_msg=""):
 
     class DeprecateAction(action):
         def __call__(self, parser, namespace, values, option_string=None):
-            logger.warn(
-                "Argument {} is deprecated. {}", self.option_strings, optional_msg
+            logger.warning(
+                "Argument %s is deprecated. %s", self.option_strings, optional_msg
             )
+            super().__call__(parser, namespace, values, option_string)
 
     return DeprecateAction
 
@@ -668,10 +655,6 @@ def get_cli_args():
     add_fn("--tls-keyfile")
     add_fn("--tls-keyfile-password", nargs="?", const=DEFAULTPASSWORD)
     add_fn("--tls-certfile")
-    add_fn(
-        "--tls-cert-blacklist",
-        action=create_deprecate_action(argparse.Action, "Use a crl instead."),
-    )
     add_fn("--tls-crl-check", action="store_true")
     add_fn("--tls-crl-check-all", action="store_true")
 
@@ -705,7 +688,6 @@ def get_cli_args():
     add_fn("--tls_cipher_suite")
     add_fn("--tls_keyfile")
     add_fn("--tls_certfile")
-    add_fn("--tls_cert_blacklist")
     add_fn("--tls_crl_check", action="store_true")
     add_fn("--tls_crl_check_all", action="store_true")
 

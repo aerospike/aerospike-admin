@@ -270,11 +270,13 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
         return None
 
     def test_loads_correct_file(self):
+        self.addCleanup(patch.stopall)
         isfile_mock = patch("os.path.isfile").start()
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
         pkgutil_mock.side_effect = self.pkgutil_side_effect
-        os.listdir = lambda *arg: [
+        listdir_mock = patch("os.listdir").start()
+        listdir_mock.return_value = [
             "5.5.0.json",
             "6.0.0.json",
             "4.2.0.json",
@@ -310,14 +312,14 @@ class JsonDynamicConfig55HandlerTest(unittest.TestCase):
             "lib.live_cluster.client.config_handler", "dir/4.2.0.json"
         )
 
-        patch.stopall()
-
     def test_fails_on_strict(self):
+        self.addCleanup(patch.stopall)
         isfile_mock = patch("os.path.isfile").start()
         isfile_mock.side_effect = lambda *arg: True
         pkgutil_mock = patch("pkgutil.get_data").start()
         pkgutil_mock.side_effect = self.pkgutil_side_effect
-        os.listdir = lambda *arg: [
+        listdir_mock = patch("os.listdir").start()
+        listdir_mock.return_value = [
             "10.2.0.json",
             "4.0.0.json",
             "5.4.0.json",
