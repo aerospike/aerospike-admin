@@ -119,8 +119,12 @@ class TestTLS(unittest.TestCase):
     def test_sslv2_rejected(self):
         """_parse_protocols rejects SSLv2 (RFC 6176)"""
         cp = self._run('--tls-protocols "SSLv2"')
-        connected = "Network Information" in cp.stdout
-        self.assertFalse(connected, "Should have failed – SSLv2 is not supported")
+        self.assertNotEqual(cp.returncode, 0, "Should have exited non-zero for SSLv2")
+        self.assertNotIn(
+            "Network Information",
+            cp.stdout,
+            "Should have failed – SSLv2 is not supported",
+        )
 
     def test_wrong_keyfile_password(self):
         """load_pem_private_key rejects wrong password for encrypted key"""
@@ -129,29 +133,47 @@ class TestTLS(unittest.TestCase):
             f"--tls-keyfile {self.certs}/client_enc.key "
             f"--tls-keyfile-password wrongpass"
         )
-        connected = "Network Information" in cp.stdout
-        self.assertFalse(connected, "Should have failed with wrong keyfile password")
+        self.assertNotEqual(
+            cp.returncode, 0, "Should have exited non-zero for wrong password"
+        )
+        self.assertNotIn(
+            "Network Information",
+            cp.stdout,
+            "Should have failed with wrong keyfile password",
+        )
 
     def test_tls_name_mismatch(self):
         """_match_tlsname should reject when tls-name doesn't match cert"""
         cp = test_util.run_asadm(
             f"-h {self.host} --tls-enable --tls-name wrong_name "
-            f"--tls-cafile {self.ca} -Uadmin -Padmin -e 'info'",
+            f"--tls-cafile {self.ca} -Uadmin -Padmin -e 'info network'",
             strip_header=False,
         )
-        connected = "Network Information" in cp.stdout
-        self.assertFalse(connected, "Should have failed due to TLS name mismatch")
+        self.assertNotEqual(
+            cp.returncode, 0, "Should have exited non-zero for TLS name mismatch"
+        )
+        self.assertNotIn(
+            "Network Information",
+            cp.stdout,
+            "Should have failed due to TLS name mismatch",
+        )
 
     def test_wrong_ca(self):
         """Handshake fails when CA didn't sign the server cert"""
         wrong_ca = os.path.join(self.certs, "wrong_ca.pem")
         cp = test_util.run_asadm(
             f"-h {self.host} --tls-enable --tls-name localhost "
-            f"--tls-cafile {wrong_ca} -Uadmin -Padmin -e 'info'",
+            f"--tls-cafile {wrong_ca} -Uadmin -Padmin -e 'info network'",
             strip_header=False,
         )
-        connected = "Network Information" in cp.stdout
-        self.assertFalse(connected, "Should have failed due to wrong CA")
+        self.assertNotEqual(
+            cp.returncode, 0, "Should have exited non-zero for wrong CA"
+        )
+        self.assertNotIn(
+            "Network Information",
+            cp.stdout,
+            "Should have failed due to wrong CA",
+        )
 
     def test_crl_revoked_cert(self):
         """_parse_crl_cert, _cert_crl_check – server cert is in CRL"""
@@ -159,12 +181,16 @@ class TestTLS(unittest.TestCase):
         cp = test_util.run_asadm(
             f"-h {self.host} --tls-enable --tls-name localhost "
             f"--tls-cafile {self.ca} --tls-capath {crl_dir} "
-            f"--tls-crl-check -Uadmin -Padmin -e 'info'",
+            f"--tls-crl-check -Uadmin -Padmin -e 'info network'",
             strip_header=False,
         )
-        connected = "Network Information" in cp.stdout
-        self.assertFalse(
-            connected, "Should have failed – server cert is revoked in CRL"
+        self.assertNotEqual(
+            cp.returncode, 0, "Should have exited non-zero for revoked cert"
+        )
+        self.assertNotIn(
+            "Network Information",
+            cp.stdout,
+            "Should have failed – server cert is revoked in CRL",
         )
 
     def test_crl_check_all(self):
@@ -173,12 +199,16 @@ class TestTLS(unittest.TestCase):
         cp = test_util.run_asadm(
             f"-h {self.host} --tls-enable --tls-name localhost "
             f"--tls-cafile {self.ca} --tls-capath {crl_dir} "
-            f"--tls-crl-check-all -Uadmin -Padmin -e 'info'",
+            f"--tls-crl-check-all -Uadmin -Padmin -e 'info network'",
             strip_header=False,
         )
-        connected = "Network Information" in cp.stdout
-        self.assertFalse(
-            connected, "Should have failed – server cert is revoked (crl-check-all)"
+        self.assertNotEqual(
+            cp.returncode, 0, "Should have exited non-zero for crl-check-all"
+        )
+        self.assertNotIn(
+            "Network Information",
+            cp.stdout,
+            "Should have failed – server cert is revoked (crl-check-all)",
         )
 
 

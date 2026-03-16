@@ -153,7 +153,7 @@ class SSLContext(object):
                 else:
                     alt_names.append(str(name.value))
         except x509.ExtensionNotFound:
-            pass
+            pass  # SAN is an optional X.509 extension; absence is not an error
         return alt_names
 
     def _match_tlsname(self, crypto_cert, tls_name):
@@ -205,7 +205,7 @@ class SSLContext(object):
 
         if depth == 0:
             tls_name = conn.get_app_data()
-            self._match_tlsname(crypto_cert=crypto_cert, tls_name=tls_name)
+            self._match_tlsname(crypto_cert, tls_name)
 
         if self._crl_check_all or (self._crl_check and depth == 0):
             self._cert_crl_check(crypto_cert)

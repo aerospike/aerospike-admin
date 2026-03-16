@@ -105,9 +105,12 @@ def _generate_crl(ca_key, ca_cert, revoked_serials=None):
 
 
 class TestGetSubjectAltNames(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     def test_dns_names(self):
         _, cert = _generate_cert(
@@ -193,9 +196,12 @@ class TestGetCommonNames(unittest.TestCase):
 
 
 class TestCertCrlCheck(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     def test_revoked_cert(self):
         _, cert = _generate_cert(self.ca_key, self.ca_cert, serial_number=0xABCD)
@@ -221,9 +227,12 @@ class TestCertCrlCheck(unittest.TestCase):
 
 
 class TestMatchTlsName(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     def test_cn_exact_match(self):
         _, cert = _generate_cert(self.ca_key, self.ca_cert, cn="server.example.com")
@@ -282,9 +291,12 @@ class TestMatchTlsName(unittest.TestCase):
 
 
 class TestParseCrlCert(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     def test_valid_crl_dir(self):
         crl = _generate_crl(self.ca_key, self.ca_cert, revoked_serials=[0x1234, 0x5678])
@@ -587,14 +599,17 @@ class TestSetContextOptions(unittest.TestCase):
 
 
 class TestVerifyCb(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca(
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca(
             cn="Test CA",
             extra_issuer_attrs=[
                 x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Test Org"),
             ],
         )
+
+    def setUp(self):
+        self.ssl_ctx = SSLContext.__new__(SSLContext)
         self.ssl_ctx._crl_checklist = []
         self.ssl_ctx._crl_check = False
         self.ssl_ctx._crl_check_all = False
@@ -1184,9 +1199,12 @@ class TestSSLContextInit(unittest.TestCase):
 
 
 class TestMatchTlsNameEdgeCases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     def test_cn_mismatch_single_name_raises(self):
         _, cert = _generate_cert(self.ca_key, self.ca_cert, cn="other.example.com")
@@ -1224,9 +1242,12 @@ class TestMatchTlsNameEdgeCases(unittest.TestCase):
 
 
 class TestParseCrlCertEdgeCases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     def test_multiple_crl_files(self):
         crl1 = _generate_crl(self.ca_key, self.ca_cert, revoked_serials=[0x1111])
@@ -1293,9 +1314,12 @@ class TestSetContextOptionsEdgeCases(unittest.TestCase):
 
 
 class TestGetSubjectAltNamesEdgeCases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     def test_directory_name_san(self):
         _, cert = _generate_cert(
@@ -1312,9 +1336,12 @@ class TestGetSubjectAltNamesEdgeCases(unittest.TestCase):
 
 
 class TestMatchTlsNameDnsMatchExceptions(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ca_key, cls.ca_cert = _generate_ca()
+
     def setUp(self):
         self.ssl_ctx = SSLContext.__new__(SSLContext)
-        self.ca_key, self.ca_cert = _generate_ca()
 
     @patch("lib.live_cluster.client.ssl_context.ssl_util")
     def test_cn_dnsname_match_exception_swallowed(self, mock_ssl_util):
