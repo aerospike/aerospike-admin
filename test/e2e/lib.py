@@ -14,6 +14,7 @@
 
 import codecs
 import os
+import shutil
 import string
 import sys
 import aerospike
@@ -23,10 +24,10 @@ import signal
 import time
 from test.e2e import util
 
-from test.e2e import util
-
 # the port to use for one of the cluster nodes
 PORT = 10000
+TLS_PORT_OFFSET = 5
+TLS_PORT = PORT + TLS_PORT_OFFSET
 # the namespace to be used for the tests
 NAMESPACE = "test"
 # the set to be used for the tests
@@ -75,6 +76,10 @@ RUNNING = False
 
 # where to mount work directory in the docker container
 CONTAINER_DIR = "/opt/work"
+CONTAINER_CERTS_DIR = CONTAINER_DIR + "/certs"
+
+# source certs for TLS tests (committed to repo, no secrets)
+CERTS_SRC_DIR = os.path.join(os.path.dirname(__file__), "certs")
 
 # Enable docker log dumping via environment variable
 DUMP_DOCKER_LOGS = os.environ.get("DUMP_DOCKER_LOGS", "false").lower() in (
@@ -195,6 +200,18 @@ def init_state_dirs():
         os.mkdir(udf, 0o755)
 
 
+def copy_certs_to_work_dir():
+    """
+    Copies test/e2e/certs/ into work/certs/ so they are available
+    inside the container at /opt/work/certs/.
+    """
+    dest = absolute_path(WORK_DIRECTORY, "certs")
+    if os.path.exists(dest):
+        shutil.rmtree(dest)
+    shutil.copytree(CERTS_SRC_DIR, dest)
+    print("Copied TLS certs to", dest)
+
+
 def temporary_path(extension):
     global FILE_COUNT
     """
@@ -231,6 +248,8 @@ def create_conf_file_from_template(
         "heartbeat_port": str(port_base + 2),
         "info_port": str(port_base + 3),
         "admin_port": str(port_base + 4),
+        "tls_service_port": str(port_base + TLS_PORT_OFFSET),
+        "certs_directory": CONTAINER_CERTS_DIR,
         "access_address": access_address,
         "peer_connection": (
             "# no peer connection"
@@ -359,6 +378,7 @@ def start_server(
             str(base + 2) + "/tcp": str(base + 2),
             str(base + 3) + "/tcp": str(base + 3),
             str(base + 4) + "/tcp": str(base + 4),
+            str(base + TLS_PORT_OFFSET) + "/tcp": str(base + TLS_PORT_OFFSET),
         },
         volumes={mount_dir: {"bind": CONTAINER_DIR, "mode": "rw"}},
         tty=True,
@@ -405,6 +425,9 @@ def start(
 
             init_work_dir()
             init_state_dirs()
+
+            if template_file == "aerospike_tls.conf":
+                copy_certs_to_work_dir()
 
             first_base = PORT
             for index in range(1, num_nodes + 1):
