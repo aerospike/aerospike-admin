@@ -616,7 +616,7 @@ def create_deprecate_action(action, optional_msg=""):
             logger.warning(
                 "Argument %s is deprecated. %s", self.option_strings, optional_msg
             )
-            setattr(namespace, self.dest, values)
+            super().__call__(parser, namespace, values, option_string)
 
     return DeprecateAction
 
