@@ -490,16 +490,16 @@ jobs:
                 amzn) DIST="amzn2023" ;;
               esac
               ARCH=$(uname -m)
-              cat > /etc/yum.repos.d/aerospike.repo <<REPO
-[aerospike-dev]
-name=Aerospike RPM DEV
-baseurl=https://artifact.aerospike.io/artifactory/database-rpm-dev-local/${DIST}/$ARCH/
-username=${JF_USERNAME}
-password=${JF_TOKEN}
-enabled=1
-gpgcheck=1
-gpgkey=https://artifact.aerospike.io/artifactory/api/security/keypair/aerospike/public
-REPO
+              printf '%s\n' \
+                "[aerospike-dev]" \
+                "name=Aerospike RPM DEV" \
+                "baseurl=https://artifact.aerospike.io/artifactory/database-rpm-dev-local/${DIST}/${ARCH}/" \
+                "username=${JF_USERNAME}" \
+                "password=${JF_TOKEN}" \
+                "enabled=1" \
+                "gpgcheck=1" \
+                "gpgkey=https://artifact.aerospike.io/artifactory/api/security/keypair/aerospike/public" \
+                > /etc/yum.repos.d/aerospike.repo
               RPM_VERSION=$(echo "$PKG_VERSION" | tr '-' '_')
               end=$((SECONDS + 300))
               while [ $SECONDS -lt $end ]; do
