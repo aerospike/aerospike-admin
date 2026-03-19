@@ -7,28 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       GIT_TAG:
-        description: "git tag on master branch only (x.y.z or x.y.z-suffix format, e.g. 1.2.3, 1.2.3-rc1). Will be ignored on other branches."
+        description: "Git tag to create on master (x.y.z or x.y.z-suffix format, e.g. 1.2.3, 1.2.3-rc1)"
         required: false
         type: string
         default: ""
-      BUILD_BUILDER_IMAGES:
-        description: "Build and push remote builder images to JFrog"
-        required: true
-        type: boolean
-        default: false
-      DOCKER_TAG:
-        description: "Tag to use for remote builder images"
-        required: true
-        type: string
-        default: latest
-  pull_request:
-    # yamllint disable-line rule:quoted-strings
-    branches:
-      - "*"
+
   push:
     branches:
       # yamllint disable-line rule:quoted-strings
-      - "master"
+      - 'pvinh/TOOLS-3292-Macbuild'
 
 jobs:
   validate-inputs:
@@ -40,33 +27,23 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Validate BUILD_BUILDER_IMAGES and DOCKER_TAG
+      - name: Validate GIT_TAG
         run: |
           set -euo pipefail
 
-          # Only validate on workflow_dispatch
           if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
             echo "Skipping input validation (not a workflow_dispatch)"
             exit 0
           fi
 
-          BUILD_BUILDER_IMAGES="${{ github.event.inputs.BUILD_BUILDER_IMAGES }}"
-          DOCKER_TAG="${{ github.event.inputs.DOCKER_TAG }}"
           GIT_TAG="${{ github.event.inputs.GIT_TAG }}"
 
-          # Validate: if BUILD_BUILDER_IMAGES is true, DOCKER_TAG must not be the default 'latest'
-          if [[ "$BUILD_BUILDER_IMAGES" == "true" && "$DOCKER_TAG" == "latest" ]]; then
-            echo "ERROR: when BUILD_BUILDER_IMAGES=true, you must explicitly specify a DOCKER_TAG (not 'latest')" >&2
-            exit 1
-          fi
-
-          # Validate: if GIT_TAG is provided, it must match x.y.z or x.y.z-suffix format and we must be on master branch
           if [[ -n "$GIT_TAG" ]]; then
             if ! [[ "$GIT_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
               echo "ERROR: GIT_TAG must be in x.y.z or x.y.z-suffix format (e.g. 1.2.3, 1.2.3-rc1). Got: '$GIT_TAG'" >&2
               exit 1
             fi
-            
+
             if [[ "${{ github.ref }}" != "refs/heads/master" ]]; then
               echo "ERROR: GIT_TAG can only be provided when running on master branch" >&2
               echo "Current branch: ${{ github.ref }}" >&2
@@ -155,8 +132,9 @@ jobs:
     # always() needed because get-version uses always() - without it, this job would be skipped
     if: ${{ always() && needs.get-version.result == 'success' }}
     strategy:
-      fail-fast: false  # Run all OS builds to see full status, but fail overall if any fails
+      fail-fast: false
       matrix:
+        host: [ubuntu-24.04, ubuntu-24.04-arm]
         distro:
           - el8
           - el9
@@ -168,44 +146,155 @@ jobs:
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
-        host:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-    uses: aerospike/shared-workflows/.github/workflows/reusable_execute-build.yaml@v2.0.2
-    with:
-      runs-on: ${{ matrix.host }}
-      jf-project: database
-      jf-build-id: ${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: "v2.0.2"
-      # this is the default behaviour so we can leave it out but if it is wanted to be explicit
-      # we need to use the ref not the ref_name in github actions. The ref_name is the short name and so not a valid ref.
-      gh-source-ref: ${{ github.ref }}
-      build-script: |
-        set -euo pipefail
+    runs-on: ${{ matrix.host }}
+    container: >-
+      ${{ matrix.distro == 'el8' && 'redhat/ubi8:8.10' ||
+        matrix.distro == 'el9' && 'redhat/ubi9:9.6' ||
+        matrix.distro == 'el10' && 'redhat/ubi10:10.0' ||
+        matrix.distro == 'amzn2023' && 'amazonlinux:2023.9.20251208.0' ||
+        matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
+        matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
+        matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
+        matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
+        matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
+        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20231126.1' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
 
-        echo "Logging in to artifact.aerospike.io for Docker pulls/pushes..."
-        jf docker login artifact.aerospike.io
+      - name: Install prereqs
+        run: |
+          set -euo pipefail
+          case "${{ matrix.distro }}" in
+            ubuntu*|debian*)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update && apt-get install -y git ca-certificates
+              ;;
+            el*|amzn*)
+              command -v dnf >/dev/null || yum install -y dnf
+              dnf -y install git ca-certificates
+              ;;
+          esac
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-        rm -rf dist
-        mkdir -p dist
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
 
-        ARCH=${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }} \
-        BUILD_BUILDER_IMAGES=${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.BUILD_BUILDER_IMAGES) || 'false' }}  \
-        IMAGE_TAG=${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.DOCKER_TAG) || 'latest' }} \
-        BUILDER_IMAGE_PREFIX="artifact.aerospike.io/database-container-dev-local/aerospike-tools/" \
-        local/.github/packaging/project/gha-main.sh "${{ matrix.distro }}"
-      gh-artifact-directory: dist
-      gh-artifact-name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
-      gh-retention-days: 1
-      dry-run: false
-      oidc-provider-name: database-gh-aerospike
-      oidc-audience: database-gh-aerospike
-      jf-build-name: "aerospike-asadm"
+      - name: Install build dependencies
+        env:
+          ENV_DISTRO: ${{ matrix.distro }}
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          source .github/bin/install_deps.sh
+          "install_deps_${{ matrix.distro }}"
+
+      - name: Build and package
+        env:
+          ENV_DISTRO: ${{ matrix.distro }}
+          BUILD_DISTRO: ${{ matrix.distro }}
+          PKG_VERSION: ${{ needs.get-version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          export PATH="$PATH:/opt/golang/go/bin"
+          source .github/bin/build_package.sh
+          build_packages
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
+          path: /tmp/output/${{ matrix.distro }}
+          retention-days: 1
+
+  build-mac-artifacts:
+    needs: get-version
+    if: ${{ always() && needs.get-version.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-14, macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+
+      - uses: kenchan0130/actions-system-info@b98fe44bc35efcc60a9828cf4a04783a8b370bde # v1.3.0
+        id: system-info
+
+      - name: Get Python version from Pipfile
+        run: |
+          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3 - | tr -d '"')" >> $GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache asadm and asinfo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: cache-asadm-asinfo
+        env:
+          cache-name: cache-asadm-asinfo
+          cache-index: "4"
+        with:
+          path: |
+            build/bin
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}
+
+      - name: Pipenv setup
+        if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        run: |
+          brew install pipenv
+          pipenv install --dev
+
+      - name: Build asadm
+        if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        run: |
+          make one-dir
+          ls -al build/bin/asadm || true
+
+      - name: Sanity test tools
+        run: |
+          sudo make install
+          asadm -e "info" || true
+          asadm -e "info" 2>&1 | grep "Not able to connect"
+          asinfo || true
+          asinfo 2>&1 | grep "Not able to connect"
+
+      - name: Create .tar
+        run: |
+          tar -C build/bin/ -cvf asadm.tar asadm
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}
+          path: asadm.tar
+          if-no-files-found: error
+          retention-days: 1
 
   organize-built-artifacts:
-    needs: [build-artifacts, get-version]
+    needs: [build-artifacts, build-mac-artifacts, get-version]
     # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.build-artifacts.result == 'success' }}
+    if: ${{ always() && needs.build-artifacts.result == 'success' && (needs.build-mac-artifacts.result == 'success' || needs.build-mac-artifacts.result == 'skipped') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -287,8 +376,9 @@ jobs:
 
   test-install-from-jfrog-and-execute:
     strategy:
-      fail-fast: false  # Run all OS tests to see full status, but fail overall if any fails
+      fail-fast: false
       matrix:
+        host: [ubuntu-24.04, ubuntu-24.04-arm]
         distro:
           - el8
           - el9
@@ -300,32 +390,46 @@ jobs:
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
-        host:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
     needs:
       - get-version
       - upload-artifacts-to-jfrog
     # always() needed because upstream jobs use always(); run after upload (not release bundle)
     if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
-    env:
-      JFROG_CLI_BUILD_NAME: ${{ github.workflow }}
-      JFROG_CLI_LOG_LEVEL: INFO
-      PACKAGE_NAME: asadm
-      ARCH: ${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
-      BUILD_BUILDER_IMAGES: false
-      BUILDER_IMAGE_PREFIX: ""
     runs-on: ${{ matrix.host }}
+    container: >-
+      ${{ matrix.distro == 'el8' && 'redhat/ubi8:8.10' ||
+        matrix.distro == 'el9' && 'redhat/ubi9:9.6' ||
+        matrix.distro == 'el10' && 'redhat/ubi10:10.0' ||
+        matrix.distro == 'amzn2023' && 'amazonlinux:2023.9.20251208.0' ||
+        matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
+        matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
+        matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
+        matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
+        matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
+        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20231126.1' }}
     permissions:
       contents: read
-      packages: write
-      attestations: write
       id-token: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
+
+      - name: Install prereqs
+        run: |
+          set -euo pipefail
+          case "${{ matrix.distro }}" in
+            ubuntu*|debian*)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update && apt-get install -y git wget gpg lsb-release sudo ca-certificates
+              ;;
+            el*|amzn*)
+              command -v dnf >/dev/null || yum install -y dnf
+              dnf -y install git wget sudo ca-certificates
+              ;;
+          esac
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install JFrog CLI
         id: jf
@@ -336,19 +440,76 @@ jobs:
         with:
           oidc-provider-name: database-gh-aerospike
           oidc-audience: database-gh-aerospike
+
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ github.ref }}
-          submodules: recursive
 
-      - name: Run test cases
+      - name: Install bats
+        run: |
+          cd /tmp
+          git clone https://github.com/bats-core/bats-core.git
+          cd bats-core
+          ./install.sh /usr/local
+
+      - name: Configure JFrog repo and install package
         env:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
+          PKG_VERSION: ${{ needs.get-version.outputs.VERSION }}
+          PACKAGE_NAME: asadm
         run: |
-          PACKAGE_NAME=${PACKAGE_NAME} \
-          ARCH=${ARCH} \
-          BUILD_BUILDER_IMAGES=${BUILD_BUILDER_IMAGES} \
-          BUILDER_IMAGE_PREFIX=${BUILDER_IMAGE_PREFIX} \
-          .github/packaging/project/test/gha-test-main.sh ${{ matrix.distro }} ${{ github.event.repository.name }} ${{ needs.get-version.outputs.VERSION }} ${PACKAGE_NAME}
+          set -euo pipefail
+          case "${{ matrix.distro }}" in
+            ubuntu*|debian*)
+              export DEBIAN_FRONTEND=noninteractive
+              install -m 600 /dev/null /etc/apt/auth.conf.d/aerospike.conf
+              printf "machine artifact.aerospike.io\nlogin %s\npassword %s\n" "$JF_USERNAME" "$JF_TOKEN" \
+                > /etc/apt/auth.conf.d/aerospike.conf
+              CODENAME=$(lsb_release -sc)
+              ARCH=$(dpkg --print-architecture)
+              KEYRING=/usr/share/keyrings/aerospike.gpg
+              wget -qO - https://aerospike.jfrog.io/artifactory/api/security/keypair/aerospike/public \
+                | gpg --batch --no-tty --dearmor -o "$KEYRING"
+              echo "deb [arch=$ARCH signed-by=$KEYRING] https://artifact.aerospike.io/artifactory/database-deb-dev-local $CODENAME main" \
+                > /etc/apt/sources.list.d/aerospike.list
+              apt-get update
+              end=$((SECONDS + 300))
+              while [ $SECONDS -lt $end ]; do
+                if apt -y install "aerospike-${PACKAGE_NAME}=${PKG_VERSION}"; then break; fi
+                echo "Retrying in 10s..."
+                apt-get update || true
+                sleep 10
+              done
+              ;;
+            el*|amzn*)
+              . /etc/os-release
+              case "$ID" in
+                rhel|centos|almalinux|rocky) DIST="el${VERSION_ID%%.*}" ;;
+                amzn) DIST="amzn2023" ;;
+              esac
+              ARCH=$(uname -m)
+              cat > /etc/yum.repos.d/aerospike.repo <<REPO
+[aerospike-dev]
+name=Aerospike RPM DEV
+baseurl=https://artifact.aerospike.io/artifactory/database-rpm-dev-local/${DIST}/$ARCH/
+username=${JF_USERNAME}
+password=${JF_TOKEN}
+enabled=1
+gpgcheck=1
+gpgkey=https://artifact.aerospike.io/artifactory/api/security/keypair/aerospike/public
+REPO
+              RPM_VERSION=$(echo "$PKG_VERSION" | tr '-' '_')
+              end=$((SECONDS + 300))
+              while [ $SECONDS -lt $end ]; do
+                if dnf install -y "aerospike-${PACKAGE_NAME}-${RPM_VERSION}-1.${ARCH}"; then break; fi
+                echo "Retrying in 10s..."
+                dnf makecache --refresh || true
+                sleep 10
+              done
+              ;;
+          esac
+
+      - name: Run test cases
+        run: bats .github/bin/test/test_execute.bats
