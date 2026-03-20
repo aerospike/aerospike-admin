@@ -42,11 +42,11 @@ function install_deps_debian11() {
         echo "python $PYTHON_VERSION" >/.tool-versions
         echo "python $PYTHON_VERSION" >$HOME/.tool-versions
         asdf exec python -m pip install --break-system-packages pipenv
-        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-        install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+        install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+        install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+        install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+        install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+        install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
         gem install fpm -v 1.17.0
         rm -rf /var/lib/apt/lists/*
 }
