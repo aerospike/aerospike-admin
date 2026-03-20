@@ -284,13 +284,13 @@ jobs:
 
       - name: Create .tar
         run: |
-          tar -C build/bin/ -cvf asadm.tar asadm
+          tar -C build/bin/ -cvf "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.tar" asadm
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}
-          path: asadm.tar
+          path: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.tar"
           if-no-files-found: error
           retention-days: 1
 
