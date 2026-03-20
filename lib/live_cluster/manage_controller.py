@@ -1086,7 +1086,7 @@ class ManageSIndexController(LiveClusterManageCommandController):
     modifiers=(
         ModifierHelp(
             "bin-type",
-            "The bin type of the provided <bin-name>. Should be one of the following values: numeric, string, or geo2dsphere",
+            "The bin type of the provided <bin-name>. Should be one of the following values: numeric, string, geo2dsphere, blob, or setindex. Use 'setindex' to create a set-based index (requires server >= 8.1.2); no bin modifier is needed.",
         ),
         ModifierHelp(
             "index-name",
@@ -1452,6 +1452,91 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             )
 
         await self._do_create(line, "blob")
+
+    async def _do_create_set(self, line):
+        index_name = line.pop(0)
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ns",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        set_ = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if not set_:
+            raise ShellException(
+                "'set' modifier is required for set type secondary index."
+            )
+
+        unsupported = [
+            m
+            for m in ("bin", "in", "ctx", "exp_base64", "ctx_base64")
+            if self.mods.get(m)
+        ]
+        if unsupported:
+            raise ShellException(
+                "Set type secondary index does not support: {}. "
+                "Only 'ns' and 'set' modifiers are valid.".format(
+                    ", ".join(unsupported)
+                )
+            )
+
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+        feature_support = await util.check_version_support(
+            feature_versions={
+                "set_index_support": constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION,
+            },
+            builds=builds,
+        )
+
+        if not feature_support["set_index_support"]:
+            raise ShellException(
+                f"Set type secondary index is not supported on server version "
+                f"< {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}."
+            )
+
+        if self.warn and not self.prompt_challenge(
+            "Adding a secondary index will cause longer restart times."
+        ):
+            return
+
+        # namespace_query_selector_support is always True for servers >= 8.1.2
+        resp = await self.cluster.info_sindex_create(
+            index_name,
+            namespace,
+            None,
+            None,
+            "set",
+            set_,
+            None,
+            None,
+            None,
+            {"namespace_query_selector_support": True},
+            nodes="principal",
+        )
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result(
+            "Use 'show sindex' to confirm {} was created successfully.".format(
+                index_name
+            )
+        )
+
+    # Hack for auto-complete
+    async def do_setindex(self, line):
+        await self._do_create_set(line)
 
 
 @CommandHelp(

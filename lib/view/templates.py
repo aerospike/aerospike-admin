@@ -2361,6 +2361,14 @@ show_sindex = Sheet(
         Field("Bin", Projectors.Number("data", "bins", "bin")),
         Field("Bin Type", Projectors.String("data", "type")),
         Field("Index Type", Projectors.String("data", "indextype")),
+        Field(
+            "Set Index",
+            Projectors.Func(
+                "boolean",
+                lambda indextype: indextype == "set",
+                Projectors.String("data", "indextype"),
+            ),
+        ),
         Field("State", Projectors.String("data", "state")),
         Field(
             "Context",

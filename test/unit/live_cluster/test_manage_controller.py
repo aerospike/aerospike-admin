@@ -2245,6 +2245,128 @@ class ManageSIndexDeleteControllerTest(unittest.IsolatedAsyncioTestCase):
             await self.controller.execute(line)
 
 
+class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageSIndexCreateController()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageSIndexCreateController.prompt_challenge"
+        ).start()
+        self.meta_mock = self.controller.meta_getter = create_autospec(
+            GetClusterMetadataController
+        )
+
+        self.addCleanup(patch.stopall)
+
+    async def test_create_set_successful(self):
+        line = "setindex mysetindex ns test set testset".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "mysetindex",
+            "test",
+            None,
+            None,
+            "set",
+            "testset",
+            None,
+            None,
+            None,
+            {"namespace_query_selector_support": True},
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm mysetindex was created successfully."
+        )
+
+    async def test_create_set_not_supported(self):
+        line = "setindex mysetindex ns test set testset".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            f"Set type secondary index is not supported on server version "
+            f"< {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_set_missing_set(self):
+        line = "setindex mysetindex ns test".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "'set' modifier is required for set type secondary index",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_set_prompt_challenge_fails(self):
+        line = "setindex mysetindex ns test set testset".split()
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        await self.controller.execute(line)
+
+        self.prompt_mock.assert_called_once_with(
+            "Adding a secondary index will cause longer restart times."
+        )
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    @parameterized.expand(
+        [
+            ("bin", "setindex mysetindex ns test set testset bin mybin", "bin"),
+            ("in", "setindex mysetindex ns test set testset in mapkeys", "in"),
+            ("ctx", "setindex mysetindex ns test set testset ctx list_index(1)", "ctx"),
+            (
+                "exp_base64",
+                "setindex mysetindex ns test set testset exp_base64 dGVzdA==",
+                "exp_base64",
+            ),
+            (
+                "ctx_base64",
+                "setindex mysetindex ns test set testset ctx_base64 dGVzdA==",
+                "ctx_base64",
+            ),
+        ]
+    )
+    async def test_create_set_with_unsupported_modifier(self, _, line_str, modifier):
+        line = line_str.split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            f"Set type secondary index does not support: {modifier}",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_set_fails_with_asinfo_error(self):
+        line = "setindex mysetindex ns test set testset".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
+        }
+
+        with self.assertRaisesRegex(ASInfoResponseError, "bar"):
+            await self.controller.execute(line)
+
+
 class ManageTruncateControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
