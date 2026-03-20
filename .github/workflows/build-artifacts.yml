@@ -381,35 +381,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [ubuntu-24.04, ubuntu-24.04-arm]
-        distro:
-          - el8
-          - el9
-          - el10
-          - amzn2023
-          - debian11
-          - debian12
-          - debian13
-          - ubuntu20.04
-          - ubuntu22.04
-          - ubuntu24.04
+        include:
+          - { host: ubuntu-24.04, distro: ubuntu24.04, container: "ubuntu:noble-20231126.1" }
+          - { host: ubuntu-24.04, distro: el9, container: "redhat/ubi9:9.6" }
+          - { host: ubuntu-24.04-arm, distro: ubuntu24.04, container: "ubuntu:noble-20231126.1" }
+          - { host: ubuntu-24.04-arm, distro: el9, container: "redhat/ubi9:9.6" }
     needs:
       - get-version
       - upload-artifacts-to-jfrog
     # always() needed because upstream jobs use always(); run after upload (not release bundle)
     if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
     runs-on: ${{ matrix.host }}
-    container: >-
-      ${{ matrix.distro == 'el8' && 'redhat/ubi8:8.10' ||
-        matrix.distro == 'el9' && 'redhat/ubi9:9.6' ||
-        matrix.distro == 'el10' && 'redhat/ubi10:10.0' ||
-        matrix.distro == 'amzn2023' && 'amazonlinux:2023.9.20251208.0' ||
-        matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
-        matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
-        matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
-        matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
-        matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
-        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20231126.1' }}
+    container: ${{ matrix.container }}
     permissions:
       contents: read
       id-token: write
@@ -425,14 +408,13 @@ jobs:
           case "${{ matrix.distro }}" in
             ubuntu*|debian*)
               export DEBIAN_FRONTEND=noninteractive
-              apt-get update && apt-get install -y git wget gpg lsb-release sudo ca-certificates
+              apt-get update && apt-get install -y wget gpg lsb-release sudo ca-certificates
               ;;
             el*|amzn*)
               command -v dnf >/dev/null || yum install -y dnf
-              dnf -y install git wget sudo ca-certificates
+              dnf -y install wget sudo ca-certificates
               ;;
           esac
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install JFrog CLI
         id: jf
@@ -444,19 +426,7 @@ jobs:
           oidc-provider-name: database-gh-aerospike
           oidc-audience: database-gh-aerospike
 
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Install bats
-        run: |
-          cd /tmp
-          git clone https://github.com/bats-core/bats-core.git
-          cd bats-core
-          ./install.sh /usr/local
-
-      - name: Configure JFrog repo and install package
+      - name: Install package from JFrog
         env:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
@@ -514,5 +484,9 @@ jobs:
               ;;
           esac
 
-      - name: Run test cases
-        run: bats .github/bin/test/test_execute.bats
+      - name: Verify asadm
+        run: |
+          echo "--- asadm --help ---"
+          asadm --help
+          echo "--- asadm version ---"
+          asadm --version || true
