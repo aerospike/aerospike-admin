@@ -35,6 +35,4 @@ function build_packages() {
 		make tar
 	fi
 
-	mkdir -p /tmp/output/"$ENV_DISTRO"
-	cp -a "$GIT_DIR"/pkg/target/* /tmp/output/"$ENV_DISTRO"
 }

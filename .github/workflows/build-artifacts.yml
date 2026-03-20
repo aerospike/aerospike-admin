@@ -215,7 +215,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
-          path: /tmp/output/${{ matrix.distro }}
+          path: pkg/target/
           retention-days: 1
 
   build-mac-artifacts:
