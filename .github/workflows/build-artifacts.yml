@@ -3,6 +3,9 @@ permissions:
   contents: read
   id-token: write
   attestations: write
+defaults:
+  run:
+    shell: bash
 on:
   workflow_dispatch:
     inputs:
