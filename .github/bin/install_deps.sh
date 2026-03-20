@@ -35,12 +35,12 @@ function install_deps_debian11() {
                 exit 1
         fi
         /opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-        install /root/go/bin/asdf /usr/local/bin/asdf
+        install $HOME/go/bin/asdf /usr/local/bin/asdf
         asdf plugin add python https://github.com/asdf-community/asdf-python.git
         asdf install python $PYTHON_VERSION
         asdf set python $PYTHON_VERSION
         echo "python $PYTHON_VERSION" >/.tool-versions
-        echo "python $PYTHON_VERSION" >/root/.tool-versions
+        echo "python $PYTHON_VERSION" >$HOME/.tool-versions
         asdf exec python -m pip install --break-system-packages pipenv
         install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
         install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
@@ -67,18 +67,18 @@ function install_deps_debian12() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install --break-system-packages pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
 	rm -rf /var/lib/apt/lists/*
 }
@@ -99,18 +99,18 @@ function install_deps_debian13() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install --break-system-packages pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
 	rm -rf /var/lib/apt/lists/*
 }
@@ -131,18 +131,18 @@ function install_deps_ubuntu20.04() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
 	rm -rf /var/lib/apt/lists/*
 }
@@ -163,18 +163,18 @@ function install_deps_ubuntu22.04() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
 	rm -rf /var/lib/apt/lists/*
 }
@@ -196,18 +196,18 @@ function install_deps_ubuntu24.04() {
 	fi
 
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install --break-system-packages pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
 	rm -rf /var/lib/apt/lists/*
 }
@@ -229,18 +229,18 @@ function install_deps_el8() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 
 	gem install fpm -v 1.17.0
 }
@@ -261,18 +261,18 @@ function install_deps_el9() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install --break-system-packages pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
 }
 
@@ -291,18 +291,18 @@ function install_deps_el10() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install --break-system-packages pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm
 }
 
@@ -320,17 +320,17 @@ function install_deps_amzn2023() {
 		exit 1
 	fi
 	/opt/golang/go/bin/go install github.com/asdf-vm/asdf/cmd/asdf@$ASDF_VERSION
-	install /root/go/bin/asdf /usr/local/bin/asdf
+	install $HOME/go/bin/asdf /usr/local/bin/asdf
 	asdf plugin add python https://github.com/asdf-community/asdf-python.git
 	asdf install python $PYTHON_VERSION
 	asdf set python $PYTHON_VERSION
 	echo "python $PYTHON_VERSION" >/.tool-versions
-	echo "python $PYTHON_VERSION" >/root/.tool-versions
+	echo "python $PYTHON_VERSION" >$HOME/.tool-versions
 	asdf exec python -m pip install --break-system-packages pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
-	install /root/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python /usr/bin/python3
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
+	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
 	gem install fpm -v 1.17.0
 }
