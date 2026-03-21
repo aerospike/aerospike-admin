@@ -2863,3 +2863,83 @@ info_transactions_provisionals_sheet = Sheet(
     group_by=("Namespace"),
     order_by=FieldSorter("Node"),
 )
+
+info_memory_sheet = Sheet(
+    (
+        node_field,
+        hidden_node_id_field,
+        Field(
+            "CGroup Tracking",
+            Projectors.String("configs", "cgroup-mem-tracking"),
+        ),
+        Subgroup(
+            "Free Memory",
+            (
+                Field(
+                    "Size",
+                    Projectors.Number("stats", "system_free_mem_kbytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Percent("stats", "system_free_mem_pct"),
+                    converter=Converters.pct,
+                ),
+            ),
+        ),
+        Subgroup(
+            "Host Free Memory",
+            (
+                Field(
+                    "Size",
+                    Projectors.Number("stats", "host_free_mem_kbytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Avail%",
+                    Projectors.Percent("stats", "host_free_mem_pct"),
+                    converter=Converters.pct,
+                ),
+            ),
+        ),
+        Subgroup(
+            "Heap",
+            (
+                Field(
+                    "Alloc",
+                    Projectors.Number("stats", "heap_allocated_kbytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Active",
+                    Projectors.Number("stats", "heap_active_kbytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Mapped",
+                    Projectors.Number("stats", "heap_mapped_kbytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Eff%",
+                    Projectors.Percent("stats", "heap_efficiency_pct"),
+                    converter=Converters.pct,
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value < 50),
+                        Formatters.yellow_alert(
+                            lambda edata: 50 <= edata.value < 60
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        Field(
+            "THP",
+            Projectors.Number("stats", "system_thp_mem_kbytes"),
+            converter=Converters.byte,
+            formatters=(Formatters.yellow_alert(lambda edata: edata.value > 0),),
+        ),
+    ),
+    from_source=("node_names", "node_ids", "stats", "configs"),
+    order_by=FieldSorter("Node"),
+)

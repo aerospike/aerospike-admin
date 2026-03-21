@@ -2326,3 +2326,109 @@ class CliViewInfoReleaseTest(unittest.TestCase):
         # Verify cluster methods were called with filter
         cluster_mock.get_node_names.assert_called_once_with(["node1"])
         cluster_mock.get_node_ids.assert_called_once_with(["node1"])
+
+
+class InfoMemoryViewTest(unittest.TestCase):
+    def setUp(self):
+        self.cluster_mock = patch(
+            "lib.live_cluster.live_cluster_root_controller.Cluster"
+        ).start()
+        self.render_mock = patch("lib.view.sheet.render").start()
+        self.print_result_mock = patch("lib.view.view.CliView.print_result").start()
+        self.addCleanup(patch.stopall)
+
+    def test_info_memory_calls_render_with_correct_sources(self):
+        stats = {
+            "1.1.1.1": {
+                "system_free_mem_kbytes": "8000000",
+                "system_free_mem_pct": "52",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "52",
+                "heap_allocated_kbytes": "500000",
+                "heap_active_kbytes": "520000",
+                "heap_mapped_kbytes": "600000",
+                "heap_efficiency_pct": "83",
+                "system_thp_mem_kbytes": "0",
+            }
+        }
+        configs = {"1.1.1.1": {"cgroup-mem-tracking": "false"}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        expected_sources = {
+            "node_names": node_names,
+            "node_ids": node_ids,
+            "stats": stats,
+            "configs": configs,
+        }
+        expected_common = {"principal": principal}
+
+        CliView.info_memory(stats, configs, self.cluster_mock, timestamp="test-stamp")
+
+        self.render_mock.assert_called_with(
+            templates.info_memory_sheet,
+            "Memory Information (test-stamp)",
+            expected_sources,
+            common=expected_common,
+        )
+
+    def test_info_memory_cgroup_tracking_enabled(self):
+        """When cgroup-mem-tracking=true, system_free_mem and host_free_mem differ."""
+        stats = {
+            "1.1.1.1": {
+                "system_free_mem_kbytes": "1200000",
+                "system_free_mem_pct": "8",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "52",
+                "heap_allocated_kbytes": "500000",
+                "heap_active_kbytes": "520000",
+                "heap_mapped_kbytes": "600000",
+                "heap_efficiency_pct": "83",
+                "system_thp_mem_kbytes": "0",
+            }
+        }
+        configs = {"1.1.1.1": {"cgroup-mem-tracking": "true"}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        expected_sources = {
+            "node_names": node_names,
+            "node_ids": node_ids,
+            "stats": stats,
+            "configs": configs,
+        }
+        expected_common = {"principal": principal}
+
+        CliView.info_memory(stats, configs, self.cluster_mock, timestamp="test-stamp")
+
+        self.render_mock.assert_called_with(
+            templates.info_memory_sheet,
+            "Memory Information (test-stamp)",
+            expected_sources,
+            common=expected_common,
+        )
+
+    def test_info_memory_with_node_filter(self):
+        stats = {"1.1.1.1": {}}
+        configs = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+
+        CliView.info_memory(stats, configs, self.cluster_mock, with_=["1.1.1.1"])
+
+        self.cluster_mock.get_node_names.assert_called_once_with(["1.1.1.1"])
+        self.cluster_mock.get_node_ids.assert_called_once_with(["1.1.1.1"])

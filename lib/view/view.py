@@ -159,6 +159,25 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
+    def info_memory(stats, configs, cluster, timestamp="", with_=None, **ignore):
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        title = "Memory Information" + title_suffix
+        sources = dict(
+            node_names=node_names,
+            node_ids=node_ids,
+            stats=stats,
+            configs=configs,
+        )
+        common = dict(principal=cluster.get_expected_principal())
+
+        CliView.print_result(
+            sheet.render(templates.info_memory_sheet, title, sources, common=common)
+        )
+
+    @staticmethod
+    @reserved_modifiers
     def info_namespace_usage(
         ns_stats, service_stats, cluster, timestamp="", with_=None, **ignore
     ):

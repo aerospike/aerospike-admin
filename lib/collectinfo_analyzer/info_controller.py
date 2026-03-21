@@ -90,6 +90,21 @@ class InfoController(CollectinfoCommandController):
             stats[key_tuple] = stats[key]
             del stats[key]
 
+    @CommandHelp("Displays memory information for each node")
+    def do_memory(self, line):
+        service_stats = self.stats_getter.get_service()
+        service_configs = self.config_getter.get_service()
+
+        for timestamp in sorted(service_stats.keys()):
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+            self.view.info_memory(
+                service_stats[timestamp],
+                service_configs.get(timestamp, {}),
+                cluster=cinfo_log,
+                timestamp=timestamp,
+                **self.mods,
+            )
+
     @CommandHelp("Displays summary information for each set")
     def do_set(self, line):
         set_stats = self.stats_getter.get_sets()

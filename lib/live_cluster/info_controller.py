@@ -96,6 +96,20 @@ class InfoController(LiveClusterCommandController):
             **self.mods,
         )
 
+    @CommandHelp(
+        "Displays memory information for each node",
+        usage=f"[{ModifierUsageHelp.WITH}]",
+        modifiers=(with_modifier_help,),
+    )
+    async def do_memory(self, line):
+        stats, configs = await asyncio.gather(
+            self.stat_getter.get_service(nodes=self.nodes),
+            self.config_getter.get_service(nodes=self.nodes),
+        )
+        return util.callable(
+            self.view.info_memory, stats, configs, self.cluster, **self.mods
+        )
+
     @CommandHelp("Displays summary information for each set")
     async def do_set(self, line):
         stats = await self.cluster.info_all_set_statistics(nodes=self.nodes)
