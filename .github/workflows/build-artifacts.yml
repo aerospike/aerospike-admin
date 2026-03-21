@@ -115,6 +115,7 @@ jobs:
       contents: read
     outputs:
       VERSION: ${{ steps.git_describe.outputs.version }}
+      BUNDLE_VERSION: ${{ steps.git_describe.outputs.bundle_version }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -131,8 +132,12 @@ jobs:
         id: git_describe
         run: |
           VERSION=$(git describe --tags --always --abbrev=9)
+          BRANCH_PREFIX="${GITHUB_REF_NAME//\//-}"
+          BUNDLE_VERSION="${BRANCH_PREFIX}-${VERSION}"
           echo "VERSION: $VERSION"
+          echo "BUNDLE_VERSION: $BUNDLE_VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "bundle_version=$BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
     needs: get-version
@@ -377,8 +382,8 @@ jobs:
       jf-bundle-name: "aerospike-asadm"
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      version: ${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: v2.0.2 # Use specific shared-workflows version
+      version: ${{ needs.get-version.outputs.BUNDLE_VERSION }}
+      gh-workflows-ref: v2.0.2
       dry-run: false
 
   test-install-from-jfrog-and-execute:
