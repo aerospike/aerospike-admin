@@ -132,7 +132,8 @@ jobs:
         id: git_describe
         run: |
           VERSION=$(git describe --tags --always --abbrev=9)
-          BRANCH_PREFIX="${GITHUB_REF_NAME//\//-}"
+          BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          BRANCH_PREFIX="${BRANCH//\//-}"
           BUNDLE_VERSION="${BRANCH_PREFIX}-${VERSION}"
           echo "VERSION: $VERSION"
           echo "BUNDLE_VERSION: $BUNDLE_VERSION"
