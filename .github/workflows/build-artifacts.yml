@@ -435,63 +435,19 @@ jobs:
           oidc-provider-name: database-gh-aerospike
           oidc-audience: database-gh-aerospike
 
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: .github/bin/test
+          sparse-checkout-cone-mode: false
+
       - name: Install package from JFrog
         env:
           JF_TOKEN: ${{ steps.jf.outputs.oidc-token }}
           JF_USERNAME: ${{ steps.jf.outputs.oidc-user }}
           PKG_VERSION: ${{ needs.get-version.outputs.VERSION }}
           PACKAGE_NAME: asadm
-        run: |
-          set -euo pipefail
-          case "${{ matrix.distro }}" in
-            ubuntu*|debian*)
-              export DEBIAN_FRONTEND=noninteractive
-              install -m 600 /dev/null /etc/apt/auth.conf.d/aerospike.conf
-              printf "machine artifact.aerospike.io\nlogin %s\npassword %s\n" "$JF_USERNAME" "$JF_TOKEN" \
-                > /etc/apt/auth.conf.d/aerospike.conf
-              CODENAME=$(lsb_release -sc)
-              ARCH=$(dpkg --print-architecture)
-              KEYRING=/usr/share/keyrings/aerospike.gpg
-              wget -qO - https://aerospike.jfrog.io/artifactory/api/security/keypair/aerospike/public \
-                | gpg --batch --no-tty --dearmor -o "$KEYRING"
-              echo "deb [arch=$ARCH signed-by=$KEYRING] https://artifact.aerospike.io/artifactory/database-deb-dev-local $CODENAME main" \
-                > /etc/apt/sources.list.d/aerospike.list
-              apt-get update
-              end=$((SECONDS + 300))
-              while [ $SECONDS -lt $end ]; do
-                if apt -y install "aerospike-${PACKAGE_NAME}=${PKG_VERSION}"; then break; fi
-                echo "Retrying in 10s..."
-                apt-get update || true
-                sleep 10
-              done
-              ;;
-            el*|amzn*)
-              . /etc/os-release
-              case "$ID" in
-                rhel|centos|almalinux|rocky) DIST="el${VERSION_ID%%.*}" ;;
-                amzn) DIST="amzn2023" ;;
-              esac
-              ARCH=$(uname -m)
-              printf '%s\n' \
-                "[aerospike-dev]" \
-                "name=Aerospike RPM DEV" \
-                "baseurl=https://artifact.aerospike.io/artifactory/database-rpm-dev-local/${DIST}/${ARCH}/" \
-                "username=${JF_USERNAME}" \
-                "password=${JF_TOKEN}" \
-                "enabled=1" \
-                "gpgcheck=1" \
-                "gpgkey=https://artifact.aerospike.io/artifactory/api/security/keypair/aerospike/public" \
-                > /etc/yum.repos.d/aerospike.repo
-              RPM_VERSION=$(echo "$PKG_VERSION" | tr '-' '_')
-              end=$((SECONDS + 300))
-              while [ $SECONDS -lt $end ]; do
-                if dnf install -y "aerospike-${PACKAGE_NAME}-${RPM_VERSION}-1.${ARCH}"; then break; fi
-                echo "Retrying in 10s..."
-                dnf makecache --refresh || true
-                sleep 10
-              done
-              ;;
-          esac
+        run: .github/bin/test/install_from_jfrog.sh
 
       - name: Verify asadm
         run: |
