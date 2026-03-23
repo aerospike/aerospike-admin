@@ -336,11 +336,11 @@ jobs:
       - organize-built-artifacts
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.organize-built-artifacts.result == 'success' }}
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v2.0.2
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v3.1.1
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: "v2.0.2"
+      gh-workflows-ref: "v3.1.1"
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
@@ -352,7 +352,7 @@ jobs:
       - sign-artifacts
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.sign-artifacts.result == 'success' }}
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v2.0.2
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v3.1.1
     with:
       jf-project: database
       jf-build-name: "aerospike-asadm"
@@ -364,7 +364,7 @@ jobs:
       dry-run: false
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
-      gh-workflows-ref: "v2.0.2"
+      gh-workflows-ref: "v3.1.1"
 
   create-release-bundle:
     permissions:
@@ -376,7 +376,7 @@ jobs:
       - get-version
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
-    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v2.0.2
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.1.1
     with:
       jf-project: "database"
       jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }}"
@@ -384,7 +384,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.BUNDLE_VERSION }}
-      gh-workflows-ref: v2.0.2
+      gh-workflows-ref: v3.1.1
       dry-run: false
 
   test-install-from-jfrog-and-execute:
