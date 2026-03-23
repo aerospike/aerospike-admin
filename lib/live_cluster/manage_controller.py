@@ -1082,11 +1082,17 @@ class ManageSIndexController(LiveClusterManageCommandController):
 
 @CommandHelp(
     "Create a new secondary index",
-    usage="<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>] [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]",
+    usage=(
+        "<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>]"
+        " [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]\n"
+        "       <index-name> ns <ns> set <set> in set"
+    ),
     modifiers=(
         ModifierHelp(
             "bin-type",
-            "The bin type of the provided <bin-name>. Should be one of the following values: numeric, string, geo2dsphere, blob, or setindex. Use 'setindex' to create a set-based index (requires server >= 8.1.2); no bin modifier is needed.",
+            "The bin type of the provided <bin-name>. Must be one of: numeric, string,"
+            " geo2dsphere, or blob. Omit bin-type entirely and use 'in set' to create a"
+            f" set-based index (requires server >= {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}).",
         ),
         ModifierHelp(
             "index-name",
@@ -1097,7 +1103,12 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ModifierHelp("bin", "Name of bin to create secondary index on."),
         ModifierHelp(
             "in",
-            "Specifies how the secondary index is to collect keys list: Specifies to use the elements of a list as keys. mapkeys: Specifies to use the keys of a map as keys. mapvalues: Specifies to use the values of a map as keys. [default: Specifies to use the contents of a bin as keys.]",
+            "Specifies how the secondary index is to collect keys. "
+            "list: Use the elements of a list as keys. "
+            "mapkeys: Use the keys of a map as keys. "
+            "mapvalues: Use the values of a map as keys. "
+            f"set: Create a set-based index (no bin required, requires server >= {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}). "
+            "[default: Use the contents of a bin as keys.]",
         ),
         ModifierHelp(
             "ctx",
@@ -1118,6 +1129,12 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "ns"])
         self.modifiers = set(["bin", "set", "in", "ctx", "exp_base64", "ctx_base64"])
         self.meta_getter = GetClusterMetadataController(self.cluster)
+
+    def _format_sub_commands_help(self) -> list[str]:
+        # do_* methods are internal autocomplete hooks, not user-facing sub-commands.
+        # Suppress the "Commands: Default" noise that would otherwise appear.
+        return []
+        
 
     @staticmethod
     def _split_ctx_list(ctx_str: str) -> list[str]:
@@ -1509,7 +1526,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         ):
             return
 
-        # namespace_query_selector_support is always True for servers >= 8.1.2
+        # namespace_query_selector_support is always True for servers >= constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION
         resp = await self.cluster.info_sindex_create(
             index_name,
             namespace,
@@ -1534,9 +1551,32 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             )
         )
 
-    # Hack for auto-complete
-    async def do_setindex(self, line):
-        await self._do_create_set(line)
+    async def _do_default(self, line):
+        # self.mods["in"] cannot be used here: parse_modifiers re-interprets the
+        # trailing "set" token as a modifier switch (since "set" is itself a modifier
+        # keyword), leaving mods["in"] == [].  Scan the raw line directly instead.
+        in_idx = next(
+            (
+                i
+                for i, tok in enumerate(line)
+                if tok.lower() == "in"
+                and i + 1 < len(line)
+                and line[i + 1].lower() == "set"
+            ),
+            None,
+        )
+
+        if in_idx is not None:
+            # Strip "in set" so _do_create_set doesn't see stray tokens
+            line.pop(in_idx + 1)
+            line.pop(in_idx)
+            await self._do_create_set(line)
+        else:
+            raise ShellException(
+                "bin-type is required. Must be one of: numeric, string, geo2dsphere, blob. "
+                "Use 'in set' to create a set-based index without a bin-type."
+            )
+
 
 
 @CommandHelp(
