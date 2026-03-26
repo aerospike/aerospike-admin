@@ -94,12 +94,15 @@ class InfoController(CollectinfoCommandController):
     def do_memory(self, line):
         service_stats = self.stats_getter.get_service()
         service_configs = self.config_getter.get_service()
+        ns_stats = self.stats_getter.get_namespace()
 
         for timestamp in sorted(service_stats.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+            ns_agg = util.aggregate_ns_memory_stats(ns_stats.get(timestamp, {}))
             self.view.info_memory(
                 service_stats[timestamp],
                 service_configs.get(timestamp, {}),
+                ns_agg,
                 cluster=cinfo_log,
                 timestamp=timestamp,
                 **self.mods,

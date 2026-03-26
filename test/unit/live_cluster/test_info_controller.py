@@ -46,11 +46,10 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
     async def test_do_memory_calls_getters_and_view(self):
         stats = {
             "1.1.1.1": {
-                "free-mem-kbytes": "8000000",
-                "free-mem-pct": "52",
-                "host-free-mem-kbytes": "8000000",
-                "host-free-mem-pct": "52",
+                "system_free_mem_kbytes": "8000000",
                 "system_free_mem_pct": "52",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "52",
                 "heap_allocated_kbytes": "500000",
                 "heap_active_kbytes": "520000",
                 "heap_mapped_kbytes": "600000",
@@ -59,27 +58,58 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
             }
         }
         configs = {"1.1.1.1": {"cgroup-mem-tracking": "false"}}
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "index_used_bytes": "1024",
+                    "sindex_used_bytes": "2048",
+                    "set_index_used_bytes": "0",
+                },
+                "bar": {
+                    "index_used_bytes": "512",
+                    "sindex_used_bytes": "256",
+                    "set_index_used_bytes": "128",
+                },
+            }
+        }
         mods = {"with": [], "line": []}
 
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
+        self.stat_getter_mock.get_namespace.return_value = ns_stats
         self.controller.mods = mods
 
         await self.controller.execute(["memory"])
 
         self.stat_getter_mock.get_service.assert_called_once_with(nodes="all")
         self.config_getter_mock.get_service.assert_called_once_with(nodes="all")
-        self.view_mock.info_memory.assert_called_once_with(
-            stats, configs, self.cluster_mock, **mods
-        )
+        self.stat_getter_mock.get_namespace.assert_called_once_with(nodes="all")
+
+        call_args = self.view_mock.info_memory.call_args
+        self.assertEqual(call_args.args[0], stats)
+        self.assertEqual(call_args.args[1], configs)
+        ns_agg = call_args.args[2]
+        self.assertEqual(ns_agg["1.1.1.1"]["index_used_bytes"], "1536")
+        self.assertEqual(ns_agg["1.1.1.1"]["sindex_used_bytes"], "2304")
+        self.assertEqual(ns_agg["1.1.1.1"]["set_index_used_bytes"], "128")
 
     async def test_do_memory_with_node_filter(self):
         stats = {"1.2.3.4": {}}
         configs = {"1.2.3.4": {"cgroup-mem-tracking": "true"}}
+        ns_stats = {
+            "1.2.3.4": {
+                "test": {
+                    "index_used_bytes": "0",
+                    "sindex_used_bytes": "0",
+                    "set_index_used_bytes": "0",
+                }
+            }
+        }
         mods = {"with": ["1.2.3.4"], "line": []}
 
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
+        self.stat_getter_mock.get_namespace.return_value = ns_stats
         self.controller.mods = mods
         self.controller.nodes = ["1.2.3.4"]
 
@@ -87,6 +117,4 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
 
         self.stat_getter_mock.get_service.assert_called_once_with(nodes=["1.2.3.4"])
         self.config_getter_mock.get_service.assert_called_once_with(nodes=["1.2.3.4"])
-        self.view_mock.info_memory.assert_called_once_with(
-            stats, configs, self.cluster_mock, **mods
-        )
+        self.stat_getter_mock.get_namespace.assert_called_once_with(nodes=["1.2.3.4"])

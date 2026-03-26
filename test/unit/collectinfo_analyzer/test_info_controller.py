@@ -54,16 +54,16 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
         service_stats = {
             ts1: {
                 node: {
-                    "free-mem-kbytes": "8000000",
-                    "free-mem-pct": "52",
+                    "system_free_mem_kbytes": "8000000",
+                    "system_free_mem_pct": "52",
                     "heap_efficiency_pct": "83",
                     "system_thp_mem_kbytes": "0",
                 }
             },
             ts2: {
                 node: {
-                    "free-mem-kbytes": "7000000",
-                    "free-mem-pct": "45",
+                    "system_free_mem_kbytes": "7000000",
+                    "system_free_mem_pct": "45",
                     "heap_efficiency_pct": "80",
                     "system_thp_mem_kbytes": "0",
                 }
@@ -73,9 +73,30 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
             ts1: {node: {"cgroup-mem-tracking": "false"}},
             ts2: {node: {"cgroup-mem-tracking": "true"}},
         }
+        ns_stats = {
+            ts1: {
+                node: {
+                    "test": {
+                        "index_used_bytes": "1024",
+                        "sindex_used_bytes": "2048",
+                        "set_index_used_bytes": "0",
+                    }
+                }
+            },
+            ts2: {
+                node: {
+                    "test": {
+                        "index_used_bytes": "4096",
+                        "sindex_used_bytes": "8192",
+                        "set_index_used_bytes": "512",
+                    }
+                }
+            },
+        }
 
         self.stats_getter_mock.get_service.return_value = service_stats
         self.config_getter_mock.get_service.return_value = service_configs
+        self.stats_getter_mock.get_namespace.return_value = ns_stats
 
         cinfo_log_mock = MagicMock()
         self.log_handler.get_cinfo_log_at.return_value = cinfo_log_mock
@@ -84,6 +105,7 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
 
         self.stats_getter_mock.get_service.assert_called_once_with()
         self.config_getter_mock.get_service.assert_called_once_with()
+        self.stats_getter_mock.get_namespace.assert_called_once_with()
 
         self.assertEqual(self.view_mock.info_memory.call_count, 2)
 
@@ -91,11 +113,16 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
         first_call_args = calls[0]
         self.assertEqual(first_call_args.args[0], service_stats[ts1])
         self.assertEqual(first_call_args.args[1], service_configs[ts1])
+        ns_agg_ts1 = first_call_args.args[2]
+        self.assertEqual(ns_agg_ts1[node]["index_used_bytes"], "1024")
+        self.assertEqual(ns_agg_ts1[node]["sindex_used_bytes"], "2048")
         self.assertEqual(first_call_args.kwargs["timestamp"], ts1)
 
         second_call_args = calls[1]
         self.assertEqual(second_call_args.args[0], service_stats[ts2])
         self.assertEqual(second_call_args.args[1], service_configs[ts2])
+        ns_agg_ts2 = second_call_args.args[2]
+        self.assertEqual(ns_agg_ts2[node]["index_used_bytes"], "4096")
         self.assertEqual(second_call_args.kwargs["timestamp"], ts2)
 
     def test_do_memory_missing_config_timestamp_falls_back_to_empty(self):
@@ -103,11 +130,13 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
         ts = "2025-01-01T00:00:00"
         node = "1.1.1.1"
 
-        service_stats = {ts: {node: {"free-mem-pct": "52"}}}
+        service_stats = {ts: {node: {"system_free_mem_pct": "52"}}}
         service_configs = {}  # no matching timestamp
+        ns_stats = {}  # no matching timestamp
 
         self.stats_getter_mock.get_service.return_value = service_stats
         self.config_getter_mock.get_service.return_value = service_configs
+        self.stats_getter_mock.get_namespace.return_value = ns_stats
 
         cinfo_log_mock = MagicMock()
         self.log_handler.get_cinfo_log_at.return_value = cinfo_log_mock
@@ -116,6 +145,7 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
 
         self.view_mock.info_memory.assert_called_once_with(
             service_stats[ts],
+            {},
             {},
             cluster=cinfo_log_mock,
             timestamp=ts,

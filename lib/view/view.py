@@ -159,15 +159,18 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
-    def info_memory(stats, configs, cluster, timestamp="", with_=None, **ignore):
+    def info_memory(stats, configs, ns_agg, cluster, timestamp="", with_=None, **ignore):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         title = "Memory Information" + title_suffix
+        merged_stats = {}
+        for node in set(list(stats.keys()) + list(ns_agg.keys())):
+            merged_stats[node] = {**stats.get(node, {}), **ns_agg.get(node, {})}
         sources = dict(
             node_names=node_names,
             node_ids=node_ids,
-            stats=stats,
+            stats=merged_stats,
             configs=configs,
         )
         common = dict(principal=cluster.get_expected_principal())

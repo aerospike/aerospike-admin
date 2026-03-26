@@ -420,6 +420,43 @@ def flip_keys(orig_data):
     return new_data
 
 
+def aggregate_ns_memory_stats(ns_stats):
+    """
+    Aggregate namespace-level memory stats per node.
+
+    Args:
+        ns_stats: {node: {namespace: {stat_name: value}}}
+
+    Returns:
+        {node: {"index_used_bytes": str, "sindex_used_bytes": str, "set_index_used_bytes": str}}
+    """
+    result = {}
+
+    for node, namespaces in ns_stats.items():
+        if isinstance(namespaces, Exception):
+            continue
+
+        total_index = 0
+        total_sindex = 0
+        total_set_index = 0
+
+        for ns_name, ns_data in namespaces.items():
+            if isinstance(ns_data, Exception):
+                continue
+
+            total_index += int(ns_data.get("index_used_bytes", 0) or 0)
+            total_sindex += int(ns_data.get("sindex_used_bytes", 0) or 0)
+            total_set_index += int(ns_data.get("set_index_used_bytes", 0) or 0)
+
+        result[node] = {
+            "index_used_bytes": str(total_index),
+            "sindex_used_bytes": str(total_sindex),
+            "set_index_used_bytes": str(total_set_index),
+        }
+
+    return result
+
+
 def first_key_to_upper(data):
     if not data or not isinstance(data, dict):
         return data

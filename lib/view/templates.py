@@ -2903,6 +2903,26 @@ info_memory_sheet = Sheet(
             ),
         ),
         Subgroup(
+            "Shared Memory",
+            (
+                Field(
+                    "PI Used",
+                    Projectors.Number("stats", "index_used_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "SI Used",
+                    Projectors.Number("stats", "sindex_used_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Set Idx Used",
+                    Projectors.Number("stats", "set_index_used_bytes"),
+                    converter=Converters.byte,
+                ),
+            ),
+        ),
+        Subgroup(
             "Heap",
             (
                 Field(

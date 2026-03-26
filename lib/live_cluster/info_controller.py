@@ -102,12 +102,14 @@ class InfoController(LiveClusterCommandController):
         modifiers=(with_modifier_help,),
     )
     async def do_memory(self, line):
-        stats, configs = await asyncio.gather(
+        stats, configs, ns_stats = await asyncio.gather(
             self.stat_getter.get_service(nodes=self.nodes),
             self.config_getter.get_service(nodes=self.nodes),
+            self.stat_getter.get_namespace(nodes=self.nodes),
         )
+        ns_agg = util.aggregate_ns_memory_stats(ns_stats)
         return util.callable(
-            self.view.info_memory, stats, configs, self.cluster, **self.mods
+            self.view.info_memory, stats, configs, ns_agg, self.cluster, **self.mods
         )
 
     @CommandHelp("Displays summary information for each set")

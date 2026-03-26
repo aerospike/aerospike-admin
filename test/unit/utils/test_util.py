@@ -656,3 +656,65 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
         for name in comma_cases:
             with self.subTest(name=name):
                 self.assertFalse(util.is_valid_aerospike_name(name, "role"))
+
+
+class AggregateNsMemoryStatsTest(unittest.TestCase):
+    def test_aggregates_across_namespaces(self):
+        ns_stats = {
+            "node1": {
+                "ns1": {
+                    "index_used_bytes": "100",
+                    "sindex_used_bytes": "200",
+                    "set_index_used_bytes": "50",
+                },
+                "ns2": {
+                    "index_used_bytes": "300",
+                    "sindex_used_bytes": "400",
+                    "set_index_used_bytes": "150",
+                },
+            }
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertEqual(result["node1"]["index_used_bytes"], "400")
+        self.assertEqual(result["node1"]["sindex_used_bytes"], "600")
+        self.assertEqual(result["node1"]["set_index_used_bytes"], "200")
+
+    def test_skips_exception_nodes(self):
+        ns_stats = {
+            "node1": Exception("connection error"),
+            "node2": {
+                "ns1": {
+                    "index_used_bytes": "100",
+                    "sindex_used_bytes": "0",
+                    "set_index_used_bytes": "0",
+                }
+            },
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertNotIn("node1", result)
+        self.assertEqual(result["node2"]["index_used_bytes"], "100")
+
+    def test_skips_exception_namespaces(self):
+        ns_stats = {
+            "node1": {
+                "ns1": Exception("timeout"),
+                "ns2": {
+                    "index_used_bytes": "500",
+                    "sindex_used_bytes": "600",
+                    "set_index_used_bytes": "0",
+                },
+            }
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertEqual(result["node1"]["index_used_bytes"], "500")
+        self.assertEqual(result["node1"]["sindex_used_bytes"], "600")
+
+    def test_missing_metrics_default_to_zero(self):
+        ns_stats = {"node1": {"ns1": {"index_used_bytes": "100"}}}
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertEqual(result["node1"]["index_used_bytes"], "100")
+        self.assertEqual(result["node1"]["sindex_used_bytes"], "0")
+        self.assertEqual(result["node1"]["set_index_used_bytes"], "0")
+
+    def test_empty_input(self):
+        self.assertEqual(util.aggregate_ns_memory_stats({}), {})

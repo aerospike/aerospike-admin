@@ -2352,6 +2352,13 @@ class InfoMemoryViewTest(unittest.TestCase):
             }
         }
         configs = {"1.1.1.1": {"cgroup-mem-tracking": "false"}}
+        ns_agg = {
+            "1.1.1.1": {
+                "index_used_bytes": "1024000",
+                "sindex_used_bytes": "67108864",
+                "set_index_used_bytes": "0",
+            }
+        }
         node_names = {"1.1.1.1": "node1"}
         node_ids = {"1.1.1.1": "NODE1"}
         principal = "test-principal"
@@ -2360,22 +2367,28 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = principal
 
-        expected_sources = {
-            "node_names": node_names,
-            "node_ids": node_ids,
-            "stats": stats,
-            "configs": configs,
-        }
         expected_common = {"principal": principal}
 
-        CliView.info_memory(stats, configs, self.cluster_mock, timestamp="test-stamp")
-
-        self.render_mock.assert_called_with(
-            templates.info_memory_sheet,
-            "Memory Information (test-stamp)",
-            expected_sources,
-            common=expected_common,
+        CliView.info_memory(
+            stats, configs, ns_agg, self.cluster_mock, timestamp="test-stamp"
         )
+
+        self.render_mock.assert_called_once()
+        render_args = self.render_mock.call_args
+        args, kwargs = render_args
+        template, title, sources = args
+
+        self.assertEqual(template, templates.info_memory_sheet)
+        self.assertEqual(title, "Memory Information (test-stamp)")
+        self.assertEqual(kwargs.get("common"), expected_common)
+        self.assertEqual(sources["node_names"], node_names)
+        self.assertEqual(sources["node_ids"], node_ids)
+        self.assertEqual(sources["configs"], configs)
+        merged = sources["stats"]
+        self.assertEqual(merged["1.1.1.1"]["system_free_mem_kbytes"], "8000000")
+        self.assertEqual(merged["1.1.1.1"]["index_used_bytes"], "1024000")
+        self.assertEqual(merged["1.1.1.1"]["sindex_used_bytes"], "67108864")
+        self.assertEqual(merged["1.1.1.1"]["set_index_used_bytes"], "0")
 
     def test_info_memory_cgroup_tracking_enabled(self):
         """When cgroup-mem-tracking=true, system_free_mem and host_free_mem differ."""
@@ -2393,6 +2406,13 @@ class InfoMemoryViewTest(unittest.TestCase):
             }
         }
         configs = {"1.1.1.1": {"cgroup-mem-tracking": "true"}}
+        ns_agg = {
+            "1.1.1.1": {
+                "index_used_bytes": "0",
+                "sindex_used_bytes": "0",
+                "set_index_used_bytes": "0",
+            }
+        }
         node_names = {"1.1.1.1": "node1"}
         node_ids = {"1.1.1.1": "NODE1"}
         principal = "test-principal"
@@ -2401,26 +2421,25 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = principal
 
-        expected_sources = {
-            "node_names": node_names,
-            "node_ids": node_ids,
-            "stats": stats,
-            "configs": configs,
-        }
-        expected_common = {"principal": principal}
-
-        CliView.info_memory(stats, configs, self.cluster_mock, timestamp="test-stamp")
-
-        self.render_mock.assert_called_with(
-            templates.info_memory_sheet,
-            "Memory Information (test-stamp)",
-            expected_sources,
-            common=expected_common,
+        CliView.info_memory(
+            stats, configs, ns_agg, self.cluster_mock, timestamp="test-stamp"
         )
+
+        self.render_mock.assert_called_once()
+        render_args = self.render_mock.call_args
+        args, kwargs = render_args
+        template, title, sources = args
+
+        self.assertEqual(template, templates.info_memory_sheet)
+        merged = sources["stats"]
+        self.assertEqual(merged["1.1.1.1"]["system_free_mem_kbytes"], "1200000")
+        self.assertEqual(merged["1.1.1.1"]["host_free_mem_kbytes"], "8000000")
+        self.assertEqual(merged["1.1.1.1"]["index_used_bytes"], "0")
 
     def test_info_memory_with_node_filter(self):
         stats = {"1.1.1.1": {}}
         configs = {"1.1.1.1": {}}
+        ns_agg = {"1.1.1.1": {}}
         node_names = {"1.1.1.1": "node1"}
         node_ids = {"1.1.1.1": "NODE1"}
 
@@ -2428,7 +2447,9 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = "principal"
 
-        CliView.info_memory(stats, configs, self.cluster_mock, with_=["1.1.1.1"])
+        CliView.info_memory(
+            stats, configs, ns_agg, self.cluster_mock, with_=["1.1.1.1"]
+        )
 
         self.cluster_mock.get_node_names.assert_called_once_with(["1.1.1.1"])
         self.cluster_mock.get_node_ids.assert_called_once_with(["1.1.1.1"])
