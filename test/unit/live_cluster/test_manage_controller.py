@@ -2264,7 +2264,7 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patch.stopall)
 
     async def test_create_set_successful(self):
-        line = "mysetindex ns test set testset in set".split()
+        line = "mysetindex ns test set testset".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
@@ -2290,7 +2290,7 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_create_set_not_supported(self):
-        line = "mysetindex ns test set testset in set".split()
+        line = "mysetindex ns test set testset".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
 
         with self.assertRaisesRegex(
@@ -2303,19 +2303,18 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_sindex_create.assert_not_called()
 
     async def test_create_set_missing_set(self):
-        line = "mysetindex ns test in set".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+        line = "mysetindex ns test".split()
 
         with self.assertRaisesRegex(
             ShellException,
-            "'set' modifier is required for set type secondary index",
+            "bin-type is required",
         ):
             await self.controller.execute(line)
 
         self.cluster_mock.info_sindex_create.assert_not_called()
 
     async def test_create_set_prompt_challenge_fails(self):
-        line = "mysetindex ns test set testset in set".split()
+        line = "mysetindex ns test set testset".split()
         self.controller.warn = True
         self.prompt_mock.return_value = False
         self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
@@ -2327,9 +2326,9 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.cluster_mock.info_sindex_create.assert_not_called()
 
-    async def test_create_set_default_unknown_bintype_raises(self):
-        """Unknown first token without 'in set' should raise a helpful error."""
-        line = "mysetindex ns test set testset".split()
+    async def test_create_set_no_set_no_bintype_raises(self):
+        """No set modifier and no bin-type should raise a helpful error."""
+        line = "mysetindex ns test".split()
 
         with self.assertRaisesRegex(
             ShellException,
@@ -2341,16 +2340,16 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand(
         [
-            ("bin", "mysetindex ns test set testset bin mybin in set", "bin"),
-            ("ctx", "mysetindex ns test set testset ctx list_index(1) in set", "ctx"),
+            ("bin", "mysetindex ns test set testset bin mybin", "bin"),
+            ("ctx", "mysetindex ns test set testset ctx list_index(1)", "ctx"),
             (
                 "exp_base64",
-                "mysetindex ns test set testset exp_base64 dGVzdA== in set",
+                "mysetindex ns test set testset exp_base64 dGVzdA==",
                 "exp_base64",
             ),
             (
                 "ctx_base64",
-                "mysetindex ns test set testset ctx_base64 dGVzdA== in set",
+                "mysetindex ns test set testset ctx_base64 dGVzdA==",
                 "ctx_base64",
             ),
         ]
@@ -2368,7 +2367,7 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_sindex_create.assert_not_called()
 
     async def test_create_set_fails_with_asinfo_error(self):
-        line = "mysetindex ns test set testset in set".split()
+        line = "mysetindex ns test set testset".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
@@ -2376,6 +2375,44 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ASInfoResponseError, "bar"):
             await self.controller.execute(line)
+
+    async def test_create_set_multiple_unsupported_modifiers(self):
+        """Multiple unsupported modifiers should all be listed in the error."""
+        line = "mysetindex ns test set testset bin mybin in list".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            r"Set type secondary index does not support: bin, in\.",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_no_bintype_with_in_modifier_raises_helpful_error(self):
+        """'in list' without a bin-type should suggest adding bin-type."""
+        line = "mysetindex ns test in list".split()
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "bin-type is required when using 'in list'",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_set_index_with_in_modifier_raises_helpful_error(self):
+        """set + 'in list' should suggest using a bin-type instead."""
+        line = "mysetindex ns test set testset in list".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "Set-based indexes do not support the 'in' modifier",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
 
 
 class ManageTruncateControllerTest(unittest.IsolatedAsyncioTestCase):
