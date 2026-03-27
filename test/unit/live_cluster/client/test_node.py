@@ -3933,6 +3933,28 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_sindex_create_set_based(self):
+        """Set-based index: command must not include bin= or type= / indexdata= fields."""
+        self.info_mock.return_value = "OK"
+        expected_call = (
+            "sindex-create:indexname=mysetidx;indextype=set;namespace=test;set=myset;"
+        )
+
+        actual = await self.node.info_sindex_create(
+            "mysetidx",
+            "test",
+            None,
+            None,
+            index_type="set",
+            set_="myset",
+            feature_support={
+                "namespace_query_selector_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
     async def test_info_sindex_delete_success(self):
         self.info_mock.return_value = "OK"
         expected_call = "sindex-delete:ns={};indexname={}".format(

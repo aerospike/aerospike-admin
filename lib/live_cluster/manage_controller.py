@@ -1082,11 +1082,17 @@ class ManageSIndexController(LiveClusterManageCommandController):
 
 @CommandHelp(
     "Create a new secondary index",
-    usage="<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>] [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]",
+    usage=(
+        "<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>]"
+        " [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]\n"
+        "        manage sindex create <index-name> ns <ns> set <set>"
+    ),
     modifiers=(
         ModifierHelp(
             "bin-type",
-            "The bin type of the provided <bin-name>. Should be one of the following values: numeric, string, or geo2dsphere",
+            "The bin type of the provided <bin-name>. Must be one of: numeric, string,"
+            " geo2dsphere, or blob. Omit bin-type entirely and provide 'set <set>' to create a"
+            f" set-based index (requires server >= {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}).",
         ),
         ModifierHelp(
             "index-name",
@@ -1097,7 +1103,11 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ModifierHelp("bin", "Name of bin to create secondary index on."),
         ModifierHelp(
             "in",
-            "Specifies how the secondary index is to collect keys list: Specifies to use the elements of a list as keys. mapkeys: Specifies to use the keys of a map as keys. mapvalues: Specifies to use the values of a map as keys. [default: Specifies to use the contents of a bin as keys.]",
+            "Specifies how the secondary index is to collect keys. "
+            "list: Use the elements of a list as keys. "
+            "mapkeys: Use the keys of a map as keys. "
+            "mapvalues: Use the values of a map as keys. "
+            "[default: Use the contents of a bin as keys.]",
         ),
         ModifierHelp(
             "ctx",
@@ -1118,6 +1128,11 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "ns"])
         self.modifiers = set(["bin", "set", "in", "ctx", "exp_base64", "ctx_base64"])
         self.meta_getter = GetClusterMetadataController(self.cluster)
+
+    def _format_sub_commands_help(self) -> list[str]:
+        # do_* methods are internal autocomplete hooks, not user-facing sub-commands.
+        # Suppress the "Commands: Default" noise that would otherwise appear.
+        return []
 
     @staticmethod
     def _split_ctx_list(ctx_str: str) -> list[str]:
@@ -1452,6 +1467,114 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             )
 
         await self._do_create(line, "blob")
+
+    async def _do_create_set(self, line):
+        index_name = line.pop(0)
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ns",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        set_ = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if not set_:
+            raise ShellException(
+                "Set-based indexes require a set name. "
+                "Correct syntax: <index-name> ns <ns> set <set-name>"
+            )
+
+        unsupported = [
+            m
+            for m in ("bin", "in", "ctx", "exp_base64", "ctx_base64")
+            if self.mods.get(m)
+        ]
+        if unsupported:
+            if unsupported == ["in"]:
+                in_type = self.mods["in"][0]
+                raise ShellException(
+                    f"Set-based indexes do not support the 'in' modifier. "
+                    f"To index into a CDT with 'in {in_type}', specify a bin-type: "
+                    f"<bin-type> <index-name> ns <ns> bin <bin-name> in {in_type}"
+                )
+            raise ShellException(
+                "Set type secondary index does not support: {}. "
+                "Only 'ns' and 'set' modifiers are valid.".format(
+                    ", ".join(unsupported)
+                )
+            )
+
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+        feature_support = await util.check_version_support(
+            feature_versions={
+                "set_index_support": constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION,
+            },
+            builds=builds,
+        )
+
+        if not feature_support["set_index_support"]:
+            raise ShellException(
+                f"Set type secondary index is not supported on server version "
+                f"< {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}."
+            )
+
+        if self.warn and not self.prompt_challenge(
+            "Adding a secondary index will cause longer restart times."
+        ):
+            return
+
+        # namespace_query_selector_support is always True for servers >= constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION
+        resp = await self.cluster.info_sindex_create(
+            index_name,
+            namespace,
+            None,
+            None,
+            "set",
+            set_,
+            None,
+            None,
+            None,
+            {"namespace_query_selector_support": True},
+            nodes="principal",
+        )
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result(
+            "Use 'show sindex' to confirm {} was created successfully.".format(
+                index_name
+            )
+        )
+
+    async def _do_default(self, line):
+        # Note: parse_modifiers initialises every modifier key to [] regardless
+        # of whether the keyword appeared in input, so we cannot distinguish
+        # "user typed 'set' with no value" from "user never typed 'set' at all"
+        # here. The defensive guard inside _do_create_set handles that case.
+        if self.mods.get("set"):
+            await self._do_create_set(line)
+        elif self.mods.get("in"):
+            in_type = self.mods["in"][0]
+            raise ShellException(
+                f"bin-type is required when using 'in {in_type}'. "
+                f"Use: <bin-type> <index-name> ns <ns> bin <bin-name> in {in_type}"
+            )
+        else:
+            raise ShellException(
+                "bin-type is required. Must be one of: numeric, string, geo2dsphere, blob. "
+                "To create a set-based index, use: <index-name> ns <ns> set <set>"
+            )
 
 
 @CommandHelp(

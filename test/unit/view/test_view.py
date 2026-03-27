@@ -316,6 +316,57 @@ class CliViewTest(unittest.TestCase):
             description="Show all stop writes - add 'for <namespace> [<set>]' for a shorter list.",
         )
 
+    def test_show_sindex(self):
+        sindexes_data = [
+            {
+                "indexname": "myidx",
+                "ns": "test",
+                "set": "myset",
+                "bins": {"bin": "mybin"},
+                "type": "numeric",
+                "indextype": "default",
+                "state": "RW",
+                "context": None,
+            },
+            {
+                "indexname": "mysetidx",
+                "ns": "test",
+                "set": "myset",
+                "bins": {},
+                "type": None,
+                "indextype": "set",
+                "state": "RW",
+                "context": None,
+            },
+        ]
+
+        CliView.show_sindex(sindexes_data, like=None, timestamp="test-stamp")
+
+        self.render_mock.assert_called_with(
+            templates.show_sindex,
+            "Secondary Indexes (test-stamp)",
+            {"data": sindexes_data},
+        )
+
+    def test_show_sindex_filtered_by_like(self):
+        sindexes_data = [
+            {"indexname": "alpha_idx", "ns": "test", "indextype": "default"},
+            {"indexname": "beta_idx", "ns": "test", "indextype": "set"},
+        ]
+
+        CliView.show_sindex(sindexes_data, like=["alpha"], timestamp="test-stamp")
+
+        self.render_mock.assert_called_with(
+            templates.show_sindex,
+            "Secondary Indexes (test-stamp)",
+            {"data": [sindexes_data[0]]},
+        )
+
+    def test_show_sindex_empty_returns_early(self):
+        CliView.show_sindex([], like=None)
+
+        self.render_mock.assert_not_called()
+
     def test_show_xdr_ns_config(self):
         configs = {
             "[::1]:3001": {
