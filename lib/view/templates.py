@@ -2364,7 +2364,7 @@ show_sindex = Sheet(
         Field(
             "Set Index",
             Projectors.Func(
-                "boolean",
+                FieldType.boolean,
                 lambda indextype: indextype == "set",
                 Projectors.String("data", "indextype"),
             ),

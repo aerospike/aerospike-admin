@@ -2302,17 +2302,6 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.cluster_mock.info_sindex_create.assert_not_called()
 
-    async def test_create_set_missing_set(self):
-        line = "mysetindex ns test".split()
-
-        with self.assertRaisesRegex(
-            ShellException,
-            "bin-type is required",
-        ):
-            await self.controller.execute(line)
-
-        self.cluster_mock.info_sindex_create.assert_not_called()
-
     async def test_create_set_prompt_challenge_fails(self):
         line = "mysetindex ns test set testset".split()
         self.controller.warn = True

@@ -1487,6 +1487,12 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             mods=self.mods,
         )
 
+        if not set_:
+            raise ShellException(
+                "Set-based indexes require a set name. "
+                "Correct syntax: <index-name> ns <ns> set <set-name>"
+            )
+
         unsupported = [
             m
             for m in ("bin", "in", "ctx", "exp_base64", "ctx_base64")
@@ -1552,6 +1558,10 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         )
 
     async def _do_default(self, line):
+        # Note: parse_modifiers initialises every modifier key to [] regardless
+        # of whether the keyword appeared in input, so we cannot distinguish
+        # "user typed 'set' with no value" from "user never typed 'set' at all"
+        # here. The defensive guard inside _do_create_set handles that case.
         if self.mods.get("set"):
             await self._do_create_set(line)
         elif self.mods.get("in"):
