@@ -14,7 +14,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Setup snyk CLI
-        uses: snyk/actions/setup@cdb760004ba9ea4d525f2e043745dfe85bb9077e
+        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04
         with: 
           snyk-version: v1.1297.3
       - name: Get Python version from Pipfile
