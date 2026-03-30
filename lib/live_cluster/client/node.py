@@ -3207,8 +3207,8 @@ class Node(AsyncObject):
         self,
         index_name: str,
         namespace: str,
-        bin_name: str,
-        bin_type: str,
+        bin_name: Optional[str],
+        bin_type: Optional[str],
         index_type: Optional[str] = None,
         set_: Optional[str] = None,
         ctx: Optional[CDTContext] = None,
@@ -3218,6 +3218,9 @@ class Node(AsyncObject):
     ):
         """
         Create a new secondary index. index_type and set are optional.
+
+        For set-based indexes (index_type="set"), bin_name and bin_type should
+        be None as no bin is indexed.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
@@ -3254,8 +3257,8 @@ class Node(AsyncObject):
             # if expression is passed, use type instead of indexdata
             command += "type={}".format(bin_type)
 
-        else:
-            if feature_support["expression_indexing"]:
+        elif bin_name:
+            if feature_support.get("expression_indexing"):
                 command += "bin={};type={}".format(bin_name, bin_type)
             else:
                 command += "indexdata={},{}".format(bin_name, bin_type)
