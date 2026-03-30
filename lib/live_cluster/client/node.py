@@ -3262,7 +3262,6 @@ class Node(AsyncObject):
                 command += "bin={};type={}".format(bin_name, bin_type)
             else:
                 command += "indexdata={},{}".format(bin_name, bin_type)
-        # else: set-based index (index_type="set") — no bin or type fields
 
         resp = await self._info(command)
 

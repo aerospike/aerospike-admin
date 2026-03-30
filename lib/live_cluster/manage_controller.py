@@ -1487,6 +1487,12 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             mods=self.mods,
         )
 
+        if not namespace:
+            raise ShellException(
+                "Set-based indexes require a namespace. "
+                "Correct syntax: <index-name> ns <ns> set <set-name>"
+            )
+
         if not set_:
             raise ShellException(
                 "Set-based indexes require a set name. "
