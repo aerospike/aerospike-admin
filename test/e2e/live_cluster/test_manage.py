@@ -313,6 +313,97 @@ class TestManageACLUsers(TestManage):
         self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
 
 
+class TestManageACLPasswordValidation(TestManage):
+    exp_user = "pwdtest"
+
+    def get_args(self, cmd):
+        return self._args.format(cmd)
+
+    def setUp(self):
+        lib.start()
+        self._args = (
+            f"-h {lib.SERVER_IP}:{lib.PORT} --enable -e '{{}}' --json -Uadmin -Padmin"
+        )
+
+    def tearDown(self) -> None:
+        lib.stop()
+
+    def test_rejects_create_user_with_invalid_password_chars(self):
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage acl create user {} password pass!word".format(self.exp_user)
+            )
+        )
+
+        self.assertEqual("", actual.stdout)
+        self.assertIn("Invalid password", actual.stderr)
+        self.assertIn("illegal characters", actual.stderr)
+
+    def test_rejects_create_user_with_quoted_password(self):
+        actual = test_util.run_asadm(
+            self.get_args(
+                'manage acl create user {} password \\"mypass123\\"'.format(
+                    self.exp_user
+                )
+            )
+        )
+
+        self.assertEqual("", actual.stdout)
+        self.assertIn("Invalid password", actual.stderr)
+
+    def test_accepts_create_user_with_valid_password(self):
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage acl create user {} password valid.pass_word@123".format(
+                    self.exp_user
+                )
+            )
+        )
+
+        self.assertEqual(
+            "Successfully created user {}.".format(self.exp_user), actual.stdout
+        )
+        self.assertStdErrEqual("", actual.stderr)
+
+    def test_rejects_set_password_with_invalid_chars(self):
+        test_util.run_asadm(
+            self.get_args(
+                "manage acl create user {} password test".format(self.exp_user)
+            )
+        )
+        time.sleep(0.5)
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage acl set-password user {} password pass!word".format(
+                    self.exp_user
+                )
+            )
+        )
+
+        self.assertEqual("", actual.stdout)
+        self.assertIn("Invalid password", actual.stderr)
+
+    def test_rejects_change_password_with_invalid_new_password(self):
+        test_util.run_asadm(
+            self.get_args(
+                "manage acl create user {} password test".format(self.exp_user)
+            )
+        )
+        time.sleep(0.5)
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage acl change-password user {} old test new pass!word".format(
+                    self.exp_user
+                )
+            )
+        )
+
+        self.assertEqual("", actual.stdout)
+        self.assertIn("Invalid password", actual.stderr)
+
+
 class TestManageACLRoles(TestManage):
     exp_role = "avatar"
 

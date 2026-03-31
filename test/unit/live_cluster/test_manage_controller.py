@@ -44,10 +44,12 @@ from lib.live_cluster.live_cluster_command_controller import (
 )
 from lib.live_cluster.manage_controller import (
     LiveClusterManageCommandController,
+    ManageACLChangePasswordUserController,
     ManageACLCreateRoleController,
     ManageACLCreateUserController,
     ManageACLGrantUserController,
     ManageACLQuotasRoleController,
+    ManageACLSetPasswordUserController,
     ManageConfigController,
     ManageConfigLeafController,
     ManageJobsKillAllScansController,
@@ -457,6 +459,244 @@ class ManageACLCreateUserControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.view_mock.print_result.assert_called_with(
             "Successfully created user test-user."
+        )
+
+
+class ManageACLCreateUserPasswordValidationTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageACLCreateUserController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageACLCreateUserController()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.addCleanup(patch.stopall)
+
+    async def test_rejects_password_with_quotes(self):
+        line = ["test-user", "password", '"mypass123"']
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_password_with_spaces(self):
+        line = ["test-user", "password", "my pass"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_password_with_exclamation(self):
+        line = ["test-user", "password", "pass!word"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    @parameterized.expand(
+        [
+            ("with_hash", "pass#word"),
+            ("with_dollar", "pass$word"),
+            ("with_percent", "pass%word"),
+            ("with_ampersand", "pass&word"),
+            ("with_caret", "pass^word"),
+            ("with_parens", "pass(word)"),
+            ("with_plus", "pass+word"),
+            ("with_equals", "pass=word"),
+            ("with_pipe", "pass|word"),
+            ("with_semicolon", "pass;word"),
+            ("with_single_quote", "pass'word"),
+            ("with_backslash", "pass\\word"),
+            ("with_tilde", "pass~word"),
+        ]
+    )
+    async def test_rejects_password_with_invalid_chars(self, _, password):
+        line = ["test-user", "password", password]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_accepts_password_with_valid_special_chars(self):
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        line = ["test-user", "password", "pass.*-:/_{}@word"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_create_user.assert_called_with(
+            "test-user", "pass.*-:/_{}@word", [], nodes="principal"
+        )
+
+    async def test_validates_prompted_password(self):
+        """Validation should also apply when password is entered via prompt"""
+        getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
+        getpass_mock.return_value = 'any"chars!allowed'
+
+        await self.controller.execute(["test-user"])
+
+        self.cluster_mock.admin_create_user.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_accepts_valid_prompted_password(self):
+        getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
+        getpass_mock.return_value = "valid.pass@123"
+        self.cluster_mock.admin_create_user.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        await self.controller.execute(["test-user"])
+
+        self.cluster_mock.admin_create_user.assert_called_with(
+            "test-user", "valid.pass@123", [], nodes="principal"
+        )
+
+
+class ManageACLSetPasswordControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageACLSetPasswordUserController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageACLSetPasswordUserController()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.addCleanup(patch.stopall)
+
+    async def test_successful_set_password(self):
+        self.cluster_mock.admin_set_password.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        line = "user test-user password validpass"
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.admin_set_password.assert_called_with(
+            "test-user", "validpass", nodes="principal"
+        )
+        self.view_mock.print_result.assert_called_with(
+            "Successfully set password for user test-user."
+        )
+
+    async def test_rejects_password_with_quotes(self):
+        line = ["user", "test-user", "password", '"mypass123"']
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_set_password.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_password_with_invalid_chars(self):
+        line = ["user", "test-user", "password", "pass!word"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_set_password.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_accepts_valid_password(self):
+        self.cluster_mock.admin_set_password.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        line = ["user", "test-user", "password", "valid.*pass_word@123"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_set_password.assert_called_with(
+            "test-user", "valid.*pass_word@123", nodes="principal"
+        )
+
+    async def test_validates_prompted_password(self):
+        """Validation should also apply when password is entered via prompt"""
+        getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
+        getpass_mock.return_value = 'any"chars!allowed'
+
+        line = ["user", "test-user"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_set_password.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_accepts_valid_prompted_password(self):
+        getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
+        getpass_mock.return_value = "valid.pass@123"
+        self.cluster_mock.admin_set_password.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+
+        line = ["user", "test-user"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_set_password.assert_called_with(
+            "test-user", "valid.pass@123", nodes="principal"
+        )
+
+
+class ManageACLChangePasswordControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageACLChangePasswordUserController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageACLChangePasswordUserController()
+        self.controller.cluster = self.cluster_mock
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.addCleanup(patch.stopall)
+
+    async def test_rejects_new_password_with_quotes(self):
+        line = ["user", "test-user", "old", "oldpass", "new", '"newpass"']
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_change_password.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_rejects_new_password_with_invalid_chars(self):
+        line = ["user", "test-user", "old", "oldpass", "new", "new!pass"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_change_password.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_accepts_valid_new_password(self):
+        self.cluster_mock.admin_change_password.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        self.cluster_mock.user = "test-user"
+        line = ["user", "test-user", "old", "oldpass", "new", "valid_new.pass@123"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_change_password.assert_called_with(
+            "test-user", "oldpass", "valid_new.pass@123", nodes="principal"
+        )
+
+    async def test_validates_prompted_new_password(self):
+        """Validation should also apply when new password is entered via prompt"""
+        getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
+        getpass_mock.return_value = 'any"chars!allowed'
+
+        line = ["user", "test-user", "old", "oldpass"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_change_password.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_accepts_valid_prompted_new_password(self):
+        getpass_mock = patch("lib.live_cluster.manage_controller.getpass").start()
+        getpass_mock.return_value = "valid.pass@123"
+        self.cluster_mock.admin_change_password.return_value = {
+            "principal_ip": ASResponse.OK
+        }
+        self.cluster_mock.user = "test-user"
+
+        line = ["user", "test-user", "old", "oldpass"]
+        await self.controller.execute(line)
+
+        self.cluster_mock.admin_change_password.assert_called_with(
+            "test-user", "oldpass", "valid.pass@123", nodes="principal"
         )
 
 

@@ -656,3 +656,91 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
         for name in comma_cases:
             with self.subTest(name=name):
                 self.assertFalse(util.is_valid_aerospike_name(name, "role"))
+
+    def test_is_valid_password_valid_passwords(self):
+        """Test is_valid_password with valid passwords"""
+        valid_passwords = [
+            "admin",
+            "password123",
+            "MyP@ssw0rd",
+            "test.password",
+            "pass*word",
+            "pass-word",
+            "pass:word",
+            "pass/word",
+            "pass_word",
+            "pass{word}",
+            "a",
+            "ALLCAPS123",
+            ".*-:/_{}@",
+            "abc123ABC",
+            "simple",
+        ]
+        for pwd in valid_passwords:
+            with self.subTest(password=pwd):
+                self.assertTrue(util.is_valid_password(pwd))
+
+    def test_is_valid_password_invalid_passwords(self):
+        """Test is_valid_password with invalid passwords"""
+        invalid_passwords = [
+            '"mypass123"',
+            "pass word",
+            "pass\tword",
+            "pass!word",
+            "pass#word",
+            "pass$word",
+            "pass%word",
+            "pass&word",
+            "pass^word",
+            "pass(word)",
+            "pass+word",
+            "pass=word",
+            "pass[word]",
+            "pass|word",
+            "pass\\word",
+            "pass;word",
+            "pass'word",
+            "pass,word",
+            "pass?word",
+            "pass~word",
+            "pass`word",
+            "pass<word>",
+        ]
+        for pwd in invalid_passwords:
+            with self.subTest(password=pwd):
+                self.assertFalse(util.is_valid_password(pwd))
+
+    def test_is_valid_password_empty(self):
+        """Test is_valid_password rejects empty passwords"""
+        self.assertFalse(util.is_valid_password(""))
+
+    def test_is_valid_password_too_long(self):
+        """Test is_valid_password rejects passwords exceeding 256 bytes"""
+        long_password = "a" * 257
+        self.assertFalse(util.is_valid_password(long_password))
+
+    def test_is_valid_password_max_length(self):
+        """Test is_valid_password accepts passwords at exactly 256 bytes"""
+        max_password = "a" * 256
+        self.assertTrue(util.is_valid_password(max_password))
+
+    def test_is_valid_password_whitespace_variations(self):
+        """Test is_valid_password rejects various whitespace"""
+        whitespace_passwords = [
+            " leading",
+            "trailing ",
+            "mid dle",
+            "\nnewline",
+            "\ttab",
+            "pass\rword",
+        ]
+        for pwd in whitespace_passwords:
+            with self.subTest(password=pwd):
+                self.assertFalse(util.is_valid_password(pwd))
+
+    def test_is_valid_password_multibyte_exceeds_limit(self):
+        """Test is_valid_password enforces byte length, not character length"""
+        exactly_256 = "a" * 256
+        self.assertTrue(util.is_valid_password(exactly_256))
+        one_over = "a" * 257
+        self.assertFalse(util.is_valid_password(one_over))
