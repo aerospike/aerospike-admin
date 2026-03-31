@@ -25,7 +25,7 @@ import socket
 import subprocess
 import sys
 import logging
-from lib.utils import version
+from lib.utils import constants, version
 from time import time
 from typing import (
     Any,
@@ -941,16 +941,17 @@ def is_valid_aerospike_name(name: str, object_type: str) -> bool:
         logger.error("%s name cannot be empty", object_type.capitalize())
         return False
 
-    pattern = r"^[a-zA-Z0-9_\-$]+$"
-    if not re.match(pattern, name):
-        # Find all illegal characters
-        illegal_chars = set(re.findall(r"[^a-zA-Z0-9_\-$]", name))
+    if not re.match(constants.VALID_AEROSPIKE_NAME_PATTERN, name):
+        illegal_chars = set(
+            re.findall(constants.VALID_AEROSPIKE_NAME_ILLEGAL_CHARS_PATTERN, name)
+        )
         logger.error(
             "Invalid %s name '%s': contains illegal characters: %s. "
-            "Names can only contain letters (a-z, A-Z), digits (0-9), underscores (_), hyphens (-), and dollar signs ($)",
+            "Names can only contain %s",
             object_type,
             name,
             ", ".join(f"'{char}'" for char in sorted(illegal_chars)),
+            constants.VALID_AEROSPIKE_NAME_CHARS_DISPLAY,
         )
         return False
 
@@ -970,6 +971,49 @@ def is_valid_role_name(role_name: str) -> bool:
         bool: True if the role name is valid, False otherwise
     """
     return is_valid_aerospike_name(role_name, "role")
+
+
+_VALID_PASSWORD_RE = re.compile(constants.VALID_PASSWORD_PATTERN)
+
+
+def is_valid_password(password: str) -> bool:
+    """
+    Validate that a password contains only characters allowed by the Aerospike server.
+
+    Allowed characters: alphanumeric (a-z, A-Z, 0-9) and the symbols .*-:/_{}@
+    White space is not supported. Empty passwords are not allowed.
+    Max length is 256 bytes.
+
+    Args:
+        password: The password string to validate
+
+    Returns:
+        bool: True if the password is valid, False otherwise
+    """
+    if not password:
+        logger.error("Password cannot be empty.")
+        return False
+
+    if len(password.encode("utf-8")) > constants.VALID_PASSWORD_MAX_BYTES:
+        logger.error(
+            "Invalid password: exceeds maximum length of %d bytes.",
+            constants.VALID_PASSWORD_MAX_BYTES,
+        )
+        return False
+
+    if not _VALID_PASSWORD_RE.match(password):
+        illegal_chars = set(
+            re.findall(constants.VALID_PASSWORD_ILLEGAL_CHARS_PATTERN, password)
+        )
+        logger.error(
+            "Invalid password: contains illegal characters: %s. "
+            "Passwords can only contain %s",
+            ", ".join(f"'{char}'" for char in sorted(illegal_chars)),
+            constants.VALID_PASSWORD_CHARS_DISPLAY,
+        )
+        return False
+
+    return True
 
 
 async def check_version_support(

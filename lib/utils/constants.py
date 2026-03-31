@@ -193,6 +193,15 @@ SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS = [
 ]
 
 
+VALID_AEROSPIKE_NAME_PATTERN = r"^[a-zA-Z0-9_\-$]+$"
+VALID_AEROSPIKE_NAME_ILLEGAL_CHARS_PATTERN = r"[^a-zA-Z0-9_\-$]"
+VALID_AEROSPIKE_NAME_CHARS_DISPLAY = "letters (a-z, A-Z), digits (0-9), underscores (_), hyphens (-), and dollar signs ($)"
+
+VALID_PASSWORD_PATTERN = r"^[a-zA-Z0-9.*\-:/_{}@]+$"
+VALID_PASSWORD_ILLEGAL_CHARS_PATTERN = r"[^a-zA-Z0-9.*\-:/_{}@]"
+VALID_PASSWORD_CHARS_DISPLAY = "letters (a-z, A-Z), digits (0-9), and symbols .*-:/_{}@"
+VALID_PASSWORD_MAX_BYTES = 256
+
 DEFAULT_ASADM_VERSION = "development"
 ASADM_APP_ID = "unknown"
 USER_AGENT_FORMAT_VERSION = "1"

@@ -260,6 +260,9 @@ class ManageACLCreateUserController(ManageLeafCommandController):
         if password is None:
             password = getpass("Enter password for new user {}:".format(username))
 
+        if not util.is_valid_password(password):
+            return
+
         roles = self.mods["roles"]
 
         # Accept "role" instead of "roles", If another modifier is added the logic may
@@ -352,6 +355,9 @@ class ManageACLSetPasswordUserController(ManageLeafCommandController):
         else:
             password = getpass("Enter new password for user {}:".format(username))
 
+        if not util.is_valid_password(password):
+            return
+
         if self.warn and not self.prompt_challenge():
             return
 
@@ -414,6 +420,9 @@ class ManageACLChangePasswordUserController(ManageLeafCommandController):
             new_password = self.mods["new"][0]
         else:
             new_password = getpass("Enter new password:")
+
+        if not util.is_valid_password(new_password):
+            return
 
         if self.warn and not self.prompt_challenge():
             return
