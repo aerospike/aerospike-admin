@@ -8,6 +8,13 @@ CONFIG_DIR = /etc/aerospike
 PACKAGE_NAME = asadm
 VERSION ?= $(shell git describe --tags --always --abbrev=9)
 RPM_VERSION := $(subst -,_,$(VERSION))
+# pkgbuild --version allows alphanumerics; git describe uses hyphens.
+MAC_VERSION := $(RPM_VERSION)
+MAC_ROOT = $(BUILD_DIR)/mac-root
+DMG_STAGING = $(BUILD_DIR)/dmg-staging
+PKG_ID = com.aerospike.asadm
+MAC_PKG = $(TARGET_DIR)/$(NAME)-$(MAC_VERSION)-$(ARCH).pkg
+MAC_DMG = $(TARGET_DIR)/$(NAME)-$(MAC_VERSION)-$(ARCH).dmg
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = aerospike-$(PACKAGE_NAME)
 MAINTAINER = "Aerospike"
@@ -82,8 +89,37 @@ prep:
 	ln -sf /opt/aerospike/bin/asadm/asadm $(BUILD_DIR)/usr/bin/asadm
 	ln -sf /opt/aerospike/bin/asadm/asinfo $(BUILD_DIR)/usr/bin/asinfo
 
+# Staging for macOS installer: matches root makefile Darwin INSTALL_ROOT and symlinks.
+.PHONY: prep-mac
+prep-mac:
+	install -d $(TARGET_DIR)
+	rm -rf $(MAC_ROOT)
+	install -d $(MAC_ROOT)/usr/local/aerospike/bin/asadm
+	install -d $(MAC_ROOT)/usr/local/bin
+	cp -a $(TOP_DIR)/asadm/. $(MAC_ROOT)/usr/local/aerospike/bin/asadm/
+	ln -sf ../aerospike/bin/asadm/asadm $(MAC_ROOT)/usr/local/bin/asadm
+	ln -sf ../aerospike/bin/asadm/asinfo $(MAC_ROOT)/usr/local/bin/asinfo
+
+.PHONY: osx-pkg
+osx-pkg: prep-mac
+	pkgbuild \
+		--root $(MAC_ROOT) \
+		--identifier $(PKG_ID) \
+		--version $(MAC_VERSION) \
+		--install-location / \
+		$(MAC_PKG)
+
+.PHONY: osx-dmg
+osx-dmg: osx-pkg
+	rm -rf $(DMG_STAGING)
+	install -d $(DMG_STAGING)
+	cp -a $(MAC_PKG) $(DMG_STAGING)/
+	hdiutil create -volname "Aerospike asadm $(MAC_VERSION)" -srcfolder $(DMG_STAGING) -ov -format UDZO $(MAC_DMG)
+
 .PHONY: clean
 clean:
 	rm -rf $(TARGET_DIR)
 	rm -rf $(BUILD_DIR)/opt
 	rm -rf $(BUILD_DIR)/var
+	rm -rf $(MAC_ROOT)
+	rm -rf $(DMG_STAGING)

@@ -15,14 +15,10 @@ on:
         type: string
         default: ""
 
-  pull_request:
-    # yamllint disable-line rule:quoted-strings
-    branches:
-      - "*"
   push:
     branches:
       # yamllint disable-line rule:quoted-strings
-      - "master"
+      - 'pvinh/TOOLS-3292-Macbuild'
 
 jobs:
   validate-inputs:
@@ -222,7 +218,7 @@ jobs:
           build_packages
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
           path: pkg/target/
@@ -296,11 +292,26 @@ jobs:
         run: |
           tar -C build/bin/ -cvf "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.tar" asadm
 
+      - name: Create .pkg and .dmg
+        env:
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
+        run: |
+          make -C pkg osx-dmg VERSION="${VERSION}"
+          PKG_VERSION="${VERSION//-/_}"
+          ARCH=$(uname -m)
+          mv "pkg/target/aerospike-asadm-${PKG_VERSION}-${ARCH}.pkg" \
+             "aerospike-asadm-${VERSION}-${{ matrix.os }}-${{ runner.arch }}.pkg"
+          mv "pkg/target/aerospike-asadm-${PKG_VERSION}-${ARCH}.dmg" \
+             "aerospike-asadm-${VERSION}-${{ matrix.os }}-${{ runner.arch }}.dmg"
+
       - name: Upload build artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}
-          path: "aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.tar"
+          path: |
+            aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.tar
+            aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.pkg
+            aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.dmg
           if-no-files-found: error
           retention-days: 1
 
@@ -323,7 +334,7 @@ jobs:
           merge-multiple: true
  
       - name: Upload packaged Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: build-artifacts
