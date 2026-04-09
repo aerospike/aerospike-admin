@@ -351,6 +351,8 @@ jobs:
   organize-signed-artifacts:
     name: Organize signed artifacts for deploy
     needs: [get-version, sign-artifacts]
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.sign-artifacts.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
