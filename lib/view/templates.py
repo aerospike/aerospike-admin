@@ -276,6 +276,11 @@ info_namespace_usage_sheet = Sheet(
                     "Evict%",
                     Projectors.Percent("ns_stats", "evict-sys-memory-pct"),
                 ),
+                Field(
+                    "Stop%",
+                    Projectors.Number("ns_stats", "stop-writes-sys-memory-pct"),
+                    converter=Converters.pct,
+                ),
             ),
         ),
         Subgroup(
@@ -1502,8 +1507,6 @@ summary_cluster_sheet = Sheet(
         create_summary_used_pct("cluster_dict", "flash_index"),
         create_summary_avail("cluster_dict", "flash_index"),
         create_summary_avail_pct("cluster_dict", "flash_index"),
-        #     ),
-        # ),
         # Subgroup(
         #     "Memory",
         #     (

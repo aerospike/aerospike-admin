@@ -1099,7 +1099,7 @@ def create_summary(
             ).values()
         )[0]
 
-        # Index
+        # Primary Index
         index_size = sum(
             util.get_value_from_second_level_of_dict(
                 ns_configs[ns],
@@ -1139,13 +1139,11 @@ def create_summary(
                     "used_pct": index_used_pct,
                 }
             else:
-                # shmem does not require you to configure mounts-budget
                 ns_index_usage = {
                     "used": index_used,
                 }
 
             if index_type == "pmem":
-                # TODO handle the cluster level aggregate
                 cluster_pmem_index_total += index_size
                 cluster_pmem_index_used += index_used
                 summary_dict["NAMESPACES"][ns]["pmem_index"] = ns_index_usage
@@ -1159,6 +1157,110 @@ def create_summary(
                 cluster_shmem_index_used += index_used
                 summary_dict["NAMESPACES"][ns]["shmem_index"] = ns_index_usage
                 summary_dict["NAMESPACES"][ns]["index_type"] = index_type
+
+        # Secondary Index — fold into the matching primary index accumulator
+        # so it appears in the same summary line (mirrors server ixs_memory_used).
+        sindex_type = list(
+            util.get_value_from_second_level_of_dict(
+                ns_stats, ("sindex-type",), default_value="", return_type=str
+            ).values()
+        )[0]
+
+        sindex_size = sum(
+            util.get_value_from_second_level_of_dict(
+                ns_configs[ns],
+                ("sindex-type.mounts-budget",),
+                default_value=0,
+                return_type=int,
+            ).values()
+        )
+        sindex_used = sum(
+            util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("sindex_used_bytes",),
+                default_value=0,
+                return_type=int,
+            ).values()
+        )
+
+        if sindex_used > 0 or sindex_size > 0:
+            if sindex_type == "pmem":
+                cluster_pmem_index_total += sindex_size
+                cluster_pmem_index_used += sindex_used
+                ns_pi = summary_dict["NAMESPACES"][ns].get("pmem_index")
+                if ns_pi:
+                    ns_pi["total"] = ns_pi.get("total", 0) + sindex_size
+                    ns_pi["used"] = ns_pi.get("used", 0) + sindex_used
+                    if ns_pi.get("total", 0) > 0:
+                        ns_pi["avail"] = ns_pi["total"] - ns_pi["used"]
+                        ns_pi["used_pct"] = (ns_pi["used"] / ns_pi["total"]) * 100.0
+                        ns_pi["avail_pct"] = 100.0 - ns_pi["used_pct"]
+                elif sindex_size > 0:
+                    sindex_avail = sindex_size - sindex_used
+                    sindex_used_pct = (sindex_used / sindex_size) * 100.0
+                    summary_dict["NAMESPACES"][ns]["pmem_index"] = {
+                        "total": sindex_size,
+                        "used": sindex_used,
+                        "avail": sindex_avail,
+                        "used_pct": sindex_used_pct,
+                        "avail_pct": 100.0 - sindex_used_pct,
+                    }
+                else:
+                    summary_dict["NAMESPACES"][ns]["pmem_index"] = {
+                        "used": sindex_used,
+                    }
+            elif sindex_type == "flash":
+                cluster_flash_index_total += sindex_size
+                cluster_flash_index_used += sindex_used
+                ns_fi = summary_dict["NAMESPACES"][ns].get("flash_index")
+                if ns_fi:
+                    ns_fi["total"] = ns_fi.get("total", 0) + sindex_size
+                    ns_fi["used"] = ns_fi.get("used", 0) + sindex_used
+                    if ns_fi.get("total", 0) > 0:
+                        ns_fi["avail"] = ns_fi["total"] - ns_fi["used"]
+                        ns_fi["used_pct"] = (ns_fi["used"] / ns_fi["total"]) * 100.0
+                        ns_fi["avail_pct"] = 100.0 - ns_fi["used_pct"]
+                elif sindex_size > 0:
+                    sindex_avail = sindex_size - sindex_used
+                    sindex_used_pct = (sindex_used / sindex_size) * 100.0
+                    summary_dict["NAMESPACES"][ns]["flash_index"] = {
+                        "total": sindex_size,
+                        "used": sindex_used,
+                        "avail": sindex_avail,
+                        "used_pct": sindex_used_pct,
+                        "avail_pct": 100.0 - sindex_used_pct,
+                    }
+                else:
+                    summary_dict["NAMESPACES"][ns]["flash_index"] = {
+                        "used": sindex_used,
+                    }
+            else:
+                cluster_shmem_index_used += sindex_used
+                ns_si = summary_dict["NAMESPACES"][ns].get("shmem_index")
+                if ns_si:
+                    ns_si["used"] = ns_si.get("used", 0) + sindex_used
+                else:
+                    summary_dict["NAMESPACES"][ns]["shmem_index"] = {
+                        "used": sindex_used,
+                    }
+
+        # Set Index (always RAM) — fold into shmem index
+        set_index_used = sum(
+            util.get_value_from_second_level_of_dict(
+                ns_stats,
+                ("set_index_used_bytes",),
+                default_value=0,
+                return_type=int,
+            ).values()
+        )
+
+        if set_index_used > 0:
+            cluster_shmem_index_used += set_index_used
+            ns_si = summary_dict["NAMESPACES"][ns].get("shmem_index")
+            if ns_si:
+                ns_si["used"] = ns_si.get("used", 0) + set_index_used
+            else:
+                summary_dict["NAMESPACES"][ns]["shmem_index"] = {"used": set_index_used}
 
         storage_engine_type = list(
             util.get_value_from_second_level_of_dict(
@@ -1647,21 +1749,40 @@ def _format_ns_stop_writes_metrics(
                     namespace=ns,
                 )
 
-            metric = "index_used_bytes"
             config = "indexes-memory-budget"
-            usage = util.get_value_from_dict(
-                stats, metric, default_value=None, return_type=int
-            )
             threshold = util.get_value_from_dict(
                 stats, config, default_value=None, return_type=int
             )
 
-            if usage is not None and threshold is not None:
-                sw = _is_stop_writes_cause(usage, threshold, stop_writes)
+            if threshold is not None and threshold > 0:
+                pi_persisted = stats.get("index-type", "") in ("flash", "pmem")
+                si_persisted = stats.get("sindex-type", "") in ("flash", "pmem")
+
+                index_mem_sz = (
+                    0
+                    if pi_persisted
+                    else util.get_value_from_dict(
+                        stats, "index_used_bytes", default_value=0, return_type=int
+                    )
+                )
+                set_index_sz = util.get_value_from_dict(
+                    stats, "set_index_used_bytes", default_value=0, return_type=int
+                )
+                sindex_mem_sz = (
+                    0
+                    if si_persisted
+                    else util.get_value_from_dict(
+                        stats, "sindex_used_bytes", default_value=0, return_type=int
+                    )
+                )
+                ixs_sz = index_mem_sz + set_index_sz + sindex_mem_sz
+
+                metric = "indexes_memory_used"
+                sw = _is_stop_writes_cause(ixs_sz, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    usage,
+                    ixs_sz,
                     sw,
                     threshold,
                     config=config,

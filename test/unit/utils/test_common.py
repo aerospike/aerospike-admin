@@ -944,7 +944,7 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             ),
-            # stop_writes is not triggered by index_used_bytes
+            # stop_writes is not triggered by indexes memory (PI only)
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
@@ -959,8 +959,8 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "index_used_bytes"): {
-                            "metric": "index_used_bytes",
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
                             "config": "indexes-memory-budget",
                             "stop_writes": False,
                             "metric_usage": 10,
@@ -970,7 +970,7 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             ),
-            # stop_writes is triggered by index_used_bytes
+            # stop_writes is triggered by indexes memory (PI only)
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
@@ -989,11 +989,109 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "index_used_bytes"): {
-                            "metric": "index_used_bytes",
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
                             "config": "indexes-memory-budget",
                             "stop_writes": True,
                             "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by combined PI + SI + set-index
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index_used_bytes": "40",
+                            "sindex_used_bytes": "30",
+                            "set_index_used_bytes": "25",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
+                            "config": "indexes-memory-budget",
+                            "stop_writes": True,
+                            "metric_usage": 95,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes excludes persisted PI from indexes-memory-budget check
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index-type": "flash",
+                            "index_used_bytes": "500",
+                            "sindex_used_bytes": "30",
+                            "set_index_used_bytes": "25",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
+                            "config": "indexes-memory-budget",
+                            "stop_writes": False,
+                            "metric_usage": 55,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes excludes persisted SI from indexes-memory-budget check
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "sindex-type": "pmem",
+                            "index_used_bytes": "40",
+                            "sindex_used_bytes": "500",
+                            "set_index_used_bytes": "25",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
+                            "config": "indexes-memory-budget",
+                            "stop_writes": False,
+                            "metric_usage": 65,
                             "metric_threshold": 90,
                             "namespace": "ns1",
                         },
