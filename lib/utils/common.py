@@ -1189,11 +1189,15 @@ def create_summary(
                 cluster_pmem_index_used += sindex_used
                 ns_pi = summary_dict["NAMESPACES"][ns].get("pmem_index")
                 if ns_pi:
-                    ns_pi["total"] = ns_pi.get("total", 0) + sindex_size
                     ns_pi["used"] = ns_pi.get("used", 0) + sindex_used
-                    if ns_pi.get("total", 0) > 0:
+                    if "total" in ns_pi:
+                        ns_pi["total"] += sindex_size
                         ns_pi["avail"] = ns_pi["total"] - ns_pi["used"]
-                        ns_pi["used_pct"] = (ns_pi["used"] / ns_pi["total"]) * 100.0
+                        ns_pi["used_pct"] = (
+                            (ns_pi["used"] / ns_pi["total"]) * 100.0
+                            if ns_pi["total"]
+                            else 0
+                        )
                         ns_pi["avail_pct"] = 100.0 - ns_pi["used_pct"]
                 elif sindex_size > 0:
                     sindex_avail = sindex_size - sindex_used
@@ -1214,11 +1218,15 @@ def create_summary(
                 cluster_flash_index_used += sindex_used
                 ns_fi = summary_dict["NAMESPACES"][ns].get("flash_index")
                 if ns_fi:
-                    ns_fi["total"] = ns_fi.get("total", 0) + sindex_size
                     ns_fi["used"] = ns_fi.get("used", 0) + sindex_used
-                    if ns_fi.get("total", 0) > 0:
+                    if "total" in ns_fi:
+                        ns_fi["total"] += sindex_size
                         ns_fi["avail"] = ns_fi["total"] - ns_fi["used"]
-                        ns_fi["used_pct"] = (ns_fi["used"] / ns_fi["total"]) * 100.0
+                        ns_fi["used_pct"] = (
+                            (ns_fi["used"] / ns_fi["total"]) * 100.0
+                            if ns_fi["total"]
+                            else 0
+                        )
                         ns_fi["avail_pct"] = 100.0 - ns_fi["used_pct"]
                 elif sindex_size > 0:
                     sindex_avail = sindex_size - sindex_used

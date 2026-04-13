@@ -331,17 +331,12 @@ ASSERT(warn, True, "Low namespace disk available pct.", "OPERATIONS", WARNING,
 				"Namespace disk available pct check.");
     
 SET CONSTRAINT VERSION >= 7.1.0;
-index_bytes = select "index_used_bytes" as "stats" from NAMESPACE.STATISTICS save;
-sindex_bytes = select "sindex_used_bytes" as "stats" from NAMESPACE.STATISTICS save;
-set_index_bytes = select "set_index_used_bytes" as "stats" from NAMESPACE.STATISTICS save;
-ixs_memory_used = do index_bytes + sindex_bytes;
-ixs_memory_used = do ixs_memory_used + set_index_bytes;
-stop_used_bytes = select "indexes-memory-budget" as "stats" from NAMESPACE.CONFIG save;
-budget_configured = do stop_used_bytes > 0;
-critical = do ixs_memory_used <= stop_used_bytes;
-ASSERT(critical, True, "High namespace indexes memory usage (stop-write enabled).", "OPERATIONS", CRITICAL,
-				"Listed namespace[s] have higher than normal combined memory usage for primary index, secondary index, and set index. Probable cause - namespace size misconfiguration.",
-				"Critical Namespace indexes memory used check.", budget_configured);
+ixs_used_pct = select "indexes_memory_used_pct" as "stats" from NAMESPACE.STATISTICS save;
+ixs_has_budget = do ixs_used_pct > 0;
+ixs_critical = do ixs_used_pct <= 100;
+ASSERT(ixs_critical, True, "High namespace indexes memory usage (stop-write enabled).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have higher than normal combined memory usage for indexes. Probable cause - namespace size misconfiguration.",
+				"Critical Namespace indexes memory used check.", ixs_has_budget);
 
 SET CONSTRAINT VERSION >= 7.0.0;
 sindex_used = select "sindex_used_bytes" as "stats" from NAMESPACE.STATISTICS save;
