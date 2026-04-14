@@ -1709,11 +1709,22 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
         actual = await self.node.info_set_config_namespace(
-            "mounts-size-limit", "50", "buff", subcontext="index-type"
+            "evict-mounts-pct", "80", "buff", subcontext="index-type"
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;mounts-size-limit=50", self.ip
+            "set-config:context=namespace;id=buff;index-type.evict-mounts-pct=80",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        actual = await self.node.info_set_config_namespace(
+            "mounts-budget", "1073741824", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;index-type.mounts-budget=1073741824",
+            self.ip,
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
