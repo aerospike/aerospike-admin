@@ -2088,22 +2088,31 @@ class Node(AsyncObject):
     async def info_set_config_namespace(
         self, param, value, namespace, set_=None, subcontext=None
     ):
-        new_param = param
-        if subcontext and subcontext != "storage-engine":
-            delimiter = "."
-
-            if subcontext == "geo2dsphere-within":
-                delimiter = "-"
-
-            new_param = delimiter.join([subcontext, param])
-
-        namespace_info_selector = "id"
-
         build = await self.info_build()
 
         if isinstance(build, Exception):
             logger.error(build)
             return build
+
+        new_param = param
+        if subcontext and subcontext != "storage-engine":
+            # Server < 7.0 accepted index-type params (mounts-size-limit,
+            # mounts-high-water-pct) as bare names in set-config while
+            # get-config returned them prefixed. Server 7.0+ fixed this
+            # inconsistency, so we only prefix index-type on 7.0+.
+            if subcontext == "index-type" and version.LooseVersion(
+                build
+            ) < version.LooseVersion(constants.SERVER_INDEX_TYPE_PREFIX_FIRST_VERSION):
+                pass
+            else:
+                delimiter = "."
+
+                if subcontext == "geo2dsphere-within":
+                    delimiter = "-"
+
+                new_param = delimiter.join([subcontext, param])
+
+        namespace_info_selector = "id"
 
         if version.LooseVersion(build) >= version.LooseVersion(
             constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION
