@@ -944,7 +944,7 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             ),
-            # stop_writes is not triggered by index_used_bytes
+            # stop_writes is not triggered by indexes memory (PI only)
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
@@ -959,8 +959,8 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "index_used_bytes"): {
-                            "metric": "index_used_bytes",
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
                             "config": "indexes-memory-budget",
                             "stop_writes": False,
                             "metric_usage": 10,
@@ -970,7 +970,7 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             ),
-            # stop_writes is triggered by index_used_bytes
+            # stop_writes is triggered by indexes memory (PI only)
             create_tc(
                 ns_stats={
                     "1.1.1.1": {
@@ -989,11 +989,109 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                 },
                 expected={
                     "1.1.1.1": {
-                        ("ns1", None, "index_used_bytes"): {
-                            "metric": "index_used_bytes",
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
                             "config": "indexes-memory-budget",
                             "stop_writes": True,
                             "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by combined PI + SI + set-index
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index_used_bytes": "40",
+                            "sindex_used_bytes": "30",
+                            "set_index_used_bytes": "25",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
+                            "config": "indexes-memory-budget",
+                            "stop_writes": True,
+                            "metric_usage": 95,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes excludes persisted PI from indexes-memory-budget check
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index-type": "flash",
+                            "index_used_bytes": "500",
+                            "sindex_used_bytes": "30",
+                            "set_index_used_bytes": "25",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
+                            "config": "indexes-memory-budget",
+                            "stop_writes": False,
+                            "metric_usage": 55,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes excludes persisted SI from indexes-memory-budget check
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "sindex-type": "pmem",
+                            "index_used_bytes": "40",
+                            "sindex_used_bytes": "500",
+                            "set_index_used_bytes": "25",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "indexes_memory_used"): {
+                            "metric": "indexes_memory_used",
+                            "config": "indexes-memory-budget",
+                            "stop_writes": False,
+                            "metric_usage": 65,
                             "metric_threshold": 90,
                             "namespace": "ns1",
                         },
@@ -1926,6 +2024,504 @@ class CreateSummaryTests(unittest.TestCase):
                                 "used_pct": 50.0,
                                 "avail": 1024.0,
                                 "avail_pct": 50.0,
+                            },
+                            "repl_factor": [1],
+                            "license_data": {"latest": 1024},
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # Test sindex (shmem) folded into existing shmem_index + set_index
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                            "sindex_used_bytes": 256,
+                            "set_index_used_bytes": 128,
+                            "data_used_bytes": 1024,
+                            "data_total_bytes": 2048,
+                            "data_avail_pct": 50,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "memory",
+                            "index-type": "shmem",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-shmem"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 1024},
+                        "shmem_index": {
+                            "used": 896,
+                        },
+                        "memory": {
+                            "total": 2048,
+                            "used": 1024,
+                            "used_pct": 50.0,
+                            "avail": 1024.0,
+                            "avail_pct": 50.0,
+                        },
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "shmem",
+                            "shmem_index": {
+                                "used": 896,
+                            },
+                            "memory": {
+                                "total": 2048,
+                                "used": 1024,
+                                "used_pct": 50.0,
+                                "avail": 1024.0,
+                                "avail_pct": 50.0,
+                            },
+                            "repl_factor": [1],
+                            "license_data": {"latest": 1024},
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # Test sindex (pmem) folded into existing pmem_index
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                            "sindex_used_bytes": 256,
+                            "data_used_bytes": 1024,
+                            "data_total_bytes": 2048,
+                            "data_avail_pct": 50,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "device",
+                            "index-type": "pmem",
+                            "index-type.mounts-budget": "2048",
+                            "sindex-type": "pmem",
+                            "sindex-type.mounts-budget": "1024",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-pmem"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 1024},
+                        "pmem_index": {
+                            "total": 3072,
+                            "used": 768,
+                            "used_pct": 25.0,
+                            "avail": 2304,
+                            "avail_pct": 75.0,
+                        },
+                        "device": {
+                            "total": 2048,
+                            "used": 1024,
+                            "used_pct": 50.0,
+                            "avail": 1024.0,
+                            "avail_pct": 50.0,
+                        },
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "pmem",
+                            "pmem_index": {
+                                "total": 3072,
+                                "used": 768,
+                                "used_pct": 25.0,
+                                "avail": 2304,
+                                "avail_pct": 75.0,
+                            },
+                            "device": {
+                                "total": 2048,
+                                "used": 1024,
+                                "used_pct": 50.0,
+                                "avail": 1024.0,
+                                "avail_pct": 50.0,
+                            },
+                            "repl_factor": [1],
+                            "license_data": {"latest": 1024},
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # Test sindex (flash) folded into existing flash_index
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                            "sindex_used_bytes": 256,
+                            "data_used_bytes": 1024,
+                            "data_total_bytes": 4096,
+                            "data_avail_pct": 75,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "device",
+                            "index-type": "flash",
+                            "index-type.mounts-budget": "2048",
+                            "sindex-type": "flash",
+                            "sindex-type.mounts-budget": "1024",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-flash"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 1024},
+                        "flash_index": {
+                            "total": 3072,
+                            "used": 768,
+                            "used_pct": 25.0,
+                            "avail": 2304,
+                            "avail_pct": 75.0,
+                        },
+                        "device": {
+                            "total": 4096,
+                            "used": 1024,
+                            "used_pct": 25.0,
+                            "avail": 3072.0,
+                            "avail_pct": 75.0,
+                        },
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "flash",
+                            "flash_index": {
+                                "total": 3072,
+                                "used": 768,
+                                "used_pct": 25.0,
+                                "avail": 2304,
+                                "avail_pct": 75.0,
+                            },
+                            "device": {
+                                "total": 4096,
+                                "used": 1024,
+                                "used_pct": 25.0,
+                                "avail": 3072.0,
+                                "avail_pct": 75.0,
+                            },
+                            "repl_factor": [1],
+                            "license_data": {"latest": 1024},
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # Test sindex (pmem) creates new pmem_index when PI is shmem
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                            "sindex_used_bytes": 256,
+                            "data_used_bytes": 1024,
+                            "data_total_bytes": 2048,
+                            "data_avail_pct": 50,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "memory",
+                            "index-type": "shmem",
+                            "sindex-type": "pmem",
+                            "sindex-type.mounts-budget": "1024",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-shmem"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 1024},
+                        "shmem_index": {
+                            "used": 512,
+                        },
+                        "pmem_index": {
+                            "total": 1024,
+                            "used": 256,
+                            "used_pct": 25.0,
+                            "avail": 768,
+                            "avail_pct": 75.0,
+                        },
+                        "memory": {
+                            "total": 2048,
+                            "used": 1024,
+                            "used_pct": 50.0,
+                            "avail": 1024.0,
+                            "avail_pct": 50.0,
+                        },
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "shmem",
+                            "shmem_index": {
+                                "used": 512,
+                            },
+                            "pmem_index": {
+                                "total": 1024,
+                                "used": 256,
+                                "used_pct": 25.0,
+                                "avail": 768,
+                                "avail_pct": 75.0,
+                            },
+                            "memory": {
+                                "total": 2048,
+                                "used": 1024,
+                                "used_pct": 50.0,
+                                "avail": 1024.0,
+                                "avail_pct": 50.0,
+                            },
+                            "repl_factor": [1],
+                            "license_data": {"latest": 1024},
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # Test sindex (flash) creates new flash_index when PI is shmem
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                            "sindex_used_bytes": 256,
+                            "data_used_bytes": 1024,
+                            "data_total_bytes": 2048,
+                            "data_avail_pct": 50,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "memory",
+                            "index-type": "shmem",
+                            "sindex-type": "flash",
+                            "sindex-type.mounts-budget": "1024",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-shmem"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 1024},
+                        "shmem_index": {
+                            "used": 512,
+                        },
+                        "flash_index": {
+                            "total": 1024,
+                            "used": 256,
+                            "used_pct": 25.0,
+                            "avail": 768,
+                            "avail_pct": 75.0,
+                        },
+                        "memory": {
+                            "total": 2048,
+                            "used": 1024,
+                            "used_pct": 50.0,
+                            "avail": 1024.0,
+                            "avail_pct": 50.0,
+                        },
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "shmem",
+                            "shmem_index": {
+                                "used": 512,
+                            },
+                            "flash_index": {
+                                "total": 1024,
+                                "used": 256,
+                                "used_pct": 25.0,
+                                "avail": 768,
+                                "avail_pct": 75.0,
+                            },
+                            "memory": {
+                                "total": 2048,
+                                "used": 1024,
+                                "used_pct": 50.0,
+                                "avail": 1024.0,
+                                "avail_pct": 50.0,
+                            },
+                            "repl_factor": [1],
+                            "license_data": {"latest": 1024},
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # Test sindex (shmem default) creates new shmem_index when PI is flash
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                            "sindex_used_bytes": 256,
+                            "data_used_bytes": 1024,
+                            "data_total_bytes": 4096,
+                            "data_avail_pct": 75,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "device",
+                            "index-type": "flash",
+                            "index-type.mounts-budget": "2048",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-flash"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 1024},
+                        "flash_index": {
+                            "total": 2048,
+                            "used": 512,
+                            "used_pct": 25.0,
+                            "avail": 1536,
+                            "avail_pct": 75.0,
+                        },
+                        "shmem_index": {
+                            "used": 256,
+                        },
+                        "device": {
+                            "total": 4096,
+                            "used": 1024,
+                            "used_pct": 25.0,
+                            "avail": 3072.0,
+                            "avail_pct": 75.0,
+                        },
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "flash",
+                            "flash_index": {
+                                "total": 2048,
+                                "used": 512,
+                                "used_pct": 25.0,
+                                "avail": 1536,
+                                "avail_pct": 75.0,
+                            },
+                            "shmem_index": {
+                                "used": 256,
+                            },
+                            "device": {
+                                "total": 4096,
+                                "used": 1024,
+                                "used_pct": 25.0,
+                                "avail": 3072.0,
+                                "avail_pct": 75.0,
+                            },
+                            "repl_factor": [1],
+                            "license_data": {"latest": 1024},
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # Test set_index creates new shmem_index when PI is on flash
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                            "set_index_used_bytes": 128,
+                            "data_used_bytes": 1024,
+                            "data_total_bytes": 4096,
+                            "data_avail_pct": 75,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "device",
+                            "index-type": "flash",
+                            "index-type.mounts-budget": "2048",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-flash"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 1024},
+                        "flash_index": {
+                            "total": 2048,
+                            "used": 512,
+                            "used_pct": 25.0,
+                            "avail": 1536,
+                            "avail_pct": 75.0,
+                        },
+                        "shmem_index": {
+                            "used": 128,
+                        },
+                        "device": {
+                            "total": 4096,
+                            "used": 1024,
+                            "used_pct": 25.0,
+                            "avail": 3072.0,
+                            "avail_pct": 75.0,
+                        },
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "flash",
+                            "flash_index": {
+                                "total": 2048,
+                                "used": 512,
+                                "used_pct": 25.0,
+                                "avail": 1536,
+                                "avail_pct": 75.0,
+                            },
+                            "shmem_index": {
+                                "used": 128,
+                            },
+                            "device": {
+                                "total": 4096,
+                                "used": 1024,
+                                "used_pct": 25.0,
+                                "avail": 3072.0,
+                                "avail_pct": 75.0,
                             },
                             "repl_factor": [1],
                             "license_data": {"latest": 1024},
