@@ -235,8 +235,13 @@ function run_snyk() {
   local scan_log="snyk-${distro:+${distro}-}${arch}-${ts}.log"
 
   local snyk_cmd=(snyk container test "${image}" "--platform=linux/${arch}")
-  # Provide Dockerfile for more accurate results if available
-  [[ -n "${distro}" && -f "${distro}/Dockerfile" ]] && snyk_cmd+=("--file=${distro}/Dockerfile")
+  # Include Dockerfile for more accurate layer-level results
+  if [[ -n "${distro}" && -f "${distro}/Dockerfile" ]]; then
+    snyk_cmd+=("--file=${distro}/Dockerfile")
+    log_info "  Dockerfile: ${distro}/Dockerfile"
+  else
+    log_warn "  Dockerfile not found for distro '${distro:-n/a}' — scanning image layers only"
+  fi
 
   log_info "Running Snyk scan → ${scan_log}"
   # Non-fatal: findings are informational
