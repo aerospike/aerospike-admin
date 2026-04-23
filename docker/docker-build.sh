@@ -235,12 +235,12 @@ function generate_bake() {
         local local_pkg=""
         case "${distro}" in
         ubuntu24.04)
-          [[ "${arch}" == "amd64" ]] && local_pkg="${LOCAL_PKG_UBUNTU_AMD64}"
-          [[ "${arch}" == "arm64" ]] && local_pkg="${LOCAL_PKG_UBUNTU_ARM64}"
+          if [[ "${arch}" == "amd64" ]]; then local_pkg="${LOCAL_PKG_UBUNTU_AMD64}"; fi
+          if [[ "${arch}" == "arm64" ]]; then local_pkg="${LOCAL_PKG_UBUNTU_ARM64}"; fi
           ;;
         ubi10)
-          [[ "${arch}" == "amd64" ]] && local_pkg="${LOCAL_PKG_UBI_AMD64}"
-          [[ "${arch}" == "arm64" ]] && local_pkg="${LOCAL_PKG_UBI_ARM64}"
+          if [[ "${arch}" == "amd64" ]]; then local_pkg="${LOCAL_PKG_UBI_AMD64}"; fi
+          if [[ "${arch}" == "arm64" ]]; then local_pkg="${LOCAL_PKG_UBI_ARM64}"; fi
           ;;
         esac
         local tags=()
@@ -260,15 +260,15 @@ function generate_bake() {
       for reg in "${REGISTRY_PREFIXES[@]}"; do
         tags+=("${reg}/aerospike-asadm:${VERSION}-${distro}")
         # ubuntu24.04 also gets the canonical version-only tag
-        [[ "${distro}" == "ubuntu24.04" ]] && tags+=("${reg}/aerospike-asadm:${VERSION}")
+        if [[ "${distro}" == "ubuntu24.04" ]]; then tags+=("${reg}/aerospike-asadm:${VERSION}"); fi
       done
       _emit_push_target "${slug}" "${ctx}" "${tags[@]}"
       push_target_names+=("${slug}")
     done
 
     # ---- Groups ----
-    [[ ${#test_target_names[@]} -gt 0 ]] && _emit_group "test" "${test_target_names[@]}"
-    [[ ${#push_target_names[@]} -gt 0 ]] && _emit_group "push" "${push_target_names[@]}"
+    if [[ ${#test_target_names[@]} -gt 0 ]]; then _emit_group "test" "${test_target_names[@]}"; fi
+    if [[ ${#push_target_names[@]} -gt 0 ]]; then _emit_group "push" "${push_target_names[@]}"; fi
 
   } >"${BAKE_FILE}"
 
@@ -326,41 +326,50 @@ function _setup_local_pkgs() {
   # Only copy arches we're actually building to avoid unnecessary work
   local need_amd64=false need_arm64=false
   for a in "${ACTIVE_ARCHES[@]}"; do
-    [[ "${a}" == "amd64" ]] && need_amd64=true
-    [[ "${a}" == "arm64" ]] && need_arm64=true
+    if [[ "${a}" == "amd64" ]]; then need_amd64=true; fi
+    if [[ "${a}" == "arm64" ]]; then need_arm64=true; fi
   done
 
   for distro in "${ACTIVE_DISTROS[@]}"; do
     case "${distro}" in
     ubuntu24.04)
-      [[ "${need_amd64}" == true ]] && \
-        LOCAL_PKG_UBUNTU_AMD64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_x86_64.deb" "ubuntu24.04" "LOCAL_PKG_UBUNTU_AMD64")
-      [[ "${need_arm64}" == true ]] && \
-        LOCAL_PKG_UBUNTU_ARM64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_aarch64.deb" "ubuntu24.04" "LOCAL_PKG_UBUNTU_ARM64")
+      if [[ "${need_amd64}" == true ]]; then
+        LOCAL_PKG_UBUNTU_AMD64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_x86_64.deb" "ubuntu24.04")
+      fi
+      if [[ "${need_arm64}" == true ]]; then
+        LOCAL_PKG_UBUNTU_ARM64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_aarch64.deb" "ubuntu24.04")
+      fi
       ;;
     ubi10)
-      [[ "${need_amd64}" == true ]] && \
-        LOCAL_PKG_UBI_AMD64=$(_copy_pkg "aerospike-asadm-*.el10.x86_64.rpm" "ubi10" "LOCAL_PKG_UBI_AMD64")
-      [[ "${need_arm64}" == true ]] && \
-        LOCAL_PKG_UBI_ARM64=$(_copy_pkg "aerospike-asadm-*.el10.aarch64.rpm" "ubi10" "LOCAL_PKG_UBI_ARM64")
+      if [[ "${need_amd64}" == true ]]; then
+        LOCAL_PKG_UBI_AMD64=$(_copy_pkg "aerospike-asadm-*.el10.x86_64.rpm" "ubi10")
+      fi
+      if [[ "${need_arm64}" == true ]]; then
+        LOCAL_PKG_UBI_ARM64=$(_copy_pkg "aerospike-asadm-*.el10.aarch64.rpm" "ubi10")
+      fi
       ;;
     esac
   done
 
-  # Warn for any arches/distros where no file was found
-  [[ "${need_amd64}" == true && "${ACTIVE_DISTROS[*]}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_AMD64}" ]] && \
+  # Warn for any expected packages that were not found
+  local distros_str="${ACTIVE_DISTROS[*]}"
+  if [[ "${need_amd64}" == true && "${distros_str}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_AMD64}" ]]; then
     log_warn "DEB (amd64) not found in ${dir} — will fall back to URL"
-  [[ "${need_arm64}" == true && "${ACTIVE_DISTROS[*]}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_ARM64}" ]] && \
+  fi
+  if [[ "${need_arm64}" == true && "${distros_str}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_ARM64}" ]]; then
     log_warn "DEB (arm64) not found in ${dir} — will fall back to URL"
-  [[ "${need_amd64}" == true && "${ACTIVE_DISTROS[*]}" == *ubi10* && -z "${LOCAL_PKG_UBI_AMD64}" ]] && \
+  fi
+  if [[ "${need_amd64}" == true && "${distros_str}" == *ubi10* && -z "${LOCAL_PKG_UBI_AMD64}" ]]; then
     log_warn "RPM (amd64) not found in ${dir} — will fall back to URL"
-  [[ "${need_arm64}" == true && "${ACTIVE_DISTROS[*]}" == *ubi10* && -z "${LOCAL_PKG_UBI_ARM64}" ]] && \
+  fi
+  if [[ "${need_arm64}" == true && "${distros_str}" == *ubi10* && -z "${LOCAL_PKG_UBI_ARM64}" ]]; then
     log_warn "RPM (arm64) not found in ${dir} — will fall back to URL"
+  fi
 }
 
 function _cleanup_local_pkgs() {
   for f in "${LOCAL_PKGS_COPIED[@]+"${LOCAL_PKGS_COPIED[@]}"}"; do
-    [[ -f "${f}" ]] && rm -f "${f}"
+    if [[ -f "${f}" ]]; then rm -f "${f}"; fi
   done
 }
 
@@ -416,7 +425,7 @@ function main() {
   fi
 
   # Default registry
-  [[ ${#REGISTRY_PREFIXES[@]} -eq 0 ]] && REGISTRY_PREFIXES=("aerospike")
+  if [[ ${#REGISTRY_PREFIXES[@]} -eq 0 ]]; then REGISTRY_PREFIXES=("aerospike"); fi
 
   # Resolve active distros
   local all_distros=("ubuntu24.04" "ubi10")
@@ -426,9 +435,9 @@ function main() {
     for d in "${distro_filters[@]}"; do
       local valid=false
       for ad in "${all_distros[@]}"; do
-        [[ "${ad}" == "${d}" ]] && { ACTIVE_DISTROS+=("${d}") ; valid=true ; break ; }
+        if [[ "${ad}" == "${d}" ]]; then ACTIVE_DISTROS+=("${d}"); valid=true; break; fi
       done
-      [[ "${valid}" == false ]] && log_warn "Unknown distro '${d}' (valid: ${all_distros[*]})"
+      if [[ "${valid}" == false ]]; then log_warn "Unknown distro '${d}' (valid: ${all_distros[*]})"; fi
     done
   fi
 
@@ -469,11 +478,11 @@ function main() {
   if [[ "${skip_update}" == false ]]; then
     log_info "=== Updating Dockerfiles ==="
     local update_args=("--version" "${VERSION}")
-    [[ -n "${packages_dir}" ]]     && update_args+=("--packages-dir" "${packages_dir}")
-    [[ -n "${deb_base_url}" ]]     && update_args+=("--deb-base-url" "${deb_base_url}")
-    [[ -n "${rpm_base_url}" ]]     && update_args+=("--rpm-base-url" "${rpm_base_url}")
-    [[ "${compute_sha}" == true ]] && update_args+=("--compute-sha")
-    [[ "${dry_run}"     == true ]] && update_args+=("--dry-run")
+    if [[ -n "${packages_dir}" ]];     then update_args+=("--packages-dir" "${packages_dir}"); fi
+    if [[ -n "${deb_base_url}" ]];     then update_args+=("--deb-base-url" "${deb_base_url}"); fi
+    if [[ -n "${rpm_base_url}" ]];     then update_args+=("--rpm-base-url" "${rpm_base_url}"); fi
+    if [[ "${compute_sha}" == true ]]; then update_args+=("--compute-sha"); fi
+    if [[ "${dry_run}"     == true ]]; then update_args+=("--dry-run"); fi
     ./update-version.sh "${update_args[@]}"
     echo ""
   fi
@@ -504,7 +513,7 @@ function main() {
   echo ""
   log_info "=== Building Images ==="
   local bake_args=("-f" "${BAKE_FILE}")
-  [[ "${no_cache}" == true ]] && bake_args+=("--no-cache")
+  if [[ "${no_cache}" == true ]]; then bake_args+=("--no-cache"); fi
 
   case "${mode}" in
   test)
