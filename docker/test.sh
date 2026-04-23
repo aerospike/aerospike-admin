@@ -176,9 +176,11 @@ function get_bake_test_entries() {
 function test_image() {
   local image="$1" arch="$2" expected_version="$3" distro="${4:-}"
 
-  log_info "====== Testing: ${image} ======"
-  log_info "  Platform: linux/${arch}"
-  [[ -n "${distro}" ]] && log_info "  Distro:   ${distro}"
+  log_info "====== Testing ======"
+  log_info "  Image:    ${image}"
+  log_info "  Distro:   ${distro:-n/a}"
+  log_info "  Arch:     ${arch}"
+  log_info "  Version:  ${expected_version}"
   echo ""
 
   # Ensure image is available
