@@ -223,7 +223,7 @@ function test_image() {
 # run_snyk: optional non-fatal Snyk container scan.
 # ---------------------------------------------------------------------------
 function run_snyk() {
-  local image="$1" arch="$2" distro="${3:-}"
+  local image="$1" arch="$2" version="$3" distro="${4:-}"
 
   if ! command -v snyk >/dev/null 2>&1; then
     log_warn "snyk not found in PATH — skipping scan."
@@ -232,7 +232,7 @@ function run_snyk() {
 
   local ts
   ts=$(date -u +%Y%m%d%H%M%S)
-  local scan_log="snyk-${distro:+${distro}-}${arch}-${ts}.log"
+  local scan_log="aerospike-asadm-${version}-${distro:+${distro}-}${arch}-${ts}.snyk"
 
   local snyk_cmd=(snyk container test "${image}" "--platform=linux/${arch}")
   # Include Dockerfile for more accurate layer-level results
@@ -328,7 +328,7 @@ function main() {
   _run_one() {
     local image="$1" arch="$2" distro="${3:-}"
     if test_image "${image}" "${arch}" "${VERSION}" "${distro}"; then
-      [[ "${snyk}" == true ]] && run_snyk "${image}" "${arch}" "${distro}"
+      [[ "${snyk}" == true ]] && run_snyk "${image}" "${arch}" "${VERSION}" "${distro}"
       if [[ "${clean}" == true ]]; then
         docker rmi -f "${image}" >/dev/null 2>&1 || true
         log_info "Removed image: ${image}"

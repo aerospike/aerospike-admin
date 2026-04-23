@@ -158,7 +158,7 @@ tramp
 
 docker_logs
 docker/docker-bake.hcl
-docker/snyk-*.log
+docker/aerospike-asadm-*.snyk
 docker/ubuntu24.04/*.deb
 docker/ubi10/*.rpm
 test/e2e/work/*
