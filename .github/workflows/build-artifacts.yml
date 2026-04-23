@@ -549,7 +549,7 @@ jobs:
           set -euo pipefail
           docker/docker-build.sh -t -v "${VERSION}" \
             -d ubuntu24.04 \
-            -u ./deploy-artifacts
+            -u ../deploy-artifacts
 
       - name: Install Snyk CLI
         run: npm install -g snyk
