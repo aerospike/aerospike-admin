@@ -315,8 +315,8 @@ function _setup_local_pkgs() {
       base="$(basename "${found}")"
       cp "${found}" "${dest_dir}/${base}"
       LOCAL_PKGS_COPIED+=("${dest_dir}/${base}")
-      log_info "  Local pkg: ${dest_dir}/${base}"
-      # Return basename via nameref-free approach: print it
+      log_info "  Local pkg: ${dest_dir}/${base}" >&2
+      # Return basename to caller via stdout (must be the only stdout output)
       printf '%s' "${base}"
     fi
   }
