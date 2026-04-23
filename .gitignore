@@ -157,6 +157,8 @@ tramp
 .cursor
 
 docker_logs
+docker/docker-bake.hcl
+docker/snyk-*.log
 test/e2e/work/*
 *.lua
 *_input.txt
