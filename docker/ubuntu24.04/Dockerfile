@@ -25,10 +25,15 @@ ARG ASADM_AMD64_URL
 ARG ASADM_AMD64_SHA256
 ARG ASADM_ARM64_URL
 ARG ASADM_ARM64_SHA256
+# When set to a filename, the package is copied from the build context instead
+# of downloaded from ASADM_*_URL. Set by docker/docker-build.sh -u <local-dir>.
+ARG ASADM_LOCAL_PKG=""
 
 SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
-RUN export DEBIAN_FRONTEND=noninteractive && \
+# hadolint ignore=DL3008
+RUN --mount=type=bind,source=.,target=/build-ctx \
+    export DEBIAN_FRONTEND=noninteractive && \
     ARCH="$(dpkg --print-architecture)" && \
     if [ "${ARCH}" = "amd64" ]; then \
         PKG_URL="${ASADM_AMD64_URL}"; PKG_SHA="${ASADM_AMD64_SHA256}"; \
@@ -36,14 +41,19 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
         PKG_URL="${ASADM_ARM64_URL}"; PKG_SHA="${ASADM_ARM64_SHA256}"; \
     fi && \
     apt-get update -y && \
-    apt-get install -y --no-install-recommends curl ca-certificates && \
-    curl -fsSL --retry 3 --retry-delay 3 "${PKG_URL}" -o /tmp/asadm.deb && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    if [ -n "${ASADM_LOCAL_PKG}" ] && [ -f "/build-ctx/${ASADM_LOCAL_PKG}" ]; then \
+        cp "/build-ctx/${ASADM_LOCAL_PKG}" /tmp/asadm.deb; \
+    else \
+        apt-get install -y --no-install-recommends curl && \
+        curl -fsSL --retry 3 --retry-delay 3 "${PKG_URL}" -o /tmp/asadm.deb && \
+        apt-get purge -y --auto-remove curl; \
+    fi && \
     if [ "${PKG_SHA}" != "PLACEHOLDER" ]; then \
         echo "${PKG_SHA}  /tmp/asadm.deb" | sha256sum -c -; \
     fi && \
     dpkg -i /tmp/asadm.deb && \
     rm -f /tmp/asadm.deb && \
-    apt-get purge -y --auto-remove curl && \
     rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT ["asadm"]

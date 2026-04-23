@@ -159,6 +159,8 @@ tramp
 docker_logs
 docker/docker-bake.hcl
 docker/snyk-*.log
+docker/ubuntu24.04/*.deb
+docker/ubi10/*.rpm
 test/e2e/work/*
 *.lua
 *_input.txt

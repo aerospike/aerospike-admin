@@ -127,16 +127,20 @@ EOF
 # ---------------------------------------------------------------------------
 
 # Emit a single-arch test target block.
-# _emit_test_target NAME CTX ARCH TAG [TAG ...]
+# _emit_test_target NAME CTX ARCH LOCAL_PKG TAG [TAG ...]
+# LOCAL_PKG: basename of pkg file in build context, or "" to use URL download.
 function _emit_test_target() {
-  local name="$1" ctx="$2" arch="$3"
-  shift 3
+  local name="$1" ctx="$2" arch="$3" local_pkg="$4"
+  shift 4
   local tags=("$@")
   local n=${#tags[@]}
   echo "target \"${name}\" {"
   echo "  context    = \"${ctx}\""
   echo "  dockerfile = \"Dockerfile\""
   echo "  platforms  = [\"linux/${arch}\"]"
+  if [[ -n "${local_pkg}" ]]; then
+    echo "  args = { ASADM_LOCAL_PKG = \"${local_pkg}\" }"
+  fi
   echo "  tags = ["
   for ((i = 0; i < n; i++)); do
     if [[ $i -lt $((n - 1)) ]]; then
@@ -213,11 +217,23 @@ function generate_bake() {
       local ctx="${distro_ctx[${distro}]}"
       local slug="${distro//\./-}"
       for arch in "${ACTIVE_ARCHES[@]}"; do
+        # Resolve local pkg filename for this distro+arch (empty = use URL)
+        local local_pkg=""
+        case "${distro}" in
+        ubuntu24.04)
+          [[ "${arch}" == "amd64" ]] && local_pkg="${LOCAL_PKG_UBUNTU_AMD64}"
+          [[ "${arch}" == "arm64" ]] && local_pkg="${LOCAL_PKG_UBUNTU_ARM64}"
+          ;;
+        ubi10)
+          [[ "${arch}" == "amd64" ]] && local_pkg="${LOCAL_PKG_UBI_AMD64}"
+          [[ "${arch}" == "arm64" ]] && local_pkg="${LOCAL_PKG_UBI_ARM64}"
+          ;;
+        esac
         local tags=()
         for reg in "${REGISTRY_PREFIXES[@]}"; do
           tags+=("${reg}/aerospike-asadm:${VERSION}-${distro}-${arch}")
         done
-        _emit_test_target "${slug}-${arch}" "${ctx}" "${arch}" "${tags[@]}"
+        _emit_test_target "${slug}-${arch}" "${ctx}" "${arch}" "${local_pkg}" "${tags[@]}"
         test_target_names+=("${slug}-${arch}")
       done
     done
@@ -254,6 +270,85 @@ VERSION=""
 REGISTRY_PREFIXES=()
 ACTIVE_DISTROS=()
 ACTIVE_ARCHES=()
+
+# Local package filenames discovered by _setup_local_pkgs(); empty = use URL
+LOCAL_PKG_UBUNTU_AMD64=""
+LOCAL_PKG_UBUNTU_ARM64=""
+LOCAL_PKG_UBI_AMD64=""
+LOCAL_PKG_UBI_ARM64=""
+LOCAL_PKGS_COPIED=()  # paths of files copied into build context dirs for cleanup
+
+# ---------------------------------------------------------------------------
+# _setup_local_pkgs: find pkg files in packages_dir, copy into build context
+# dirs (ubuntu24.04/ and ubi10/) so the Dockerfile bind-mount can see them.
+# Populates LOCAL_PKG_* globals and LOCAL_PKGS_COPIED for later cleanup.
+# ---------------------------------------------------------------------------
+function _setup_local_pkgs() {
+  local dir="$1"
+  local real_dir
+  real_dir=$(cd "${dir}" && pwd -P)
+
+  _find_one() {
+    find -L "${real_dir}" -maxdepth 3 -name "$1" -type f 2>/dev/null | head -1
+  }
+
+  _copy_pkg() {
+    local pattern="$1" dest_dir="$2"
+    local found
+    found=$(_find_one "${pattern}")
+    if [[ -n "${found}" ]]; then
+      local base
+      base="$(basename "${found}")"
+      cp "${found}" "${dest_dir}/${base}"
+      LOCAL_PKGS_COPIED+=("${dest_dir}/${base}")
+      log_info "  Local pkg: ${dest_dir}/${base}"
+      # Return basename via nameref-free approach: print it
+      printf '%s' "${base}"
+    fi
+  }
+
+  log_info "Resolving local packages from: ${real_dir}"
+
+  # Only copy arches we're actually building to avoid unnecessary work
+  local need_amd64=false need_arm64=false
+  for a in "${ACTIVE_ARCHES[@]}"; do
+    [[ "${a}" == "amd64" ]] && need_amd64=true
+    [[ "${a}" == "arm64" ]] && need_arm64=true
+  done
+
+  for distro in "${ACTIVE_DISTROS[@]}"; do
+    case "${distro}" in
+    ubuntu24.04)
+      [[ "${need_amd64}" == true ]] && \
+        LOCAL_PKG_UBUNTU_AMD64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_x86_64.deb" "ubuntu24.04" "LOCAL_PKG_UBUNTU_AMD64")
+      [[ "${need_arm64}" == true ]] && \
+        LOCAL_PKG_UBUNTU_ARM64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_aarch64.deb" "ubuntu24.04" "LOCAL_PKG_UBUNTU_ARM64")
+      ;;
+    ubi10)
+      [[ "${need_amd64}" == true ]] && \
+        LOCAL_PKG_UBI_AMD64=$(_copy_pkg "aerospike-asadm-*.el10.x86_64.rpm" "ubi10" "LOCAL_PKG_UBI_AMD64")
+      [[ "${need_arm64}" == true ]] && \
+        LOCAL_PKG_UBI_ARM64=$(_copy_pkg "aerospike-asadm-*.el10.aarch64.rpm" "ubi10" "LOCAL_PKG_UBI_ARM64")
+      ;;
+    esac
+  done
+
+  # Warn for any arches/distros where no file was found
+  [[ "${need_amd64}" == true && "${ACTIVE_DISTROS[*]}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_AMD64}" ]] && \
+    log_warn "DEB (amd64) not found in ${dir} — will fall back to URL"
+  [[ "${need_arm64}" == true && "${ACTIVE_DISTROS[*]}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_ARM64}" ]] && \
+    log_warn "DEB (arm64) not found in ${dir} — will fall back to URL"
+  [[ "${need_amd64}" == true && "${ACTIVE_DISTROS[*]}" == *ubi10* && -z "${LOCAL_PKG_UBI_AMD64}" ]] && \
+    log_warn "RPM (amd64) not found in ${dir} — will fall back to URL"
+  [[ "${need_arm64}" == true && "${ACTIVE_DISTROS[*]}" == *ubi10* && -z "${LOCAL_PKG_UBI_ARM64}" ]] && \
+    log_warn "RPM (arm64) not found in ${dir} — will fall back to URL"
+}
+
+function _cleanup_local_pkgs() {
+  for f in "${LOCAL_PKGS_COPIED[@]+"${LOCAL_PKGS_COPIED[@]}"}"; do
+    [[ -f "${f}" ]] && rm -f "${f}"
+  done
+}
 
 function main() {
   local mode=""
@@ -379,7 +474,14 @@ function main() {
     exit 0
   fi
 
-  # ---- Step 2: Generate bake file ----
+  # ---- Step 2: Resolve local packages (if --packages-dir/-u local path) ----
+  if [[ -n "${packages_dir}" ]]; then
+    _setup_local_pkgs "${packages_dir}"
+    trap '_cleanup_local_pkgs' EXIT
+    echo ""
+  fi
+
+  # ---- Step 3: Generate bake file ----
   echo ""
   log_info "=== Generating Bake File ==="
   generate_bake
