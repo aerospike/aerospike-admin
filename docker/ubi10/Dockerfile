@@ -32,6 +32,7 @@ ARG ASADM_LOCAL_PKG=""
 SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 RUN --mount=type=bind,source=.,target=/build-ctx \
+    --mount=type=secret,id=jfrog_token,required=false \
     ARCH="$(uname -m)" && \
     if [ "${ARCH}" = "x86_64" ]; then \
         PKG_URL="${ASADM_AMD64_URL}"; PKG_SHA="${ASADM_AMD64_SHA256}"; \
@@ -41,8 +42,15 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
     if [ -n "${ASADM_LOCAL_PKG}" ] && [ -f "/build-ctx/${ASADM_LOCAL_PKG}" ]; then \
         cp "/build-ctx/${ASADM_LOCAL_PKG}" /tmp/asadm.rpm; \
     else \
+        JFROG_TOKEN="$(cat /run/secrets/jfrog_token 2>/dev/null || true)" && \
         dnf install -y curl ca-certificates && \
-        curl -fsSL --retry 3 --retry-delay 3 "${PKG_URL}" -o /tmp/asadm.rpm && \
+        if [ -n "${JFROG_TOKEN}" ]; then \
+            curl -fsSL --retry 3 --retry-delay 3 \
+                -H "Authorization: Bearer ${JFROG_TOKEN}" \
+                "${PKG_URL}" -o /tmp/asadm.rpm; \
+        else \
+            curl -fsSL --retry 3 --retry-delay 3 "${PKG_URL}" -o /tmp/asadm.rpm; \
+        fi && \
         dnf remove -y curl; \
     fi && \
     if [ "${PKG_SHA}" != "PLACEHOLDER" ]; then \

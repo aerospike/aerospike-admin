@@ -33,6 +33,7 @@ SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 # hadolint ignore=DL3008
 RUN --mount=type=bind,source=.,target=/build-ctx \
+    --mount=type=secret,id=jfrog_token,required=false \
     export DEBIAN_FRONTEND=noninteractive && \
     ARCH="$(dpkg --print-architecture)" && \
     if [ "${ARCH}" = "amd64" ]; then \
@@ -45,8 +46,15 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
     if [ -n "${ASADM_LOCAL_PKG}" ] && [ -f "/build-ctx/${ASADM_LOCAL_PKG}" ]; then \
         cp "/build-ctx/${ASADM_LOCAL_PKG}" /tmp/asadm.deb; \
     else \
+        JFROG_TOKEN="$(cat /run/secrets/jfrog_token 2>/dev/null || true)" && \
         apt-get install -y --no-install-recommends curl && \
-        curl -fsSL --retry 3 --retry-delay 3 "${PKG_URL}" -o /tmp/asadm.deb && \
+        if [ -n "${JFROG_TOKEN}" ]; then \
+            curl -fsSL --retry 3 --retry-delay 3 \
+                -H "Authorization: Bearer ${JFROG_TOKEN}" \
+                "${PKG_URL}" -o /tmp/asadm.deb; \
+        else \
+            curl -fsSL --retry 3 --retry-delay 3 "${PKG_URL}" -o /tmp/asadm.deb; \
+        fi && \
         apt-get purge -y --auto-remove curl; \
     fi && \
     if [ "${PKG_SHA}" != "PLACEHOLDER" ]; then \
