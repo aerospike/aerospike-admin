@@ -33,22 +33,22 @@ log_failure() { printf '\e[31m[FAIL]\e[0m    %s\n' "$*" >&2; }
 # ---------------------------------------------------------------------------
 function usage() {
   cat <<'EOF'
-Usage: docker/test.sh --version VERSION [OPTIONS]
-       docker/test.sh -i IMAGE --version VERSION [OPTIONS]
+Usage: docker/test.sh -v VERSION [OPTIONS]
+       docker/test.sh -i IMAGE -v VERSION [OPTIONS]
 
 Smoke-test Aerospike asadm Docker images.
 
 REQUIRED:
-    --version VERSION   Expected asadm version string, e.g. 5.0.0 or 5.0.0-rc1
-                        Used to locate test image tags in docker-bake.hcl and to
-                        verify the version printed by the container.
+    -v, --version VERSION   Expected asadm version string, e.g. 5.0.0 or 5.0.0-rc1
+                            Used to locate test image tags in docker-bake.hcl and to
+                            verify the version printed by the container.
 
 OPTIONS:
     -i, --image IMAGE   Test a specific image tag instead of auto-discovering from
                         docker-bake.hcl. IMAGE must be locally loaded or pullable.
-    --distro DISTRO     Filter by distro; repeat for multiple (default: all in bake file)
+    -d, --distro DISTRO Filter by distro; repeat for multiple (default: all in bake file)
                         Values: ubuntu24.04, ubi10
-    --arch ARCH         Filter by arch; repeat for multiple
+    -a, --arch ARCH     Filter by arch; repeat for multiple
                         Values: amd64, arm64
                         Default (no -i): host arch only
                         Default (with -i): host arch
@@ -69,19 +69,19 @@ PREREQUISITES:
 
 EXAMPLES:
     # Test all locally-built images (reads docker-bake.hcl, defaults to host arch)
-    docker/test.sh --version 5.0.0-rc1
+    docker/test.sh -v 5.0.0-rc1
 
     # Test all arches for all distros
-    docker/test.sh --version 5.0.0 --arch amd64 --arch arm64
+    docker/test.sh -v 5.0.0 -a amd64 -a arm64
 
     # Test a specific image tag
-    docker/test.sh -i aerospike/aerospike-asadm:5.0.0-ubuntu24.04-amd64 --version 5.0.0
+    docker/test.sh -i aerospike/aerospike-asadm:5.0.0-ubuntu24.04-amd64 -v 5.0.0
 
     # Test + Snyk scan + cleanup
-    docker/test.sh --version 5.0.0 -s -c
+    docker/test.sh -v 5.0.0 -s -c
 
     # Test only ubi10 on both arches
-    docker/test.sh --version 5.0.0 --distro ubi10 --arch amd64 --arch arm64
+    docker/test.sh -v 5.0.0 -d ubi10 -a amd64 -a arm64
 EOF
 }
 
@@ -274,7 +274,7 @@ function main() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-    --version)
+    -v | --version)
       VERSION="$2"
       shift 2
       ;;
@@ -282,11 +282,11 @@ function main() {
       specific_image="$2"
       shift 2
       ;;
-    --distro)
+    -d | --distro)
       distro_filter="$2"
       shift 2
       ;;
-    --arch)
+    -a | --arch)
       arch_filters+=("$2")
       shift 2
       ;;
