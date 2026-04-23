@@ -34,7 +34,7 @@ log_warn()    { printf '\e[33m[WARN]\e[0m  %s\n' "$*" >&2; }
 # ---------------------------------------------------------------------------
 function usage() {
   cat <<'EOF'
-Usage: docker/docker-build.sh -t|-p|-g --version VERSION [OPTIONS]
+Usage: docker/docker-build.sh -t|-p|-g -v VERSION [OPTIONS]
 
 Build Docker images for Aerospike asadm (Ubuntu 24.04 and UBI 10).
 
@@ -44,16 +44,16 @@ MODES (one required):
     -g, --generate   Update Dockerfiles only, no build
 
 REQUIRED:
-    --version VERSION       asadm version, e.g. 5.0.0 or 5.0.0-rc1
-                            Required unless --skip-update is set.
+    -v, --version VERSION   asadm version, e.g. 5.0.0 or 5.0.0-rc1
+                            Required unless -S/--skip-update is set.
 
 OPTIONS:
     -r, --registry REG      Registry prefix for image tags (default: aerospike)
                             Repeat for multiple registries: -r reg1 -r reg2
                             Example: -r artifact.aerospike.io/database-docker-dev-local
-    --distro DISTRO         Filter distro; repeat for multiple (default: all)
+    -d, --distro DISTRO     Filter distro; repeat for multiple (default: all)
                             Values: ubuntu24.04, ubi10
-    --arch ARCH             Filter arch for test targets; repeat for multiple (default: all)
+    -a, --arch ARCH         Filter arch for test targets; repeat for multiple (default: all)
                             Values: amd64, arm64
                             Push always builds both arches regardless of this flag.
     -u, --packages-url URL_OR_PATH
@@ -64,10 +64,10 @@ OPTIONS:
     --packages-dir DIR      Explicit local packages dir (forwarded to update-version.sh)
     --deb-base-url URL      Explicit DEB base URL (forwarded to update-version.sh)
     --rpm-base-url URL      Explicit RPM base URL (forwarded to update-version.sh)
-    --compute-sha           Forwarded to update-version.sh (download packages to compute SHA256)
-    --skip-update           Skip calling update-version.sh (use current Dockerfile ARGs as-is)
-    --no-cache              Disable Docker build cache
-    --dry-run               Dry run: forward to update-version.sh; skip Docker steps
+    -s, --compute-sha       Download packages to compute SHA256 (forwarded to update-version.sh)
+    -S, --skip-update       Skip calling update-version.sh (use current Dockerfile ARGs as-is)
+    -n, --no-cache          Disable Docker build cache
+    -N, --dry-run           Dry run: forward to update-version.sh; skip Docker steps
     -h, --help              Show this help message
 
 DISTROS AND BASE IMAGES:
@@ -86,36 +86,36 @@ TAGS PRODUCED:
 
 EXAMPLES:
     # Build + load using local packages dir
-    docker/docker-build.sh -t --version 5.0.0-rc1 -u /path/to/dist
+    docker/docker-build.sh -t -v 5.0.0-rc1 -u /path/to/dist
 
     # Build + load from JFrog dev (single -u sets both DEB and RPM URLs)
-    docker/docker-build.sh -t --version 5.0.0-rc1 \
+    docker/docker-build.sh -t -v 5.0.0-rc1 \
         -u https://aerospike.jfrog.io/artifactory/database-dev-local
 
     # Build + load, download packages to compute SHA256
-    docker/docker-build.sh -t --version 5.0.0 --compute-sha
+    docker/docker-build.sh -t -v 5.0.0 -s
 
     # Build + push to default registry (docker.io/aerospike/aerospike-asadm)
-    docker/docker-build.sh -p --version 5.0.0
+    docker/docker-build.sh -p -v 5.0.0
 
     # Build + push to JFrog dev registry with dev package source
-    docker/docker-build.sh -p --version 5.0.0 \
+    docker/docker-build.sh -p -v 5.0.0 \
         -r artifact.aerospike.io/database-docker-dev-local \
         -u https://aerospike.jfrog.io/artifactory/database-dev-local
 
     # Push to multiple registries simultaneously
-    docker/docker-build.sh -p --version 5.0.0 \
+    docker/docker-build.sh -p -v 5.0.0 \
         -r aerospike \
         -r artifact.aerospike.io/database-docker-dev-local
 
     # Update Dockerfiles only (no build)
-    docker/docker-build.sh -g --version 5.0.0 --compute-sha
+    docker/docker-build.sh -g -v 5.0.0 -s
 
     # Build + test only ubuntu24.04 amd64
-    docker/docker-build.sh -t --version 5.0.0 --distro ubuntu24.04 --arch amd64
+    docker/docker-build.sh -t -v 5.0.0 -d ubuntu24.04 -a amd64
 
     # Build without updating Dockerfiles
-    docker/docker-build.sh -t --version 5.0.0 --skip-update
+    docker/docker-build.sh -t -v 5.0.0 -S
 
 ENVIRONMENT:
     JFROG_TOKEN             JFrog API token (or Identity Token) for downloading
@@ -390,18 +390,18 @@ function main() {
     -t) mode="test" ; shift ;;
     -p) mode="push" ; shift ;;
     -g | --generate)  full_generate=true       ; shift ;;
-    --version)        VERSION="$2"             ; shift 2 ;;
-    -r | --registry)  REGISTRY_PREFIXES+=("$2") ; shift 2 ;;
-    --distro)         distro_filters+=("$2")   ; shift 2 ;;
-    --arch)           arch_filters+=("$2")     ; shift 2 ;;
-    -u | --packages-url) pkg_url="$2"           ; shift 2 ;;
-    --packages-dir)   packages_dir="$2"        ; shift 2 ;;
-    --deb-base-url)   deb_base_url="$2"        ; shift 2 ;;
-    --rpm-base-url)   rpm_base_url="$2"        ; shift 2 ;;
-    --compute-sha)    compute_sha=true         ; shift ;;
-    --skip-update)    skip_update=true         ; shift ;;
-    --no-cache)       no_cache=true            ; shift ;;
-    --dry-run)        dry_run=true             ; shift ;;
+    -v | --version)       VERSION="$2"             ; shift 2 ;;
+    -r | --registry)      REGISTRY_PREFIXES+=("$2") ; shift 2 ;;
+    -d | --distro)        distro_filters+=("$2")   ; shift 2 ;;
+    -a | --arch)          arch_filters+=("$2")     ; shift 2 ;;
+    -u | --packages-url)  pkg_url="$2"             ; shift 2 ;;
+    --packages-dir)       packages_dir="$2"        ; shift 2 ;;
+    --deb-base-url)       deb_base_url="$2"        ; shift 2 ;;
+    --rpm-base-url)       rpm_base_url="$2"        ; shift 2 ;;
+    -s | --compute-sha)   compute_sha=true         ; shift ;;
+    -S | --skip-update)   skip_update=true         ; shift ;;
+    -n | --no-cache)      no_cache=true            ; shift ;;
+    -N | --dry-run)       dry_run=true             ; shift ;;
     -h | --help)      usage ; exit 0 ;;
     *) log_warn "Unknown option: $1" ; usage ; exit 1 ;;
     esac
