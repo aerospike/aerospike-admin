@@ -8,7 +8,7 @@ set -euo pipefail
 
 JFROG_URL="https://artifact.aerospike.io/artifactory"
 JFROG_KEY_URL="https://aerospike.jfrog.io/artifactory/api/security/keypair/aerospike/public"
-RETRY_TIMEOUT=300
+RETRY_TIMEOUT=1200
 RETRY_INTERVAL=10
 
 install_deb() {

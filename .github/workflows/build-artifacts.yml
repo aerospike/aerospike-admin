@@ -438,9 +438,9 @@ jobs:
           - { host: ubuntu-24.04-arm, distro: el9, container: "redhat/ubi9:9.6" }
     needs:
       - get-version
-      - upload-artifacts-to-jfrog
-    # always() needed because upstream jobs use always(); run after upload (not release bundle)
-    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
+      - docker-deploy
+    # always() needed because upstream jobs use always(); run last so JFrog has time to index packages
+    if: ${{ always() && needs.docker-deploy.result == 'success' }}
     runs-on: ${{ matrix.host }}
     container: ${{ matrix.container }}
     permissions:
