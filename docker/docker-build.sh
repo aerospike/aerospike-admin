@@ -160,16 +160,23 @@ function _emit_test_target() {
 }
 
 # Emit a multi-arch push target block (always linux/amd64 + linux/arm64).
-# _emit_push_target NAME CTX TAG [TAG ...]
+# _emit_push_target NAME CTX LOCAL_PKG_AMD64 LOCAL_PKG_ARM64 TAG [TAG ...]
+# LOCAL_PKG_AMD64/ARM64: basename of pkg file in build context, or "" to use URL download.
 function _emit_push_target() {
-  local name="$1" ctx="$2"
-  shift 2
+  local name="$1" ctx="$2" local_pkg_amd64="$3" local_pkg_arm64="$4"
+  shift 4
   local tags=("$@")
   local n=${#tags[@]}
   echo "target \"${name}\" {"
   echo "  context    = \"${ctx}\""
   echo "  dockerfile = \"Dockerfile\""
   echo "  platforms  = [\"linux/amd64\", \"linux/arm64\"]"
+  if [[ -n "${local_pkg_amd64}" || -n "${local_pkg_arm64}" ]]; then
+    echo "  args = {"
+    [[ -n "${local_pkg_amd64}" ]] && echo "    ASADM_LOCAL_PKG_AMD64 = \"${local_pkg_amd64}\""
+    [[ -n "${local_pkg_arm64}" ]] && echo "    ASADM_LOCAL_PKG_ARM64 = \"${local_pkg_arm64}\""
+    echo "  }"
+  fi
   echo "  tags = ["
   for ((i = 0; i < n; i++)); do
     if [[ $i -lt $((n - 1)) ]]; then
@@ -255,6 +262,18 @@ function generate_bake() {
     for distro in "${ACTIVE_DISTROS[@]}"; do
       local ctx="${distro_ctx[${distro}]}"
       local slug="${distro//\./-}"
+      # Resolve per-arch local packages for this distro (empty = fall back to URL)
+      local push_pkg_amd64="" push_pkg_arm64=""
+      case "${distro}" in
+      ubuntu24.04)
+        push_pkg_amd64="${LOCAL_PKG_UBUNTU_AMD64}"
+        push_pkg_arm64="${LOCAL_PKG_UBUNTU_ARM64}"
+        ;;
+      ubi10)
+        push_pkg_amd64="${LOCAL_PKG_UBI_AMD64}"
+        push_pkg_arm64="${LOCAL_PKG_UBI_ARM64}"
+        ;;
+      esac
       local tags=()
       for reg in "${REGISTRY_PREFIXES[@]}"; do
         if [[ "${multi_distro}" == true ]]; then
@@ -269,7 +288,7 @@ function generate_bake() {
           fi
         fi
       done
-      _emit_push_target "${slug}" "${ctx}" "${tags[@]}"
+      _emit_push_target "${slug}" "${ctx}" "${push_pkg_amd64}" "${push_pkg_arm64}" "${tags[@]}"
       push_target_names+=("${slug}")
     done
 
