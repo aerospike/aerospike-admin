@@ -80,6 +80,24 @@ rpm: prep
 tar: prep
 	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
 
+.PHONY: osx-pkg
+ifeq ($(OS),Darwin)
+osx-pkg: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+else
+osx-pkg:
+	$(error osx-pkg is only supported on macOS (Darwin))
+endif
+
+.PHONY: osx-dmg
+ifeq ($(OS),Darwin)
+osx-dmg: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+else
+osx-dmg:
+	$(error osx-dmg is only supported on macOS (Darwin))
+endif
+
 .PHONY: prep
 prep: one-dir
 	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
