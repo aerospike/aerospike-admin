@@ -353,31 +353,34 @@ jobs:
     needs: [get-version, sign-artifacts]
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.sign-artifacts.result == 'success' }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: audit
 
       - name: Download signed artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: signed-artifacts
 
       - name: Extract package files (flatten paths)
         run: |
+          set -euo pipefail
           mkdir -p deploy-artifacts
           find signed-artifacts/ -type f \( \
             -name '*.deb' -o -name '*.rpm' -o -name '*.tgz' -o \
             -name '*.tar' -o -name '*.dmg' -o -name '*.pkg' -o \
             -name '*.exe' -o -name '*.asc' -o -name '*.sha256' \
           \) -exec cp -t deploy-artifacts/ {} +
-          echo "Deploy artifacts:"
+          count=$(find deploy-artifacts/ -maxdepth 1 -type f | wc -l)
+          echo "Deploy artifacts: ${count} file(s)"
           ls -la deploy-artifacts/
+          [[ ${count} -gt 0 ]] || { echo "ERROR: no deploy artifacts found" >&2; exit 1; }
       - name: Upload deploy artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: deploy-artifacts/

@@ -207,7 +207,9 @@ function test_image() {
   if [[ -n "${expected_version}" ]]; then
     local base_version
     base_version=$(printf '%s' "${expected_version}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
-    if printf '%s' "${output}" | grep -qF "${base_version}"; then
+    if [[ -z "${base_version}" ]]; then
+      log_warn "Could not parse base version from '${expected_version}'; skipping version check"
+    elif printf '%s' "${output}" | grep -qF "${base_version}"; then
       log_success "Version ${expected_version} confirmed in output"
     else
       log_warn "Expected version ${expected_version} not found in output:"

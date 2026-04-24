@@ -492,6 +492,12 @@ function main() {
     exit 1
   fi
 
+  # VERSION is required whenever bake targets are generated (skipped only for -g/dry-run)
+  if [[ -z "${VERSION}" && "${skip_update}" == true && "${generate_only}" == false && "${dry_run}" == false ]]; then
+    log_warn "-v/--version is required when --skip-update is used (bake tags will be empty otherwise)."
+    exit 1
+  fi
+
   # Resolve -u / --packages-url: local dir or remote JFrog base URL
   if [[ -n "${pkg_url}" ]]; then
     if [[ "${pkg_url}" == http://* || "${pkg_url}" == https://* ]]; then
@@ -537,7 +543,7 @@ function main() {
   log_info "=== Generating Bake File ==="
   generate_bake
 
-  # ---- Step 3: Build ----
+  # ---- Step 4: Build ----
   echo ""
   log_info "=== Building Images ==="
   local bake_args=("-f" "${BAKE_FILE}")

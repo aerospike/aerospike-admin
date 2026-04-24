@@ -2,7 +2,7 @@
 set -xeuo pipefail
 
 function build_packages() {
-	if [ "$ENV_DISTRO" = "" ]; then
+	if [ "${ENV_DISTRO:-}" = "" ]; then
 		echo "ENV_DISTRO is not set"
 		return
 	fi

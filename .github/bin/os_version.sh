@@ -62,7 +62,7 @@ main() {
 			distro_id='debian'
 			;;
 		* )
-			error "/etc/issue contained an unsupported linux distibution: $issue"
+			error "/etc/issue contained an unsupported linux distribution: $issue"
 			exit 1
 			;;
 		esac
@@ -79,7 +79,7 @@ main() {
 			distro_version=${debian_version%%.*}
 			;;
 		* )
-			error "/etc/issue contained an unsupported linux distibution: $issue"
+			error "/etc/issue contained an unsupported linux distribution: $issue"
 			exit 1
 			;;
 		esac

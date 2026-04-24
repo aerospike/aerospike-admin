@@ -59,11 +59,12 @@ install_rpm() {
     "gpgkey=${JFROG_KEY_URL}" \
     > /etc/yum.repos.d/aerospike.repo
 
-  local rpm_version end
+  local rpm_version rpm_release end
   rpm_version=$(echo "$PKG_VERSION" | tr '-' '_')
+  rpm_release="${RPM_RELEASE:-1}"
   end=$((SECONDS + RETRY_TIMEOUT))
   while [ $SECONDS -lt $end ]; do
-    if dnf install -y "aerospike-${PACKAGE_NAME}-${rpm_version}-1.${arch}"; then return 0; fi
+    if dnf install -y "aerospike-${PACKAGE_NAME}-${rpm_version}-${rpm_release}.${arch}"; then return 0; fi
     echo "Retrying in ${RETRY_INTERVAL}s..."
     dnf makecache --refresh || true
     sleep "$RETRY_INTERVAL"

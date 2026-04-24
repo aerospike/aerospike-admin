@@ -217,7 +217,6 @@ function install_deps_el8() {
 	dnf module enable -y ruby:2.7
 	yum install -y "https://download.rockylinux.org/pub/rocky/8.10/Devel/$(uname -m)/os/Packages/r/readline-devel-7.0-10.el8.$(uname -m).rpm"
 	dnf -y install $EL8_DEPS
-	gem install --no-document fpm
 	if [ "$(uname -m)" = "x86_64" ]; then
 		curl -L "${CURL_RETRY_OPTS[@]}" https://go.dev/dl/go"$GOLANG_VERSION".linux-amd64.tar.gz -o /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz
 		mkdir -p /opt/golang && tar -zxvf /tmp/go"$GOLANG_VERSION".linux-amd64.tar.gz -C /opt/golang
@@ -303,7 +302,7 @@ function install_deps_el10() {
 	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pipenv /usr/bin/pipenv
 	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip /usr/bin/pip
 	install $HOME/.asdf/installs/python/$PYTHON_VERSION/bin/pip3 /usr/bin/pip3
-	gem install fpm
+	gem install fpm -v 1.17.0
 }
 
 function install_deps_amzn2023() {
