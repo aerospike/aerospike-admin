@@ -573,4 +573,4 @@ jobs:
           docker/docker-build.sh -p -v "${VERSION}" \
             -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local \
-            -u ./deploy-artifacts
+            -u ../deploy-artifacts
