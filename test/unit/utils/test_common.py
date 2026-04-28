@@ -1000,6 +1000,102 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             ),
+            # stop_writes is not triggered by index_used_bytes for flash (uses mounts-budget)
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index_used_bytes": "10",
+                            "index-type": "flash",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "5",
+                            "index-type.mounts-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "index_used_bytes"): {
+                            "metric": "index_used_bytes",
+                            "config": "index-type.mounts-budget",
+                            "stop_writes": False,
+                            "metric_usage": 10,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by index_used_bytes for flash (uses mounts-budget)
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index_used_bytes": "90",
+                            "index-type": "flash",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "5",
+                            "index-type.mounts-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "index_used_bytes"): {
+                            "metric": "index_used_bytes",
+                            "config": "index-type.mounts-budget",
+                            "stop_writes": True,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # stop_writes is triggered by index_used_bytes for pmem (uses mounts-budget)
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index_used_bytes": "100",
+                            "index-type": "pmem",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "5",
+                            "index-type.mounts-budget": "90",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "index_used_bytes"): {
+                            "metric": "index_used_bytes",
+                            "config": "index-type.mounts-budget",
+                            "stop_writes": True,
+                            "metric_usage": 100,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
             # stop_writes is not triggered by set.memory_data_bytes
             create_tc(
                 set_stats={

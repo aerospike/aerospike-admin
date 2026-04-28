@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 @CommandHelp(
     "Displays health summary. If remote server System credentials provided, then it will collect remote system stats and analyse that also. If credentials are not available then it will collect only localhost system statistics. This command is still in beta and its output should not be directly acted upon without further analysis.",
-    short_msg="Displays health summary",
+    "Note: This command is deprecated and is no longer actively maintained. It will be removed in a future release.",
+    short_msg="Displays health summary (deprecated)",
     usage=f"[-dv] [-f <query_file>] [-o <output_file>] [-n <num_snapshots>] [-s <sleep_seconds>] [-oc <output_filter_category>] [-wl <output_filter_warn_level>] [{SSH_MODIFIER_USAGE}]",
     modifiers=(
         ModifierHelp("-f", "Query file path", default="inbuilt health queries."),
@@ -127,6 +128,11 @@ class HealthCheckController(LiveClusterCommandController):
             return await self.cluster.info_health_outliers(nodes=self.nodes)
 
     async def _do_default(self, line):
+        logger.warning(
+            "The 'health' command is deprecated and is no longer actively maintained. "
+            "It will be removed in a future release."
+        )
+
         output_file = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-o",
