@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 @CommandHelp(
     "Displays all lines from cluster logs (collectinfos) matched with input strings.",
-    short_msg="Displays health summary",
+    "Note: This command is deprecated and is no longer actively maintained. It will be removed in a future release.",
+    short_msg="Displays health summary (deprecated)",
     usage="[-dv] [-f <query_file>] [-o <output_file>] [-oc <output_filter_category>] [-wl <output_filter_warn_level>]",
     modifiers=(
         ModifierHelp(
@@ -57,6 +58,11 @@ class HealthCheckController(CollectinfoCommandController):
         self.modifiers = set()
 
     def _do_default(self, line):
+        logger.warning(
+            "The 'health' command is deprecated and is no longer actively maintained. "
+            "It will be removed in a future release."
+        )
+
         output_file = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-o",

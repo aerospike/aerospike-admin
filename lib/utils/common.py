@@ -1647,11 +1647,21 @@ def _format_ns_stop_writes_metrics(
                     namespace=ns,
                 )
 
+            index_type = util.get_value_from_dict(
+                stats, "index-type", default_value=None, return_type=str
+            )
+            is_persisted = index_type in ("flash", "pmem")
+
             metric = "index_used_bytes"
-            config = "indexes-memory-budget"
             usage = util.get_value_from_dict(
                 stats, metric, default_value=None, return_type=int
             )
+
+            if is_persisted:
+                config = "index-type.mounts-budget"
+            else:
+                config = "indexes-memory-budget"
+
             threshold = util.get_value_from_dict(
                 stats, config, default_value=None, return_type=int
             )
