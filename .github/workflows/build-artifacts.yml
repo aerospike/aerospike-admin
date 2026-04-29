@@ -349,6 +349,7 @@ jobs:
       installer-identity: ${{ vars.APPLE_INSTALLER_IDENTITY }}
       gh-workflows-ref: "v3.4.0"
       gh-retention-days: 1
+      notarize: false
     secrets:
       apple-application-cert: ${{ secrets.APPLE_APPLICATION_CERT }}
       apple-installer-cert: ${{ secrets.APPLE_INSTALLER_CERT }}
