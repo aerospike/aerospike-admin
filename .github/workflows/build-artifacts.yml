@@ -350,13 +350,7 @@ jobs:
       installer-identity: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
       gh-workflows-ref: "v3.4.0"
       gh-retention-days: 1
-    secrets:
-      apple-application-cert: ${{ secrets.APPLE_APPLICATION_CERT }}
-      apple-id: ${{ secrets.APPLE_ID }}
-      apple-installer-cert: ${{ secrets.APPLE_INSTALLER_CERT }}
-      apple-cert-password: ${{ secrets.APPLE_CERT_PASSWORD }}
-      apple-notarization-password: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
-      apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+    secrets: inherit
 
   sign-artifacts:
     needs:
@@ -498,7 +492,7 @@ jobs:
             -v "${VERSION}" \
             -d ubuntu24.04 \
             -a ${{ matrix.arch }} \
-            -u ./deploy-artifacts
+            -u ../deploy-artifacts
           SNYK_ARGS=()
           [[ -n "${SNYK_TOKEN:-}" ]] && SNYK_ARGS+=(-s)
           docker/test.sh -v "${VERSION}" \
@@ -563,4 +557,4 @@ jobs:
             -v "${VERSION}" \
             -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local \
-            -u ./deploy-artifacts
+            -u ../deploy-artifacts
