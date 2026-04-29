@@ -344,6 +344,7 @@ jobs:
       contents: read
       id-token: write
     with:
+      sign-mac: false
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
       artifact-glob: "**/*.pkg"
       signing-identity: "Developer ID Application: Aerospike, Inc. (22224RFU67)"
