@@ -345,8 +345,8 @@ jobs:
     with:
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
       artifact-glob: "**/*.pkg"
-      signing-identity: ${{ vars.APPLE_SIGNING_IDENTITY }}
-      installer-identity: ${{ vars.APPLE_INSTALLER_IDENTITY }}
+      signing-identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      installer-identity: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
       gh-workflows-ref: "v3.4.0"
       gh-retention-days: 1
     secrets: inherit
