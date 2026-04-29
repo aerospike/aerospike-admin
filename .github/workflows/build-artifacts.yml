@@ -332,17 +332,42 @@ jobs:
           overwrite: true
           retention-days: 1
 
-  sign-artifacts:
+  notarize-mac-artifacts:
     needs:
       - get-version
       - organize-built-artifacts
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.organize-built-artifacts.result == 'success' }}
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v3.1.1
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-mac-artifacts.yaml@v3.4.0
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
+      artifact-glob: "**/*.pkg"
+      signing-identity: ${{ vars.APPLE_SIGNING_IDENTITY }}
+      installer-identity: ${{ vars.APPLE_INSTALLER_IDENTITY }}
+      gh-workflows-ref: "v3.4.0"
+      gh-retention-days: 1
+    secrets:
+      apple-application-cert: ${{ secrets.APPLE_APPLICATION_CERT }}
+      apple-installer-cert: ${{ secrets.APPLE_INSTALLER_CERT }}
+      apple-cert-password: ${{ secrets.APPLE_CERT_PASSWORD }}
+      apple-id: ${{ secrets.APPLE_ID }}
+      apple-notarization-password: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+      apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+
+  sign-artifacts:
+    needs:
+      - get-version
+      - notarize-mac-artifacts
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.notarize-mac-artifacts.result == 'success' }}
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v3.4.0
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: "v3.1.1"
+      gh-workflows-ref: "v3.4.0"
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
@@ -392,7 +417,7 @@ jobs:
       - organize-signed-artifacts
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.organize-signed-artifacts.result == 'success' }}
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v3.1.1
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v3.4.0
     with:
       jf-project: database
       jf-build-name: "aerospike-asadm"
@@ -404,7 +429,7 @@ jobs:
       dry-run: false
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
-      gh-workflows-ref: "v3.1.1"
+      gh-workflows-ref: "v3.4.0"
 
   create-release-bundle:
     permissions:
@@ -416,7 +441,7 @@ jobs:
       - get-version
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
-    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.1.1
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.4.0
     with:
       jf-project: "database"
       jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }}"
@@ -424,7 +449,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.BUNDLE_VERSION }}
-      gh-workflows-ref: v3.1.1
+      gh-workflows-ref: v3.4.0
       dry-run: false
 
   test-install-from-jfrog-and-execute:
@@ -438,9 +463,9 @@ jobs:
           - { host: ubuntu-24.04-arm, distro: el9, container: "redhat/ubi9:9.6" }
     needs:
       - get-version
-      - docker-deploy
+      - docker-manifest
     # always() needed because upstream jobs use always(); run last so JFrog has time to index packages
-    if: ${{ always() && needs.docker-deploy.result == 'success' }}
+    if: ${{ always() && needs.docker-manifest.result == 'success' }}
     runs-on: ${{ matrix.host }}
     container: ${{ matrix.container }}
     permissions:
@@ -497,11 +522,64 @@ jobs:
           echo "--- asadm version ---"
           asadm --version || true
 
-  docker-deploy:
-    name: Docker deploy (ubuntu24.04)
+  docker-build-arch:
+    name: Docker build & test (${{ matrix.arch }})
     needs: [get-version, create-release-bundle]
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.create-release-bundle.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04,     arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download deploy artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
+          path: ./deploy-artifacts
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      - name: Build and smoke test
+        env:
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set -euo pipefail
+          docker/docker-build.sh -t \
+            -v "${VERSION}" \
+            -d ubuntu24.04 \
+            -a ${{ matrix.arch }} \
+            -u ./deploy-artifacts
+          SNYK_ARGS=()
+          [[ -n "${SNYK_TOKEN:-}" ]] && SNYK_ARGS+=(-s)
+          docker/test.sh -v "${VERSION}" \
+            -d ubuntu24.04 \
+            -a ${{ matrix.arch }} \
+            -c "${SNYK_ARGS[@]+"${SNYK_ARGS[@]}"}"
+
+  docker-manifest:
+    name: Docker build, push & manifest (multi-arch)
+    needs: [get-version, docker-build-arch]
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.docker-build-arch.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -515,7 +593,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Download signed artifacts
+      - name: Download deploy artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
@@ -545,35 +623,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
-      - name: Build Docker image (test mode)
+      - name: Build and push multi-arch image to JFrog
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           set -euo pipefail
-          docker/docker-build.sh -t -v "${VERSION}" \
-            -d ubuntu24.04 \
-            -u ../deploy-artifacts
-
-      - name: Install Snyk CLI
-        run: npm install -g snyk
-
-      - name: Smoke test and Snyk scan Docker images
-        env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          set -euo pipefail
-          docker/test.sh -v "${VERSION}" \
-            -d ubuntu24.04 \
-            -a amd64 -a arm64 \
-            -c -s
-
-      - name: Push Docker image to JFrog
-        env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
-        run: |
-          set -euo pipefail
-          docker/docker-build.sh -p -v "${VERSION}" \
+          docker/docker-build.sh -p \
+            -v "${VERSION}" \
             -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local \
-            -u ../deploy-artifacts
+            -u ./deploy-artifacts
