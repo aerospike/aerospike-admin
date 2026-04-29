@@ -350,13 +350,7 @@ jobs:
       gh-workflows-ref: "v3.4.0"
       gh-retention-days: 1
       notarize: false
-    secrets:
-      apple-application-cert: ${{ secrets.APPLE_APPLICATION_CERT }}
-      apple-installer-cert: ${{ secrets.APPLE_INSTALLER_CERT }}
-      apple-cert-password: ${{ secrets.APPLE_CERT_PASSWORD }}
-      apple-id: ${{ secrets.APPLE_ID }}
-      apple-notarization-password: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
-      apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+    secrets: inherit
 
   sign-artifacts:
     needs:
