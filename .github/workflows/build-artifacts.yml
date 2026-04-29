@@ -345,8 +345,8 @@ jobs:
     with:
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
       artifact-glob: "**/*.pkg"
-      signing-identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      installer-identity: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+      signing-identity: "Developer ID Application: Aerospike, Inc. (22224RFU67)"
+      installer-identity: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
       gh-workflows-ref: "v3.4.0"
       gh-retention-days: 1
     secrets: inherit
