@@ -349,8 +349,6 @@ jobs:
       installer-identity: ${{ vars.APPLE_INSTALLER_IDENTITY }}
       gh-workflows-ref: "v3.4.0"
       gh-retention-days: 1
-      notarize: false
-      dry-run: true
     secrets: inherit
 
   sign-artifacts:
