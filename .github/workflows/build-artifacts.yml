@@ -424,7 +424,7 @@ jobs:
               ;;
             el*|amzn*)
               command -v dnf >/dev/null || yum install -y dnf
-              dnf -y install git ca-certificates
+              dnf -y install git ca-certificates findutils
               ;;
           esac
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -464,11 +464,54 @@ jobs:
       - name: Run smoke tests
         run: bats .github/bin/test/test_execute.bats
 
+  test-install-mac-and-execute:
+    name: Test install & execute (${{ matrix.os }})
+    needs: [get-version, sign-artifacts]
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.sign-artifacts.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-14, macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Install bats
+        run: brew install bats-core
+
+      - name: Checkout (test scripts only)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: .github/bin/test
+          sparse-checkout-cone-mode: false
+
+      - name: Download signed artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
+          path: ./packages
+
+      - name: Install .pkg locally
+        run: |
+          set -euo pipefail
+          pkg=$(find ./packages -name "*-${{ matrix.os }}-${{ runner.arch }}.pkg" | head -1)
+          [[ -n "${pkg}" ]] || { echo "ERROR: no .pkg found for ${{ matrix.os }}-${{ runner.arch }}" >&2; exit 1; }
+          sudo installer -pkg "${pkg}" -target /
+
+      - name: Run smoke tests
+        run: bats .github/bin/test/test_execute.bats
+
   organize-signed-artifacts:
     name: Organize signed artifacts for deploy
-    needs: [get-version, test-install-local-and-execute]
+    needs: [get-version, test-install-local-and-execute, test-install-mac-and-execute]
     # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.test-install-local-and-execute.result == 'success' }}
+    if: ${{ always() && needs.test-install-local-and-execute.result == 'success' && needs.test-install-mac-and-execute.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
