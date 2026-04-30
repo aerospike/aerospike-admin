@@ -374,11 +374,101 @@ jobs:
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
       gpg-key-pass: ${{ secrets.GPG_PASS }}
 
-  organize-signed-artifacts:
-    name: Organize signed artifacts for deploy
+  test-install-local-and-execute:
+    name: Test install & execute (${{ matrix.distro }}, ${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }})
     needs: [get-version, sign-artifacts]
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.sign-artifacts.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ubuntu-24.04, ubuntu-24.04-arm]
+        distro:
+          - el8
+          - el9
+          - el10
+          - amzn2023
+          - debian11
+          - debian12
+          - debian13
+          - ubuntu20.04
+          - ubuntu22.04
+          - ubuntu24.04
+    runs-on: ${{ matrix.host }}
+    container: >-
+      ${{ matrix.distro == 'el8' && 'redhat/ubi8:8.10' ||
+        matrix.distro == 'el9' && 'redhat/ubi9:9.6' ||
+        matrix.distro == 'el10' && 'redhat/ubi10:10.0' ||
+        matrix.distro == 'amzn2023' && 'amazonlinux:2023.9.20251208.0' ||
+        matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
+        matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
+        matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
+        matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
+        matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
+        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20231126.1' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Install prereqs and bats
+        run: |
+          set -euo pipefail
+          case "${{ matrix.distro }}" in
+            ubuntu*|debian*)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update && apt-get install -y git ca-certificates
+              ;;
+            el*|amzn*)
+              command -v dnf >/dev/null || yum install -y dnf
+              dnf -y install git ca-certificates
+              ;;
+          esac
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git clone --depth 1 --branch v1.11.1 \
+            https://github.com/bats-core/bats-core.git /tmp/bats
+          /tmp/bats/install.sh /usr/local
+
+      - name: Checkout (test scripts only)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: .github/bin/test
+          sparse-checkout-cone-mode: false
+
+      - name: Download artifact for this distro/arch
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
+          path: ./packages
+
+      - name: Install package locally
+        run: |
+          set -euo pipefail
+          case "${{ matrix.distro }}" in
+            ubuntu*|debian*)
+              export DEBIAN_FRONTEND=noninteractive
+              pkg=$(find ./packages -name "*.deb" | head -1)
+              [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found" >&2; exit 1; }
+              apt-get install -y "${pkg}"
+              ;;
+            el*|amzn*)
+              pkg=$(find ./packages -name "*.rpm" | head -1)
+              [[ -n "${pkg}" ]] || { echo "ERROR: no .rpm found" >&2; exit 1; }
+              dnf install -y "${pkg}"
+              ;;
+          esac
+
+      - name: Run smoke tests
+        run: bats .github/bin/test/test_execute.bats
+
+  organize-signed-artifacts:
+    name: Organize signed artifacts for deploy
+    needs: [get-version, test-install-local-and-execute]
+    # always() needed because upstream jobs use always()
+    if: ${{ always() && needs.test-install-local-and-execute.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
