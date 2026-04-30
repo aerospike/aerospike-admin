@@ -2,3 +2,4 @@
 set -euo pipefail
 
 asadm --help
+asinfo --help

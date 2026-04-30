@@ -310,7 +310,7 @@ jobs:
   organize-built-artifacts:
     needs: [build-artifacts, build-mac-artifacts, get-version]
     # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.build-artifacts.result == 'success' && (needs.build-mac-artifacts.result == 'success' || needs.build-mac-artifacts.result == 'skipped') }}
+    if: ${{ always() && needs.build-artifacts.result == 'success' && needs.build-mac-artifacts.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -414,56 +414,43 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Install prereqs and bats
+      - name: Install prereqs
         run: |
           set -euo pipefail
           case "${{ matrix.distro }}" in
-            ubuntu*|debian*)
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update && apt-get install -y git ca-certificates
-              ;;
             el*|amzn*)
-              command -v dnf >/dev/null || yum install -y dnf
-              dnf -y install git ca-certificates findutils
+              dnf -y install findutils
               ;;
           esac
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git clone --depth 1 --branch v1.11.1 \
-            https://github.com/bats-core/bats-core.git /tmp/bats
-          /tmp/bats/install.sh /usr/local
 
-      - name: Checkout (test scripts only)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          sparse-checkout: .github/bin/test
-          sparse-checkout-cone-mode: false
-
-      - name: Download artifact for this distro/arch
+      - name: Download signed artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
+          name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: ./packages
 
       - name: Install package locally
         run: |
           set -euo pipefail
+          arch="${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}"
           case "${{ matrix.distro }}" in
             ubuntu*|debian*)
               export DEBIAN_FRONTEND=noninteractive
-              pkg=$(find ./packages -name "*.deb" | head -1)
-              [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found" >&2; exit 1; }
-              dpkg -i "${pkg}" || true
-              apt-get install -f -y
+              pkg=$(find ./packages -name "*_${{ matrix.distro }}_*${arch}*.deb" | head -1)
+              [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
+              apt-get install -y "${pkg}"
               ;;
             el*|amzn*)
-              pkg=$(find ./packages -name "*.rpm" | head -1)
-              [[ -n "${pkg}" ]] || { echo "ERROR: no .rpm found" >&2; exit 1; }
+              pkg=$(find ./packages -name "*.${{ matrix.distro }}.*${arch}*.rpm" | head -1)
+              [[ -n "${pkg}" ]] || { echo "ERROR: no .rpm found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
               dnf install -y "${pkg}"
               ;;
           esac
 
-      - name: Run smoke tests
-        run: bats .github/bin/test/test_execute.bats
+      - name: Verify installation
+        run: |
+          asadm --help
+          asinfo --help
 
   test-install-mac-and-execute:
     name: Test install & execute (${{ matrix.os }})
@@ -483,15 +470,6 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Install bats
-        run: brew install bats-core
-
-      - name: Checkout (test scripts only)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          sparse-checkout: .github/bin/test
-          sparse-checkout-cone-mode: false
-
       - name: Download signed artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -505,8 +483,10 @@ jobs:
           [[ -n "${pkg}" ]] || { echo "ERROR: no .pkg found for ${{ matrix.os }}-${{ runner.arch }}" >&2; exit 1; }
           sudo installer -pkg "${pkg}" -target /
 
-      - name: Run smoke tests
-        run: bats .github/bin/test/test_execute.bats
+      - name: Verify installation
+        run: |
+          asadm --help
+          asinfo --help
 
   organize-signed-artifacts:
     name: Organize signed artifacts for deploy
