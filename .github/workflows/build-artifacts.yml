@@ -350,13 +350,7 @@ jobs:
       installer-identity: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
       gh-workflows-ref: "v3.4.0"
       gh-retention-days: 1
-    secrets:
-      apple-application-cert: ${{ secrets.APPLE_APPLICATION_CERT }}
-      apple-id: ${{ secrets.APPLE_ID }}
-      apple-installer-cert: ${{ secrets.APPLE_INSTALLER_CERT }}
-      apple-cert-password: ${{ secrets.APPLE_CERT_PASSWORD }}
-      apple-notarization-password: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
-      apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+    secrets: inherit
 
   sign-artifacts:
     needs:
@@ -438,10 +432,11 @@ jobs:
       id-token: write
       attestations: write
     needs:
-      - upload-artifacts-to-jfrog
       - get-version
+      - upload-artifacts-to-jfrog
+      - docker-manifest
     # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' }}
+    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' && needs.docker-manifest.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.4.0
     with:
       jf-project: "database"
@@ -455,9 +450,9 @@ jobs:
 
   docker-build-arch:
     name: Docker build & test (${{ matrix.arch }})
-    needs: [get-version, create-release-bundle]
+    needs: [get-version, organize-signed-artifacts]
     # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.create-release-bundle.result == 'success' }}
+    if: ${{ always() && needs.organize-signed-artifacts.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
