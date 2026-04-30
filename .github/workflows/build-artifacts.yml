@@ -374,7 +374,7 @@ jobs:
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
       gpg-key-pass: ${{ secrets.GPG_PASS }}
 
-  test-install-local-and-execute:
+  test-install-linux-and-execute:
     name: Test install & execute (${{ matrix.distro }}, ${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }})
     needs: [get-version, sign-artifacts]
     # always() needed because upstream jobs use always()
