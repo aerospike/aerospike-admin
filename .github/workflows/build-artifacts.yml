@@ -452,7 +452,8 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               pkg=$(find ./packages -name "*.deb" | head -1)
               [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found" >&2; exit 1; }
-              dpkg -i "${pkg}" 2>/dev/null; apt-get install -f -y
+              dpkg -i "${pkg}" || true
+              apt-get install -f -y
               ;;
             el*|amzn*)
               pkg=$(find ./packages -name "*.rpm" | head -1)
