@@ -509,9 +509,9 @@ jobs:
 
   organize-signed-artifacts:
     name: Organize signed artifacts for deploy
-    needs: [get-version, test-install-local-and-execute, test-install-mac-and-execute]
+    needs: [get-version, test-install-linux-and-execute, test-install-mac-and-execute]
     # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.test-install-local-and-execute.result == 'success' && needs.test-install-mac-and-execute.result == 'success' }}
+    if: ${{ always() && needs.test-install-linux-and-execute.result == 'success' && needs.test-install-mac-and-execute.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
