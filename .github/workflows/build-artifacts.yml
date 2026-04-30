@@ -25,6 +25,8 @@ jobs:
   validate-inputs:
     name: Validate workflow inputs
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -167,7 +169,7 @@ jobs:
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
         matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
-        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20231126.1' }}
+        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' }}
     permissions:
       contents: read
     steps:
@@ -319,7 +321,7 @@ jobs:
           egress-policy: audit
 
       - name: Download All Matrix Artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: build-artifacts
           pattern: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}*
@@ -405,7 +407,7 @@ jobs:
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
         matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
-        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20231126.1' }}
+        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' }}
     permissions:
       contents: read
     steps:
@@ -438,6 +440,7 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               pkg=$(find ./packages -name "*_${{ matrix.distro }}_*${arch}*.deb" | head -1)
               [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
+              apt-get update
               apt-get install -y "${pkg}"
               ;;
             el*|amzn*)
@@ -494,6 +497,8 @@ jobs:
     # always() needed because upstream jobs use always()
     if: ${{ always() && needs.test-install-linux-and-execute.result == 'success' && needs.test-install-mac-and-execute.result == 'success' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -501,7 +506,7 @@ jobs:
           egress-policy: audit
 
       - name: Download signed artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: signed-artifacts
@@ -593,7 +598,7 @@ jobs:
             -a ${{ matrix.arch }} \
             -u ../deploy-artifacts
           SNYK_ARGS=()
-          [[ -n "${SNYK_TOKEN:-}" ]] && SNYK_ARGS+=(-s)
+          if [[ -n "${SNYK_TOKEN:-}" ]]; then SNYK_ARGS+=(-s); fi
           docker/test.sh -v "${VERSION}" \
             -d ubuntu24.04 \
             -a ${{ matrix.arch }} \

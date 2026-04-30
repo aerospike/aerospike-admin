@@ -185,8 +185,8 @@ function _emit_push_target() {
   echo "  platforms  = [\"linux/amd64\", \"linux/arm64\"]"
   if [[ -n "${local_pkg_amd64}" || -n "${local_pkg_arm64}" ]]; then
     echo "  args = {"
-    [[ -n "${local_pkg_amd64}" ]] && echo "    ASADM_LOCAL_PKG_AMD64 = \"${local_pkg_amd64}\""
-    [[ -n "${local_pkg_arm64}" ]] && echo "    ASADM_LOCAL_PKG_ARM64 = \"${local_pkg_arm64}\""
+    if [[ -n "${local_pkg_amd64}" ]]; then echo "    ASADM_LOCAL_PKG_AMD64 = \"${local_pkg_amd64}\""; fi
+    if [[ -n "${local_pkg_arm64}" ]]; then echo "    ASADM_LOCAL_PKG_ARM64 = \"${local_pkg_arm64}\""; fi
     echo "  }"
   fi
   echo "  tags = ["
@@ -253,7 +253,7 @@ function _emit_group() {
 function run_manifest_mode() {
   log_info "=== Creating multi-arch manifest (imagetools) ==="
   local multi_distro=false
-  [[ ${#ACTIVE_DISTROS[@]} -gt 1 ]] && multi_distro=true
+  if [[ ${#ACTIVE_DISTROS[@]} -gt 1 ]]; then multi_distro=true; fi
 
   for distro in "${ACTIVE_DISTROS[@]}"; do
     for reg in "${REGISTRY_PREFIXES[@]}"; do
@@ -586,7 +586,7 @@ function main() {
       for __b in "${__deduped[@]+"${__deduped[@]}"}"; do
         if [[ "${__a}" == "${__b}" ]]; then __dup=true; break; fi
       done
-      [[ "${__dup}" == false ]] && __deduped+=("${__a}")
+      if [[ "${__dup}" == false ]]; then __deduped+=("${__a}"); fi
     done
     ACTIVE_ARCHES=("${__deduped[@]}")
   fi
