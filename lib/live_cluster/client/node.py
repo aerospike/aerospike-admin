@@ -4098,9 +4098,9 @@ class Node(AsyncObject):
         """
         result = await self._admin_cadmin(ASSocket.query_users, (), self.ip)
         logger.debug(
-            "admin_query_users node=%s user_count=%s",
+            "admin_query_users node=%s response=%s",
             self.ip,
-            len(result) if isinstance(result, dict) else result,
+            result,
         )
         return result
 
@@ -4114,10 +4114,10 @@ class Node(AsyncObject):
         """
         result = await self._admin_cadmin(ASSocket.query_user, [user], self.ip)
         logger.debug(
-            "admin_query_user node=%s user=%s role_count=%s",
+            "admin_query_user node=%s user=%s response=%s",
             self.ip,
             user,
-            len(result.get(user, [])) if isinstance(result, dict) else result,
+            result,
         )
         return result
 
@@ -4238,10 +4238,9 @@ class Node(AsyncObject):
         """
         result = await self._admin_cadmin(ASSocket.query_roles, (), self.ip)
         logger.debug(
-            "admin_query_roles node=%s role_count=%s roles=%s",
+            "admin_query_roles node=%s response=%s",
             self.ip,
-            len(result) if isinstance(result, dict) else result,
-            list(result.keys()) if isinstance(result, dict) else None,
+            result,
         )
         return result
 
@@ -4257,22 +4256,12 @@ class Node(AsyncObject):
         ASProtocolError on fail
         """
         result = await self._admin_cadmin(ASSocket.query_role, [role], self.ip)
-        if isinstance(result, dict) and role in result:
-            role_data = result[role]
-            logger.debug(
-                "admin_query_role node=%s role=%s privilege_count=%s whitelist_count=%s",
-                self.ip,
-                role,
-                len(role_data.get("privileges", [])),
-                len(role_data.get("whitelist", [])),
-            )
-        else:
-            logger.debug(
-                "admin_query_role node=%s role=%s response=%s",
-                self.ip,
-                role,
-                result,
-            )
+        logger.debug(
+            "admin_query_role node=%s role=%s response=%s",
+            self.ip,
+            role,
+            result,
+        )
         return result
 
     ############################################################################
