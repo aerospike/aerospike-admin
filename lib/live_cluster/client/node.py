@@ -2909,7 +2909,9 @@ class Node(AsyncObject):
             if dcs == "":
                 return []
 
-            return client_util.info_to_list(dcs, delimiter=",")
+            result = client_util.info_to_list(dcs, delimiter=",")
+            logger.debug("info_dcs node=%s response=%s", self.ip, result)
+            return result
 
         dcs = await self._info("dcs")
         if dcs.startswith("ERROR") or dcs.startswith("error"):
@@ -4096,9 +4098,9 @@ class Node(AsyncObject):
         """
         result = await self._admin_cadmin(ASSocket.query_users, (), self.ip)
         logger.debug(
-            "admin_query_users node=%s response=%s",
+            "admin_query_users node=%s user_count=%s",
             self.ip,
-            result,
+            len(result) if isinstance(result, dict) else result,
         )
         return result
 
@@ -4112,10 +4114,10 @@ class Node(AsyncObject):
         """
         result = await self._admin_cadmin(ASSocket.query_user, [user], self.ip)
         logger.debug(
-            "admin_query_user node=%s user=%s response=%s",
+            "admin_query_user node=%s user=%s role_count=%s",
             self.ip,
             user,
-            result,
+            len(result.get(user, [])) if isinstance(result, dict) else result,
         )
         return result
 
@@ -4179,17 +4181,9 @@ class Node(AsyncObject):
         whitelist: list[string]
         Returns: 0 (ASResponse.OK) on success, ASProtocolError on fail
         """
-        result = await self._admin_cadmin(
+        return await self._admin_cadmin(
             ASSocket.set_whitelist, (role, whitelist), self.ip
         )
-        logger.debug(
-            "admin_set_whitelist node=%s role=%s whitelist=%s response=%s",
-            self.ip,
-            role,
-            whitelist,
-            result,
-        )
-        return result
 
     @async_return_exceptions
     async def admin_delete_whitelist(self, role):
@@ -4244,9 +4238,10 @@ class Node(AsyncObject):
         """
         result = await self._admin_cadmin(ASSocket.query_roles, (), self.ip)
         logger.debug(
-            "admin_query_roles node=%s response=%s",
+            "admin_query_roles node=%s role_count=%s roles=%s",
             self.ip,
-            result,
+            len(result) if isinstance(result, dict) else result,
+            list(result.keys()) if isinstance(result, dict) else None,
         )
         return result
 
@@ -4262,12 +4257,22 @@ class Node(AsyncObject):
         ASProtocolError on fail
         """
         result = await self._admin_cadmin(ASSocket.query_role, [role], self.ip)
-        logger.debug(
-            "admin_query_role node=%s role=%s response=%s",
-            self.ip,
-            role,
-            result,
-        )
+        if isinstance(result, dict) and role in result:
+            role_data = result[role]
+            logger.debug(
+                "admin_query_role node=%s role=%s privilege_count=%s whitelist_count=%s",
+                self.ip,
+                role,
+                len(role_data.get("privileges", [])),
+                len(role_data.get("whitelist", [])),
+            )
+        else:
+            logger.debug(
+                "admin_query_role node=%s role=%s response=%s",
+                self.ip,
+                role,
+                result,
+            )
         return result
 
     ############################################################################
