@@ -1096,6 +1096,81 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             ),
+            # flash without index-type.mounts-budget produces no entry
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index_used_bytes": "90",
+                            "index-type": "flash",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"indexes-memory-budget": "5"}},
+                },
+                expected={"1.1.1.1": {}},
+            ),
+            # shmem is treated as non-persisted (uses indexes-memory-budget)
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "true",
+                            "index_used_bytes": "90",
+                            "index-type": "shmem",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "indexes-memory-budget": "90",
+                            "index-type.mounts-budget": "1000",
+                        }
+                    },
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "index_used_bytes"): {
+                            "metric": "index_used_bytes",
+                            "config": "indexes-memory-budget",
+                            "stop_writes": True,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
+            # flash entry recorded with stop_writes=False when ns stop_writes is "false"
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "ns1": {
+                            "stop_writes": "false",
+                            "index_used_bytes": "90",
+                            "index-type": "flash",
+                        }
+                    },
+                },
+                ns_config={
+                    "1.1.1.1": {"ns1": {"index-type.mounts-budget": "90"}},
+                },
+                expected={
+                    "1.1.1.1": {
+                        ("ns1", None, "index_used_bytes"): {
+                            "metric": "index_used_bytes",
+                            "config": "index-type.mounts-budget",
+                            "stop_writes": False,
+                            "metric_usage": 90,
+                            "metric_threshold": 90,
+                            "namespace": "ns1",
+                        },
+                    }
+                },
+            ),
             # stop_writes is not triggered by set.memory_data_bytes
             create_tc(
                 set_stats={
