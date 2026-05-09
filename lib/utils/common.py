@@ -1127,11 +1127,14 @@ def create_summary(
             }
             summary_dict["NAMESPACES"][ns]["memory_data_and_indexes"] = ns_mem_usage
 
-        index_type = list(
-            util.get_value_from_second_level_of_dict(
-                ns_stats, ("index-type",), default_value="", return_type=str
-            ).values()
-        )[0]
+        index_type = next(
+            iter(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats, ("index-type",), default_value="", return_type=str
+                ).values()
+            ),
+            "",
+        )
 
         # Primary Index
         index_size = sum(
@@ -1194,11 +1197,14 @@ def create_summary(
                 summary_dict["NAMESPACES"][ns]["index_type"] = index_type
 
         # Secondary Index — separate summary line per storage type.
-        sindex_type = list(
-            util.get_value_from_second_level_of_dict(
-                ns_stats, ("sindex-type",), default_value="", return_type=str
-            ).values()
-        )[0]
+        sindex_type = next(
+            iter(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats, ("sindex-type",), default_value="", return_type=str
+                ).values()
+            ),
+            "",
+        )
 
         sindex_size = sum(
             util.get_value_from_second_level_of_dict(
@@ -1869,31 +1875,37 @@ def _format_ns_stop_writes_metrics(
                 pi_persisted = stats.get("index-type", "") in ("flash", "pmem")
                 si_persisted = stats.get("sindex-type", "") in ("flash", "pmem")
 
-                index_mem_sz = (
+                index_mem_used = (
                     0
                     if pi_persisted
                     else util.get_value_from_dict(
                         stats, "index_used_bytes", default_value=0, return_type=int
                     )
                 )
-                set_index_sz = util.get_value_from_dict(
+                set_index_used = util.get_value_from_dict(
                     stats, "set_index_used_bytes", default_value=0, return_type=int
                 )
-                sindex_mem_sz = (
+                sindex_mem_used = (
                     0
                     if si_persisted
                     else util.get_value_from_dict(
                         stats, "sindex_used_bytes", default_value=0, return_type=int
                     )
                 )
-                ixs_sz = index_mem_sz + set_index_sz + sindex_mem_sz
+                ixs_used = index_mem_used + set_index_used + sindex_mem_used
 
+                # Synthetic admin-side metric mirroring the server's
+                # eval_stop_writes() ixs_sz: the sum that the server actually
+                # compares against `indexes-memory-budget`. Not a server-emitted
+                # stat — there is `indexes_memory_used_pct` (a ratio) but no
+                # bytes equivalent, so we compute it here for the stop-writes
+                # entry to expose the threshold in the same units (bytes).
                 metric = "indexes_memory_used"
-                sw = _is_stop_writes_cause(ixs_sz, threshold, stop_writes)
+                sw = _is_stop_writes_cause(ixs_used, threshold, stop_writes)
                 _create_stop_writes_entry(
                     stop_writes_metrics[node],
                     metric,
-                    ixs_sz,
+                    ixs_used,
                     sw,
                     threshold,
                     config=config,
