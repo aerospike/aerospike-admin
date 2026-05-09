@@ -774,21 +774,21 @@ class CliViewTest(unittest.TestCase):
                 "used_pct": 4,
                 "avail_pct": 5,
             },
-            "memory": {
+            "data_memory": {
                 "total": 1,
                 "used": 2,
                 "avail": 3,
                 "used_pct": 4,
                 "avail_pct": 5,
             },
-            "device": {
+            "data_device": {
                 "total": 1,
                 "used": 2,
                 "avail": 3,
                 "used_pct": 4,
                 "avail_pct": 5,
             },
-            "pmem": {
+            "data_pmem": {
                 "total": 1,
                 "used": 2,
                 "avail": 3,
@@ -821,9 +821,9 @@ class CliViewTest(unittest.TestCase):
    7.   Flash Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    8.   Shmem Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    9.   Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   10.  Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   11.  Device                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   12.  Pmem                     :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   10.  Data Memory              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   11.  Data Device              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   12.  Data Pmem                :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    13.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    14.  Active Namespaces        :  2 of 2
    15.  Active Features          :  Compression, Depression
@@ -877,21 +877,21 @@ class CliViewTest(unittest.TestCase):
                     "used_pct": 4,
                     "avail_pct": 5,
                 },
-                "memory": {
+                "data_memory": {
                     "total": 5,
                     "used": 2,
                     "avail": 3,
                     "used_pct": 4,
                     "avail_pct": 5,
                 },
-                "device": {
+                "data_device": {
                     "total": 6,
                     "used": 2,
                     "avail": 3,
                     "used_pct": 4,
                     "avail_pct": 5,
                 },
-                "pmem": {
+                "data_pmem": {
                     "total": 7,
                     "used": 2,
                     "avail": 3,
@@ -948,21 +948,21 @@ class CliViewTest(unittest.TestCase):
                     "used_pct": 4,
                     "avail_pct": 5,
                 },
-                "memory": {
+                "data_memory": {
                     "total": 5,
                     "used": 2,
                     "avail": 3,
                     "used_pct": 4,
                     "avail_pct": 5,
                 },
-                "device": {
+                "data_device": {
                     "total": 6,
                     "used": 2,
                     "avail": 3,
                     "used_pct": 4,
                     "avail_pct": 5,
                 },
-                "pmem": {
+                "data_pmem": {
                     "total": 7,
                     "used": 2,
                     "avail": 3,
@@ -995,9 +995,9 @@ class CliViewTest(unittest.TestCase):
    3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   6.   Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   7.   Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   8.   Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    10.  Replication Factor       :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
@@ -1012,9 +1012,9 @@ class CliViewTest(unittest.TestCase):
    3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   6.   Memory                   :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   7.   Device                   :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   8.   Pmem                     :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   6.   Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   7.   Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   8.   Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
    10.  Replication Factor       :  1
    11.  Post-Write-Queue Hit-Rate:  1.000  
