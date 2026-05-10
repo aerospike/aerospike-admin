@@ -342,17 +342,17 @@ stop_used_bytes = select "indexes-memory-budget" as "stats" from NAMESPACE.CONFI
 budget_configured = do stop_used_bytes > 0;
 memory_check = do budget_configured && is_not_persisted;
 critical = do used_bytes <= stop_used_bytes;
-ASSERT(critical, True, "High namespace index memory used pct (stop-write enabled).", "OPERATIONS", CRITICAL,
+ASSERT(critical, True, "High namespace index memory used bytes (stop-write enabled).", "OPERATIONS", CRITICAL,
 				"Listed namespace[s] have higher than normal memory usage for indexes. Probable cause - namespace size misconfiguration.",
-				"Critical Namespace index memory used pct check.", memory_check);
+				"Critical Namespace index memory used bytes check.", memory_check);
 
 mounts_budget = select "index-type.mounts-budget" as "stats" from NAMESPACE.CONFIG save;
 mounts_budget_configured = do mounts_budget > 0;
 persisted_check = do mounts_budget_configured && is_persisted;
 mounts_critical = do used_bytes <= mounts_budget;
-ASSERT(mounts_critical, True, "High namespace index mounts used pct.", "OPERATIONS", CRITICAL,
+ASSERT(mounts_critical, True, "High namespace index mounts used bytes.", "OPERATIONS", CRITICAL,
 				"Listed namespace[s] have higher than normal index usage on mounted storage. Probable cause - namespace size misconfiguration.",
-				"Critical Namespace index mounts used pct check.", persisted_check);
+				"Critical Namespace index mounts used bytes check.", persisted_check);
 
 SET CONSTRAINT VERSION >= 7.0.0;
 used = select "data_used_pct" as "stats" from NAMESPACE.STATISTICS save;
