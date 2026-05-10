@@ -1027,7 +1027,12 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    where=None,
+                    **self.controller.mods,
                 ),
             ]
         )
@@ -1045,9 +1050,21 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    where=None,
+                    **self.controller.mods,
                 ),
-                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "Scan Jobs",
+                    self.cluster_mock,
+                    "scans",
+                    flip_output=False,
+                    where=None,
+                    **self.controller.mods,
+                ),
             ]
         )
 
@@ -1065,13 +1082,27 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    where=None,
+                    **self.controller.mods,
                 ),
-                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "Scan Jobs",
+                    self.cluster_mock,
+                    "scans",
+                    flip_output=False,
+                    where=None,
+                    **self.controller.mods,
+                ),
                 call(
                     "SIndex Builder Jobs",
                     self.cluster_mock,
                     "sindex-builder",
+                    flip_output=False,
+                    where=None,
                     **self.controller.mods,
                 ),
             ]
@@ -1088,9 +1119,93 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    where=None,
+                    **self.controller.mods,
                 ),
             ]
+        )
+
+    async def test_queries_with_flip(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "-flip"])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=True,
+            where=None,
+            **self.controller.mods,
+        )
+
+    async def test_queries_with_like(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "like", "status"])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            where=None,
+            **self.controller.mods,
+        )
+        self.assertIn("status", self.controller.mods["like"])
+
+    async def test_queries_with_for(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "for", "test", "myset"])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            where=None,
+            **self.controller.mods,
+        )
+        self.assertEqual(self.controller.mods["for"], ["test", "myset"])
+
+    async def test_queries_with_where(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "-where", "status=active"])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            where=["status=active"],
+            **self.controller.mods,
+        )
+
+    async def test_queries_with_multiple_where(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(
+            ["queries", "-where", "ns=test", "-where", "status=active"]
+        )
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            where=["ns=test", "status=active"],
+            **self.controller.mods,
         )
 
     async def test_scans(self):
@@ -1102,7 +1217,14 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.getter_mock.get_scans.assert_called_with(nodes="all")
         self.view_mock.show_jobs.assert_has_calls(
             [
-                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "Scan Jobs",
+                    self.cluster_mock,
+                    "scans",
+                    flip_output=False,
+                    where=None,
+                    **self.controller.mods,
+                ),
             ]
         )
 
@@ -1131,6 +1253,8 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
                     "SIndex Builder Jobs",
                     self.cluster_mock,
                     "sindex-builder",
+                    flip_output=False,
+                    where=None,
                     **self.controller.mods,
                 ),
             ]
