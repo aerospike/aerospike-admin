@@ -14,12 +14,12 @@
 
 import asyncio
 import copy
+import re
 from typing import Iterable, Optional
 from lib.base_controller import ShellException
 from lib.base_get_controller import BaseGetConfigController
 
 from lib.utils import common, util, constants
-from lib.utils.constants import Modifiers
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
 
@@ -1172,7 +1172,7 @@ class GetUserAgentsController:
 
 
 def filter_jobs(jobs_data, for_mods=None, where=None):
-    """Filter per-host job dicts by namespace/set (for_mods) and field=value substring (where).
+    """Filter per-host job dicts by namespace/set (for_mods) and field=regex (where).
 
     Mutates and returns jobs_data. Empty hosts are kept (rendered as no rows).
     Returns ``jobs_data`` unchanged when it is None (e.g. a collectinfo capture
@@ -1194,7 +1194,11 @@ def filter_jobs(jobs_data, for_mods=None, where=None):
     if where:
         for clause in where:
             field, _, pattern = clause.partition("=")
-            where_compiled.append((field, util.compile_likes([pattern])))
+            try:
+                compiled = util.compile_likes([pattern])
+            except re.error as e:
+                raise ShellException(f"invalid -where regex in '{clause}': {e}")
+            where_compiled.append((field, compiled))
 
     for host, host_jobs in list(jobs_data.items()):
         if not isinstance(host_jobs, dict):
@@ -1241,8 +1245,14 @@ def parse_jobs_mods(line, modifiers, mods):
             modifiers=modifiers,
             mods=mods,
         )
-        if w is None or "=" not in w:
-            raise ShellException("invalid -where clause: expected <field>=<pattern>")
+        if w is None:
+            raise ShellException(
+                "invalid -where clause: missing <field>=<pattern> value"
+            )
+        if "=" not in w:
+            raise ShellException(
+                f"invalid -where clause: '{w}' — expected <field>=<pattern>"
+            )
         where.append(w)
 
     return flip_output, (where or None)

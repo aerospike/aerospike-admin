@@ -964,6 +964,20 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
             {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
         )
 
+    async def test_get_query_invalid_regex_raises_shell_exception(self):
+        # Malformed regex like `-where status=(` must surface a ShellException
+        # naming the offending clause — not crash with re.error.
+        from lib.base_controller import ShellException
+
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}
+        }
+
+        with self.assertRaises(ShellException) as ctx:
+            await self.controller.get_query(where=["status=("])
+
+        self.assertIn("status=(", str(ctx.exception))
+
     async def test_get_query_where_nonexistent_field_filters_all(self):
         # A -where clause on a field that no job has should filter every row out.
         # Documents current behavior so an unintended change (e.g. erroring on

@@ -322,7 +322,7 @@ flip_jobs_modifier_help = ModifierHelp(
 )
 where_jobs_modifier_help = ModifierHelp(
     "-where",
-    "Filter jobs by <field>=<value> substring match. Repeatable; multiple clauses AND together. E.g. -where status=active",
+    "Filter jobs by <field>=<regex>. Plain text matches as a substring; regex metacharacters (^ $ . * etc.) are supported. Repeatable; multiple clauses AND together. E.g. -where status=active",
 )
 like_jobs_modifier_help = ModifierHelp(
     Modifiers.LIKE,
@@ -332,7 +332,7 @@ for_jobs_modifier_help = ModifierHelp(
     Modifiers.FOR,
     "Filter by namespace [and set] substring match",
 )
-jobs_usage_extras = f"[--flip] [-where <field>=<pattern> [...]] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{Modifiers.LIKE} <field-substring>]"
+jobs_usage_extras = f"[--flip] [-where <field>=<regex> [...]] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{Modifiers.LIKE} <field-substring>]"
 
 
 @CommandHelp(
