@@ -1349,7 +1349,6 @@ class CliView(object):
         like=None,
         with_=None,
         flip_output=False,
-        where=None,
         **ignore,
     ):
         if jobs_data is None:
@@ -1359,42 +1358,15 @@ class CliView(object):
         title = "{}{}".format(title, title_timestamp)
 
         filtered_data = dict(jobs_data)
-        for_mods = ignore.get("for", [])
 
-        for host in list(filtered_data.keys()):
-            host_data = filtered_data[host]
+        for host, host_data in jobs_data.items():
             if isinstance(host_data, ASInfoError):
                 del filtered_data[host]
                 continue
-
             if trid:
-                for id in list(host_data.keys()):
+                for id in dict(host_data):
                     if id not in trid:
                         del filtered_data[host][id]
-
-            if for_mods:
-                ns_pattern = (
-                    util.compile_likes([for_mods[0]]) if len(for_mods) > 0 else None
-                )
-                set_pattern = (
-                    util.compile_likes([for_mods[1]]) if len(for_mods) > 1 else None
-                )
-                for id in list(filtered_data[host].keys()):
-                    job = filtered_data[host][id]
-                    if ns_pattern and not ns_pattern.search(str(job.get("ns", ""))):
-                        del filtered_data[host][id]
-                        continue
-                    if set_pattern and not set_pattern.search(str(job.get("set", ""))):
-                        del filtered_data[host][id]
-
-            if where:
-                for clause in where:
-                    field, pattern = clause.split("=", 1)
-                    pat = util.compile_likes([pattern])
-                    for id in list(filtered_data[host].keys()):
-                        val = str(filtered_data[host][id].get(field, ""))
-                        if not pat.search(val):
-                            del filtered_data[host][id]
 
         if not filtered_data:
             return

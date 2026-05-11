@@ -20,6 +20,7 @@ from lib.collectinfo_analyzer.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )
+from lib.live_cluster.get_controller import filter_jobs
 from lib.utils import common, constants, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -89,22 +90,22 @@ flip_config_modifier = ModifierHelp(
     "Flip output table to show Nodes on Y axis and config on X axis.",
 )
 flip_jobs_modifier_help = ModifierHelp(
-    "-flip",
-    "Transpose output so each job is a row instead of a column.",
+    "--flip",
+    "Flip output table to show fields on Y axis and jobs on X axis.",
 )
 where_jobs_modifier_help = ModifierHelp(
     "-where",
-    "Keep only jobs where <field>=<pattern> (regex). Repeatable; multiple clauses AND together. E.g. -where status=active",
-    default="None",
+    "Filter jobs by <field>=<substring-regex>. Repeatable; multiple clauses AND together. E.g. -where status=active",
 )
 like_jobs_modifier_help = ModifierHelp(
     Modifiers.LIKE,
-    'After -flip, project to fields matching regex. E.g. like "^(Node|Namespace|Type|status)$"',
+    "Filter by field-name substring match",
 )
 for_jobs_modifier_help = ModifierHelp(
     Modifiers.FOR,
-    "Filter by namespace [and set]. E.g. for test myset",
+    "Filter by namespace [and set] substring match",
 )
+jobs_usage_extras = f"[--flip] [-where <field>=<pattern> [...]] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{Modifiers.LIKE} <field-substring>]"
 
 
 @CommandHelp(
@@ -1687,10 +1688,16 @@ class ShowJobsController(CollectinfoCommandController):
         self.do_queries(line[:])
         self.do_sindex_builder(line[:])
 
-    def _job_helper(self, module, title, line):
+    def _parse_jobs_mods(self, line):
         flip_output = util.check_arg_and_delete_from_mods(
             line=line,
             arg="-flip",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--flip",
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
@@ -1707,7 +1714,16 @@ class ShowJobsController(CollectinfoCommandController):
             )
             if w is None:
                 break
+            if "=" not in w:
+                raise ShellException(
+                    f"invalid -where clause: '{w}' — expected <field>=<pattern>"
+                )
             where.append(w)
+        return flip_output, (where or None)
+
+    def _job_helper(self, module, title, line):
+        flip_output, where = self._parse_jobs_mods(line)
+        for_mods = self.mods[Modifiers.FOR]
 
         jobs_data = self.log_handler.info_meta_data(stanza=constants.METADATA_JOBS)
 
@@ -1719,12 +1735,13 @@ class ShowJobsController(CollectinfoCommandController):
             scan_data = jobs_data.get(module)
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
+            scan_data = filter_jobs(scan_data, for_mods=for_mods, where=where)
+
             self.view.show_jobs(
                 title,
                 cinfo_log,
                 scan_data,
                 flip_output=flip_output,
-                where=where or None,
                 **self.mods,
             )
 
@@ -1737,7 +1754,7 @@ class ShowJobsController(CollectinfoCommandController):
             like_jobs_modifier_help,
             ModifierHelp("trid", "List of transaction IDs to filter for."),
         ),
-        usage=f"[-flip] [-where <field>=<pattern> [...]] [{Modifiers.FOR} <ns> [<set>]] [{Modifiers.LIKE} <regex>] [trid <trid1> [<trid2>]]",
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg=f"Displays scan jobs. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
     )
     def do_scans(self, line):
@@ -1752,7 +1769,7 @@ class ShowJobsController(CollectinfoCommandController):
             like_jobs_modifier_help,
             ModifierHelp("trid", "List of transaction IDs to filter for."),
         ),
-        usage=f"[-flip] [-where <field>=<pattern> [...]] [{Modifiers.FOR} <ns> [<set>]] [{Modifiers.LIKE} <regex>] [trid <trid1> [<trid2>]]",
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg="Displays query jobs",
     )
     def do_queries(self, line):
@@ -1771,7 +1788,7 @@ class ShowJobsController(CollectinfoCommandController):
             like_jobs_modifier_help,
             ModifierHelp("trid", "List of transaction IDs to filter for."),
         ),
-        usage=f"[-flip] [-where <field>=<pattern> [...]] [{Modifiers.FOR} <ns> [<set>]] [{Modifiers.LIKE} <regex>] [trid <trid1> [<trid2>]]",
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg="Displays sindex-builder jobs. Removed in server v. {} and later".format(
             constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
         ),

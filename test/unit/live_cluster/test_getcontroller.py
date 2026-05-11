@@ -903,6 +903,67 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertDictEqual(actual, expected)
 
+    async def test_get_query_filters_for_ns(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "set": "myset", "status": "active(ok)"},
+                "2": {"ns": "other", "set": "otherset", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(for_mods=["test"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "set": "myset", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_filters_for_ns_and_set(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "set": "a", "status": "active(ok)"},
+                "2": {"ns": "test", "set": "b", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(for_mods=["test", "a"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "set": "a", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_filters_where(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["status=active"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_filters_multiple_where_and(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+                "3": {"ns": "other", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["ns=test", "status=active"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
+        )
+
 
 class GetACLControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

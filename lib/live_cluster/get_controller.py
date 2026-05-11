@@ -1169,6 +1169,49 @@ class GetUserAgentsController:
         return await self.cluster.info_user_agents(nodes=nodes)
 
 
+def filter_jobs(jobs_data, for_mods=None, where=None):
+    """Filter per-host job dicts by namespace/set (for_mods) and field=regex (where).
+
+    Mutates and returns jobs_data. Empty hosts are kept (rendered as no rows).
+    """
+    ns_filter = None
+    set_filter = None
+    if for_mods:
+        try:
+            ns_filter = [for_mods[0]]
+            set_filter = [for_mods[1]]
+        except IndexError:
+            pass
+
+    where_compiled = []
+    if where:
+        for clause in where:
+            field, _, pattern = clause.partition("=")
+            where_compiled.append((field, util.compile_likes([pattern])))
+
+    for host, host_jobs in list(jobs_data.items()):
+        if not isinstance(host_jobs, dict):
+            continue
+        for trid in list(host_jobs.keys()):
+            job = host_jobs[trid]
+            if ns_filter and not next(
+                iter(util.filter_list([str(job.get("ns", ""))], ns_filter)), None
+            ):
+                del host_jobs[trid]
+                continue
+            if set_filter and not next(
+                iter(util.filter_list([str(job.get("set", ""))], set_filter)), None
+            ):
+                del host_jobs[trid]
+                continue
+            if any(
+                not pat.search(str(job.get(field, ""))) for field, pat in where_compiled
+            ):
+                del host_jobs[trid]
+
+    return jobs_data
+
+
 class GetJobsController:
     def __init__(self, cluster):
         self.cluster = cluster
@@ -1189,25 +1232,25 @@ class GetJobsController:
 
         return job_map
 
-    async def get_scans(self, nodes="all"):
+    async def get_scans(self, nodes="all", for_mods=None, where=None):
         scan_data = await self.cluster.info_scan_show(nodes=nodes)
 
         for host, data in list(scan_data.items()):
             if isinstance(data, Exception):
                 del scan_data[host]
 
-        return scan_data
+        return filter_jobs(scan_data, for_mods=for_mods, where=where)
 
-    async def get_query(self, nodes="all"):
+    async def get_query(self, nodes="all", for_mods=None, where=None):
         query_data = await self.cluster.info_query_show(nodes=nodes)
 
         for host, data in list(query_data.items()):
             if isinstance(data, Exception):
                 del query_data[host]
 
-        return query_data
+        return filter_jobs(query_data, for_mods=for_mods, where=where)
 
-    async def get_sindex_builder(self, nodes="all"):
+    async def get_sindex_builder(self, nodes="all", for_mods=None, where=None):
         sindex_builder_data = await self.cluster.info_jobs(
             module="sindex-builder", nodes=nodes
         )
@@ -1216,4 +1259,4 @@ class GetJobsController:
             if isinstance(data, Exception):
                 del sindex_builder_data[host]
 
-        return sindex_builder_data
+        return filter_jobs(sindex_builder_data, for_mods=for_mods, where=where)
