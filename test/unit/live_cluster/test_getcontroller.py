@@ -964,6 +964,21 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
             {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
         )
 
+    async def test_get_query_where_nonexistent_field_filters_all(self):
+        # A -where clause on a field that no job has should filter every row out.
+        # Documents current behavior so an unintended change (e.g. erroring on
+        # missing fields) is a deliberate decision rather than a silent regression.
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["nonexistent=foo"])
+
+        self.assertDictEqual(actual, {"1.1.1.1": {}})
+
 
 class GetACLControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

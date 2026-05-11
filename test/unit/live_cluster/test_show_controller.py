@@ -1242,6 +1242,60 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ShellException):
             await self.controller.execute(["queries", "-where", "status"])
 
+    async def test_queries_trailing_where_no_value_raises(self):
+        from lib.base_controller import ShellException
+
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        with self.assertRaises(ShellException):
+            await self.controller.execute(["queries", "-where"])
+
+    async def test_queries_with_for_ns_only(self):
+        # One-element for_mods reaches the getter with a single-element list;
+        # filter_jobs must not crash on the missing-set element.
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "for", "test"])
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=["test"], where=None
+        )
+        self.assertEqual(self.controller.mods["for"], ["test"])
+
+    async def test_queries_combined_modifiers(self):
+        # --flip + for + -where + like in a single command — verify each modifier
+        # is parsed and forwarded correctly regardless of interaction.
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(
+            [
+                "queries",
+                "--flip",
+                "for",
+                "test",
+                "-where",
+                "status=active",
+                "like",
+                "status",
+            ]
+        )
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=["test"], where=["status=active"]
+        )
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=True,
+            **self.controller.mods,
+        )
+        self.assertEqual(self.controller.mods["for"], ["test"])
+        self.assertIn("status", self.controller.mods["like"])
+
     async def test_scans(self):
         self.getter_mock.get_scans.return_value = "scans"
         self.cluster_mock.info_build.return_value = {"1.1.1.1": "5.7"}

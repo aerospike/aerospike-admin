@@ -30,6 +30,7 @@ from lib.live_cluster.get_controller import (
     GetLatenciesController,
     GetUserAgentsController,
     GetMaskingRulesController,
+    parse_jobs_mods,
 )
 
 from .client import ASProtocolError
@@ -321,7 +322,7 @@ flip_jobs_modifier_help = ModifierHelp(
 )
 where_jobs_modifier_help = ModifierHelp(
     "-where",
-    "Filter jobs by <field>=<substring-regex>. Repeatable; multiple clauses AND together. E.g. -where status=active",
+    "Filter jobs by <field>=<value> substring match. Repeatable; multiple clauses AND together. E.g. -where status=active",
 )
 like_jobs_modifier_help = ModifierHelp(
     Modifiers.LIKE,
@@ -1794,39 +1795,6 @@ class ShowJobsController(LiveClusterCommandController):
     async def _sindex_supported(self):
         return await self._supported(constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION)
 
-    def _parse_jobs_mods(self, line):
-        flip_output = util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="-flip",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        ) or util.check_arg_and_delete_from_mods(
-            line=line,
-            arg="--flip",
-            default=False,
-            modifiers=self.modifiers,
-            mods=self.mods,
-        )
-        where = []
-        while True:
-            w = util.get_arg_and_delete_from_mods(
-                line=line,
-                arg="-where",
-                return_type=str,
-                default=None,
-                modifiers=self.modifiers,
-                mods=self.mods,
-            )
-            if w is None:
-                break
-            if "=" not in w:
-                raise ShellException(
-                    f"invalid -where clause: '{w}' — expected <field>=<pattern>"
-                )
-            where.append(w)
-        return flip_output, (where or None)
-
     @CommandHelp(
         "Displays jobs from all available modules",
     )
@@ -1851,7 +1819,7 @@ class ShowJobsController(LiveClusterCommandController):
         short_msg="Displays query jobs",
     )
     async def do_queries(self, line):
-        flip_output, where = self._parse_jobs_mods(line)
+        flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
         jobs = await self.getter.get_query(
             nodes=self.nodes,
             for_mods=self.mods[Modifiers.FOR],
@@ -1892,7 +1860,7 @@ class ShowJobsController(LiveClusterCommandController):
                 )
             return
 
-        flip_output, where = self._parse_jobs_mods(line)
+        flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
         jobs = await self.getter.get_scans(
             nodes=self.nodes,
             for_mods=self.mods[Modifiers.FOR],
@@ -1938,7 +1906,7 @@ class ShowJobsController(LiveClusterCommandController):
                 )
             return
 
-        flip_output, where = self._parse_jobs_mods(line)
+        flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
         jobs = await self.getter.get_sindex_builder(
             nodes=self.nodes,
             for_mods=self.mods[Modifiers.FOR],

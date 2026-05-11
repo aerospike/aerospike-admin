@@ -15,9 +15,11 @@
 import asyncio
 import copy
 from typing import Iterable, Optional
+from lib.base_controller import ShellException
 from lib.base_get_controller import BaseGetConfigController
 
 from lib.utils import common, util, constants
+from lib.utils.constants import Modifiers
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
 
@@ -1170,10 +1172,15 @@ class GetUserAgentsController:
 
 
 def filter_jobs(jobs_data, for_mods=None, where=None):
-    """Filter per-host job dicts by namespace/set (for_mods) and field=regex (where).
+    """Filter per-host job dicts by namespace/set (for_mods) and field=value substring (where).
 
     Mutates and returns jobs_data. Empty hosts are kept (rendered as no rows).
+    Returns ``jobs_data`` unchanged when it is None (e.g. a collectinfo capture
+    that has no rows for this module).
     """
+    if jobs_data is None:
+        return jobs_data
+
     ns_filter = None
     set_filter = None
     if for_mods:
@@ -1210,6 +1217,35 @@ def filter_jobs(jobs_data, for_mods=None, where=None):
                 del host_jobs[trid]
 
     return jobs_data
+
+
+def parse_jobs_mods(line, modifiers, mods):
+    """Parse ``--flip``/``-flip`` and repeatable ``-where <field>=<pattern>`` out of line.
+
+    Returns ``(flip_output, where_or_None)``. Mutates ``line`` and ``mods`` via
+    ``util.*_and_delete_from_mods``. Raises ShellException for malformed -where.
+    """
+    flip_output = util.check_arg_and_delete_from_mods(
+        line=line, arg="-flip", default=False, modifiers=modifiers, mods=mods
+    ) or util.check_arg_and_delete_from_mods(
+        line=line, arg="--flip", default=False, modifiers=modifiers, mods=mods
+    )
+
+    where = []
+    while "-where" in line:
+        w = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-where",
+            return_type=str,
+            default=None,
+            modifiers=modifiers,
+            mods=mods,
+        )
+        if w is None or "=" not in w:
+            raise ShellException("invalid -where clause: expected <field>=<pattern>")
+        where.append(w)
+
+    return flip_output, (where or None)
 
 
 class GetJobsController:
