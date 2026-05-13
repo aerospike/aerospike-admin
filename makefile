@@ -116,6 +116,13 @@ coverage:
 	make unit-cov
 	make integration-cov
 	coverage combine
+	coverage report
+
+.PHONY: unit-coverage
+unit-coverage:
+	coverage erase
+	make unit-cov
+	coverage report
 
 .PHONY: install
 install: uninstall
