@@ -6,7 +6,15 @@ TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
 # Package variables
 PACKAGE_NAME = asadm
+# Source of truth for the version, in precedence order:
+#   1. $VERSION env (CI sets this from VERSION file via build_package.sh)
+#   2. VERSION file at repo root
+#   3. git describe (legacy clones without VERSION file)
+ifeq ($(wildcard $(PKG_DIR)/../VERSION),)
 VERSION ?= $(shell git describe --tags --always --abbrev=9)
+else
+VERSION ?= $(shell tr -d '[:space:]' < $(PKG_DIR)/../VERSION)
+endif
 RPM_VERSION := $(subst -,_,$(VERSION))
 # pkgbuild --version allows alphanumerics; git describe uses hyphens.
 MAC_VERSION := $(RPM_VERSION)

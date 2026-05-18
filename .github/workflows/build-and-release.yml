@@ -78,52 +78,8 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "VERSION: $VERSION"
 
-  create-tag:
-    name: Create git tag from VERSION
-    needs: validate-inputs
-    if: >-
-      inputs.release == true &&
-      github.ref == 'refs/heads/master'
-    runs-on: ubuntu-24.04
-    environment: deploy-to-master
-    permissions:
-      contents: write
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Create and push tag
-        env:
-          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
-        run: |
-          set -euo pipefail
-          git fetch --tags --force
-          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
-            echo "::error::Tag '${VERSION}' already exists. Bump VERSION via the Bump Version workflow first." >&2
-            exit 1
-          fi
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" -m "$VERSION" "$GITHUB_SHA"
-          git push origin "refs/tags/${VERSION}"
-          echo "Pushed tag: $VERSION"
-
-  # Single point of always()-guarding; downstream uses default needs:.
   get-version:
-    needs: [validate-inputs, create-tag]
-    if: >-
-      always() &&
-      needs.validate-inputs.result == 'success' &&
-      needs.create-tag.result != 'failure' &&
-      needs.create-tag.result != 'cancelled'
+    needs: validate-inputs
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -714,3 +670,45 @@ jobs:
       version: ${{ needs.get-version.outputs.VERSION }}
       gh-workflows-ref: v3.4.0
       dry-run: ${{ inputs.release != true }}
+
+  # Tag-last: created only after every publish step succeeds. A failure
+  # anywhere upstream means no tag, no draft release, no inconsistent state.
+  create-tag:
+    name: Create git tag (release marker)
+    if: inputs.release == true && github.ref == 'refs/heads/master'
+    needs:
+      - validate-inputs
+      - upload-artifacts-to-jfrog
+      - docker-manifest
+      - create-release-bundle
+    runs-on: ubuntu-24.04
+    environment: deploy-to-master
+    permissions:
+      contents: write
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create and push tag
+        env:
+          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            echo "::error::Tag '${VERSION}' already exists. Bump VERSION first." >&2
+            exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "$VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/${VERSION}"
+          echo "Pushed tag: $VERSION"
