@@ -1,0 +1,97 @@
+# Lightweight installer build check.
+#
+# Purpose: catch dependency / packaging regressions on every push, before
+# they reach the full release pipeline. The release workflow builds for 10
+# distros × 2 arches + signing + notarization — too heavy for every commit.
+#
+# This workflow exercises both fpm code paths (deb on Ubuntu, rpm on EL) on
+# amd64 so a regression in either format surfaces early. macOS pkg builds
+# are deferred to the release workflow (macOS runners are ~10x more
+# expensive and pkg/Makefile changes are infrequent).
+#
+# tests.yml verifies the binary build via `make`. This adds coverage for
+# the *packaging* step (install_deps → make → fpm).
+
+name: Build check (installer)
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  installer-build:
+    name: Build .${{ matrix.pkg }} (${{ matrix.distro }}, amd64)
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: ubuntu24.04, container: 'ubuntu:noble-20251013', pkg: deb }
+          - { distro: el10,        container: 'redhat/ubi10:10.0',    pkg: rpm }
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Install prereqs
+        run: |
+          set -euo pipefail
+          case "${{ matrix.distro }}" in
+            ubuntu*|debian*)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends git ca-certificates
+              ;;
+            el*|amzn*)
+              dnf -y install git ca-certificates
+              ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+
+      - name: Mark workspace as safe (for git inside container)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install build dependencies
+        env:
+          ENV_DISTRO: ${{ matrix.distro }}
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          source .github/bin/install_deps.sh
+          install_deps "${{ matrix.distro }}"
+
+      - name: Build .${{ matrix.pkg }} installer
+        env:
+          ENV_DISTRO: ${{ matrix.distro }}
+          BUILD_DISTRO: ${{ matrix.distro }}
+          # PKG_VERSION unset → build_package.sh falls back to `git describe`.
+        run: |
+          set -euo pipefail
+          export PATH="$PATH:/opt/golang/go/bin"
+          source .github/bin/build_package.sh
+          build_packages
+
+      - name: Verify .${{ matrix.pkg }} produced
+        run: |
+          set -euo pipefail
+          count=$(find pkg/target -maxdepth 2 -name "*.${{ matrix.pkg }}" -type f | wc -l)
+          if [[ "$count" -eq 0 ]]; then
+            echo "::error::No .${{ matrix.pkg }} produced under pkg/target/." >&2
+            ls -la pkg/target/ || true
+            exit 1
+          fi
+          echo "Installer build succeeded:"
+          find pkg/target -maxdepth 2 -name "*.${{ matrix.pkg }}" -type f

@@ -1,4 +1,31 @@
-name: build-artifacts
+# Build and Release pipeline for aerospike-admin (asadm + asinfo).
+#
+# Source of truth for the version: the VERSION file at repo root.
+#
+# === Master release flow ===
+#   1. Run Bump Version (manual) → opens PR updating VERSION.
+#   2. Review + merge the PR to master.
+#   3. Dispatch this workflow on master with `release=true`:
+#      - Creates and pushes git tag <VERSION> (e.g. 5.0.0-rc1).
+#      - Tag push triggers draft-release.yml (drafts GitHub release notes).
+#      - Builds + signs + tests + publishes packages to JFrog dev repos.
+#      - Creates JFrog release bundle (master-only — used for promotion).
+#
+# === Feature-branch publishing (for external customers without GHA access) ===
+#   Dispatch this workflow on any branch with `release=true`:
+#      - No git tag is created (tags are master-only).
+#      - VERSION is computed as a SemVer 2.0 pre-release identifier so it
+#        sorts correctly in apt/dnf and never collides with master:
+#            5.0.0-rc1 + branch feature/foo, sha abc123456
+#          → 5.0.0-rc1.feature-foo.abc123456
+#      - Packages are uploaded to the JFrog dev repo and installable via
+#        apt/dnf with that version pin. No release bundle is created.
+#
+# === Test (dry-run) ===
+#   Dispatch with `release=false` from any branch: builds run end-to-end,
+#   artifacts available on the GHA run page, no tag, no JFrog publish.
+
+name: Build and Release
 permissions:
   contents: read
   id-token: write
@@ -9,67 +36,56 @@ defaults:
 on:
   workflow_dispatch:
     inputs:
-      GIT_TAG:
-        description: "Git tag to create on master (x.y.z or x.y.z-suffix format, e.g. 1.2.3, 1.2.3-rc1)"
-        required: false
-        type: string
-        default: ""
       release:
-        description: "Publish to JFrog (uncheck for dry-run). Only honored on workflow_dispatch."
-        required: false
+        description: "Publish and create git tag from VERSION. Uncheck for a dry-run test build (no tag, no publish)."
         type: boolean
         default: false
 
-  push:
-    branches:
-      - master
-
 jobs:
   validate-inputs:
-    name: Validate workflow inputs
+    name: Validate VERSION file
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    outputs:
+      VERSION: ${{ steps.read.outputs.VERSION }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: audit
 
-      - name: Validate GIT_TAG
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Read and validate VERSION
+        id: read
         run: |
           set -euo pipefail
-
-          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
-            echo "Skipping input validation (not a workflow_dispatch)"
-            exit 0
+          if [[ ! -f VERSION ]]; then
+            echo "::error::VERSION file is missing at repo root." >&2
+            exit 1
           fi
-
-          GIT_TAG="${{ github.event.inputs.GIT_TAG }}"
-
-          if [[ -n "$GIT_TAG" ]]; then
-            if ! [[ "$GIT_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-              echo "ERROR: GIT_TAG must be in x.y.z or x.y.z-suffix format (e.g. 1.2.3, 1.2.3-rc1). Got: '$GIT_TAG'" >&2
-              exit 1
-            fi
-
-            if [[ "${{ github.ref }}" != "refs/heads/master" ]]; then
-              echo "ERROR: GIT_TAG can only be provided when running on master branch" >&2
-              echo "Current branch: ${{ github.ref }}" >&2
-              exit 1
-            fi
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::VERSION file is empty." >&2
+            exit 1
           fi
-
-          echo "✓ Input validation passed"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "::error::VERSION '$VERSION' is not valid semver (expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-suffix)." >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION: $VERSION"
 
   create-tag:
-    name: Create git tag (x.y.z)
+    name: Create git tag from VERSION
     needs: validate-inputs
-    # Only run on workflow_dispatch on master with GIT_TAG provided
+    # Only create+push a tag when actually publishing. For dry-run test builds
+    # (release=false) this is skipped — the build still runs using git describe.
     if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/master' &&
-      github.event.inputs.GIT_TAG != ''
+      inputs.release == true &&
+      github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     environment: deploy-to-master
     permissions:
@@ -87,60 +103,81 @@ jobs:
           fetch-tags: true
 
       - name: Create and push tag
+        env:
+          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
         run: |
           set -euo pipefail
-
-          GIT_TAG="${{ github.event.inputs.GIT_TAG }}"
-
           git fetch --tags --force
-
-          if git rev-parse -q --verify "refs/tags/$GIT_TAG" >/dev/null; then
-            echo "Tag '$GIT_TAG' already exists; skipping creation."
-            exit 0
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            echo "::error::Tag '${VERSION}' already exists. Bump VERSION via the Bump Version workflow first." >&2
+            exit 1
           fi
-
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "$VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/${VERSION}"
+          echo "Pushed tag: $VERSION"
 
-          git tag -a "$GIT_TAG" -m "$GIT_TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$GIT_TAG"
-
+  # Computes the VERSION used by every downstream job — package filenames,
+  # JFrog publish paths, image tags, release-bundle name.
+  #
+  # Branch builds use SemVer 2.0 pre-release identifiers so dpkg/rpm/JFrog
+  # all sort versions correctly (a feature build of 5.0.0-rc1 is "newer than"
+  # 5.0.0-rc1 itself, and "older than" 5.0.0).
+  #
+  # On master:
+  #   VERSION = file VERSION (e.g. "5.0.0-rc1" or "5.0.0"). Matches the git
+  #   tag pushed by create-tag.
+  #
+  # Off master:
+  #   - If file VERSION already has a pre-release suffix: append further
+  #     pre-release identifiers with '.'
+  #         5.0.0-rc1  +  branch=feature/foo, sha=abc123456
+  #       → 5.0.0-rc1.feature-foo.abc123456
+  #   - Otherwise start the pre-release segment with '-'
+  #         5.0.0  +  branch=feature/foo, sha=abc123456
+  #       → 5.0.0-feature-foo.abc123456
+  #
+  # Branch slug is sanitized to [A-Za-z0-9-] (SemVer pre-release identifier
+  # rules). Customers can `apt install aerospike-asadm=<version>` against the
+  # JFrog dev repo for any branch build.
+  #
+  # Also the single point of always()-guarding so downstream uses default
+  # needs: semantics. create-tag failure halts; create-tag skipped continues.
   get-version:
     needs: [validate-inputs, create-tag]
-    # Run if validate-inputs succeeded AND create-tag succeeded or was skipped
     if: >-
-      always() && 
+      always() &&
       needs.validate-inputs.result == 'success' &&
-      (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
+      needs.create-tag.result != 'failure' &&
+      needs.create-tag.result != 'cancelled'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
-      VERSION: ${{ steps.git_describe.outputs.version }}
-      BUNDLE_VERSION: ${{ steps.git_describe.outputs.bundle_version }}
+      VERSION: ${{ steps.compute.outputs.version }}
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Compute version from git describe
-        id: git_describe
+      - name: Compute VERSION (SemVer-aware for branch builds)
+        id: compute
+        env:
+          BASE: ${{ needs.validate-inputs.outputs.VERSION }}
         run: |
-          VERSION=$(git describe --tags --always --abbrev=9)
-          BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          BRANCH_PREFIX="${BRANCH//\//-}"
-          BUNDLE_VERSION="${BRANCH_PREFIX}-${VERSION}"
-          echo "VERSION: $VERSION"
-          echo "BUNDLE_VERSION: $BUNDLE_VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "bundle_version=$BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == "refs/heads/master" ]]; then
+            VERSION="${BASE}"
+          else
+            BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
+            # 9-char SHA matches `git describe --abbrev=9` used by makefile,
+            # build_package.sh, pkg/Makefile, and mac-artifact.yml.
+            SHORT_SHA="${GITHUB_SHA::9}"
+            if [[ "${BASE}" == *-* ]]; then
+              VERSION="${BASE}.${BRANCH_SLUG}.${SHORT_SHA}"
+            else
+              VERSION="${BASE}-${BRANCH_SLUG}.${SHORT_SHA}"
+            fi
+          fi
+          echo "VERSION: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
     needs: get-version
@@ -548,8 +585,6 @@ jobs:
       oidc-audience: database-gh-aerospike
       gh-artifact-name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-retention-days: 1
-      # Only an explicit workflow_dispatch with release=true publishes.
-      # Push events and unchecked dispatches are dry-run.
       dry-run: ${{ inputs.release != true }}
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
@@ -688,7 +723,11 @@ jobs:
             -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local
 
+  # Release bundles are JFrog's promotion/audit unit — reserved for master
+  # releases. Feature-branch builds publish to the dev repo (apt/dnf
+  # installable via branch-prefixed VERSION) but do not produce a bundle.
   create-release-bundle:
+    if: github.ref == 'refs/heads/master'
     permissions:
       contents: read
       id-token: write
@@ -704,6 +743,6 @@ jobs:
       jf-bundle-name: "aerospike-asadm"
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
-      version: ${{ needs.get-version.outputs.BUNDLE_VERSION }}
+      version: ${{ needs.get-version.outputs.VERSION }}
       gh-workflows-ref: v3.4.0
       dry-run: ${{ inputs.release != true }}
