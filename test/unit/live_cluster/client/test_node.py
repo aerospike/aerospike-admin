@@ -1665,7 +1665,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual.response, "Invalid subcontext service")
 
-    async def test_info_set_config_namespace_success(self):
+    async def test_info_set_config_namespace_no_subcontext(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
@@ -1675,6 +1675,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_with_set(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace(
@@ -1686,17 +1687,19 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_storage_engine_no_prefix(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace(
-            "foo", "bar", "buff", subcontext="storage-engine"
+            "defrag-lwm-pct", "50", "buff", subcontext="storage-engine"
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;foo=bar", self.ip
+            "set-config:context=namespace;id=buff;defrag-lwm-pct=50", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_geo2dsphere_within_uses_hyphen(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace(
@@ -1708,14 +1711,86 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_sindex_type_always_prefixed(self):
+        self.info_mock.return_value = "ok"
+
         actual = await self.node.info_set_config_namespace(
-            "mounts-size-limit", "50", "buff", subcontext="index-type"
+            "mounts-size-limit", "1073741824", "buff", subcontext="sindex-type"
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;mounts-size-limit=50", self.ip
+            "set-config:context=namespace;id=buff;sindex-type.mounts-size-limit=1073741824",
+            self.ip,
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_set_config_namespace_index_type_no_prefix_before_7(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0.1"
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_set_config_namespace(
+            "mounts-size-limit", "1073741824", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;mounts-size-limit=1073741824",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        actual = await self.node.info_set_config_namespace(
+            "mounts-high-water-pct", "80", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;mounts-high-water-pct=80",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+
+    async def test_info_set_config_namespace_index_type_prefixed_from_7(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "7.0.0.0"
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_set_config_namespace(
+            "evict-mounts-pct", "80", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;index-type.evict-mounts-pct=80",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        actual = await self.node.info_set_config_namespace(
+            "mounts-budget", "1073741824", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;index-type.mounts-budget=1073741824",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+
+    async def test_info_set_config_namespace_index_type_prefixed_on_8(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "8.1.0.0"
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_set_config_namespace(
+            "evict-mounts-pct", "80", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;namespace=buff;index-type.evict-mounts-pct=80",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
 
     async def test_info_set_config_namespace_fail(self):
         self.info_mock.return_value = "error"
