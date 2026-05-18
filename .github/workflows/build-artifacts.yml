@@ -14,12 +14,15 @@ on:
         required: false
         type: string
         default: ""
+      release:
+        description: "Publish to JFrog (uncheck for dry-run). Only honored on workflow_dispatch."
+        required: false
+        type: boolean
+        default: false
 
   push:
     branches:
       - master
-      # yamllint disable-line rule:quoted-strings
-      - 'pvinh/TOOLS-3292-Macbuild'
 
 jobs:
   validate-inputs:
@@ -141,8 +144,6 @@ jobs:
 
   build-artifacts:
     needs: get-version
-    # always() needed because get-version uses always() - without it, this job would be skipped
-    if: ${{ always() && needs.get-version.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -207,7 +208,7 @@ jobs:
         run: |
           set -euo pipefail
           source .github/bin/install_deps.sh
-          "install_deps_${{ matrix.distro }}"
+          install_deps "${{ matrix.distro }}"
 
       - name: Build and package
         env:
@@ -229,7 +230,6 @@ jobs:
 
   build-mac-artifacts:
     needs: get-version
-    if: ${{ always() && needs.get-version.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -283,14 +283,6 @@ jobs:
           make one-dir
           ls -al build/bin/asadm || true
 
-      - name: Sanity test tools
-        run: |
-          sudo make install
-          asadm -e "info" || true
-          asadm -e "info" 2>&1 | grep -q "Not able to connect" || true
-          asinfo || true
-          asinfo 2>&1 | grep -q "Not able to connect" || true
-
       - name: Create .pkg
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
@@ -311,8 +303,6 @@ jobs:
 
   organize-built-artifacts:
     needs: [build-artifacts, build-mac-artifacts, get-version]
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.build-artifacts.result == 'success' && needs.build-mac-artifacts.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -339,8 +329,6 @@ jobs:
     needs:
       - get-version
       - organize-built-artifacts
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.organize-built-artifacts.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-mac-artifacts.yaml@v3.4.0
     permissions:
       contents: read
@@ -364,8 +352,6 @@ jobs:
     needs:
       - get-version
       - notarize-mac-artifacts
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.notarize-mac-artifacts.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v3.4.0
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
@@ -379,8 +365,6 @@ jobs:
   test-install-linux-and-execute:
     name: Test install & execute (${{ matrix.distro }}, ${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }})
     needs: [get-version, sign-artifacts]
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.sign-artifacts.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -420,10 +404,21 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ matrix.distro }}" in
+            ubuntu*|debian*)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y --no-install-recommends git ca-certificates curl tar
+              ;;
             el*|amzn*)
-              dnf -y install findutils
+              dnf -y install findutils git ca-certificates tar gzip
               ;;
           esac
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
 
       - name: Download signed artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -440,7 +435,6 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               pkg=$(find ./packages -name "*_${{ matrix.distro }}_*${arch}*.deb" | head -1)
               [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
-              apt-get update
               apt-get install -y "${pkg}"
               ;;
             el*|amzn*)
@@ -450,16 +444,22 @@ jobs:
               ;;
           esac
 
-      - name: Verify installation
+      - name: Install bats
+        env:
+          BATS_VERSION: "1.11.0"
         run: |
-          asadm --help
-          asinfo --help
+          set -euo pipefail
+          curl -fsSL --retry 3 "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" -o /tmp/bats.tgz
+          tar -xzf /tmp/bats.tgz -C /tmp
+          "/tmp/bats-core-${BATS_VERSION}/install.sh" /usr/local
+          bats --version
+
+      - name: Verify installation
+        run: bats .github/bin/test/test_execute.bats
 
   test-install-mac-and-execute:
     name: Test install & execute (${{ matrix.os }})
     needs: [get-version, sign-artifacts]
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.sign-artifacts.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -472,6 +472,11 @@ jobs:
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
 
       - name: Download signed artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -486,16 +491,15 @@ jobs:
           [[ -n "${pkg}" ]] || { echo "ERROR: no .pkg found for ${{ matrix.os }}-${{ runner.arch }}" >&2; exit 1; }
           sudo installer -pkg "${pkg}" -target /
 
+      - name: Install bats
+        run: brew install bats-core
+
       - name: Verify installation
-        run: |
-          asadm --help
-          asinfo --help
+        run: bats .github/bin/test/test_execute.bats
 
   organize-signed-artifacts:
     name: Organize signed artifacts for deploy
     needs: [get-version, test-install-linux-and-execute, test-install-mac-and-execute]
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.test-install-linux-and-execute.result == 'success' && needs.test-install-mac-and-execute.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -535,8 +539,6 @@ jobs:
     needs:
       - get-version
       - organize-signed-artifacts
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.organize-signed-artifacts.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v3.4.0
     with:
       jf-project: database
@@ -546,16 +548,16 @@ jobs:
       oidc-audience: database-gh-aerospike
       gh-artifact-name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-retention-days: 1
-      dry-run: false
+      # Only an explicit workflow_dispatch with release=true publishes.
+      # Push events and unchecked dispatches are dry-run.
+      dry-run: ${{ inputs.release != true }}
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
       gh-workflows-ref: "v3.4.0"
 
   docker-build-arch:
-    name: Docker build & test (${{ matrix.arch }})
+    name: Docker build, test & push (${{ matrix.arch }})
     needs: [get-version, organize-signed-artifacts]
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.organize-signed-artifacts.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -565,6 +567,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -584,49 +587,7 @@ jobs:
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Install Snyk CLI
-        run: npm install -g snyk
-
-      - name: Build and smoke test
-        env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          set -euo pipefail
-          docker/docker-build.sh -t \
-            -v "${VERSION}" \
-            -d ubuntu24.04 \
-            -a ${{ matrix.arch }} \
-            -u ../deploy-artifacts
-          SNYK_ARGS=()
-          if [[ -n "${SNYK_TOKEN:-}" ]]; then SNYK_ARGS+=(-s); fi
-          docker/test.sh -v "${VERSION}" \
-            -d ubuntu24.04 \
-            -a ${{ matrix.arch }} \
-            -c "${SNYK_ARGS[@]+"${SNYK_ARGS[@]}"}"
-
-  docker-manifest:
-    name: Docker build, push & manifest (multi-arch)
-    needs: [get-version, docker-build-arch]
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.docker-build-arch.result == 'success' }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Download deploy artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
-          path: ./deploy-artifacts
+        run: npm install -g snyk@1.1297.4
 
       - name: Install JFrog CLI
         id: jf
@@ -646,22 +607,86 @@ jobs:
           username: ${{ steps.jf.outputs.oidc-user }}
           password: ${{ steps.jf.outputs.oidc-token }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+      - name: Build (native) and smoke test
+        env:
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set -euo pipefail
+          docker/docker-build.sh -t \
+            -v "${VERSION}" \
+            -d ubuntu24.04 \
+            -a ${{ matrix.arch }} \
+            -u ../deploy-artifacts
+          SNYK_ARGS=()
+          if [[ -n "${SNYK_TOKEN:-}" ]]; then SNYK_ARGS+=(-s); fi
+          docker/test.sh -v "${VERSION}" \
+            -d ubuntu24.04 \
+            -a ${{ matrix.arch }} \
+            -c "${SNYK_ARGS[@]+"${SNYK_ARGS[@]}"}"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Build and push multi-arch image to JFrog
+      - name: Push native per-arch tag to JFrog
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           set -euo pipefail
-          docker/docker-build.sh -p \
+          # -S: Dockerfile is already updated by the previous build step.
+          # -a <single-arch>: triggers the native single-arch push branch in docker-build.sh.
+          docker/docker-build.sh -p -S \
             -v "${VERSION}" \
             -d ubuntu24.04 \
+            -a ${{ matrix.arch }} \
             -r artifact.aerospike.io/database-docker-dev-local \
             -u ../deploy-artifacts
+
+  docker-manifest:
+    name: Docker multi-arch manifest (stitch native tags)
+    needs: [get-version, docker-build-arch]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install JFrog CLI
+        id: jf
+        uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
+        env:
+          JF_URL: https://artifact.aerospike.io
+          JF_PROJECT: database
+        with:
+          version: 2.78.8
+          oidc-provider-name: database-gh-aerospike
+          oidc-audience: database-gh-aerospike
+
+      - name: Docker login to Artifactory
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: artifact.aerospike.io
+          username: ${{ steps.jf.outputs.oidc-user }}
+          password: ${{ steps.jf.outputs.oidc-token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Stitch per-arch tags into multi-arch manifest
+        env:
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          # -M (manifest) stitches the per-arch tags pushed by docker-build-arch
+          # via `buildx imagetools create`. No build, no QEMU.
+          docker/docker-build.sh -M \
+            -v "${VERSION}" \
+            -d ubuntu24.04 \
+            -r artifact.aerospike.io/database-docker-dev-local
 
   create-release-bundle:
     permissions:
@@ -672,8 +697,6 @@ jobs:
       - get-version
       - upload-artifacts-to-jfrog
       - docker-manifest
-    # always() needed because upstream jobs use always()
-    if: ${{ always() && needs.upload-artifacts-to-jfrog.result == 'success' && needs.docker-manifest.result == 'success' }}
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.4.0
     with:
       jf-project: "database"
@@ -683,4 +706,4 @@ jobs:
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.BUNDLE_VERSION }}
       gh-workflows-ref: v3.4.0
-      dry-run: false
+      dry-run: ${{ inputs.release != true }}

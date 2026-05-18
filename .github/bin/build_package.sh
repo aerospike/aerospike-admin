@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-set -xeuo pipefail
+set -euo pipefail
+[[ -n "${DEBUG:-}" ]] && set -x
 
 function build_packages() {
 	if [ "${ENV_DISTRO:-}" = "" ]; then
-		echo "ENV_DISTRO is not set"
-		return
+		echo "ENV_DISTRO is not set" >&2
+		return 1
 	fi
 	export PATH=$PATH:/opt/golang/go/bin
 	GIT_DIR=$(git rev-parse --show-toplevel)

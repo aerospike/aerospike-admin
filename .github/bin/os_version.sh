@@ -3,134 +3,55 @@
 # ------------------------------------------------------------------------------
 # Copyright 2012-2023 Aerospike, Inc.
 #
-# Portions may be licensed to Aerospike, Inc. under one or more contributor
-# license agreements.
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
 # the License at http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
 # ------------------------------------------------------------------------------
+#
+# Emit a short distro identifier used by pkg/Makefile (e.g. "el9", "ubuntu24").
+# Pass -long for the verbose form ("rhel9", "ubuntu24").
+#
+# Reads /etc/os-release. Every distro in the CI matrix and every supported
+# local-dev distro has this file; the legacy /etc/issue fallback was removed
+# along with the tools-packaging-common submodule.
+
+set -euo pipefail
 
 OPT_LONG=0
+[[ "${1:-}" = "-long" ]] && OPT_LONG=1
 
-if [ "$1" = "-long" ]
-then
-	OPT_LONG=1
+if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "error: $(uname -s) is not supported." >&2
+    exit 1
 fi
 
-error() {
-	echo 'error:' "$*" >&2
-}
+if [[ ! -f /etc/os-release ]]; then
+    echo "error: /etc/os-release not found." >&2
+    exit 1
+fi
 
-main() {
+. /etc/os-release
 
-	local kernel=''
-	local distro_id=''
-	local distro_version=''
-	local distro_long=''
-	local distro_short=''
+distro_id="${ID,,}"
+distro_version="${VERSION_ID%%.*}"
 
-	# Make sure this script is running on Linux
-	# The script is not designed to work on non-Linux
-	# operating systems.
-	kernel=$(uname -s | tr '[:upper:]' '[:lower:]')
-	if [ "$kernel" != 'linux' ]
-	then
-		error "$kernel is not supported."
-		exit 1
-	fi
+case "$distro_id" in
+    rhel|redhat)
+        short="el${distro_version}"
+        long="${distro_id}${distro_version}"
+        ;;
+    fedora)
+        short="fc${distro_version}"
+        long="${distro_id}${distro_version}"
+        ;;
+    *)
+        short="${distro_id}${distro_version}"
+        long="$short"
+        ;;
+esac
 
-	if [ -f /etc/os-release ]
-	then
-		. /etc/os-release
-		distro_id=${ID,,}
-		distro_version=${VERSION_ID}
-	elif [ -f /etc/issue ]
-	then
-		issue=$(cat /etc/issue | tr '[:upper:]' '[:lower:]')
-		case "$issue" in
-		*'redhat'* | *'rhel'* | *'red hat'* )
-			distro_id='rhel'
-			;;
-		*'debian'* )
-			distro_id='debian'
-			;;
-		* )
-			error "/etc/issue contained an unsupported linux distribution: $issue"
-			exit 1
-			;;
-		esac
-
-		case "$distro_id" in
-		'rhel' )
-			local release=''
-			release=$(cat /etc/redhat-release | tr '[:upper:]' '[:lower:]')
-			release_version=${release##*release}
-			distro_version=${release_version%%.*}
-			;;
-		'debian' )
-			debian_version=$(cat /etc/debian_version | tr '[:upper:]' '[:lower:]')
-			distro_version=${debian_version%%.*}
-			;;
-		* )
-			error "/etc/issue contained an unsupported linux distribution: $issue"
-			exit 1
-			;;
-		esac
-	fi
-
-	distro_id=${distro_id//[[:space:]]/}
-	distro_version=${distro_version//[[:space:]]/}
-
-	# Second chance for pre-release versions.
-	if [ -z "$distro_version" ]
-	then
-		case "$distro_id" in
-		'debian' )
-		debian_version=$(cat /etc/debian_version | tr '[:upper:]' '[:lower:]')
-		if [[ "$debian_version" = "bullseye"* ]]
-		then
-			debian_version=11
-		elif [[ "$debian_version" = "bookworm"* ]]
-		then
-			debian_version=12
-		elif [[ "$debian_version" = "trixie"* ]]
-		then
-			debian_version=13
-		fi
-		distro_version=${debian_version%%.*}
-		;;
-		esac
-	fi
-
-	case "$distro_id" in
-	'rhel' | 'redhat' | 'red hat' )
-		distro_long="${distro_id}${distro_version%%.*}"
-		distro_short="el${distro_version%%.*}"
-		;;
-	'fedora' )
-		distro_long="${distro_id}${distro_version}"
-		distro_short="fc${distro_version}"
-		;;
-	* )
-		distro_long="${distro_id}${distro_version}"
-		distro_short="${distro_id}${distro_version}"
-		;;
-	esac
-
-	if [ "$OPT_LONG" = "1" ]
-	then
-		echo "${distro_long}"
-	else
-		echo "${distro_short}"
-	fi
-	exit 0
-}
-
-main
+if [[ "$OPT_LONG" = "1" ]]; then
+    echo "$long"
+else
+    echo "$short"
+fi
