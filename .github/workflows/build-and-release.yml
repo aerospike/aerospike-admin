@@ -81,8 +81,6 @@ jobs:
   create-tag:
     name: Create git tag from VERSION
     needs: validate-inputs
-    # Only create+push a tag when actually publishing. For dry-run test builds
-    # (release=false) this is skipped — the build still runs using git describe.
     if: >-
       inputs.release == true &&
       github.ref == 'refs/heads/master'
@@ -118,32 +116,7 @@ jobs:
           git push origin "refs/tags/${VERSION}"
           echo "Pushed tag: $VERSION"
 
-  # Computes the VERSION used by every downstream job — package filenames,
-  # JFrog publish paths, image tags, release-bundle name.
-  #
-  # Branch builds use SemVer 2.0 pre-release identifiers so dpkg/rpm/JFrog
-  # all sort versions correctly (a feature build of 5.0.0-rc1 is "newer than"
-  # 5.0.0-rc1 itself, and "older than" 5.0.0).
-  #
-  # On master:
-  #   VERSION = file VERSION (e.g. "5.0.0-rc1" or "5.0.0"). Matches the git
-  #   tag pushed by create-tag.
-  #
-  # Off master:
-  #   - If file VERSION already has a pre-release suffix: append further
-  #     pre-release identifiers with '.'
-  #         5.0.0-rc1  +  branch=feature/foo, sha=abc123456
-  #       → 5.0.0-rc1.feature-foo.abc123456
-  #   - Otherwise start the pre-release segment with '-'
-  #         5.0.0  +  branch=feature/foo, sha=abc123456
-  #       → 5.0.0-feature-foo.abc123456
-  #
-  # Branch slug is sanitized to [A-Za-z0-9-] (SemVer pre-release identifier
-  # rules). Customers can `apt install aerospike-asadm=<version>` against the
-  # JFrog dev repo for any branch build.
-  #
-  # Also the single point of always()-guarding so downstream uses default
-  # needs: semantics. create-tag failure halts; create-tag skipped continues.
+  # Single point of always()-guarding; downstream uses default needs:.
   get-version:
     needs: [validate-inputs, create-tag]
     if: >-
@@ -167,8 +140,7 @@ jobs:
             VERSION="${BASE}"
           else
             BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
-            # 9-char SHA matches `git describe --abbrev=9` used by makefile,
-            # build_package.sh, pkg/Makefile, and mac-artifact.yml.
+            # 9-char SHA matches `git describe --abbrev=9` elsewhere in the repo.
             SHORT_SHA="${GITHUB_SHA::9}"
             if [[ "${BASE}" == *-* ]]; then
               VERSION="${BASE}.${BRANCH_SLUG}.${SHORT_SHA}"
@@ -590,11 +562,6 @@ jobs:
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
       gh-workflows-ref: "v3.4.0"
 
-  # Docker chain is gated by release=true (skipped under dry-run).
-  # Rationale: dry-run is for pipeline validation, not artifact distribution.
-  # If you need a branch build's docker image on JFrog, dispatch this
-  # workflow on that branch with release=true — it publishes the image
-  # under the SemVer branch-prefixed VERSION computed in get-version.
   docker-build-arch:
     name: Docker build, test & push (${{ matrix.arch }})
     if: inputs.release == true
@@ -671,8 +638,7 @@ jobs:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           set -euo pipefail
-          # -S: Dockerfile is already updated by the previous build step.
-          # -a <single-arch>: triggers the native single-arch push branch in docker-build.sh.
+          # -S: skip update-version.sh; the previous build already ran it.
           docker/docker-build.sh -p -S \
             -v "${VERSION}" \
             -d ubuntu24.04 \
@@ -682,9 +648,6 @@ jobs:
 
   docker-manifest:
     name: Docker multi-arch manifest (stitch native tags)
-    # Skipped under dry-run via the create-release-bundle/docker-build-arch
-    # chain. docker-build-arch's `if:` is the source of truth; default
-    # needs: semantics propagate the skip.
     needs: [get-version, docker-build-arch]
     runs-on: ubuntu-24.04
     permissions:
@@ -725,16 +688,12 @@ jobs:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           set -euo pipefail
-          # -M (manifest) stitches the per-arch tags pushed by docker-build-arch
-          # via `buildx imagetools create`. No build, no QEMU.
           docker/docker-build.sh -M \
             -v "${VERSION}" \
             -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local
 
-  # Release bundles are JFrog's promotion/audit unit — reserved for master
-  # releases. Feature-branch builds publish to the dev repo (apt/dnf
-  # installable via branch-prefixed VERSION) but do not produce a bundle.
+  # Release bundles are JFrog's promotion unit; reserved for master.
   create-release-bundle:
     if: github.ref == 'refs/heads/master'
     permissions:

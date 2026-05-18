@@ -22,11 +22,6 @@ export GOLANG_VERSION="${GOLANG_VERSION:-1.24.6}"
 
 export CURL_RETRY_OPTS=(--retry 5 --retry-delay 5)
 
-# ---------------------------------------------------------------------------
-# Per-distro OS package lists. Variables intentionally remain shell strings
-# (not arrays) so the workflow's existing pattern of `apt-get install $LIST`
-# / `dnf install $LIST` continues to work.
-# ---------------------------------------------------------------------------
 DEBIAN_11_DEPS='ca-certificates curl git rsync make gcc g++ build-essential xz-utils liblzma-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev libncursesw5-dev uuid-dev tk-dev libssl1.1 libssl-dev ruby-rubygems rpm less'
 DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils less"
@@ -54,8 +49,7 @@ _pkg_list_for() {
   esac
 }
 
-# Some EL distros need a readline-devel RPM from a vault URL (not present in
-# their main repos for the UBI base image we use).
+# readline-devel isn't in UBI base repos; pull from Rocky vault.
 _readline_url_for() {
   local arch
   arch=$(uname -m)
@@ -67,8 +61,7 @@ _readline_url_for() {
   esac
 }
 
-# Newer distros enforce PEP 668 and require --break-system-packages for pip.
-# Mirrors the per-distro flag use in the previous install_deps_<distro> functions.
+# PEP 668: newer distros need --break-system-packages for pip.
 _pip_flags_for() {
   case "$1" in
     debian*|ubuntu24.04|el9|el10|amzn2023) echo "--break-system-packages" ;;
@@ -152,13 +145,12 @@ _post_install_cleanup() {
   esac
 }
 
-# Main entry point.
 install_deps() {
   local distro="${1:?install_deps requires a distro argument (e.g. ubuntu24.04)}"
 
   _install_distro_packages "$distro"
 
-  # debian11 needs CA-cert refresh after package install for downstream curls.
+  # debian11 ships stale CA bundle; refresh before Go/asdf curl calls.
   if [[ "$distro" == "debian11" ]]; then
     update-ca-certificates
   fi

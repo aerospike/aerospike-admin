@@ -46,8 +46,9 @@ jobs:
       - name: Refuse to bump to an existing version
         run: |
           set -euo pipefail
-          CURRENT=$(cat VERSION)
-          if [[ "$CURRENT" == "$VERSION" ]]; then
+          # File may not exist on first bootstrap; treat as empty.
+          CURRENT=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || true)
+          if [[ -n "$CURRENT" && "$CURRENT" == "$VERSION" ]]; then
             echo "::error::VERSION is already '$VERSION'. Nothing to bump." >&2
             exit 1
           fi
