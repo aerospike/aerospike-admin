@@ -590,8 +590,14 @@ jobs:
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
       gh-workflows-ref: "v3.4.0"
 
+  # Docker chain is gated by release=true (skipped under dry-run).
+  # Rationale: dry-run is for pipeline validation, not artifact distribution.
+  # If you need a branch build's docker image on JFrog, dispatch this
+  # workflow on that branch with release=true — it publishes the image
+  # under the SemVer branch-prefixed VERSION computed in get-version.
   docker-build-arch:
     name: Docker build, test & push (${{ matrix.arch }})
+    if: inputs.release == true
     needs: [get-version, organize-signed-artifacts]
     strategy:
       fail-fast: false
@@ -676,6 +682,9 @@ jobs:
 
   docker-manifest:
     name: Docker multi-arch manifest (stitch native tags)
+    # Skipped under dry-run via the create-release-bundle/docker-build-arch
+    # chain. docker-build-arch's `if:` is the source of truth; default
+    # needs: semantics propagate the skip.
     needs: [get-version, docker-build-arch]
     runs-on: ubuntu-24.04
     permissions:
