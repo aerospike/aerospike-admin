@@ -621,7 +621,7 @@ jobs:
           EOF
           cat > "${SHIM_DIR}/asinfo" <<EOF
           #!/bin/sh
-          exec docker run --rm --entrypoint /usr/bin/asinfo "${IMAGE}" "\$@"
+          exec docker run --rm --entrypoint /opt/aerospike/bin/asadm/asinfo "${IMAGE}" "\$@"
           EOF
           chmod +x "${SHIM_DIR}/asadm" "${SHIM_DIR}/asinfo"
           PATH="${SHIM_DIR}:${PATH}" bats .github/bin/test/test_execute.bats

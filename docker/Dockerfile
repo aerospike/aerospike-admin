@@ -83,8 +83,12 @@ LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Aerospike"
 
+# Only the PyInstaller bundle is copied. The .deb's /usr/bin/{asadm,asinfo}
+# symlinks are intentionally skipped: COPY dereferences single-file symlinks,
+# which would land disconnected copies of the bootstrap binary at /usr/bin/
+# and break PyInstaller's _internal/ lookup (uses /proc/self/exe → dirname).
+# Distroless has no shell so PATH lookup isn't useful anyway; invoke asinfo
+# via `docker run --entrypoint /opt/aerospike/bin/asadm/asinfo …`.
 COPY --from=builder /opt/aerospike /opt/aerospike
-COPY --from=builder /usr/bin/asadm /usr/bin/asadm
-COPY --from=builder /usr/bin/asinfo /usr/bin/asinfo
 
-ENTRYPOINT ["/usr/bin/asadm"]
+ENTRYPOINT ["/opt/aerospike/bin/asadm/asadm"]
