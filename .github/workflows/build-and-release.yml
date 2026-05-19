@@ -51,11 +51,11 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Publish and create git tag from VERSION. Uncheck for a dry-run test build (no tag, no publish)."
+        description: "Publish packages to JFrog (and push Docker tags). On master, also creates the git tag from VERSION and a release bundle. On non-master branches, tag + bundle are always skipped. Uncheck for a dry-run build (no publish)."
         type: boolean
         default: false
       skip_tag:
-        description: "Skip git tag + release bundle even on master (treat as feature-style build). Ignored on non-master branches."
+        description: "Skip git tag + release bundle even on master (treat as feature-style build). No effect on non-master branches, which never tag."
         type: boolean
         default: false
 
