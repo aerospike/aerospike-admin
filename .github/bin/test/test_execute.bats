@@ -4,3 +4,8 @@
   asadm --help
   [ "$?" -eq 0 ]
 }
+
+@test "can run asinfo" {
+  asinfo --help
+  [ "$?" -eq 0 ]
+}
