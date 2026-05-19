@@ -46,15 +46,13 @@ REQUIRED:
 OPTIONS:
     -i, --image IMAGE   Test a specific image tag instead of auto-discovering from
                         docker-bake.hcl. IMAGE must be locally loaded or pullable.
-    -d, --distro DISTRO Filter by distro; repeat for multiple (default: all in bake file)
-                        Values: ubuntu24.04, ubi10
     -a, --arch ARCH     Filter by arch; repeat for multiple
                         Values: amd64, arm64
                         Default (no -i): host arch only
                         Default (with -i): host arch
     -s, --snyk          Run snyk container test after smoke tests pass.
                         Requires snyk CLI in PATH.
-                        Results saved to snyk-<distro>-<arch>-<timestamp>.log
+                        Results saved to snyk-<arch>-<timestamp>.log
     -c, --clean         Remove each image with docker rmi after its tests pass.
     -h, --help          Show this help message
 
@@ -71,28 +69,24 @@ EXAMPLES:
     # Test all locally-built images (reads docker-bake.hcl, defaults to host arch)
     docker/test.sh -v 5.0.0-rc1
 
-    # Test all arches for all distros
+    # Test both arches
     docker/test.sh -v 5.0.0 -a amd64 -a arm64
 
     # Test a specific image tag
-    docker/test.sh -i aerospike/aerospike-asadm:5.0.0-ubuntu24.04-amd64 -v 5.0.0
+    docker/test.sh -i aerospike/aerospike-asadm:5.0.0-amd64 -v 5.0.0
 
     # Test + Snyk scan + cleanup
     docker/test.sh -v 5.0.0 -s -c
-
-    # Test only ubi10 on both arches
-    docker/test.sh -v 5.0.0 -d ubi10 -a amd64 -a arm64
 EOF
 }
 
 # ---------------------------------------------------------------------------
-# get_bake_tag: extract the first image tag for a given distro+arch test
-# target from docker-bake.hcl.
+# get_bake_tag: extract the first image tag for a given arch test target
+# from docker-bake.hcl.
 # ---------------------------------------------------------------------------
 function get_bake_tag() {
-  local distro="$1" arch="$2"
-  local slug="${distro//\./-}"
-  local target="${slug}-${arch}"
+  local arch="$1"
+  local target="test-${arch}"
   awk "/^target \"${target}\" \{/,/^\}/" "${BAKE_FILE}" |
     grep -oE '"[^"]+/aerospike-asadm:[^"]+"' |
     head -1 |
@@ -101,24 +95,16 @@ function get_bake_tag() {
 }
 
 # ---------------------------------------------------------------------------
-# get_bake_test_entries: emit "distro arch tag" lines for all test targets
-# found in docker-bake.hcl, filtered by DISTRO_FILTER and ARCH_FILTERS.
+# get_bake_test_entries: emit "arch tag" lines for all test targets
+# found in docker-bake.hcl, filtered by ARCH_FILTERS.
 # ---------------------------------------------------------------------------
 function get_bake_test_entries() {
-  local distro_filter="$1"
-  shift
   local arch_filters=("$@")
 
   if [[ ! -f "${BAKE_FILE}" ]]; then
     log_warn "${BAKE_FILE} not found. Run docker/docker-build.sh -t first."
     exit 1
   fi
-
-  # slug → canonical distro name (must mirror what docker-build.sh produces)
-  declare -A slug_to_distro=(
-    ["ubuntu24-04"]="ubuntu24.04"
-    ["ubi10"]="ubi10"
-  )
 
   local test_line
   test_line=$(grep '^group "test"' "${BAKE_FILE}" || true)
@@ -138,13 +124,8 @@ function get_bake_test_entries() {
   while IFS= read -r target; do
     [[ -z "${target}" ]] && continue
 
-    # target format: <distro-slug>-<arch>, e.g. ubuntu24-04-amd64, ubi10-arm64
-    local arch="${target##*-}"
-    local slug="${target%-"${arch}"}"
-    local distro="${slug_to_distro[${slug}]:-${slug}}"
-
-    # Apply distro filter
-    [[ -n "${distro_filter}" && "${distro}" != "${distro_filter}" ]] && continue
+    # target format: test-<arch>, e.g. test-amd64
+    local arch="${target#test-}"
 
     # Apply arch filter (empty = no filter)
     if [[ ${#arch_filters[@]} -gt 0 ]]; then
@@ -159,13 +140,13 @@ function get_bake_test_entries() {
     fi
 
     local tag
-    tag=$(get_bake_tag "${distro}" "${arch}")
+    tag=$(get_bake_tag "${arch}")
     if [[ -z "${tag}" ]]; then
       log_warn "No tag found for target '${target}' in ${BAKE_FILE}"
       continue
     fi
 
-    printf '%s %s %s\n' "${distro}" "${arch}" "${tag}"
+    printf '%s %s\n' "${arch}" "${tag}"
   done <<<"${targets_raw}"
 }
 
@@ -174,11 +155,10 @@ function get_bake_test_entries() {
 # Returns 0 on success, 1 on failure.
 # ---------------------------------------------------------------------------
 function test_image() {
-  local image="$1" arch="$2" expected_version="$3" distro="${4:-}"
+  local image="$1" arch="$2" expected_version="$3"
 
   log_info "====== Testing ======"
   log_info "  Image:    ${image}"
-  log_info "  Distro:   ${distro:-n/a}"
   log_info "  Arch:     ${arch}"
   log_info "  Version:  ${expected_version}"
   echo ""
@@ -226,7 +206,7 @@ function test_image() {
 # run_snyk: optional non-fatal Snyk container scan.
 # ---------------------------------------------------------------------------
 function run_snyk() {
-  local image="$1" arch="$2" version="$3" distro="${4:-}"
+  local image="$1" arch="$2" version="$3"
 
   if ! command -v snyk >/dev/null 2>&1; then
     log_warn "snyk not found in PATH — skipping scan."
@@ -235,17 +215,9 @@ function run_snyk() {
 
   local ts
   ts=$(date -u +%Y%m%d%H%M%S)
-  local scan_log="aerospike-asadm-${version}-${distro:+${distro}-}${arch}-${ts}.snyk"
+  local scan_log="aerospike-asadm-${version}-${arch}-${ts}.snyk"
 
-  local snyk_cmd=(snyk container test "${image}" "--platform=linux/${arch}")
-  # Include Dockerfile for more accurate layer-level results
-  if [[ -n "${distro}" && -f "${distro}/Dockerfile" ]]; then
-    snyk_cmd+=("--file=${distro}/Dockerfile")
-    log_info "  Dockerfile: ${distro}/Dockerfile"
-  else
-    log_warn "  Dockerfile not found for distro '${distro:-n/a}' — scanning image layers only"
-  fi
-
+  local snyk_cmd=(snyk container test "${image}" "--platform=linux/${arch}" "--file=Dockerfile")
   log_info "Running Snyk scan → ${scan_log}"
   # Non-fatal: findings are informational
   "${snyk_cmd[@]}" | tee "${scan_log}" || true
@@ -277,7 +249,6 @@ function host_arch() {
 function main() {
   local VERSION=""
   local specific_image=""
-  local distro_filter=""
   local arch_filters=()
   local snyk=false
   local clean=false
@@ -290,10 +261,6 @@ function main() {
       ;;
     -i | --image)
       specific_image="$2"
-      shift 2
-      ;;
-    -d | --distro)
-      distro_filter="$2"
       shift 2
       ;;
     -a | --arch)
@@ -329,9 +296,9 @@ function main() {
   local tested=0 failed=0
 
   _run_one() {
-    local image="$1" arch="$2" distro="${3:-}"
-    if test_image "${image}" "${arch}" "${VERSION}" "${distro}"; then
-      [[ "${snyk}" == true ]] && run_snyk "${image}" "${arch}" "${VERSION}" "${distro}"
+    local image="$1" arch="$2"
+    if test_image "${image}" "${arch}" "${VERSION}"; then
+      [[ "${snyk}" == true ]] && run_snyk "${image}" "${arch}" "${VERSION}"
       if [[ "${clean}" == true ]]; then
         docker rmi -f "${image}" >/dev/null 2>&1 || true
         log_info "Removed image: ${image}"
@@ -360,10 +327,10 @@ function main() {
       arch_filters=("$(host_arch)")
     fi
 
-    while IFS=" " read -r distro arch tag; do
+    while IFS=" " read -r arch tag; do
       [[ -z "${tag}" ]] && continue
-      _run_one "${tag}" "${arch}" "${distro}"
-    done < <(get_bake_test_entries "${distro_filter}" "${arch_filters[@]}")
+      _run_one "${tag}" "${arch}"
+    done < <(get_bake_test_entries "${arch_filters[@]}")
   fi
 
   echo ""

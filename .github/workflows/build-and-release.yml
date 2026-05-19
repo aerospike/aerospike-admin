@@ -607,13 +607,11 @@ jobs:
           set -euo pipefail
           docker/docker-build.sh -t \
             -v "${VERSION}" \
-            -d ubuntu24.04 \
             -a ${{ matrix.arch }} \
             -u ../deploy-artifacts
           SNYK_ARGS=()
           if [[ -n "${SNYK_TOKEN:-}" ]]; then SNYK_ARGS+=(-s); fi
           docker/test.sh -v "${VERSION}" \
-            -d ubuntu24.04 \
             -a ${{ matrix.arch }} \
             -c "${SNYK_ARGS[@]}"
 
@@ -622,10 +620,8 @@ jobs:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           set -euo pipefail
-          # -S: skip update-version.sh; the previous build already ran it.
-          docker/docker-build.sh -p -S \
+          docker/docker-build.sh -p \
             -v "${VERSION}" \
-            -d ubuntu24.04 \
             -a ${{ matrix.arch }} \
             -r artifact.aerospike.io/database-docker-dev-local \
             -u ../deploy-artifacts
@@ -674,7 +670,6 @@ jobs:
           set -euo pipefail
           docker/docker-build.sh -M \
             -v "${VERSION}" \
-            -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local
 
   # Release bundles are JFrog's promotion unit; produced on every publish
