@@ -212,8 +212,9 @@ function test_image() {
     elif printf '%s' "${output}" | grep -qF "${base_version}"; then
       log_success "Version ${expected_version} confirmed in output"
     else
-      log_warn "Expected version ${expected_version} not found in output:"
+      log_failure "Expected version ${expected_version} not found in output:"
       printf '%s\n' "${output}"
+      return 1
     fi
   fi
 

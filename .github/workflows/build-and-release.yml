@@ -218,7 +218,7 @@ jobs:
 
       - name: Get Python version from Pipfile
         run: |
-          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3 - | tr -d '"')" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=$(grep 'python_version' Pipfile | cut -d ' ' -f 3 - | tr -d '"')" >> $GITHUB_ENV
 
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -587,7 +587,7 @@ jobs:
           docker/test.sh -v "${VERSION}" \
             -d ubuntu24.04 \
             -a ${{ matrix.arch }} \
-            -c "${SNYK_ARGS[@]+"${SNYK_ARGS[@]}"}"
+            -c "${SNYK_ARGS[@]}"
 
       - name: Push native per-arch tag to JFrog
         env:

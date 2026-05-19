@@ -16,8 +16,9 @@ else
 VERSION ?= $(shell tr -d '[:space:]' < $(PKG_DIR)/../VERSION)
 endif
 RPM_VERSION := $(subst -,_,$(VERSION))
-# pkgbuild --version allows alphanumerics; git describe uses hyphens.
-MAC_VERSION := $(RPM_VERSION)
+# pkgbuild --version rejects hyphens and underscores; use dots so SemVer
+# pre-release tags (e.g. 5.0.0-rc1 -> 5.0.0.rc1) are accepted.
+MAC_VERSION := $(subst -,.,$(VERSION))
 MAC_ROOT = $(BUILD_DIR)/mac-root
 DMG_STAGING = $(BUILD_DIR)/dmg-staging
 PKG_ID = com.aerospike.asadm
