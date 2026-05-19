@@ -617,11 +617,11 @@ jobs:
           SHIM_DIR=$(mktemp -d)
           cat > "${SHIM_DIR}/asadm" <<EOF
           #!/bin/sh
-          exec docker run --rm "${IMAGE}" "\$@"
+          exec docker run --rm "${IMAGE}" asadm "\$@"
           EOF
           cat > "${SHIM_DIR}/asinfo" <<EOF
           #!/bin/sh
-          exec docker run --rm --entrypoint /opt/aerospike/bin/asadm/asinfo "${IMAGE}" "\$@"
+          exec docker run --rm "${IMAGE}" asinfo "\$@"
           EOF
           chmod +x "${SHIM_DIR}/asadm" "${SHIM_DIR}/asinfo"
           PATH="${SHIM_DIR}:${PATH}" bats .github/bin/test/test_execute.bats

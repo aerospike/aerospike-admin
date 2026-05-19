@@ -69,7 +69,10 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
     if [ -n "${PKG_SHA}" ] && [ "${PKG_SHA}" != "PLACEHOLDER" ]; then \
         echo "${PKG_SHA}  /tmp/asadm.deb" | sha256sum -c -; \
     fi && \
-    dpkg-deb -x /tmp/asadm.deb /
+    dpkg-deb -x /tmp/asadm.deb / && \
+    mkdir -p /shim/usr/local/bin && \
+    ln -sf /opt/aerospike/bin/asadm/asadm  /shim/usr/local/bin/asadm && \
+    ln -sf /opt/aerospike/bin/asadm/asinfo /shim/usr/local/bin/asinfo
 
 # ---------------------------------------------------------------------------
 # Runtime. distroless/python3 ships the C libs Python apps need; we don't use
@@ -86,9 +89,18 @@ LABEL org.opencontainers.image.title="Aerospike asadm" \
 
 COPY --from=builder /opt/aerospike /opt/aerospike
 
-# /usr/bin/{asadm,asinfo} from the .deb are intentionally skipped: COPY
-# dereferences single-file symlinks, which would land disconnected copies of
-# the bootstrap binary at /usr/bin/ and break PyInstaller's _internal/ lookup
-# (uses /proc/self/exe → dirname). Invoke asinfo with:
-#   docker run --entrypoint /opt/aerospike/bin/asadm/asinfo …
-ENTRYPOINT ["/opt/aerospike/bin/asadm/asadm"]
+# Symlinks created in the builder at /shim/usr/local/bin/{asadm,asinfo} →
+# /opt/aerospike/bin/asadm/{asadm,asinfo}. COPY of a *directory* preserves
+# symlinks (single-file COPY dereferences them — which would break
+# PyInstaller's /proc/self/exe → dirname → _internal/ resolution).
+# Placing the symlinks on PATH lets users invoke either binary by name:
+#   docker run IMAGE                  → asadm   (default via CMD)
+#   docker run IMAGE asadm  --help    → asadm
+#   docker run IMAGE asinfo --help    → asinfo
+COPY --from=builder /shim/usr/local/bin/ /usr/local/bin/
+
+# Reset the inherited `python3` entrypoint from distroless/python3-debian12;
+# our CMD becomes the full command. runc resolves bare names via PATH, so
+# users can invoke either tool by name.
+ENTRYPOINT []
+CMD ["asadm"]
