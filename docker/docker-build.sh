@@ -12,7 +12,7 @@
 # Modes:
 #   -t   Test: build and load locally (one image per distro×arch, --load compatible)
 #   -p   Push: build and push to registry (multi-arch, or single-arch per-tag when -a selects one arch)
-#   -M   Manifest: stitch per-arch tags into a multi-arch manifest (buildx imagetools create --push)
+#   -M   Manifest: stitch per-arch tags into a multi-arch manifest (buildx imagetools create; pushes by default)
 #   -g   Update Dockerfiles only (no bake / no build)
 #
 
@@ -265,8 +265,8 @@ function run_manifest_mode() {
       else
         target_tag="${reg}/aerospike-asadm:${VERSION}"
       fi
-      log_info "imagetools create --push ${target_tag}"
-      docker buildx imagetools create --push \
+      log_info "imagetools create ${target_tag}"
+      docker buildx imagetools create \
         -t "${target_tag}" \
         "${src_amd64}" \
         "${src_arm64}"
