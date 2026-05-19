@@ -9,7 +9,7 @@
 #      - Creates and pushes git tag <VERSION> (e.g. 5.0.0-rc1).
 #      - Tag push triggers draft-release.yml (drafts GitHub release notes).
 #      - Builds + signs + tests + publishes packages to JFrog dev repos.
-#      - Creates JFrog release bundle (master-only — used for promotion).
+#      - Creates JFrog release bundle (the promotion unit for any publish).
 #
 # === Feature-branch publishing (for external customers without GHA access) ===
 #   Dispatch this workflow on any branch with `release=true`:
@@ -19,25 +19,29 @@
 #            5.0.0-rc1 + branch feature/foo, sha abc123456
 #          → 5.0.0-rc1.feature-foo.abc123456
 #      - Packages are uploaded to the JFrog dev repo and installable via
-#        apt/dnf with that version pin. No release bundle is created.
+#        apt/dnf with that version pin. A release bundle is created so the
+#        artifacts can be promoted through JFrog.
 #
 # === Master feature-style build (publish from master without tagging) ===
-#   Dispatch on master with `release=true` and `skip_tag=true`:
+#   Dispatch on master with `release=true` and `skip_tagging=true`:
 #      - Behaves like a feature-branch build: VERSION gets the master+sha
-#        suffix (e.g. 5.0.0-rc1.master.abc123456), no git tag is created,
-#        and no release bundle is produced.
+#        suffix (e.g. 5.0.0-rc1.master.abc123456) and no git tag is created.
+#        A release bundle is still produced (same as feature-branch publish).
 #      - Use when you want to publish a build from master for testing/
 #        validation without committing to a real release.
 #
 # === Test (dry-run) ===
 #   Dispatch with `release=false` from any branch: builds run end-to-end,
-#   artifacts available on the GHA run page, no tag, no JFrog publish.
+#   artifacts available on the GHA run page, no tag, no JFrog publish,
+#   no release bundle.
 #
 # === Tagging rules (summary) ===
 #   Tagging is master-only. A git tag is created ONLY when:
-#       release=true  AND  ref==refs/heads/master  AND  skip_tag=false
+#       release=true  AND  ref==refs/heads/master  AND  skip_tagging=false
 #   For any non-master branch tagging is unconditionally skipped, regardless
-#   of `release` or `skip_tag`. The same applies to JFrog release bundles.
+#   of `release` or `skip_tagging`. Release bundles, by contrast, are produced
+#   on every publish (`release=true`) regardless of branch or `skip_tagging`,
+#   since the bundle is what enables JFrog promotion.
 
 name: Build and Release
 permissions:
@@ -51,11 +55,11 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Publish packages to JFrog (and push Docker tags). On master, also creates the git tag from VERSION and a release bundle. On non-master branches, tag + bundle are always skipped. Uncheck for a dry-run build (no publish)."
+        description: "Publish packages to JFrog (and push Docker tags) and create a JFrog release bundle (the promotion unit). On master, also creates the git tag from VERSION. On non-master branches, the git tag is always skipped. Uncheck for a dry-run build (no publish, no bundle)."
         type: boolean
         default: false
-      skip_tag:
-        description: "Skip git tag + release bundle even on master (treat as feature-style build). No effect on non-master branches, which never tag."
+      skip_tagging:
+        description: "Skip the git tag even on master (treat as feature-style build). Release bundle is still produced when release=true. No effect on non-master branches, which never tag."
         type: boolean
         default: false
 
@@ -108,13 +112,13 @@ jobs:
         id: compute
         env:
           BASE: ${{ needs.validate-inputs.outputs.VERSION }}
-          SKIP_TAG: ${{ inputs.skip_tag }}
+          SKIP_TAGGING: ${{ inputs.skip_tagging }}
         run: |
           set -euo pipefail
-          # On master without skip_tag this is a real release: use BASE as-is.
-          # Otherwise (any branch, or master+skip_tag) build a SemVer pre-release
+          # On master without skip_tagging this is a real release: use BASE as-is.
+          # Otherwise (any branch, or master+skip_tagging) build a SemVer pre-release
           # identifier so it never collides with the bare BASE version.
-          if [[ "${GITHUB_REF}" == "refs/heads/master" && "${SKIP_TAG}" != "true" ]]; then
+          if [[ "${GITHUB_REF}" == "refs/heads/master" && "${SKIP_TAGGING}" != "true" ]]; then
             VERSION="${BASE}"
           else
             BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
@@ -673,9 +677,10 @@ jobs:
             -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local
 
-  # Release bundles are JFrog's promotion unit; reserved for master without skip_tag.
+  # Release bundles are JFrog's promotion unit; produced on every publish
+  # regardless of branch or skip_tagging.
   create-release-bundle:
-    if: github.ref == 'refs/heads/master' && inputs.skip_tag != true
+    if: inputs.release == true
     permissions:
       contents: read
       id-token: write
@@ -693,15 +698,15 @@ jobs:
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.VERSION }}
       gh-workflows-ref: v3.4.0
-      dry-run: ${{ inputs.release != true }}
+      dry-run: false
 
   # Tag-last: created only after every publish step succeeds. A failure
   # anywhere upstream means no tag, no draft release, no inconsistent state.
   # Tagging is master-only; non-master dispatches never produce a tag.
-  # skip_tag also suppresses tagging on master (feature-style master build).
+  # skip_tagging also suppresses tagging on master (feature-style master build).
   create-tag:
     name: Create git tag (release marker)
-    if: inputs.release == true && github.ref == 'refs/heads/master' && inputs.skip_tag != true
+    if: inputs.release == true && github.ref == 'refs/heads/master' && inputs.skip_tagging != true
     needs:
       - validate-inputs
       - upload-artifacts-to-jfrog
