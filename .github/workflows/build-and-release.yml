@@ -253,7 +253,9 @@ jobs:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           make -C pkg osx-pkg VERSION="${VERSION}"
-          PKG_VERSION="${VERSION//-/_}"
+          # Must match MAC_VERSION in pkg/Makefile: pkgbuild rejects '-' and '_',
+          # so SemVer pre-release tags are emitted with '.' separators.
+          PKG_VERSION="${VERSION//-/.}"
           ARCH=$(uname -m)
           mv "pkg/target/aerospike-asadm-${PKG_VERSION}-${ARCH}.pkg" \
              "aerospike-asadm-${VERSION}-${{ matrix.os }}-${{ runner.arch }}.pkg"
