@@ -12,7 +12,7 @@ ARG ASADM_AMD64_SHA256="PLACEHOLDER"
 ARG ASADM_ARM64_URL="https://aerospike.jfrog.io/artifactory/database-rpm-dev-local/el10/aarch64/aerospike-asadm-5.0.0_rc1.el10.aarch64.rpm"
 ARG ASADM_ARM64_SHA256="PLACEHOLDER"
 
-FROM redhat/ubi10:10.0
+FROM redhat/ubi10:10.0@sha256:27251e29658cf10b31914ab9f2630d3f5b0d17d2996ee2dd7d6e2c091a84ab1b
 
 LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.description="asadm and asinfo, tools for managing Aerospike database." \

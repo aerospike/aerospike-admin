@@ -14,3 +14,13 @@ updates:
     directory: /
     schedule:
       interval: daily
+
+  - package-ecosystem: docker
+    directory: /docker/ubi10
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /docker/ubuntu24.04
+    schedule:
+      interval: weekly

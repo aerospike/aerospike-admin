@@ -12,7 +12,7 @@ ARG ASADM_AMD64_SHA256="PLACEHOLDER"
 ARG ASADM_ARM64_URL="https://aerospike.jfrog.io/artifactory/database-deb-dev-local/pool/noble/aerospike-asadm/aerospike-asadm_5.0.0-rc1_ubuntu24.04_aarch64.deb"
 ARG ASADM_ARM64_SHA256="PLACEHOLDER"
 
-FROM ubuntu:24.04
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
 
 LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.description="asadm and asinfo, tools for managing Aerospike database." \
