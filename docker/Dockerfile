@@ -43,6 +43,10 @@ ARG ASADM_LOCAL_PKG_ARM64=""
 
 SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
+# Extract to / so the .deb's absolute symlinks at /usr/bin/{asadm,asinfo}
+# → /opt/aerospike/bin/asadm/{asadm,asinfo} resolve correctly when the final
+# stage COPYs them. Extracting under /stage would leave dangling symlinks
+# (BuildKit resolves them against the builder root to compute a checksum).
 # hadolint ignore=DL3008
 RUN --mount=type=bind,source=.,target=/build-ctx \
     export DEBIAN_FRONTEND=noninteractive && \
@@ -64,8 +68,7 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
     if [ -n "${PKG_SHA}" ] && [ "${PKG_SHA}" != "PLACEHOLDER" ]; then \
         echo "${PKG_SHA}  /tmp/asadm.deb" | sha256sum -c -; \
     fi && \
-    mkdir -p /stage && \
-    dpkg-deb -x /tmp/asadm.deb /stage
+    dpkg-deb -x /tmp/asadm.deb /
 
 # ---------------------------------------------------------------------------
 # Runtime: distroless/cc supplies glibc + libstdc++ + libgcc + ca-certificates.
@@ -80,8 +83,8 @@ LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Aerospike"
 
-COPY --from=builder /stage/opt/aerospike /opt/aerospike
-COPY --from=builder /stage/usr/bin/asadm /usr/bin/asadm
-COPY --from=builder /stage/usr/bin/asinfo /usr/bin/asinfo
+COPY --from=builder /opt/aerospike /opt/aerospike
+COPY --from=builder /usr/bin/asadm /usr/bin/asadm
+COPY --from=builder /usr/bin/asinfo /usr/bin/asinfo
 
 ENTRYPOINT ["/usr/bin/asadm"]

@@ -158,7 +158,6 @@ tramp
 
 docker_logs
 docker/docker-bake.hcl
-docker/aerospike-asadm-*.snyk
 docker/aerospike-asadm_*.deb
 test/e2e/work/*
 *.lua

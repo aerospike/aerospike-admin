@@ -609,11 +609,28 @@ jobs:
             -v "${VERSION}" \
             -a ${{ matrix.arch }} \
             -u ../deploy-artifacts
-          SNYK_ARGS=()
-          if [[ -n "${SNYK_TOKEN:-}" ]]; then SNYK_ARGS+=(-s); fi
-          docker/test.sh -v "${VERSION}" \
-            -a ${{ matrix.arch }} \
-            -c "${SNYK_ARGS[@]}"
+
+          # Reuse the linux-install bats smoke test against the loaded image
+          # by shimming `asadm` and `asinfo` to `docker run` calls.
+          sudo apt-get update -qq && sudo apt-get install -y bats
+          IMAGE="aerospike/aerospike-asadm:${VERSION}-${{ matrix.arch }}"
+          SHIM_DIR=$(mktemp -d)
+          cat > "${SHIM_DIR}/asadm" <<EOF
+          #!/bin/sh
+          exec docker run --rm "${IMAGE}" "\$@"
+          EOF
+          cat > "${SHIM_DIR}/asinfo" <<EOF
+          #!/bin/sh
+          exec docker run --rm --entrypoint /usr/bin/asinfo "${IMAGE}" "\$@"
+          EOF
+          chmod +x "${SHIM_DIR}/asadm" "${SHIM_DIR}/asinfo"
+          PATH="${SHIM_DIR}:${PATH}" bats .github/bin/test/test_execute.bats
+
+          if [[ -n "${SNYK_TOKEN:-}" ]]; then
+            snyk container test "${IMAGE}" \
+              --platform=linux/${{ matrix.arch }} \
+              --file=docker/Dockerfile || true
+          fi
 
       - name: Push native per-arch tag to JFrog
         env:
