@@ -21,9 +21,23 @@
 #      - Packages are uploaded to the JFrog dev repo and installable via
 #        apt/dnf with that version pin. No release bundle is created.
 #
+# === Master feature-style build (publish from master without tagging) ===
+#   Dispatch on master with `release=true` and `skip_tag=true`:
+#      - Behaves like a feature-branch build: VERSION gets the master+sha
+#        suffix (e.g. 5.0.0-rc1.master.abc123456), no git tag is created,
+#        and no release bundle is produced.
+#      - Use when you want to publish a build from master for testing/
+#        validation without committing to a real release.
+#
 # === Test (dry-run) ===
 #   Dispatch with `release=false` from any branch: builds run end-to-end,
 #   artifacts available on the GHA run page, no tag, no JFrog publish.
+#
+# === Tagging rules (summary) ===
+#   Tagging is master-only. A git tag is created ONLY when:
+#       release=true  AND  ref==refs/heads/master  AND  skip_tag=false
+#   For any non-master branch tagging is unconditionally skipped, regardless
+#   of `release` or `skip_tag`. The same applies to JFrog release bundles.
 
 name: Build and Release
 permissions:
@@ -38,6 +52,10 @@ on:
     inputs:
       release:
         description: "Publish and create git tag from VERSION. Uncheck for a dry-run test build (no tag, no publish)."
+        type: boolean
+        default: false
+      skip_tag:
+        description: "Skip git tag + release bundle even on master (treat as feature-style build). Ignored on non-master branches."
         type: boolean
         default: false
 
@@ -90,9 +108,13 @@ jobs:
         id: compute
         env:
           BASE: ${{ needs.validate-inputs.outputs.VERSION }}
+          SKIP_TAG: ${{ inputs.skip_tag }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" == "refs/heads/master" ]]; then
+          # On master without skip_tag this is a real release: use BASE as-is.
+          # Otherwise (any branch, or master+skip_tag) build a SemVer pre-release
+          # identifier so it never collides with the bare BASE version.
+          if [[ "${GITHUB_REF}" == "refs/heads/master" && "${SKIP_TAG}" != "true" ]]; then
             VERSION="${BASE}"
           else
             BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
@@ -553,7 +575,7 @@ jobs:
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Install Snyk CLI
-        run: npm install -g snyk@1.1297.4
+        run: npm install -g snyk@1.1304.3
 
       - name: Install JFrog CLI
         id: jf
@@ -651,9 +673,9 @@ jobs:
             -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local
 
-  # Release bundles are JFrog's promotion unit; reserved for master.
+  # Release bundles are JFrog's promotion unit; reserved for master without skip_tag.
   create-release-bundle:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' && inputs.skip_tag != true
     permissions:
       contents: read
       id-token: write
@@ -675,9 +697,11 @@ jobs:
 
   # Tag-last: created only after every publish step succeeds. A failure
   # anywhere upstream means no tag, no draft release, no inconsistent state.
+  # Tagging is master-only; non-master dispatches never produce a tag.
+  # skip_tag also suppresses tagging on master (feature-style master build).
   create-tag:
     name: Create git tag (release marker)
-    if: inputs.release == true && github.ref == 'refs/heads/master'
+    if: inputs.release == true && github.ref == 'refs/heads/master' && inputs.skip_tag != true
     needs:
       - validate-inputs
       - upload-artifacts-to-jfrog
