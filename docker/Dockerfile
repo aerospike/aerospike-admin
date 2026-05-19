@@ -10,14 +10,18 @@
 #
 # The .deb produced by pkg/Makefile is fully self-contained: a PyInstaller
 # one-dir bundle at /opt/aerospike/bin/asadm/ plus two symlinks at
-# /usr/bin/{asadm,asinfo}, and declares no Depends:. We therefore unpack
-# the .deb in a builder stage and copy just the payload into a distroless
-# runtime stage — no apt, no dpkg, no shell in the shipped image.
+# /usr/bin/{asadm,asinfo}, and declares no Depends:. We unpack the .deb in a
+# builder stage and copy just the payload into a distroless runtime stage —
+# no apt, no dpkg, no shell in the shipped image.
+#
+# Runtime base is gcr.io/distroless/python3-debian12: it ships the C libs
+# Python bundles typically link against (zlib, libffi, libsqlite3, libcrypt,
+# libreadline, libuuid, libbz2, liblzma, …), which our PyInstaller bundle
+# excludes from itself (see pyinstaller-build.spec excludes_binaries). We
+# don't use the bundled /usr/bin/python3 — our PyInstaller binary brings its
+# own — but the lib set is exactly what we need, maintained by Google.
 #
 
-# Empty defaults so the in-stage RUN (which uses `set -u`) sees them as
-# defined-but-empty when only one arch's ARGs are passed (single-arch builds).
-# docker-build.sh injects real values via bake `args = {}`.
 ARG ASADM_AMD64_URL=""
 ARG ASADM_AMD64_SHA256=""
 ARG ASADM_ARM64_URL=""
@@ -34,9 +38,6 @@ ARG ASADM_ARM64_URL
 ARG ASADM_ARM64_SHA256
 # When set to a filename, the package is copied from the build context instead
 # of downloaded from ASADM_*_URL. Set by docker/docker-build.sh -u <local-dir>.
-# ASADM_LOCAL_PKG        - single-arch test builds (legacy).
-# ASADM_LOCAL_PKG_AMD64  - multi-arch builds, amd64.
-# ASADM_LOCAL_PKG_ARM64  - multi-arch builds, arm64.
 ARG ASADM_LOCAL_PKG=""
 ARG ASADM_LOCAL_PKG_AMD64=""
 ARG ASADM_LOCAL_PKG_ARM64=""
@@ -45,8 +46,8 @@ SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 # Extract to / so the .deb's absolute symlinks at /usr/bin/{asadm,asinfo}
 # → /opt/aerospike/bin/asadm/{asadm,asinfo} resolve correctly when the final
-# stage COPYs them. Extracting under /stage would leave dangling symlinks
-# (BuildKit resolves them against the builder root to compute a checksum).
+# stage COPYs from /opt/aerospike. Extracting under /stage would leave
+# dangling symlinks (BuildKit resolves them against the builder root).
 # hadolint ignore=DL3008
 RUN --mount=type=bind,source=.,target=/build-ctx \
     export DEBIAN_FRONTEND=noninteractive && \
@@ -71,24 +72,23 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
     dpkg-deb -x /tmp/asadm.deb /
 
 # ---------------------------------------------------------------------------
-# Runtime: distroless/cc supplies glibc + libstdc++ + libgcc + ca-certificates.
-# No shell, no package manager, no curl.
+# Runtime. distroless/python3 ships the C libs Python apps need; we don't use
+# its bundled python3 binary (PyInstaller embeds its own). No shell, no apt.
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/python3-debian12
 
 LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.description="asadm and asinfo, tools for managing Aerospike database." \
       org.opencontainers.image.source="https://github.com/aerospike/aerospike-admin" \
-      org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12" \
+      org.opencontainers.image.base.name="gcr.io/distroless/python3-debian12" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Aerospike"
 
-# Only the PyInstaller bundle is copied. The .deb's /usr/bin/{asadm,asinfo}
-# symlinks are intentionally skipped: COPY dereferences single-file symlinks,
-# which would land disconnected copies of the bootstrap binary at /usr/bin/
-# and break PyInstaller's _internal/ lookup (uses /proc/self/exe → dirname).
-# Distroless has no shell so PATH lookup isn't useful anyway; invoke asinfo
-# via `docker run --entrypoint /opt/aerospike/bin/asadm/asinfo …`.
 COPY --from=builder /opt/aerospike /opt/aerospike
 
+# /usr/bin/{asadm,asinfo} from the .deb are intentionally skipped: COPY
+# dereferences single-file symlinks, which would land disconnected copies of
+# the bootstrap binary at /usr/bin/ and break PyInstaller's _internal/ lookup
+# (uses /proc/self/exe → dirname). Invoke asinfo with:
+#   docker run --entrypoint /opt/aerospike/bin/asadm/asinfo …
 ENTRYPOINT ["/opt/aerospike/bin/asadm/asadm"]
