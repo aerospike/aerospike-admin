@@ -9,7 +9,7 @@
 #      - Creates and pushes git tag <VERSION> (e.g. 5.0.0-rc1).
 #      - Tag push triggers draft-release.yml (drafts GitHub release notes).
 #      - Builds + signs + tests + publishes packages to JFrog dev repos.
-#      - Creates JFrog release bundle (master-only — used for promotion).
+#      - Creates JFrog release bundle (the promotion unit for any publish).
 #
 # === Feature-branch publishing (for external customers without GHA access) ===
 #   Dispatch this workflow on any branch with `release=true`:
@@ -19,11 +19,29 @@
 #            5.0.0-rc1 + branch feature/foo, sha abc123456
 #          → 5.0.0-rc1.feature-foo.abc123456
 #      - Packages are uploaded to the JFrog dev repo and installable via
-#        apt/dnf with that version pin. No release bundle is created.
+#        apt/dnf with that version pin. A release bundle is created so the
+#        artifacts can be promoted through JFrog.
+#
+# === Master feature-style build (publish from master without tagging) ===
+#   Dispatch on master with `release=true` and `skip_tagging=true`:
+#      - Behaves like a feature-branch build: VERSION gets the master+sha
+#        suffix (e.g. 5.0.0-rc1.master.abc123456) and no git tag is created.
+#        A release bundle is still produced (same as feature-branch publish).
+#      - Use when you want to publish a build from master for testing/
+#        validation without committing to a real release.
 #
 # === Test (dry-run) ===
 #   Dispatch with `release=false` from any branch: builds run end-to-end,
-#   artifacts available on the GHA run page, no tag, no JFrog publish.
+#   artifacts available on the GHA run page, no tag, no JFrog publish,
+#   no release bundle.
+#
+# === Tagging rules (summary) ===
+#   Tagging is master-only. A git tag is created ONLY when:
+#       release=true  AND  ref==refs/heads/master  AND  skip_tagging=false
+#   For any non-master branch tagging is unconditionally skipped, regardless
+#   of `release` or `skip_tagging`. Release bundles, by contrast, are produced
+#   on every publish (`release=true`) regardless of branch or `skip_tagging`,
+#   since the bundle is what enables JFrog promotion.
 
 name: Build and Release
 permissions:
@@ -37,7 +55,11 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Publish and create git tag from VERSION. Uncheck for a dry-run test build (no tag, no publish)."
+        description: "Publish packages to JFrog (and push Docker tags) and create a JFrog release bundle (the promotion unit). On master, also creates the git tag from VERSION. On non-master branches, the git tag is always skipped. Uncheck for a dry-run build (no publish, no bundle)."
+        type: boolean
+        default: false
+      skip_tagging:
+        description: "Skip the git tag even on master (treat as feature-style build). Release bundle is still produced when release=true. No effect on non-master branches, which never tag."
         type: boolean
         default: false
 
@@ -90,9 +112,13 @@ jobs:
         id: compute
         env:
           BASE: ${{ needs.validate-inputs.outputs.VERSION }}
+          SKIP_TAGGING: ${{ inputs.skip_tagging }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" == "refs/heads/master" ]]; then
+          # On master without skip_tagging this is a real release: use BASE as-is.
+          # Otherwise (any branch, or master+skip_tagging) build a SemVer pre-release
+          # identifier so it never collides with the bare BASE version.
+          if [[ "${GITHUB_REF}" == "refs/heads/master" && "${SKIP_TAGGING}" != "true" ]]; then
             VERSION="${BASE}"
           else
             BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
@@ -218,7 +244,7 @@ jobs:
 
       - name: Get Python version from Pipfile
         run: |
-          echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3 - | tr -d '"')" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=$(grep 'python_version' Pipfile | cut -d ' ' -f 3 - | tr -d '"')" >> $GITHUB_ENV
 
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -253,7 +279,9 @@ jobs:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           make -C pkg osx-pkg VERSION="${VERSION}"
-          PKG_VERSION="${VERSION//-/_}"
+          # Must match MAC_VERSION in pkg/Makefile: pkgbuild rejects '-' and '_',
+          # so SemVer pre-release tags are emitted with '.' separators.
+          PKG_VERSION="${VERSION//-/.}"
           ARCH=$(uname -m)
           mv "pkg/target/aerospike-asadm-${PKG_VERSION}-${ARCH}.pkg" \
              "aerospike-asadm-${VERSION}-${{ matrix.os }}-${{ runner.arch }}.pkg"
@@ -551,7 +579,7 @@ jobs:
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Install Snyk CLI
-        run: npm install -g snyk@1.1297.4
+        run: npm install -g snyk@1.1304.3
 
       - name: Install JFrog CLI
         id: jf
@@ -579,25 +607,44 @@ jobs:
           set -euo pipefail
           docker/docker-build.sh -t \
             -v "${VERSION}" \
-            -d ubuntu24.04 \
             -a ${{ matrix.arch }} \
             -u ../deploy-artifacts
-          SNYK_ARGS=()
-          if [[ -n "${SNYK_TOKEN:-}" ]]; then SNYK_ARGS+=(-s); fi
-          docker/test.sh -v "${VERSION}" \
-            -d ubuntu24.04 \
-            -a ${{ matrix.arch }} \
-            -c "${SNYK_ARGS[@]+"${SNYK_ARGS[@]}"}"
+
+          # Reuse the linux-install bats smoke test against the loaded image
+          # by shimming `asadm` and `asinfo` to `docker run` calls.
+          sudo apt-get update -qq && sudo apt-get install -y bats
+          IMAGE="aerospike/aerospike-asadm:${VERSION}-${{ matrix.arch }}"
+          SHIM_DIR=$(mktemp -d)
+          cat > "${SHIM_DIR}/asadm" <<EOF
+          #!/bin/sh
+          exec docker run --rm "${IMAGE}" asadm "\$@"
+          EOF
+          cat > "${SHIM_DIR}/asinfo" <<EOF
+          #!/bin/sh
+          exec docker run --rm "${IMAGE}" asinfo "\$@"
+          EOF
+          chmod +x "${SHIM_DIR}/asadm" "${SHIM_DIR}/asinfo"
+          PATH="${SHIM_DIR}:${PATH}" bats .github/bin/test/test_execute.bats
+
+          # Verify the loaded image actually carries the version we built —
+          # catches mis-tagged or stale-cached images that bats wouldn't.
+          BASE_VERSION=$(printf '%s' "${VERSION}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+          docker run --rm "${IMAGE}" --version | grep -qF "${BASE_VERSION}" \
+            || { echo "ERROR: expected ${BASE_VERSION} in --version output" >&2; exit 1; }
+
+          if [[ -n "${SNYK_TOKEN:-}" ]]; then
+            snyk container test "${IMAGE}" \
+              --platform=linux/${{ matrix.arch }} \
+              --file=docker/Dockerfile || true
+          fi
 
       - name: Push native per-arch tag to JFrog
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           set -euo pipefail
-          # -S: skip update-version.sh; the previous build already ran it.
-          docker/docker-build.sh -p -S \
+          docker/docker-build.sh -p \
             -v "${VERSION}" \
-            -d ubuntu24.04 \
             -a ${{ matrix.arch }} \
             -r artifact.aerospike.io/database-docker-dev-local \
             -u ../deploy-artifacts
@@ -646,12 +693,12 @@ jobs:
           set -euo pipefail
           docker/docker-build.sh -M \
             -v "${VERSION}" \
-            -d ubuntu24.04 \
             -r artifact.aerospike.io/database-docker-dev-local
 
-  # Release bundles are JFrog's promotion unit; reserved for master.
+  # Release bundles are JFrog's promotion unit; produced on every publish
+  # regardless of branch or skip_tagging.
   create-release-bundle:
-    if: github.ref == 'refs/heads/master'
+    if: inputs.release == true
     permissions:
       contents: read
       id-token: write
@@ -669,13 +716,15 @@ jobs:
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.VERSION }}
       gh-workflows-ref: v3.4.0
-      dry-run: ${{ inputs.release != true }}
+      dry-run: false
 
   # Tag-last: created only after every publish step succeeds. A failure
   # anywhere upstream means no tag, no draft release, no inconsistent state.
+  # Tagging is master-only; non-master dispatches never produce a tag.
+  # skip_tagging also suppresses tagging on master (feature-style master build).
   create-tag:
     name: Create git tag (release marker)
-    if: inputs.release == true && github.ref == 'refs/heads/master'
+    if: inputs.release == true && github.ref == 'refs/heads/master' && inputs.skip_tagging != true
     needs:
       - validate-inputs
       - upload-artifacts-to-jfrog

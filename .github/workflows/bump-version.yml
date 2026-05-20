@@ -87,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          existing_pr=$(gh pr list --head "version-bump/$VERSION" --base master --json number --jq '.[0].number' --repo "${{ github.repository }}")
+          existing_pr=$(gh pr list --head "version-bump/$VERSION" --base master --json number --jq '.[0].number // empty' --repo "${{ github.repository }}")
           if [[ -n "$existing_pr" ]]; then
             echo "PR #$existing_pr already exists for this version (updated by force-push)."
           else

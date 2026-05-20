@@ -5,15 +5,15 @@
 # Build multi-architecture Docker images for Aerospike asadm.
 #
 # Flow:
-#   1. Call ./update-version.sh to patch Dockerfile ARGs (URLs + SHA256)
-#   2. Generate docker-bake.hcl with test and push targets
-#   3. Build with docker buildx bake
+#   1. Resolve .deb URLs and SHA256s for VERSION (local dir or remote URL).
+#   2. Generate docker-bake.hcl with test and push targets that pass those
+#      URLs/SHAs as build args.
+#   3. Build with docker buildx bake.
 #
 # Modes:
-#   -t   Test: build and load locally (one image per distro×arch, --load compatible)
-#   -p   Push: build and push to registry (multi-arch, or single-arch per-tag when -a selects one arch)
-#   -M   Manifest: stitch per-arch tags into a multi-arch manifest (buildx imagetools create --push)
-#   -g   Update Dockerfiles only (no bake / no build)
+#   -t   Test: build and load locally (one image per arch, --load compatible)
+#   -p   Push: build and push to registry (multi-arch, or single-arch when -a selects one arch)
+#   -M   Manifest: stitch per-arch tags into a multi-arch manifest (buildx imagetools create; pushes by default)
 #
 
 set -Eeuo pipefail
@@ -23,11 +23,14 @@ cd "${SCRIPT_DIR}"
 
 BAKE_FILE="docker-bake.hcl"
 
+DEFAULT_DEB_BASE_URL="https://aerospike.jfrog.io/artifactory/database-deb-dev-local"
+UBUNTU_CODENAME="noble"
+
 # ---------------------------------------------------------------------------
-# Logging
+# Logging — all to stderr so functions called as $(...) can return stdout cleanly
 # ---------------------------------------------------------------------------
-log_info()    { printf '\e[36m[INFO]\e[0m  %s\n' "$*"; }
-log_success() { printf '\e[32m[OK]\e[0m    %s\n' "$*"; }
+log_info()    { printf '\e[36m[INFO]\e[0m  %s\n' "$*" >&2; }
+log_success() { printf '\e[32m[OK]\e[0m    %s\n' "$*" >&2; }
 log_warn()    { printf '\e[33m[WARN]\e[0m  %s\n' "$*" >&2; }
 
 # ---------------------------------------------------------------------------
@@ -35,77 +38,66 @@ log_warn()    { printf '\e[33m[WARN]\e[0m  %s\n' "$*" >&2; }
 # ---------------------------------------------------------------------------
 function usage() {
   cat <<'EOF'
-Usage: docker/docker-build.sh -t|-p|-M|-g -v VERSION [OPTIONS]
+Usage: docker/docker-build.sh -t|-p|-M -v VERSION [OPTIONS]
 
-Build Docker images for Aerospike asadm (Ubuntu 24.04 and UBI 10).
+Build the Aerospike asadm Docker image (single recipe; multi-arch).
 
 MODES (one required):
-    -t               Test mode: build and load locally (single platform per arch)
+    -t               Test mode: build and load locally (one image per arch)
     -p               Push mode: build and push images (see -a below)
     -M, --manifest   Create/push multi-arch manifest from existing per-arch tags (imagetools)
-    -g, --generate   Update Dockerfiles only, no build
 
 REQUIRED:
     -v, --version VERSION   asadm version, e.g. 5.0.0 or 5.0.0-rc1
-                            Required unless -S/--skip-update is set.
 
 OPTIONS:
     -r, --registry REG      Registry prefix for image tags (default: aerospike)
                             Repeat for multiple registries: -r reg1 -r reg2
                             Example: -r artifact.aerospike.io/database-docker-dev-local
-    -d, --distro DISTRO     Filter distro; repeat for multiple (default: all)
-                            Values: ubuntu24.04, ubi10
     -a, --arch ARCH         Filter arch; repeat for multiple (default: all)
                             Values: amd64, arm64
                             Test (-t): limits test bake targets.
                             Push (-p): if exactly one arch is selected, pushes a single-platform
-                            image per distro tagged <version>-<distro>-<arch> (native CI matrix + -M).
-                            If both arches (default), push uses one multi-platform target per distro.
+                            image tagged <version>-<arch> (native CI matrix + -M).
+                            If both arches (default), push uses one multi-platform target.
     -u, --packages-url URL_OR_PATH
                             Package source — local dir or JFrog base URL:
                               Local:  -u /path/to/dist  (sets --packages-dir)
                               Remote: -u https://aerospike.jfrog.io/artifactory/database-deb-dev-local
-                                      (sets both --deb-base-url and --rpm-base-url)
-    --packages-dir DIR      Explicit local packages dir (forwarded to update-version.sh)
-    --deb-base-url URL      Explicit DEB base URL (forwarded to update-version.sh)
-    --rpm-base-url URL      Explicit RPM base URL (forwarded to update-version.sh)
+                                      (sets --deb-base-url)
+    --packages-dir DIR      Explicit local packages dir. .deb is copied into the build
+                            context and SHA256 is computed from the local file.
+    --deb-base-url URL      Explicit DEB base URL (default: JFrog dev repo).
     -T, --timestamp TS      Override the timestamp appended to push tags (default: current UTC time,
                             format YYYYMMDDHHmmSS, e.g. 20260421153000)
-    -s, --compute-sha       Download packages to compute SHA256 (forwarded to update-version.sh)
-    -S, --skip-update       Skip calling update-version.sh (use current Dockerfile ARGs as-is)
+    -s, --compute-sha       Download each .deb from the resolved URL to compute SHA256
+                            (only meaningful without --packages-dir; otherwise SHA is
+                            computed from the local file).
     -n, --no-cache          Disable Docker build cache
-    -N, --dry-run           Dry run: forward to update-version.sh; skip Docker steps
+    -N, --dry-run           Resolve URLs/SHAs and print, then exit (no bake, no build).
     -h, --help              Show this help message
-
-DISTROS AND BASE IMAGES:
-    ubuntu24.04    Ubuntu 24.04, installs asadm .deb   (linux/amd64 + linux/arm64)
-    ubi10          Red Hat UBI 10, installs asadm .rpm  (linux/amd64 + linux/arm64)
 
 TAGS PRODUCED:
   Test mode (loaded locally):
-    <reg>/aerospike-asadm:<version>-<distro>-<arch>
-    e.g. aerospike/aerospike-asadm:5.0.0-ubuntu24.04-amd64
+    <reg>/aerospike-asadm:<version>-<arch>
+    e.g. aerospike/aerospike-asadm:5.0.0-amd64
 
-  Push mode — multiple distros:
-    <reg>/aerospike-asadm:<version>-<distro>
-    <reg>/aerospike-asadm:<version>-<distro>-<timestamp>   (when -T is set)
-
-  Push mode — single distro:
+  Push mode — multi-arch (default, both arches):
     <reg>/aerospike-asadm:<version>
-    <reg>/aerospike-asadm:<version>-<timestamp>            (when -T is set)
+    <reg>/aerospike-asadm:<version>-<timestamp>   (when -T is set)
 
-  Push mode — single arch (-a once): per-arch tags:
-    <reg>/aerospike-asadm:<version>-<distro>-<arch>
+  Push mode — single arch (-a once): per-arch tag (native CI matrix):
+    <reg>/aerospike-asadm:<version>-<arch>
 
 EXAMPLES:
     # Build + load using local packages dir
     docker/docker-build.sh -t -v 5.0.0-rc1 -u /path/to/dist
 
-    # Build + load from JFrog dev (single -u sets both DEB and RPM URLs)
+    # Build + load from JFrog dev (single -u sets the DEB base URL)
     docker/docker-build.sh -t -v 5.0.0-rc1 \
-        -u https://aerospike.jfrog.io/artifactory/database-dev-local
+        -u https://aerospike.jfrog.io/artifactory/database-deb-dev-local
 
-    # Build + load, download packages to compute SHA256
+    # Build + load, download package to compute SHA256
     docker/docker-build.sh -t -v 5.0.0 -s
 
     # Build + push to default registry (docker.io/aerospike/aerospike-asadm)
@@ -114,24 +106,18 @@ EXAMPLES:
     # Build + push to JFrog dev registry with dev package source
     docker/docker-build.sh -p -v 5.0.0 \
         -r artifact.aerospike.io/database-docker-dev-local \
-        -u https://aerospike.jfrog.io/artifactory/database-dev-local
+        -u https://aerospike.jfrog.io/artifactory/database-deb-dev-local
 
     # Push to multiple registries simultaneously
     docker/docker-build.sh -p -v 5.0.0 \
         -r aerospike \
         -r artifact.aerospike.io/database-docker-dev-local
 
-    # Update Dockerfiles only (no build)
-    docker/docker-build.sh -g -v 5.0.0 -s
-
-    # Build + test only ubuntu24.04 amd64
-    docker/docker-build.sh -t -v 5.0.0 -d ubuntu24.04 -a amd64
-
-    # Build without updating Dockerfiles
-    docker/docker-build.sh -t -v 5.0.0 -S
+    # Build + test only amd64
+    docker/docker-build.sh -t -v 5.0.0 -a amd64
 
     # Stitch manifest after native per-arch pushes
-    docker/docker-build.sh -M -v 5.0.0 -d ubuntu24.04 \
+    docker/docker-build.sh -M -v 5.0.0 \
         -r artifact.aerospike.io/database-docker-dev-local
 
 OUTPUT:
@@ -140,24 +126,67 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# SHA256 helpers
+# ---------------------------------------------------------------------------
+sha256_of_file() {
+  if command -v sha256sum &>/dev/null; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+sha256_of_url() {
+  local url="$1"
+  local tmp
+  tmp=$(mktemp)
+  log_info "  Downloading for SHA256: $(basename "${url}")"
+  if ! curl -fsSL --retry 3 --retry-delay 3 "${url}" -o "${tmp}" 2>/dev/null; then
+    log_warn "  Download failed — SHA256 set to PLACEHOLDER"
+    rm -f "${tmp}"
+    printf 'PLACEHOLDER'
+    return
+  fi
+  sha256_of_file "${tmp}"
+  rm -f "${tmp}"
+}
+
+find_package() {
+  local dir="$1" filename="$2"
+  local real_dir
+  real_dir=$(cd "${dir}" && pwd -P)
+  find -L "${real_dir}" -maxdepth 3 -name "${filename}" -type f 2>/dev/null | head -1
+}
+
+# ---------------------------------------------------------------------------
 # Bake file emitters — write to stdout; caller redirects to BAKE_FILE
 # ---------------------------------------------------------------------------
 
-# Emit a single-arch test target block.
-# _emit_test_target NAME CTX ARCH LOCAL_PKG TAG [TAG ...]
-# LOCAL_PKG: basename of pkg file in build context, or "" to use URL download.
-function _emit_test_target() {
-  local name="$1" ctx="$2" arch="$3" local_pkg="$4"
-  shift 4
+# _emit_args: print an `args = { ... }` block for a target. Args are passed
+# as alternating KEY VALUE; values are skipped when empty so we don't emit
+# stale ARGs into the bake file.
+function _emit_args() {
+  local pairs=("$@")
+  local i n=${#pairs[@]}
+  local emitted=()
+  for ((i = 0; i < n; i += 2)); do
+    local key="${pairs[$i]}" val="${pairs[$((i + 1))]}"
+    [[ -z "${val}" ]] && continue
+    emitted+=("${key}" "${val}")
+  done
+  [[ ${#emitted[@]} -eq 0 ]] && return
+  echo "  args = {"
+  local m=${#emitted[@]}
+  for ((i = 0; i < m; i += 2)); do
+    echo "    ${emitted[$i]} = \"${emitted[$((i + 1))]}\""
+  done
+  echo "  }"
+}
+
+# _emit_tags TAG [TAG ...]
+function _emit_tags() {
   local tags=("$@")
   local n=${#tags[@]}
-  echo "target \"${name}\" {"
-  echo "  context    = \"${ctx}\""
-  echo "  dockerfile = \"Dockerfile\""
-  echo "  platforms  = [\"linux/${arch}\"]"
-  if [[ -n "${local_pkg}" ]]; then
-    echo "  args = { ASADM_LOCAL_PKG = \"${local_pkg}\" }"
-  fi
   echo "  tags = ["
   for ((i = 0; i < n; i++)); do
     if [[ $i -lt $((n - 1)) ]]; then
@@ -167,73 +196,82 @@ function _emit_test_target() {
     fi
   done
   echo "  ]"
+}
+
+# _emit_test_target NAME ARCH LOCAL_PKG TAGS...
+# Single-arch test target. URL/SHA args are passed for the active arch.
+function _emit_test_target() {
+  local name="$1" arch="$2" local_pkg="$3"
+  shift 3
+  local tags=("$@")
+  echo "target \"${name}\" {"
+  echo "  context    = \".\""
+  echo "  dockerfile = \"Dockerfile\""
+  echo "  platforms  = [\"linux/${arch}\"]"
+  if [[ "${arch}" == "amd64" ]]; then
+    _emit_args \
+      ASADM_AMD64_URL "${ASADM_AMD64_URL}" \
+      ASADM_AMD64_SHA256 "${ASADM_AMD64_SHA256}" \
+      ASADM_LOCAL_PKG "${local_pkg}"
+  else
+    _emit_args \
+      ASADM_ARM64_URL "${ASADM_ARM64_URL}" \
+      ASADM_ARM64_SHA256 "${ASADM_ARM64_SHA256}" \
+      ASADM_LOCAL_PKG "${local_pkg}"
+  fi
+  _emit_tags "${tags[@]}"
   echo "}"
   echo ""
 }
 
-# Emit a multi-arch push target block (always linux/amd64 + linux/arm64).
-# _emit_push_target NAME CTX LOCAL_PKG_AMD64 LOCAL_PKG_ARM64 TAG [TAG ...]
-# LOCAL_PKG_AMD64/ARM64: basename of pkg file in build context, or "" to use URL download.
+# _emit_push_target NAME LOCAL_PKG_AMD64 LOCAL_PKG_ARM64 TAGS...
+# Multi-arch push target (always linux/amd64 + linux/arm64).
 function _emit_push_target() {
-  local name="$1" ctx="$2" local_pkg_amd64="$3" local_pkg_arm64="$4"
-  shift 4
+  local name="$1" local_pkg_amd64="$2" local_pkg_arm64="$3"
+  shift 3
   local tags=("$@")
-  local n=${#tags[@]}
   echo "target \"${name}\" {"
-  echo "  context    = \"${ctx}\""
+  echo "  context    = \".\""
   echo "  dockerfile = \"Dockerfile\""
   echo "  platforms  = [\"linux/amd64\", \"linux/arm64\"]"
-  if [[ -n "${local_pkg_amd64}" || -n "${local_pkg_arm64}" ]]; then
-    echo "  args = {"
-    if [[ -n "${local_pkg_amd64}" ]]; then echo "    ASADM_LOCAL_PKG_AMD64 = \"${local_pkg_amd64}\""; fi
-    if [[ -n "${local_pkg_arm64}" ]]; then echo "    ASADM_LOCAL_PKG_ARM64 = \"${local_pkg_arm64}\""; fi
-    echo "  }"
-  fi
-  echo "  tags = ["
-  for ((i = 0; i < n; i++)); do
-    if [[ $i -lt $((n - 1)) ]]; then
-      echo "    \"${tags[$i]}\","
-    else
-      echo "    \"${tags[$i]}\""
-    fi
-  done
-  echo "  ]"
+  _emit_args \
+    ASADM_AMD64_URL "${ASADM_AMD64_URL}" \
+    ASADM_AMD64_SHA256 "${ASADM_AMD64_SHA256}" \
+    ASADM_ARM64_URL "${ASADM_ARM64_URL}" \
+    ASADM_ARM64_SHA256 "${ASADM_ARM64_SHA256}" \
+    ASADM_LOCAL_PKG_AMD64 "${local_pkg_amd64}" \
+    ASADM_LOCAL_PKG_ARM64 "${local_pkg_arm64}"
+  _emit_tags "${tags[@]}"
   echo "}"
   echo ""
 }
 
-# Emit a single-arch push target (native CI matrix; tags include distro and arch).
-# _emit_single_arch_push_target NAME CTX ARCH LOCAL_PKG TAG [TAG ...]
+# _emit_single_arch_push_target NAME ARCH LOCAL_PKG TAGS...
+# Single-arch push target (native CI matrix; tag includes arch).
 function _emit_single_arch_push_target() {
-  local name="$1" ctx="$2" arch="$3" local_pkg="$4"
-  shift 4
+  local name="$1" arch="$2" local_pkg="$3"
+  shift 3
   local tags=("$@")
-  local n=${#tags[@]}
   echo "target \"${name}\" {"
-  echo "  context    = \"${ctx}\""
+  echo "  context    = \".\""
   echo "  dockerfile = \"Dockerfile\""
   echo "  platforms  = [\"linux/${arch}\"]"
-  if [[ -n "${local_pkg}" ]]; then
-    if [[ "${arch}" == "amd64" ]]; then
-      echo "  args = { ASADM_LOCAL_PKG_AMD64 = \"${local_pkg}\" }"
-    else
-      echo "  args = { ASADM_LOCAL_PKG_ARM64 = \"${local_pkg}\" }"
-    fi
+  if [[ "${arch}" == "amd64" ]]; then
+    _emit_args \
+      ASADM_AMD64_URL "${ASADM_AMD64_URL}" \
+      ASADM_AMD64_SHA256 "${ASADM_AMD64_SHA256}" \
+      ASADM_LOCAL_PKG_AMD64 "${local_pkg}"
+  else
+    _emit_args \
+      ASADM_ARM64_URL "${ASADM_ARM64_URL}" \
+      ASADM_ARM64_SHA256 "${ASADM_ARM64_SHA256}" \
+      ASADM_LOCAL_PKG_ARM64 "${local_pkg}"
   fi
-  echo "  tags = ["
-  for ((i = 0; i < n; i++)); do
-    if [[ $i -lt $((n - 1)) ]]; then
-      echo "    \"${tags[$i]}\","
-    else
-      echo "    \"${tags[$i]}\""
-    fi
-  done
-  echo "  ]"
+  _emit_tags "${tags[@]}"
   echo "}"
   echo ""
 }
 
-# Emit a named bake group.
 # _emit_group NAME TARGET [TARGET ...]
 function _emit_group() {
   local name="$1"
@@ -248,45 +286,32 @@ function _emit_group() {
 
 # ---------------------------------------------------------------------------
 # run_manifest_mode: stitch per-arch tags into multi-arch manifest(s)
-# Requires global VERSION, REGISTRY_PREFIXES, ACTIVE_DISTROS
+# Requires global VERSION, REGISTRY_PREFIXES
 # ---------------------------------------------------------------------------
 function run_manifest_mode() {
   log_info "=== Creating multi-arch manifest (imagetools) ==="
-  local multi_distro=false
-  if [[ ${#ACTIVE_DISTROS[@]} -gt 1 ]]; then multi_distro=true; fi
-
-  for distro in "${ACTIVE_DISTROS[@]}"; do
-    for reg in "${REGISTRY_PREFIXES[@]}"; do
-      local src_amd64 src_arm64 target_tag
-      src_amd64="${reg}/aerospike-asadm:${VERSION}-${distro}-amd64"
-      src_arm64="${reg}/aerospike-asadm:${VERSION}-${distro}-arm64"
-      if [[ "${multi_distro}" == true ]]; then
-        target_tag="${reg}/aerospike-asadm:${VERSION}-${distro}"
-      else
-        target_tag="${reg}/aerospike-asadm:${VERSION}"
-      fi
-      log_info "imagetools create --push ${target_tag}"
-      docker buildx imagetools create --push \
-        -t "${target_tag}" \
-        "${src_amd64}" \
-        "${src_arm64}"
-      docker buildx imagetools inspect "${target_tag}"
-    done
+  for reg in "${REGISTRY_PREFIXES[@]}"; do
+    local src_amd64 src_arm64 target_tag
+    src_amd64="${reg}/aerospike-asadm:${VERSION}-amd64"
+    src_arm64="${reg}/aerospike-asadm:${VERSION}-arm64"
+    target_tag="${reg}/aerospike-asadm:${VERSION}"
+    log_info "imagetools create ${target_tag}"
+    docker buildx imagetools create \
+      -t "${target_tag}" \
+      "${src_amd64}" \
+      "${src_arm64}"
+    docker buildx imagetools inspect "${target_tag}"
   done
   log_success "Manifest(s) pushed."
 }
 
 # ---------------------------------------------------------------------------
 # generate_bake: write docker-bake.hcl
-# Reads globals: VERSION, REGISTRY_PREFIXES, ACTIVE_DISTROS, ACTIVE_ARCHES, PUSH_SINGLE_ARCH
+# Reads globals: VERSION, REGISTRY_PREFIXES, ACTIVE_ARCHES, PUSH_SINGLE_ARCH,
+#                ASADM_*_URL, ASADM_*_SHA256, LOCAL_PKG_*
 # ---------------------------------------------------------------------------
 function generate_bake() {
   log_info "Generating ${BAKE_FILE}..."
-
-  declare -A distro_ctx=(
-    [ubuntu24.04]="ubuntu24.04"
-    [ubi10]="ubi10"
-  )
 
   local test_target_names=()
   local push_target_names=()
@@ -298,90 +323,40 @@ function generate_bake() {
     echo ""
 
     # ---- Test targets (single-arch, --load compatible) ----
-    for distro in "${ACTIVE_DISTROS[@]}"; do
-      local ctx="${distro_ctx[${distro}]}"
-      local slug="${distro//\./-}"
-      for arch in "${ACTIVE_ARCHES[@]}"; do
-        # Resolve local pkg filename for this distro+arch (empty = use URL)
-        local local_pkg=""
-        case "${distro}" in
-        ubuntu24.04)
-          if [[ "${arch}" == "amd64" ]]; then local_pkg="${LOCAL_PKG_UBUNTU_AMD64}"; fi
-          if [[ "${arch}" == "arm64" ]]; then local_pkg="${LOCAL_PKG_UBUNTU_ARM64}"; fi
-          ;;
-        ubi10)
-          if [[ "${arch}" == "amd64" ]]; then local_pkg="${LOCAL_PKG_UBI_AMD64}"; fi
-          if [[ "${arch}" == "arm64" ]]; then local_pkg="${LOCAL_PKG_UBI_ARM64}"; fi
-          ;;
-        esac
-        local tags=()
-        for reg in "${REGISTRY_PREFIXES[@]}"; do
-          tags+=("${reg}/aerospike-asadm:${VERSION}-${distro}-${arch}")
-        done
-        _emit_test_target "${slug}-${arch}" "${ctx}" "${arch}" "${local_pkg}" "${tags[@]}"
-        test_target_names+=("${slug}-${arch}")
+    for arch in "${ACTIVE_ARCHES[@]}"; do
+      local local_pkg=""
+      if [[ "${arch}" == "amd64" ]]; then local_pkg="${LOCAL_PKG_AMD64}"; fi
+      if [[ "${arch}" == "arm64" ]]; then local_pkg="${LOCAL_PKG_ARM64}"; fi
+      local tags=()
+      for reg in "${REGISTRY_PREFIXES[@]}"; do
+        tags+=("${reg}/aerospike-asadm:${VERSION}-${arch}")
       done
+      _emit_test_target "test-${arch}" "${arch}" "${local_pkg}" "${tags[@]}"
+      test_target_names+=("test-${arch}")
     done
 
     # ---- Push targets ----
-    local multi_distro=false
-    if [[ ${#ACTIVE_DISTROS[@]} -gt 1 ]]; then multi_distro=true; fi
-
     if [[ "${PUSH_SINGLE_ARCH:-false}" == true ]]; then
       local arch="${ACTIVE_ARCHES[0]}"
-      for distro in "${ACTIVE_DISTROS[@]}"; do
-        local ctx="${distro_ctx[${distro}]}"
-        local slug="${distro//\./-}"
-        local push_pkg=""
-        case "${distro}" in
-        ubuntu24.04)
-          if [[ "${arch}" == "amd64" ]]; then push_pkg="${LOCAL_PKG_UBUNTU_AMD64}"; fi
-          if [[ "${arch}" == "arm64" ]]; then push_pkg="${LOCAL_PKG_UBUNTU_ARM64}"; fi
-          ;;
-        ubi10)
-          if [[ "${arch}" == "amd64" ]]; then push_pkg="${LOCAL_PKG_UBI_AMD64}"; fi
-          if [[ "${arch}" == "arm64" ]]; then push_pkg="${LOCAL_PKG_UBI_ARM64}"; fi
-          ;;
-        esac
-        local tags=()
-        for reg in "${REGISTRY_PREFIXES[@]}"; do
-          tags+=("${reg}/aerospike-asadm:${VERSION}-${distro}-${arch}")
-        done
-        _emit_single_arch_push_target "push-${slug}-${arch}" "${ctx}" "${arch}" "${push_pkg}" "${tags[@]}"
-        push_target_names+=("push-${slug}-${arch}")
+      local push_pkg=""
+      if [[ "${arch}" == "amd64" ]]; then push_pkg="${LOCAL_PKG_AMD64}"; fi
+      if [[ "${arch}" == "arm64" ]]; then push_pkg="${LOCAL_PKG_ARM64}"; fi
+      local tags=()
+      for reg in "${REGISTRY_PREFIXES[@]}"; do
+        tags+=("${reg}/aerospike-asadm:${VERSION}-${arch}")
       done
+      _emit_single_arch_push_target "push-${arch}" "${arch}" "${push_pkg}" "${tags[@]}"
+      push_target_names+=("push-${arch}")
     else
-      for distro in "${ACTIVE_DISTROS[@]}"; do
-        local ctx="${distro_ctx[${distro}]}"
-        local slug="${distro//\./-}"
-        local push_pkg_amd64="" push_pkg_arm64=""
-        case "${distro}" in
-        ubuntu24.04)
-          push_pkg_amd64="${LOCAL_PKG_UBUNTU_AMD64}"
-          push_pkg_arm64="${LOCAL_PKG_UBUNTU_ARM64}"
-          ;;
-        ubi10)
-          push_pkg_amd64="${LOCAL_PKG_UBI_AMD64}"
-          push_pkg_arm64="${LOCAL_PKG_UBI_ARM64}"
-          ;;
-        esac
-        local tags=()
-        for reg in "${REGISTRY_PREFIXES[@]}"; do
-          if [[ "${multi_distro}" == true ]]; then
-            tags+=("${reg}/aerospike-asadm:${VERSION}-${distro}")
-            if [[ -n "${TIMESTAMP}" ]]; then
-              tags+=("${reg}/aerospike-asadm:${VERSION}-${distro}-${TIMESTAMP}")
-            fi
-          else
-            tags+=("${reg}/aerospike-asadm:${VERSION}")
-            if [[ -n "${TIMESTAMP}" ]]; then
-              tags+=("${reg}/aerospike-asadm:${VERSION}-${TIMESTAMP}")
-            fi
-          fi
-        done
-        _emit_push_target "${slug}" "${ctx}" "${push_pkg_amd64}" "${push_pkg_arm64}" "${tags[@]}"
-        push_target_names+=("${slug}")
+      local tags=()
+      for reg in "${REGISTRY_PREFIXES[@]}"; do
+        tags+=("${reg}/aerospike-asadm:${VERSION}")
+        if [[ -n "${TIMESTAMP}" ]]; then
+          tags+=("${reg}/aerospike-asadm:${VERSION}-${TIMESTAMP}")
+        fi
       done
+      _emit_push_target "push" "${LOCAL_PKG_AMD64}" "${LOCAL_PKG_ARM64}" "${tags[@]}"
+      push_target_names+=("push")
     fi
 
     # ---- Groups ----
@@ -394,97 +369,80 @@ function generate_bake() {
 }
 
 # ---------------------------------------------------------------------------
-# Main
+# resolve_packages: compute URLs, SHA256s, and (optionally) copy local .debs
+# into the build context. Populates globals:
+#   ASADM_{AMD64,ARM64}_URL
+#   ASADM_{AMD64,ARM64}_SHA256
+#   LOCAL_PKG_{AMD64,ARM64}     (set only when --packages-dir is used)
+#   LOCAL_PKGS_COPIED           (paths to clean up on EXIT)
 # ---------------------------------------------------------------------------
+function resolve_packages() {
+  local pkg_amd64="aerospike-asadm_${VERSION}_ubuntu24.04_x86_64.deb"
+  local pkg_arm64="aerospike-asadm_${VERSION}_ubuntu24.04_aarch64.deb"
+  local pool="${DEB_BASE_URL}/pool/${UBUNTU_CODENAME}/aerospike-asadm"
 
-# Script-level state: populated in main(), read by generate_bake()
-VERSION=""
-TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
-REGISTRY_PREFIXES=()
-ACTIVE_DISTROS=()
-ACTIVE_ARCHES=()
-PUSH_SINGLE_ARCH=false
+  ASADM_AMD64_URL="${pool}/${pkg_amd64}"
+  ASADM_ARM64_URL="${pool}/${pkg_arm64}"
 
-# Local package filenames discovered by _setup_local_pkgs(); empty = use URL
-LOCAL_PKG_UBUNTU_AMD64=""
-LOCAL_PKG_UBUNTU_ARM64=""
-LOCAL_PKG_UBI_AMD64=""
-LOCAL_PKG_UBI_ARM64=""
-LOCAL_PKGS_COPIED=()  # paths of files copied into build context dirs for cleanup
+  log_info "=== Resolving packages ==="
+  log_info "  Version:      ${VERSION}"
+  log_info "  DEB base URL: ${DEB_BASE_URL}"
+  [[ -n "${PACKAGES_DIR}" ]] && log_info "  Packages dir: ${PACKAGES_DIR}"
 
-# ---------------------------------------------------------------------------
-# _setup_local_pkgs: find pkg files in packages_dir, copy into build context
-# dirs (ubuntu24.04/ and ubi10/) so the Dockerfile bind-mount can see them.
-# Populates LOCAL_PKG_* globals and LOCAL_PKGS_COPIED for later cleanup.
-# ---------------------------------------------------------------------------
-function _setup_local_pkgs() {
-  local dir="$1"
-  local real_dir
-  real_dir=$(cd "${dir}" && pwd -P)
-
-  _find_one() {
-    find -L "${real_dir}" -maxdepth 3 -name "$1" -type f 2>/dev/null | head -1
-  }
-
-  _copy_pkg() {
-    local pattern="$1" dest_dir="$2"
-    local found
-    found=$(_find_one "${pattern}")
-    if [[ -n "${found}" ]]; then
-      local base
-      base="$(basename "${found}")"
-      cp "${found}" "${dest_dir}/${base}"
-      LOCAL_PKGS_COPIED+=("${dest_dir}/${base}")
-      log_info "  Local pkg: ${dest_dir}/${base}" >&2
-      # Return basename to caller via stdout (must be the only stdout output)
-      printf '%s' "${base}"
-    fi
-  }
-
-  log_info "Resolving local packages from: ${real_dir}"
-
-  # Only copy arches we're actually building to avoid unnecessary work
   local need_amd64=false need_arm64=false
   for a in "${ACTIVE_ARCHES[@]}"; do
-    if [[ "${a}" == "amd64" ]]; then need_amd64=true; fi
-    if [[ "${a}" == "arm64" ]]; then need_arm64=true; fi
+    [[ "${a}" == "amd64" ]] && need_amd64=true
+    [[ "${a}" == "arm64" ]] && need_arm64=true
   done
 
-  for distro in "${ACTIVE_DISTROS[@]}"; do
-    case "${distro}" in
-    ubuntu24.04)
-      if [[ "${need_amd64}" == true ]]; then
-        LOCAL_PKG_UBUNTU_AMD64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_x86_64.deb" "ubuntu24.04")
+  if [[ -n "${PACKAGES_DIR}" ]]; then
+    local real_dir
+    real_dir=$(cd "${PACKAGES_DIR}" && pwd -P)
+    if [[ "${need_amd64}" == true ]]; then
+      local path
+      path=$(find_package "${real_dir}" "${pkg_amd64}")
+      if [[ -n "${path}" ]]; then
+        log_info "  Found:  ${path}"
+        ASADM_AMD64_SHA256=$(sha256_of_file "${path}")
+        cp "${path}" "${SCRIPT_DIR}/${pkg_amd64}"
+        LOCAL_PKG_AMD64="${pkg_amd64}"
+        LOCAL_PKGS_COPIED+=("${SCRIPT_DIR}/${pkg_amd64}")
+      else
+        log_warn "  ${pkg_amd64} not found in ${PACKAGES_DIR} — will fall back to URL"
+        ASADM_AMD64_SHA256="PLACEHOLDER"
       fi
-      if [[ "${need_arm64}" == true ]]; then
-        LOCAL_PKG_UBUNTU_ARM64=$(_copy_pkg "aerospike-asadm_*_ubuntu24.04_aarch64.deb" "ubuntu24.04")
+    fi
+    if [[ "${need_arm64}" == true ]]; then
+      local path
+      path=$(find_package "${real_dir}" "${pkg_arm64}")
+      if [[ -n "${path}" ]]; then
+        log_info "  Found:  ${path}"
+        ASADM_ARM64_SHA256=$(sha256_of_file "${path}")
+        cp "${path}" "${SCRIPT_DIR}/${pkg_arm64}"
+        LOCAL_PKG_ARM64="${pkg_arm64}"
+        LOCAL_PKGS_COPIED+=("${SCRIPT_DIR}/${pkg_arm64}")
+      else
+        log_warn "  ${pkg_arm64} not found in ${PACKAGES_DIR} — will fall back to URL"
+        ASADM_ARM64_SHA256="PLACEHOLDER"
       fi
-      ;;
-    ubi10)
-      if [[ "${need_amd64}" == true ]]; then
-        LOCAL_PKG_UBI_AMD64=$(_copy_pkg "aerospike-asadm-*.el10.x86_64.rpm" "ubi10")
-      fi
-      if [[ "${need_arm64}" == true ]]; then
-        LOCAL_PKG_UBI_ARM64=$(_copy_pkg "aerospike-asadm-*.el10.aarch64.rpm" "ubi10")
-      fi
-      ;;
-    esac
-  done
+    fi
+  elif [[ "${COMPUTE_SHA}" == true ]]; then
+    [[ "${need_amd64}" == true ]] && ASADM_AMD64_SHA256=$(sha256_of_url "${ASADM_AMD64_URL}")
+    [[ "${need_arm64}" == true ]] && ASADM_ARM64_SHA256=$(sha256_of_url "${ASADM_ARM64_URL}")
+  else
+    ASADM_AMD64_SHA256="PLACEHOLDER"
+    ASADM_ARM64_SHA256="PLACEHOLDER"
+  fi
 
-  # Warn for any expected packages that were not found
-  local distros_str="${ACTIVE_DISTROS[*]}"
-  if [[ "${need_amd64}" == true && "${distros_str}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_AMD64}" ]]; then
-    log_warn "DEB (amd64) not found in ${dir} — will fall back to URL"
+  echo ""
+  log_info "  AMD64 URL: ${ASADM_AMD64_URL}"
+  log_info "  AMD64 SHA: ${ASADM_AMD64_SHA256}"
+  log_info "  ARM64 URL: ${ASADM_ARM64_URL}"
+  log_info "  ARM64 SHA: ${ASADM_ARM64_SHA256}"
+  if [[ "${ASADM_AMD64_SHA256}" == "PLACEHOLDER" || "${ASADM_ARM64_SHA256}" == "PLACEHOLDER" ]]; then
+    log_warn "  One or more SHA256 checksums are PLACEHOLDER — SHA256 verification will be skipped at build time."
   fi
-  if [[ "${need_arm64}" == true && "${distros_str}" == *ubuntu24.04* && -z "${LOCAL_PKG_UBUNTU_ARM64}" ]]; then
-    log_warn "DEB (arm64) not found in ${dir} — will fall back to URL"
-  fi
-  if [[ "${need_amd64}" == true && "${distros_str}" == *ubi10* && -z "${LOCAL_PKG_UBI_AMD64}" ]]; then
-    log_warn "RPM (amd64) not found in ${dir} — will fall back to URL"
-  fi
-  if [[ "${need_arm64}" == true && "${distros_str}" == *ubi10* && -z "${LOCAL_PKG_UBI_ARM64}" ]]; then
-    log_warn "RPM (arm64) not found in ${dir} — will fall back to URL"
-  fi
+  echo ""
 }
 
 function _cleanup_local_pkgs() {
@@ -493,35 +451,50 @@ function _cleanup_local_pkgs() {
   done
 }
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+# Script-level state
+VERSION=""
+TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
+REGISTRY_PREFIXES=()
+ACTIVE_ARCHES=()
+PUSH_SINGLE_ARCH=false
+
+PACKAGES_DIR=""
+DEB_BASE_URL="${DEFAULT_DEB_BASE_URL}"
+COMPUTE_SHA=false
+
+ASADM_AMD64_URL=""
+ASADM_AMD64_SHA256=""
+ASADM_ARM64_URL=""
+ASADM_ARM64_SHA256=""
+
+LOCAL_PKG_AMD64=""
+LOCAL_PKG_ARM64=""
+LOCAL_PKGS_COPIED=()
+
 function main() {
   local mode=""
-  local skip_update=false
   local dry_run=false
   local no_cache=false
-  local full_generate=false
-  local generate_only=false
-  local distro_filters=()
   local arch_filters=()
-  local pkg_url="" packages_dir="" deb_base_url="" rpm_base_url=""
-  local compute_sha=false
+  local pkg_url=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
     -t) mode="test" ; shift ;;
     -p) mode="push" ; shift ;;
     -M | --manifest) mode="manifest" ; shift ;;
-    -g | --generate)  full_generate=true       ; shift ;;
     -v | --version)       VERSION="$2"             ; shift 2 ;;
     -r | --registry)      REGISTRY_PREFIXES+=("$2") ; shift 2 ;;
-    -d | --distro)        distro_filters+=("$2")   ; shift 2 ;;
     -a | --arch)          arch_filters+=("$2")     ; shift 2 ;;
     -u | --packages-url)  pkg_url="$2"             ; shift 2 ;;
-    --packages-dir)       packages_dir="$2"        ; shift 2 ;;
-    --deb-base-url)       deb_base_url="$2"        ; shift 2 ;;
-    --rpm-base-url)       rpm_base_url="$2"        ; shift 2 ;;
+    --packages-dir)       PACKAGES_DIR="$2"        ; shift 2 ;;
+    --deb-base-url)       DEB_BASE_URL="$2"        ; shift 2 ;;
     -T | --timestamp)     TIMESTAMP="$2"           ; shift 2 ;;
-    -s | --compute-sha)   compute_sha=true         ; shift ;;
-    -S | --skip-update)   skip_update=true         ; shift ;;
+    -s | --compute-sha)   COMPUTE_SHA=true         ; shift ;;
     -n | --no-cache)      no_cache=true            ; shift ;;
     -N | --dry-run)       dry_run=true             ; shift ;;
     -h | --help)      usage ; exit 0 ;;
@@ -529,39 +502,20 @@ function main() {
     esac
   done
 
-  # Resolve mode
-  if [[ "${full_generate}" == true && -z "${mode}" ]]; then
-    generate_only=true
-  fi
-  if [[ "${full_generate}" == false && -z "${mode}" ]]; then
-    log_warn "A mode (-t, -p, -M, or -g) is required."
+  if [[ -z "${mode}" ]]; then
+    log_warn "A mode (-t, -p, or -M) is required."
     usage
     exit 1
   fi
 
-  # --version required unless --skip-update
-  if [[ -z "${VERSION}" && "${skip_update}" == false ]]; then
-    log_warn "--version is required (or use --skip-update to skip Dockerfile update)."
+  if [[ -z "${VERSION}" ]]; then
+    log_warn "--version is required."
     usage
     exit 1
   fi
 
   # Default registry
   if [[ ${#REGISTRY_PREFIXES[@]} -eq 0 ]]; then REGISTRY_PREFIXES=("aerospike"); fi
-
-  # Resolve active distros
-  local all_distros=("ubuntu24.04" "ubi10")
-  if [[ ${#distro_filters[@]} -eq 0 ]]; then
-    ACTIVE_DISTROS=("${all_distros[@]}")
-  else
-    for d in "${distro_filters[@]}"; do
-      local valid=false
-      for ad in "${all_distros[@]}"; do
-        if [[ "${ad}" == "${d}" ]]; then ACTIVE_DISTROS+=("${d}"); valid=true; break; fi
-      done
-      if [[ "${valid}" == false ]]; then log_warn "Unknown distro '${d}' (valid: ${all_distros[*]})"; fi
-    done
-  fi
 
   # Resolve active arches
   local all_arches=("amd64" "arm64")
@@ -591,32 +545,17 @@ function main() {
     ACTIVE_ARCHES=("${__deduped[@]}")
   fi
 
-  if [[ ${#ACTIVE_DISTROS[@]} -eq 0 ]]; then
-    log_warn "No valid distros after filtering."
-    exit 1
-  fi
   if [[ ${#ACTIVE_ARCHES[@]} -eq 0 ]]; then
     log_warn "No valid arches after filtering."
     exit 1
   fi
 
   if [[ "${mode}" == "manifest" ]]; then
-    if [[ -z "${VERSION}" ]]; then
-      log_warn "-v/--version is required for -M."
-      exit 1
-    fi
     run_manifest_mode
     exit 0
   fi
 
-  # VERSION is required whenever bake targets are generated (skipped only for -g/dry-run)
-  if [[ -z "${VERSION}" && "${skip_update}" == true && "${generate_only}" == false && "${dry_run}" == false ]]; then
-    log_warn "-v/--version is required when --skip-update is used (bake tags will be empty otherwise)."
-    exit 1
-  fi
-
-  # Push with exactly one arch: per-distro single-platform targets (native CI matrix)
-  PUSH_SINGLE_ARCH=false
+  # Push with exactly one arch: single-platform target (native CI matrix)
   if [[ "${mode}" == "push" && ${#ACTIVE_ARCHES[@]} -eq 1 ]]; then
     PUSH_SINGLE_ARCH=true
   fi
@@ -624,29 +563,16 @@ function main() {
   # Resolve -u / --packages-url: local dir or remote JFrog base URL
   if [[ -n "${pkg_url}" ]]; then
     if [[ "${pkg_url}" == http://* || "${pkg_url}" == https://* ]]; then
-      deb_base_url="${pkg_url}"
-      rpm_base_url="${pkg_url}"
+      DEB_BASE_URL="${pkg_url}"
     else
-      packages_dir="${pkg_url}"
+      PACKAGES_DIR="${pkg_url}"
     fi
   fi
 
-  # ---- Step 1: Update Dockerfiles ----
-  if [[ "${skip_update}" == false ]]; then
-    log_info "=== Updating Dockerfiles ==="
-    local update_args=("--version" "${VERSION}")
-    if [[ -n "${packages_dir}" ]];     then update_args+=("--packages-dir" "${packages_dir}"); fi
-    if [[ -n "${deb_base_url}" ]];     then update_args+=("--deb-base-url" "${deb_base_url}"); fi
-    if [[ -n "${rpm_base_url}" ]];     then update_args+=("--rpm-base-url" "${rpm_base_url}"); fi
-    if [[ "${compute_sha}" == true ]]; then update_args+=("--compute-sha"); fi
-    if [[ "${dry_run}"     == true ]]; then update_args+=("--dry-run"); fi
-    ./update-version.sh "${update_args[@]}"
-    echo ""
-  fi
-
-  if [[ "${generate_only}" == true ]]; then
-    log_success "Dockerfiles updated. (-g only: skipping bake and build)"
-    exit 0
+  # ---- Step 1: Resolve URLs + SHAs (and copy local .debs into context if any) ----
+  resolve_packages
+  if [[ ${#LOCAL_PKGS_COPIED[@]} -gt 0 ]]; then
+    trap '_cleanup_local_pkgs' EXIT
   fi
 
   if [[ "${dry_run}" == true ]]; then
@@ -654,19 +580,11 @@ function main() {
     exit 0
   fi
 
-  # ---- Step 2: Resolve local packages (if --packages-dir/-u local path) ----
-  if [[ -n "${packages_dir}" ]]; then
-    _setup_local_pkgs "${packages_dir}"
-    trap '_cleanup_local_pkgs' EXIT
-    echo ""
-  fi
-
-  # ---- Step 3: Generate bake file ----
-  echo ""
+  # ---- Step 2: Generate bake file ----
   log_info "=== Generating Bake File ==="
   generate_bake
 
-  # ---- Step 4: Build ----
+  # ---- Step 3: Build ----
   echo ""
   log_info "=== Building Images ==="
   local bake_args=("-f" "${BAKE_FILE}")
