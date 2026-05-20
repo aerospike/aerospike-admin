@@ -40,7 +40,7 @@ function usage() {
   cat <<'EOF'
 Usage: docker/docker-build.sh -t|-p|-M -v VERSION [OPTIONS]
 
-Build the Aerospike asadm distroless Docker image (single recipe; multi-arch).
+Build the Aerospike asadm Docker image (single recipe; multi-arch).
 
 MODES (one required):
     -t               Test mode: build and load locally (one image per arch)

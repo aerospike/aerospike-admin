@@ -16,9 +16,10 @@ else
 VERSION ?= $(shell tr -d '[:space:]' < $(PKG_DIR)/../VERSION)
 endif
 RPM_VERSION := $(subst -,_,$(VERSION))
-# pkgbuild --version rejects hyphens and underscores; use dots so SemVer
-# pre-release tags (e.g. 5.0.0-rc1 -> 5.0.0.rc1) are accepted.
-MAC_VERSION := $(subst -,.,$(VERSION))
+# pkgbuild --version rejects hyphens and underscores; collapse both to dots
+# so SemVer pre-release tags (e.g. 5.0.0-rc1 -> 5.0.0.rc1) are accepted, and
+# defensively normalize any underscore-form inputs (env overrides) too.
+MAC_VERSION := $(subst _,.,$(subst -,.,$(VERSION)))
 MAC_ROOT = $(BUILD_DIR)/mac-root
 DMG_STAGING = $(BUILD_DIR)/dmg-staging
 PKG_ID = com.aerospike.asadm
