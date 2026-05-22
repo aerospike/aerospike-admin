@@ -2349,6 +2349,15 @@ class CliView(object):
             )
         )
 
+        if "system_memory" in cluster_dict:
+            sm = cluster_dict["system_memory"]
+            numbered_lines.append(
+                CliView.SummaryLine(
+                    "System Memory",
+                    f"{sm['avail_pct']:.2f}% free",
+                )
+            )
+
         if "pmem_index" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
@@ -2373,6 +2382,46 @@ class CliView(object):
                 )
             )
 
+        if "pmem_sindex" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Pmem Sindex",
+                    cluster_dict["pmem_sindex"],
+                )
+            )
+
+        if "flash_sindex" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Flash Sindex",
+                    cluster_dict["flash_sindex"],
+                )
+            )
+
+        if "shmem_sindex" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Shmem Sindex",
+                    cluster_dict["shmem_sindex"],
+                )
+            )
+
+        if "set_index" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Set Index",
+                    cluster_dict["set_index"],
+                )
+            )
+
+        if "indexes_memory" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Indexes Memory",
+                    cluster_dict["indexes_memory"],
+                )
+            )
+
         if "memory_data_and_indexes" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
@@ -2383,29 +2432,29 @@ class CliView(object):
                 )
             )
 
-        if "memory" in cluster_dict:
+        if "data_memory" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
-                    "Memory",
-                    cluster_dict["memory"],
+                    "Data Memory",
+                    cluster_dict["data_memory"],
                     contiguous=True,
                 )
             )
 
-        if "device" in cluster_dict:
+        if "data_device" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
-                    "Device",
-                    cluster_dict["device"],
+                    "Data Device",
+                    cluster_dict["data_device"],
                     contiguous=True,
                 )
             )
 
-        if "pmem" in cluster_dict:
+        if "data_pmem" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
-                    "Pmem",
-                    cluster_dict["pmem"],
+                    "Data Pmem",
+                    cluster_dict["data_pmem"],
                     contiguous=True,
                 )
             )
@@ -2495,6 +2544,33 @@ class CliView(object):
             except:
                 pass
 
+            if "pmem_sindex" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Pmem Sindex", ns_stats["pmem_sindex"])
+                )
+
+            if "flash_sindex" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Flash Sindex", ns_stats["flash_sindex"])
+                )
+
+            if "shmem_sindex" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Shmem Sindex", ns_stats["shmem_sindex"])
+                )
+
+            if "set_index" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Set Index", ns_stats["set_index"])
+                )
+
+            if "indexes_memory" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine(
+                        "Indexes Memory", ns_stats["indexes_memory"]
+                    )
+                )
+
             if "memory_data_and_indexes" in ns_stats:
                 ns_lines.append(
                     CliView.SummaryUsageLine(
@@ -2505,28 +2581,28 @@ class CliView(object):
                     )
                 )
 
-            if "memory" in ns_stats:
+            if "data_memory" in ns_stats:
                 ns_lines.append(
                     CliView.SummaryUsageLine(
-                        "Memory", ns_stats["memory"], contiguous=True
+                        "Data Memory", ns_stats["data_memory"], contiguous=True
                     )
                 )
 
-            if "device" in ns_stats:
+            if "data_device" in ns_stats:
                 try:
                     ns_lines.append(
                         CliView.SummaryUsageLine(
-                            "Device", ns_stats["device"], contiguous=True
+                            "Data Device", ns_stats["data_device"], contiguous=True
                         )
                     )
                 except:
                     pass
 
-            if "pmem" in ns_stats:
+            if "data_pmem" in ns_stats:
                 try:
                     ns_lines.append(
                         CliView.SummaryUsageLine(
-                            "Pmem", ns_stats["pmem"], contiguous=True
+                            "Data Pmem", ns_stats["data_pmem"], contiguous=True
                         )
                     )
                 except:
