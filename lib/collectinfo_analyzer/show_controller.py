@@ -20,6 +20,7 @@ from lib.collectinfo_analyzer.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )
+from lib.live_cluster.get_controller import filter_jobs, parse_jobs_mods
 from lib.utils import common, constants, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -88,6 +89,23 @@ flip_config_modifier = ModifierHelp(
     "--flip",
     "Flip output table to show Nodes on Y axis and config on X axis.",
 )
+flip_jobs_modifier_help = ModifierHelp(
+    "--flip",
+    "Flip output table to show fields on Y axis and jobs on X axis.",
+)
+where_jobs_modifier_help = ModifierHelp(
+    "-where",
+    "Filter jobs by <field>=<regex>. Plain text matches as a substring; regex metacharacters (^ $ . * etc.) are supported. Repeatable; multiple clauses AND together. E.g. -where status=active",
+)
+like_jobs_modifier_help = ModifierHelp(
+    Modifiers.LIKE,
+    "Filter by field-name substring match",
+)
+for_jobs_modifier_help = ModifierHelp(
+    Modifiers.FOR,
+    "Filter by namespace [and set] substring match",
+)
+jobs_usage_extras = f"[--flip] [-where <field>=<regex> [...]] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{Modifiers.LIKE} <field-substring>]"
 
 
 @CommandHelp(
@@ -1660,7 +1678,7 @@ class ShowBestPracticesController(CollectinfoCommandController):
 )
 class ShowJobsController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(["trid"])
+        self.modifiers = set([Modifiers.LIKE, Modifiers.FOR, "trid"])
 
     @CommandHelp(
         "Displays scans, queries, and sindex-builder jobs.",
@@ -1670,7 +1688,10 @@ class ShowJobsController(CollectinfoCommandController):
         self.do_queries(line[:])
         self.do_sindex_builder(line[:])
 
-    def _job_helper(self, module, title):
+    def _job_helper(self, module, title, line):
+        flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
+        for_mods = self.mods[Modifiers.FOR]
+
         jobs_data = self.log_handler.info_meta_data(stanza=constants.METADATA_JOBS)
 
         for timestamp in sorted(jobs_data.keys()):
@@ -1681,25 +1702,45 @@ class ShowJobsController(CollectinfoCommandController):
             scan_data = jobs_data.get(module)
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
-            self.view.show_jobs(title, cinfo_log, scan_data, **self.mods)
+            scan_data = filter_jobs(scan_data, for_mods=for_mods, where=where)
+
+            self.view.show_jobs(
+                title,
+                cinfo_log,
+                scan_data,
+                flip_output=flip_output,
+                **self.mods,
+            )
 
     @CommandHelp(
         f'Displays scan jobs. For easier viewing run "page on" first. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later.',
-        modifiers=(ModifierHelp("trid", "List of transaction IDs to filter for."),),
-        usage=f"[trid <trid1> [<trid2>]]",
+        modifiers=(
+            flip_jobs_modifier_help,
+            where_jobs_modifier_help,
+            for_jobs_modifier_help,
+            like_jobs_modifier_help,
+            ModifierHelp("trid", "List of transaction IDs to filter for."),
+        ),
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg=f"Displays scan jobs. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
     )
     def do_scans(self, line):
-        self._job_helper(constants.JobType.SCAN, "Scan Jobs")
+        self._job_helper(constants.JobType.SCAN, "Scan Jobs", line)
 
     @CommandHelp(
         'Displays query jobs. For easier viewing run "page on" first.',
-        modifiers=(ModifierHelp("trid", "List of transaction IDs to filter for."),),
-        usage=f"[trid <trid1> [<trid2>]]",
+        modifiers=(
+            flip_jobs_modifier_help,
+            where_jobs_modifier_help,
+            for_jobs_modifier_help,
+            like_jobs_modifier_help,
+            ModifierHelp("trid", "List of transaction IDs to filter for."),
+        ),
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg="Displays query jobs",
     )
     def do_queries(self, line):
-        self._job_helper(constants.JobType.QUERY, "Query Jobs")
+        self._job_helper(constants.JobType.QUERY, "Query Jobs", line)
 
     # TODO: Should be removed eventually. "sindex-builder" was removed in server 5.7.
     # So should probably be removed when server 7.0 is supported.
@@ -1707,15 +1748,21 @@ class ShowJobsController(CollectinfoCommandController):
         "Displays sindex-builder jobs. Removed in server v. {} and later.".format(
             constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
         ),
-        modifiers=(ModifierHelp("trid", "List of transaction IDs to filter for."),),
-        usage=f"[trid <trid1> [<trid2>]]",
+        modifiers=(
+            flip_jobs_modifier_help,
+            where_jobs_modifier_help,
+            for_jobs_modifier_help,
+            like_jobs_modifier_help,
+            ModifierHelp("trid", "List of transaction IDs to filter for."),
+        ),
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg="Displays sindex-builder jobs. Removed in server v. {} and later".format(
             constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
         ),
     )
     @CommandName("sindex-builder")
     def do_sindex_builder(self, line):
-        self._job_helper(constants.JobType.SINDEX_BUILDER, "SIndex Builder Jobs")
+        self._job_helper(constants.JobType.SINDEX_BUILDER, "SIndex Builder Jobs", line)
 
 
 @CommandHelp(

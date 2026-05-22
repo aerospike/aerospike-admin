@@ -1348,6 +1348,7 @@ class CliView(object):
         trid=None,
         like=None,
         with_=None,
+        flip_output=False,
         **ignore,
     ):
         if jobs_data is None:
@@ -1374,10 +1375,16 @@ class CliView(object):
         node_ids = cluster.get_node_ids(with_)
         sources = dict(data=filtered_data, node_names=node_names, node_ids=node_ids)
         common = dict(principal=cluster.get_expected_principal())
+        style = SheetStyle.columns if flip_output else None
 
         CliView.print_result(
             sheet.render(
-                templates.show_jobs, title, sources, common=common, selectors=like
+                templates.show_jobs,
+                title,
+                sources,
+                common=common,
+                selectors=like,
+                style=style,
             )
         )
 

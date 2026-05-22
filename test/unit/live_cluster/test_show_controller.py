@@ -1022,12 +1022,18 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute([])
 
-        self.getter_mock.get_query.assert_called_with(nodes="all")
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
         self.assertEqual(self.view_mock.show_jobs.call_count, 1)
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    **self.controller.mods,
                 ),
             ]
         )
@@ -1039,15 +1045,29 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute([])
 
-        self.getter_mock.get_query.assert_called_with(nodes="all")
-        self.getter_mock.get_scans.assert_called_with(nodes="all")
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
+        self.getter_mock.get_scans.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
         self.assertEqual(self.view_mock.show_jobs.call_count, 2)
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    **self.controller.mods,
                 ),
-                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "Scan Jobs",
+                    self.cluster_mock,
+                    "scans",
+                    flip_output=False,
+                    **self.controller.mods,
+                ),
             ]
         )
 
@@ -1059,19 +1079,36 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute([])
 
-        self.getter_mock.get_query.assert_called_with(nodes="all")
-        self.getter_mock.get_scans.assert_called_with(nodes="all")
-        self.getter_mock.get_sindex_builder.assert_called_with(nodes="all")
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
+        self.getter_mock.get_scans.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
+        self.getter_mock.get_sindex_builder.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    **self.controller.mods,
                 ),
-                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "Scan Jobs",
+                    self.cluster_mock,
+                    "scans",
+                    flip_output=False,
+                    **self.controller.mods,
+                ),
                 call(
                     "SIndex Builder Jobs",
                     self.cluster_mock,
                     "sindex-builder",
+                    flip_output=False,
                     **self.controller.mods,
                 ),
             ]
@@ -1084,14 +1121,186 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute(["queries"])
 
-        self.getter_mock.get_query.assert_called_with(nodes="all")
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
-                    "Query Jobs", self.cluster_mock, "queries", **self.controller.mods
+                    "Query Jobs",
+                    self.cluster_mock,
+                    "queries",
+                    flip_output=False,
+                    **self.controller.mods,
                 ),
             ]
         )
+
+    async def test_queries_with_flip_short(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "-flip"])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=True,
+            **self.controller.mods,
+        )
+
+    async def test_queries_with_flip_long(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "--flip"])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=True,
+            **self.controller.mods,
+        )
+
+    async def test_queries_with_like(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "like", "status"])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            **self.controller.mods,
+        )
+        self.assertIn("status", self.controller.mods["like"])
+
+    async def test_queries_with_for(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "for", "test", "myset"])
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=["test", "myset"], where=None
+        )
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            **self.controller.mods,
+        )
+        self.assertEqual(self.controller.mods["for"], ["test", "myset"])
+
+    async def test_queries_with_where(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "-where", "status=active"])
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=["status=active"]
+        )
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            **self.controller.mods,
+        )
+
+    async def test_queries_with_multiple_where(self):
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(
+            ["queries", "-where", "ns=test", "-where", "status=active"]
+        )
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=["ns=test", "status=active"]
+        )
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=False,
+            **self.controller.mods,
+        )
+
+    async def test_queries_where_invalid_raises(self):
+        from lib.base_controller import ShellException
+
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        with self.assertRaises(ShellException) as ctx:
+            await self.controller.execute(["queries", "-where", "status"])
+
+        # Error names the offending token so the user can locate it.
+        self.assertIn("status", str(ctx.exception))
+
+    async def test_queries_trailing_where_no_value_raises(self):
+        from lib.base_controller import ShellException
+
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        with self.assertRaises(ShellException) as ctx:
+            await self.controller.execute(["queries", "-where"])
+
+        # Distinct phrasing from the no-`=` case so the user knows the value is missing.
+        self.assertIn("missing", str(ctx.exception).lower())
+
+    async def test_queries_with_for_ns_only(self):
+        # One-element for_mods reaches the getter with a single-element list;
+        # filter_jobs must not crash on the missing-set element.
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "for", "test"])
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=["test"], where=None
+        )
+        self.assertEqual(self.controller.mods["for"], ["test"])
+
+    async def test_queries_combined_modifiers(self):
+        # --flip + for + -where + like in a single command — verify each modifier
+        # is parsed and forwarded correctly regardless of interaction.
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(
+            [
+                "queries",
+                "--flip",
+                "for",
+                "test",
+                "-where",
+                "status=active",
+                "like",
+                "status",
+            ]
+        )
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=["test"], where=["status=active"]
+        )
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            self.cluster_mock,
+            "queries",
+            flip_output=True,
+            **self.controller.mods,
+        )
+        self.assertEqual(self.controller.mods["for"], ["test"])
+        self.assertIn("status", self.controller.mods["like"])
 
     async def test_scans(self):
         self.getter_mock.get_scans.return_value = "scans"
@@ -1099,10 +1308,18 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute(["scans"])
 
-        self.getter_mock.get_scans.assert_called_with(nodes="all")
+        self.getter_mock.get_scans.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
         self.view_mock.show_jobs.assert_has_calls(
             [
-                call("Scan Jobs", self.cluster_mock, "scans", **self.controller.mods),
+                call(
+                    "Scan Jobs",
+                    self.cluster_mock,
+                    "scans",
+                    flip_output=False,
+                    **self.controller.mods,
+                ),
             ]
         )
 
@@ -1124,13 +1341,16 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute(["sindex"])
 
-        self.getter_mock.get_sindex_builder.assert_called_with(nodes="all")
+        self.getter_mock.get_sindex_builder.assert_called_with(
+            nodes="all", for_mods=[], where=None
+        )
         self.view_mock.show_jobs.assert_has_calls(
             [
                 call(
                     "SIndex Builder Jobs",
                     self.cluster_mock,
                     "sindex-builder",
+                    flip_output=False,
                     **self.controller.mods,
                 ),
             ]

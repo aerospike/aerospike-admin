@@ -259,6 +259,34 @@ class CliViewTest(unittest.TestCase):
             sources,
             common=common,
             selectors=["foo"],
+            style=None,
+        )
+
+    def test_show_jobs_flip(self):
+        jobs_data = {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}}
+        self.cluster_mock.get_node_names.return_value = "node_names"
+        self.cluster_mock.get_node_ids.return_value = "node_ids"
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+
+        CliView.show_jobs(
+            "Jobs",
+            self.cluster_mock,
+            jobs_data,
+            timestamp="ts",
+            flip_output=True,
+        )
+
+        self.render_mock.assert_called_with(
+            templates.show_jobs,
+            "Jobs (ts)",
+            {
+                "data": jobs_data,
+                "node_names": "node_names",
+                "node_ids": "node_ids",
+            },
+            common={"principal": "principal"},
+            selectors=None,
+            style=SheetStyle.columns,
         )
 
     def test_show_racks(self):

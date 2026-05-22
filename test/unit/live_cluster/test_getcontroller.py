@@ -903,6 +903,96 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertDictEqual(actual, expected)
 
+    async def test_get_query_filters_for_ns(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "set": "myset", "status": "active(ok)"},
+                "2": {"ns": "other", "set": "otherset", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(for_mods=["test"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "set": "myset", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_filters_for_ns_and_set(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "set": "a", "status": "active(ok)"},
+                "2": {"ns": "test", "set": "b", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(for_mods=["test", "a"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "set": "a", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_filters_where(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["status=active"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_filters_multiple_where_and(self):
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+                "3": {"ns": "other", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["ns=test", "status=active"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_invalid_regex_raises_shell_exception(self):
+        # Malformed regex like `-where status=(` must surface a ShellException
+        # naming the offending clause — not crash with re.error.
+        from lib.base_controller import ShellException
+
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}
+        }
+
+        with self.assertRaises(ShellException) as ctx:
+            await self.controller.get_query(where=["status=("])
+
+        self.assertIn("status=(", str(ctx.exception))
+
+    async def test_get_query_where_nonexistent_field_filters_all(self):
+        # A -where clause on a field that no job has should filter every row out.
+        # Documents current behavior so an unintended change (e.g. erroring on
+        # missing fields) is a deliberate decision rather than a silent regression.
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["nonexistent=foo"])
+
+        self.assertDictEqual(actual, {"1.1.1.1": {}})
+
 
 class GetACLControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
