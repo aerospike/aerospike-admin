@@ -1191,7 +1191,11 @@ def create_summary(
                 cluster_flash_index_used += index_used
                 summary_dict["NAMESPACES"][ns]["flash_index"] = ns_index_usage
                 summary_dict["NAMESPACES"][ns]["index_type"] = index_type
-            elif index_type == "shmem":
+            else:
+                # Default unknown/missing index-type to shmem so the bytes still
+                # render in the PI breakdown and stay consistent with the
+                # sindex branch below and the `Indexes Memory` aggregate (which
+                # also treats unknown as non-persisted).
                 cluster_shmem_index_used += index_used
                 summary_dict["NAMESPACES"][ns]["shmem_index"] = ns_index_usage
                 summary_dict["NAMESPACES"][ns]["index_type"] = index_type
@@ -1306,11 +1310,14 @@ def create_summary(
             cluster_indexes_memory_total += ixs_budget
             cluster_indexes_memory_used += ixs_used
 
-        storage_engine_type = list(
-            util.get_value_from_second_level_of_dict(
-                ns_stats, ("storage-engine",), default_value="", return_type=str
-            ).values()
-        )[0]
+        storage_engine_type = next(
+            iter(
+                util.get_value_from_second_level_of_dict(
+                    ns_stats, ("storage-engine",), default_value="", return_type=str
+                ).values()
+            ),
+            "",
+        )
 
         data_size = util.get_value_from_second_level_of_dict(
             ns_stats,
@@ -1471,30 +1478,36 @@ def create_summary(
         }
         summary_dict["CLUSTER"]["memory_data_and_indexes"] = cluster_memory
 
-    if cluster_pmem_index_total > 0:
-        cluster_pmem_index_size_used_pct = (
-            cluster_pmem_index_used / cluster_pmem_index_total
-        ) * 100.0
-        cluster_pmem_index: SummaryStorageUsageDict = {
-            "total": cluster_pmem_index_total,
-            "avail": cluster_pmem_index_total - cluster_pmem_index_used,
-            "avail_pct": 100 - cluster_pmem_index_size_used_pct,
-            "used": cluster_pmem_index_used,
-            "used_pct": cluster_pmem_index_size_used_pct,
-        }
+    if cluster_pmem_index_total > 0 or cluster_pmem_index_used > 0:
+        if cluster_pmem_index_total > 0:
+            cluster_pmem_index_size_used_pct = (
+                cluster_pmem_index_used / cluster_pmem_index_total
+            ) * 100.0
+            cluster_pmem_index: SummaryStorageUsageDict = {
+                "total": cluster_pmem_index_total,
+                "avail": cluster_pmem_index_total - cluster_pmem_index_used,
+                "avail_pct": 100 - cluster_pmem_index_size_used_pct,
+                "used": cluster_pmem_index_used,
+                "used_pct": cluster_pmem_index_size_used_pct,
+            }
+        else:
+            cluster_pmem_index = {"used": cluster_pmem_index_used}
         summary_dict["CLUSTER"]["pmem_index"] = cluster_pmem_index
 
-    if cluster_flash_index_total > 0:
-        cluster_flash_index_used_pct = (
-            cluster_flash_index_used / cluster_flash_index_total
-        ) * 100.0
-        cluster_flash_index: SummaryStorageUsageDict = {
-            "total": cluster_flash_index_total,
-            "avail": cluster_flash_index_total - cluster_flash_index_used,
-            "avail_pct": 100 - cluster_flash_index_used_pct,
-            "used": cluster_flash_index_used,
-            "used_pct": cluster_flash_index_used_pct,
-        }
+    if cluster_flash_index_total > 0 or cluster_flash_index_used > 0:
+        if cluster_flash_index_total > 0:
+            cluster_flash_index_used_pct = (
+                cluster_flash_index_used / cluster_flash_index_total
+            ) * 100.0
+            cluster_flash_index: SummaryStorageUsageDict = {
+                "total": cluster_flash_index_total,
+                "avail": cluster_flash_index_total - cluster_flash_index_used,
+                "avail_pct": 100 - cluster_flash_index_used_pct,
+                "used": cluster_flash_index_used,
+                "used_pct": cluster_flash_index_used_pct,
+            }
+        else:
+            cluster_flash_index = {"used": cluster_flash_index_used}
         summary_dict["CLUSTER"]["flash_index"] = cluster_flash_index
 
     if cluster_shmem_index_used > 0:

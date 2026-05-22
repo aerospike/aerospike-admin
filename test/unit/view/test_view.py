@@ -746,6 +746,11 @@ class CliViewTest(unittest.TestCase):
             "device_count": 2,
             "device_count_per_node": 2,
             "device_count_same_across_nodes": True,
+            "system_memory": {
+                "used": 0,
+                "used_pct": 19.5,
+                "avail_pct": 80.5,
+            },
             "pmem_index": {
                 "total": 1,
                 "used": 2,
@@ -761,6 +766,29 @@ class CliViewTest(unittest.TestCase):
                 "avail_pct": 5,
             },
             "shmem_index": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "pmem_sindex": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "flash_sindex": {
+                "total": 1,
+                "used": 2,
+                "avail": 3,
+                "used_pct": 4,
+                "avail_pct": 5,
+            },
+            "shmem_sindex": {"used": 2},
+            "set_index": {"used": 2},
+            "indexes_memory": {
                 "total": 1,
                 "used": 2,
                 "avail": 3,
@@ -817,16 +845,22 @@ class CliViewTest(unittest.TestCase):
    3.   OS Version               :  Linux 4.15.0-106-generic
    4.   Cluster Size             :  1
    5.   Devices                  :  Total 2, per-node 2
-   6.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   7.   Flash Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   8.   Shmem Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   9.   Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   10.  Data Memory              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   11.  Data Device              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   12.  Data Pmem                :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   13.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
-   14.  Active Namespaces        :  2 of 2
-   15.  Active Features          :  Compression, Depression
+   6.   System Memory            :  80.50% free
+   7.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   8.   Flash Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   9.   Shmem Index              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   10.  Pmem Sindex              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   11.  Flash Sindex             :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   12.  Shmem Sindex             :  2.000 B used
+   13.  Set Index                :  2.000 B used
+   14.  Indexes Memory           :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   15.  Memory                   :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   16.  Data Memory              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   17.  Data Device              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   18.  Data Pmem                :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   19.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   20.  Active Namespaces        :  2 of 2
+   21.  Active Features          :  Compression, Depression
 
 """
 
@@ -865,6 +899,29 @@ class CliViewTest(unittest.TestCase):
                 },
                 "shmem_index": {
                     "total": 3,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "pmem_sindex": {
+                    "total": 1,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "flash_sindex": {
+                    "total": 2,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "shmem_sindex": {"used": 2},
+                "set_index": {"used": 2},
+                "indexes_memory": {
+                    "total": 8,
                     "used": 2,
                     "avail": 3,
                     "used_pct": 4,
@@ -941,6 +998,29 @@ class CliViewTest(unittest.TestCase):
                     "used_pct": 4,
                     "avail_pct": 5,
                 },
+                "pmem_sindex": {
+                    "total": 1,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "flash_sindex": {
+                    "total": 2,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
+                "shmem_sindex": {"used": 2},
+                "set_index": {"used": 2},
+                "indexes_memory": {
+                    "total": 8,
+                    "used": 2,
+                    "avail": 3,
+                    "used_pct": 4,
+                    "avail_pct": 5,
+                },
                 "memory_data_and_indexes": {
                     "total": 4,
                     "used": 2,
@@ -994,16 +1074,21 @@ class CliViewTest(unittest.TestCase):
    2.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   6.   Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   7.   Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   8.   Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
-   10.  Replication Factor       :  1
-   11.  Post-Write-Queue Hit-Rate:  1.000  
-   12.  Rack-aware               :  True
-   13.  Master Objects           :  2.000  
-   14.  Compression-ratio        :  0.5
+   5.   Pmem Sindex              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   6.   Flash Sindex             :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   7.   Shmem Sindex             :  2.000 B used
+   8.   Set Index                :  2.000 B used
+   9.   Indexes Memory           :  Total 8.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   10.  Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   11.  Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   12.  Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   13.  Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   15.  Replication Factor       :  1
+   16.  Post-Write-Queue Hit-Rate:  1.000  
+   17.  Rack-aware               :  True
+   18.  Master Objects           :  2.000  
+   19.  Compression-ratio        :  0.5
 
    {terminal.fg_red()}bar{terminal.fg_clear()}
    ===
@@ -1011,16 +1096,21 @@ class CliViewTest(unittest.TestCase):
    2.   Pmem Index               :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    3.   Flash Index              :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
    4.   Shmem Index              :  Total 3.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
-   5.   Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
-   6.   Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   7.   Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   8.   Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   9.   License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
-   10.  Replication Factor       :  1
-   11.  Post-Write-Queue Hit-Rate:  1.000  
-   12.  Rack-aware               :  False
-   13.  Master Objects           :  2.000  
-   14.  Compression-ratio        :  0.5
+   5.   Pmem Sindex              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   6.   Flash Sindex             :  Total 2.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   7.   Shmem Sindex             :  2.000 B used
+   8.   Set Index                :  2.000 B used
+   9.   Indexes Memory           :  Total 8.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B)
+   10.  Memory                   :  Total 4.000 B, 4.00% used (2.000 B), 5.00% available (3.000 B) includes data, pindex, and sindex
+   11.  Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   12.  Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   13.  Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
+   14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   15.  Replication Factor       :  1
+   16.  Post-Write-Queue Hit-Rate:  1.000  
+   17.  Rack-aware               :  False
+   18.  Master Objects           :  2.000  
+   19.  Compression-ratio        :  0.5
 """
 
         actual = CliView._summary_namespace_list_view(ns_data)
@@ -1471,6 +1561,69 @@ class CliViewTest(unittest.TestCase):
         # Should not have a Used% column for sindex
         self.assertNotIn("Used%", output)
         self.assertNotIn("SIndex Used%", output)
+
+    def test_info_namespace_usage_renders_system_memory_stop_pct(self):
+        """The System Memory subgroup must surface stop-writes-sys-memory-pct as a Stop% column."""
+
+        ns_stats = {
+            "1.1.1.1": {
+                "test": {
+                    "stop-writes-sys-memory-pct": "90",
+                    "evict-sys-memory-pct": "85",
+                    "storage-engine": "memory",
+                    "index-type": "shmem",
+                    "sindex-type": "shmem",
+                }
+            }
+        }
+        service_stats = {"1.1.1.1": {"system_free_mem_pct": "40"}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock = MagicMock()
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+
+        patch.stopall()
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            CliView.info_namespace_usage(
+                ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
+            )
+        output = f.getvalue()
+
+        self.assertIn("System Memory", output)
+        self.assertIn("Stop%", output)
+        self.assertIn("90.0 %", output)  # threshold formatted as pct
+
+    def test_info_namespace_usage_sheet_has_stop_pct_field(self):
+        """Verify lib/view/templates.py wires Stop% -> stop-writes-sys-memory-pct in the System Memory subgroup."""
+        from lib.view.sheet.decleration import Subgroup
+
+        system_memory_subgroup = next(
+            (
+                f
+                for f in templates.info_namespace_usage_sheet.fields
+                if isinstance(f, Subgroup) and f.title == "System Memory"
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            system_memory_subgroup,
+            "info_namespace_usage_sheet missing 'System Memory' subgroup",
+        )
+
+        field_titles = [f.title for f in system_memory_subgroup.fields]
+        self.assertIn("Stop%", field_titles)
+
+        stop_pct_field = next(
+            f for f in system_memory_subgroup.fields if f.title == "Stop%"
+        )
+        # Projector should target the new stop-writes-sys-memory-pct config key.
+        self.assertIn("stop-writes-sys-memory-pct", stop_pct_field.projector.keys)
 
     def test_info_transactions_monitors_with_with_modifier(self):
         ns_stats = {"1.1.1.1": {"test": {"mrt_monitors": 100}}}

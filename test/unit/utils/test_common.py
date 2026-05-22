@@ -2260,6 +2260,119 @@ class CreateSummaryTests(unittest.TestCase):
                     },
                 },
             ),
+            # pmem PI used-only fallback: server reports index_used_bytes but no
+            # mounts-budget configured. Both ns-level and cluster-level entries
+            # should render in used-only form (mirrors the SI fallback at the
+            # cluster level so bytes aren't silently dropped from the summary).
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "device",
+                            "index-type": "pmem",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-pmem"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 0},
+                        "pmem_index": {"used": 512},
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "pmem",
+                            "pmem_index": {"used": 512},
+                            "repl_factor": [1],
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # flash PI used-only fallback: same as above but for flash index.
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "index_used_bytes": 512,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "device",
+                            "index-type": "flash",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": ["Index-on-flash"],
+                        "ns_count": 1,
+                        "license_data": {"latest": 0},
+                        "flash_index": {"used": 512},
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "index_type": "flash",
+                            "flash_index": {"used": 512},
+                            "repl_factor": [1],
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
+            # flash sindex used-only fallback: server reports sindex_used_bytes
+            # but no sindex-type.mounts-budget configured. Cluster-level
+            # flash_sindex must still render as used-only (covers the else
+            # branch at common.py:1543).
+            create_tc(
+                ns_stats={
+                    "1.1.1.1": {
+                        "test": {
+                            "sindex_used_bytes": 256,
+                        },
+                    },
+                },
+                ns_configs={
+                    "1.1.1.1": {
+                        "test": {
+                            "storage-engine": "device",
+                            "sindex-type": "flash",
+                            "replication-factor": 1,
+                        },
+                    },
+                },
+                expected={
+                    "CLUSTER": {
+                        "active_features": [],
+                        "ns_count": 1,
+                        "license_data": {"latest": 0},
+                        "flash_sindex": {"used": 256},
+                        "compression_enabled": False,
+                    },
+                    "NAMESPACES": {
+                        "test": {
+                            "flash_sindex": {"used": 256},
+                            "repl_factor": [1],
+                            "compression_enabled": False,
+                        },
+                    },
+                },
+            ),
             # shmem PI + pmem SI → shmem_index and pmem_sindex
             create_tc(
                 ns_stats={
@@ -3443,6 +3556,11 @@ class CreateSummaryTests(unittest.TestCase):
                         "os_version": [],
                         "server_version": [],
                         "compression_enabled": False,
+                        # No `index-type` configured for "test" ns, so the PI
+                        # branch defaults unknown to shmem (sums 200+200 across
+                        # the two nodes). Mirrors the policy used for sindex
+                        # and the `Indexes Memory` aggregate.
+                        "shmem_index": {"used": 400},
                     },
                     "NAMESPACES": {
                         "test": {
@@ -3457,6 +3575,8 @@ class CreateSummaryTests(unittest.TestCase):
                             "rack_aware": False,
                             "repl_factor": [2],
                             "compression_enabled": False,
+                            "index_type": "",
+                            "shmem_index": {"used": 400},
                         },
                         "bar": {
                             "compression_ratio": 0.5,
