@@ -20,6 +20,8 @@ from .types import (
     ASInfoConfigError,
     ASProtocolError,
     ASResponse,
+    ASClusterError,
+    ASNoNodesError,
     ASINFO_RESPONSE_OK,
     Addr_Port_TLSName,
 )

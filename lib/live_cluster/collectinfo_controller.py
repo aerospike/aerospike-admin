@@ -21,6 +21,7 @@ import shutil
 import time
 import traceback
 from typing import Any, Callable
+from lib.live_cluster.client import ASNoNodesError
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.logfile_downloader import LogFileDownloader
 from lib.live_cluster import ssh
@@ -930,6 +931,13 @@ class CollectinfoController(LiveClusterCommandController):
             self.failed_cmds = []
 
             try:
+                # Preflight: with no alive nodes there is nothing to collect.
+                # Surface the same typed error the cluster client would raise
+                # deeper in the call stack, so the message and handling stay
+                # consistent.
+                if not self.cluster.get_nodes():
+                    raise ASNoNodesError()
+
                 await self._dump_collectinfo_json(
                     individual_file_prefix,
                     enable_ssh,
@@ -941,6 +949,11 @@ class CollectinfoController(LiveClusterCommandController):
                     snp_count,
                     wait_time,
                 )
+            except ASNoNodesError as e:
+                # No nodes means no data — always fatal, --ignore-errors cannot
+                # produce a partial collectinfo bundle in this case.
+                logger.error(e)
+                return
             except (ssh.SSHError, FileNotFoundError) as e:
                 logger.error(ShellException(e))
                 logger.error(
