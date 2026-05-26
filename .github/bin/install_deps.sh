@@ -7,10 +7,11 @@
 #   install_deps <distro>     # e.g. install_deps ubuntu24.04
 #
 # Supported distros: debian11, debian12, debian13,
-#                    ubuntu20.04, ubuntu22.04, ubuntu24.04,
+#                    ubuntu20.04, ubuntu22.04, ubuntu24.04, ubuntu26.04,
 #                    el8, el9, el10, amzn2023
 #
 # Set DEBUG=1 to enable bash trace mode.
+# ubuntu26.04: set GET_PIP_SHA256 to override the expected sha256 for bootstrap get-pip.py when PyPA updates it.
 #
 
 set -euo pipefail
@@ -28,6 +29,11 @@ DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd cu
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
+# Ubuntu 26.04 (resolute): lzma-dev was dropped — use liblzma-dev. Do not pin libreadline8
+# (t64 / readline major varies); libreadline-dev pulls the correct runtime (see aerospike/aql#70).
+# Extra pyenv-style -dev packages keep CPython stdlib modules complete; ensurepip workaround below.
+UBUNTU_2604_DEPS="${UBUNTU_2404_DEPS/lzma-dev/liblzma-dev} zlib1g-dev libbz2-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev uuid-dev"
+UBUNTU_2604_DEPS="${UBUNTU_2604_DEPS/libreadline8 /}"
 EL8_DEPS="ruby rubygems redhat-rpm-config rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
@@ -41,6 +47,7 @@ _pkg_list_for() {
     ubuntu20.04) echo "$UBUNTU_2004_DEPS" ;;
     ubuntu22.04) echo "$UBUNTU_2204_DEPS" ;;
     ubuntu24.04) echo "$UBUNTU_2404_DEPS" ;;
+    ubuntu26.04) echo "$UBUNTU_2604_DEPS" ;;
     el8)         echo "$EL8_DEPS" ;;
     el9)         echo "$EL9_DEPS" ;;
     el10)        echo "$EL10_DEPS" ;;
@@ -64,7 +71,7 @@ _readline_url_for() {
 # PEP 668: newer distros need --break-system-packages for pip.
 _pip_flags_for() {
   case "$1" in
-    debian*|ubuntu24.04|el9|el10|amzn2023) echo "--break-system-packages" ;;
+    debian*|ubuntu24.04|ubuntu26.04|el9|el10|amzn2023) echo "--break-system-packages" ;;
     *) echo "" ;;
   esac
 }
@@ -117,11 +124,36 @@ _install_go() {
 
 _install_python_via_asdf_and_fpm() {
   local pip_flags="$1"  # "" or "--break-system-packages"
+  local distro="${2:-}"
+  local saved_pyconf_set=0
+  local saved_pyconf=""
+  if [[ -n "${PYTHON_CONFIGURE_OPTS+x}" ]]; then
+    saved_pyconf_set=1
+    saved_pyconf="${PYTHON_CONFIGURE_OPTS}"
+  fi
 
   /opt/golang/go/bin/go install "github.com/asdf-vm/asdf/cmd/asdf@${ASDF_VERSION}"
   install "$HOME/go/bin/asdf" /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  # Ubuntu 26.04 (resolute): ensurepip during "make install" can fail (pip bootstrap to --root /).
+  # Build without bundled pip and install pip explicitly afterward.
+  if [[ "$distro" == "ubuntu26.04" ]]; then
+    export PYTHON_CONFIGURE_OPTS="--with-ensurepip=no"
+  fi
   asdf install python "$PYTHON_VERSION"
+  if [[ "$distro" == "ubuntu26.04" ]]; then
+    if [[ "$saved_pyconf_set" -eq 1 ]]; then
+      export PYTHON_CONFIGURE_OPTS="${saved_pyconf}"
+    else
+      unset PYTHON_CONFIGURE_OPTS
+    fi
+    # Fail on HTTP errors (-f); checksum pins bootstrap.pypa.io content (bump when updating intentionally).
+    local get_pip_expected_sha="${GET_PIP_SHA256:-66904bccb878e363db6236ea900e6935e507dcb887e9f178f6212edfe7f46a76}"
+    curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+    echo "${get_pip_expected_sha}  /tmp/get-pip.py" | sha256sum -c - >/dev/null
+    "$HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python" /tmp/get-pip.py --no-warn-script-location
+    rm -f /tmp/get-pip.py
+  fi
   asdf set python "$PYTHON_VERSION"
   echo "python $PYTHON_VERSION" > /.tool-versions
   echo "python $PYTHON_VERSION" > "$HOME/.tool-versions"
@@ -156,6 +188,6 @@ install_deps() {
   fi
 
   _install_go
-  _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")"
+  _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")" "$distro"
   _post_install_cleanup "$distro"
 }
