@@ -38,7 +38,7 @@ jobs:
       matrix:
         include:
           - { distro: ubuntu24.04, container: 'ubuntu:noble-20251013', pkg: deb }
-          - { distro: ubuntu26.04, container: 'ubuntu:questing-20251217', pkg: deb }
+          - { distro: ubuntu26.04, container: 'ubuntu:resolute-20260421', pkg: deb }
           - { distro: el10,        container: 'redhat/ubi10:10.0',    pkg: rpm }
     steps:
       - name: Harden the runner (Audit all outbound calls)

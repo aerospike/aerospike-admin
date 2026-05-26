@@ -163,7 +163,7 @@ jobs:
         matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
         matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' ||
-        matrix.distro == 'ubuntu26.04' && 'ubuntu:questing-20251217' }}
+        matrix.distro == 'ubuntu26.04' && 'ubuntu:resolute-20260421' }}
     permissions:
       contents: read
     steps:
@@ -388,7 +388,7 @@ jobs:
         matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
         matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' ||
-        matrix.distro == 'ubuntu26.04' && 'ubuntu:questing-20251217' }}
+        matrix.distro == 'ubuntu26.04' && 'ubuntu:resolute-20260421' }}
     permissions:
       contents: read
     steps:

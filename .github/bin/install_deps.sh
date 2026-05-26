@@ -28,10 +28,11 @@ DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd cu
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
-# Ubuntu 26.04+ (questing): lzma-dev was dropped; liblzma-dev provides the same headers.
-# Questing images are leaner than 24.04's; add pyenv-style -dev packages so CPython's
-# stdlib modules (e.g. zlib) and ensurepip bootstrap succeed (otherwise make install fails).
+# Ubuntu 26.04 (resolute): lzma-dev was dropped — use liblzma-dev. Do not pin libreadline8
+# (t64 / readline major varies); libreadline-dev pulls the correct runtime (see aerospike/aql#70).
+# Extra pyenv-style -dev packages keep CPython stdlib modules complete; ensurepip workaround below.
 UBUNTU_2604_DEPS="${UBUNTU_2404_DEPS/lzma-dev/liblzma-dev} zlib1g-dev libbz2-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev uuid-dev"
+UBUNTU_2604_DEPS="${UBUNTU_2604_DEPS/libreadline8 /}"
 EL8_DEPS="ruby rubygems redhat-rpm-config rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
@@ -127,7 +128,7 @@ _install_python_via_asdf_and_fpm() {
   /opt/golang/go/bin/go install "github.com/asdf-vm/asdf/cmd/asdf@${ASDF_VERSION}"
   install "$HOME/go/bin/asdf" /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  # Ubuntu questing: ensurepip during "make install" can fail (pip bootstrap to --root /).
+  # Ubuntu 26.04 (resolute): ensurepip during "make install" can fail (pip bootstrap to --root /).
   # Build without bundled pip and install pip explicitly afterward.
   if [[ "$distro" == "ubuntu26.04" ]]; then
     export PYTHON_CONFIGURE_OPTS="--with-ensurepip=no"
