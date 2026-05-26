@@ -150,6 +150,7 @@ jobs:
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
+          - ubuntu26.04
     runs-on: ${{ matrix.host }}
     container: >-
       ${{ matrix.distro == 'el8' && 'redhat/ubi8:8.10' ||
@@ -161,7 +162,8 @@ jobs:
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
         matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
-        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' }}
+        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' ||
+        matrix.distro == 'ubuntu26.04' && 'ubuntu:questing-20251217' }}
     permissions:
       contents: read
     steps:
@@ -322,7 +324,7 @@ jobs:
     needs:
       - get-version
       - organize-built-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-mac-artifacts.yaml@v3.4.0
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-mac-artifacts.yaml@v3.6.0
     permissions:
       contents: read
       id-token: write
@@ -331,7 +333,7 @@ jobs:
       artifact-glob: "**/*.pkg"
       signing-identity: "Developer ID Application: Aerospike, Inc. (22224RFU67)"
       installer-identity: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
-      gh-workflows-ref: "v3.4.0"
+      gh-workflows-ref: "v3.6.0"
       gh-retention-days: 1
     secrets:
       apple-application-cert: ${{ secrets.APPLE_APPLICATION_CERT }}
@@ -345,11 +347,11 @@ jobs:
     needs:
       - get-version
       - notarize-mac-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v3.4.0
+    uses: aerospike/shared-workflows/.github/workflows/reusable_sign-artifacts.yaml@v3.6.0
     with:
       gh-artifact-name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: "v3.4.0"
+      gh-workflows-ref: "v3.6.0"
     secrets:
       gpg-private-key: ${{ secrets.GPG_SECRET_KEY }}
       gpg-public-key: ${{ secrets.GPG_PUBLIC_KEY }}
@@ -373,6 +375,7 @@ jobs:
           - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
+          - ubuntu26.04
     runs-on: ${{ matrix.host }}
     container: >-
       ${{ matrix.distro == 'el8' && 'redhat/ubi8:8.10' ||
@@ -384,7 +387,8 @@ jobs:
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
         matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
-        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' }}
+        matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' ||
+        matrix.distro == 'ubuntu26.04' && 'ubuntu:questing-20251217' }}
     permissions:
       contents: read
     steps:
@@ -532,7 +536,7 @@ jobs:
     needs:
       - get-version
       - organize-signed-artifacts
-    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v3.4.0
+    uses: aerospike/shared-workflows/.github/workflows/reusable_deploy-artifacts.yaml@v3.6.0
     with:
       jf-project: database
       jf-build-name: "aerospike-asadm"
@@ -544,7 +548,7 @@ jobs:
       dry-run: ${{ inputs.release != true }}
       jf-build-id: ${{ needs.get-version.outputs.VERSION }}
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
-      gh-workflows-ref: "v3.4.0"
+      gh-workflows-ref: "v3.6.0"
 
   docker-build-arch:
     name: Docker build, test & push (${{ matrix.arch }})
@@ -707,7 +711,7 @@ jobs:
       - get-version
       - upload-artifacts-to-jfrog
       - docker-manifest
-    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.4.0
+    uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.6.0
     with:
       jf-project: "database"
       jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }}"
@@ -715,7 +719,7 @@ jobs:
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
       version: ${{ needs.get-version.outputs.VERSION }}
-      gh-workflows-ref: v3.4.0
+      gh-workflows-ref: v3.6.0
       dry-run: false
 
   # Tag-last: created only after every publish step succeeds. A failure

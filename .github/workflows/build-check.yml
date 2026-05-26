@@ -1,7 +1,7 @@
 # Lightweight installer build check.
 #
 # Purpose: catch dependency / packaging regressions on every push, before
-# they reach the full release pipeline. The release workflow builds for 10
+# they reach the full release pipeline. The release workflow builds for 11
 # distros × 2 arches + signing + notarization — too heavy for every commit.
 #
 # This workflow exercises both fpm code paths (deb on Ubuntu, rpm on EL) on
@@ -38,6 +38,7 @@ jobs:
       matrix:
         include:
           - { distro: ubuntu24.04, container: 'ubuntu:noble-20251013', pkg: deb }
+          - { distro: ubuntu26.04, container: 'ubuntu:questing-20251217', pkg: deb }
           - { distro: el10,        container: 'redhat/ubi10:10.0',    pkg: rpm }
     steps:
       - name: Harden the runner (Audit all outbound calls)

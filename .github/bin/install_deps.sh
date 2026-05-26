@@ -7,7 +7,7 @@
 #   install_deps <distro>     # e.g. install_deps ubuntu24.04
 #
 # Supported distros: debian11, debian12, debian13,
-#                    ubuntu20.04, ubuntu22.04, ubuntu24.04,
+#                    ubuntu20.04, ubuntu22.04, ubuntu24.04, ubuntu26.04,
 #                    el8, el9, el10, amzn2023
 #
 # Set DEBUG=1 to enable bash trace mode.
@@ -28,6 +28,7 @@ DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd cu
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
+UBUNTU_2604_DEPS="$UBUNTU_2404_DEPS"
 EL8_DEPS="ruby rubygems redhat-rpm-config rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
@@ -41,6 +42,7 @@ _pkg_list_for() {
     ubuntu20.04) echo "$UBUNTU_2004_DEPS" ;;
     ubuntu22.04) echo "$UBUNTU_2204_DEPS" ;;
     ubuntu24.04) echo "$UBUNTU_2404_DEPS" ;;
+    ubuntu26.04) echo "$UBUNTU_2604_DEPS" ;;
     el8)         echo "$EL8_DEPS" ;;
     el9)         echo "$EL9_DEPS" ;;
     el10)        echo "$EL10_DEPS" ;;
@@ -64,7 +66,7 @@ _readline_url_for() {
 # PEP 668: newer distros need --break-system-packages for pip.
 _pip_flags_for() {
   case "$1" in
-    debian*|ubuntu24.04|el9|el10|amzn2023) echo "--break-system-packages" ;;
+    debian*|ubuntu24.04|ubuntu26.04|el9|el10|amzn2023) echo "--break-system-packages" ;;
     *) echo "" ;;
   esac
 }
