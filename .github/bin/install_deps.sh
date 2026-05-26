@@ -29,7 +29,9 @@ UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binu
 UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 # Ubuntu 26.04+ (questing): lzma-dev was dropped; liblzma-dev provides the same headers.
-UBUNTU_2604_DEPS="${UBUNTU_2404_DEPS/lzma-dev/liblzma-dev}"
+# Questing images are leaner than 24.04's; add pyenv-style -dev packages so CPython's
+# stdlib modules (e.g. zlib) and ensurepip bootstrap succeed (otherwise make install fails).
+UBUNTU_2604_DEPS="${UBUNTU_2404_DEPS/lzma-dev/liblzma-dev} zlib1g-dev libbz2-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev uuid-dev"
 EL8_DEPS="ruby rubygems redhat-rpm-config rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
@@ -120,11 +122,23 @@ _install_go() {
 
 _install_python_via_asdf_and_fpm() {
   local pip_flags="$1"  # "" or "--break-system-packages"
+  local distro="${2:-}"
 
   /opt/golang/go/bin/go install "github.com/asdf-vm/asdf/cmd/asdf@${ASDF_VERSION}"
   install "$HOME/go/bin/asdf" /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
+  # Ubuntu questing: ensurepip during "make install" can fail (pip bootstrap to --root /).
+  # Build without bundled pip and install pip explicitly afterward.
+  if [[ "$distro" == "ubuntu26.04" ]]; then
+    export PYTHON_CONFIGURE_OPTS="--with-ensurepip=no"
+  fi
   asdf install python "$PYTHON_VERSION"
+  if [[ "$distro" == "ubuntu26.04" ]]; then
+    unset PYTHON_CONFIGURE_OPTS
+    curl -L "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+    "$HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python" /tmp/get-pip.py --no-warn-script-location
+    rm -f /tmp/get-pip.py
+  fi
   asdf set python "$PYTHON_VERSION"
   echo "python $PYTHON_VERSION" > /.tool-versions
   echo "python $PYTHON_VERSION" > "$HOME/.tool-versions"
@@ -159,6 +173,6 @@ install_deps() {
   fi
 
   _install_go
-  _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")"
+  _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")" "$distro"
   _post_install_cleanup "$distro"
 }
