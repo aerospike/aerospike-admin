@@ -11,6 +11,7 @@
 #                    el8, el9, el10, amzn2023
 #
 # Set DEBUG=1 to enable bash trace mode.
+# ubuntu26.04: set GET_PIP_SHA256 to override the expected sha256 for bootstrap get-pip.py when PyPA updates it.
 #
 
 set -euo pipefail
@@ -124,6 +125,12 @@ _install_go() {
 _install_python_via_asdf_and_fpm() {
   local pip_flags="$1"  # "" or "--break-system-packages"
   local distro="${2:-}"
+  local saved_pyconf_set=0
+  local saved_pyconf=""
+  if [[ -n "${PYTHON_CONFIGURE_OPTS+x}" ]]; then
+    saved_pyconf_set=1
+    saved_pyconf="${PYTHON_CONFIGURE_OPTS}"
+  fi
 
   /opt/golang/go/bin/go install "github.com/asdf-vm/asdf/cmd/asdf@${ASDF_VERSION}"
   install "$HOME/go/bin/asdf" /usr/local/bin/asdf
@@ -135,8 +142,15 @@ _install_python_via_asdf_and_fpm() {
   fi
   asdf install python "$PYTHON_VERSION"
   if [[ "$distro" == "ubuntu26.04" ]]; then
-    unset PYTHON_CONFIGURE_OPTS
-    curl -L "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+    if [[ "$saved_pyconf_set" -eq 1 ]]; then
+      export PYTHON_CONFIGURE_OPTS="${saved_pyconf}"
+    else
+      unset PYTHON_CONFIGURE_OPTS
+    fi
+    # Fail on HTTP errors (-f); checksum pins bootstrap.pypa.io content (bump when updating intentionally).
+    local get_pip_expected_sha="${GET_PIP_SHA256:-66904bccb878e363db6236ea900e6935e507dcb887e9f178f6212edfe7f46a76}"
+    curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+    echo "${get_pip_expected_sha}  /tmp/get-pip.py" | sha256sum -c - >/dev/null
     "$HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python" /tmp/get-pip.py --no-warn-script-location
     rm -f /tmp/get-pip.py
   fi
