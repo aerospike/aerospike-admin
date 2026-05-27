@@ -633,7 +633,7 @@ jobs:
           # Verify the loaded image actually carries the version we built —
           # catches mis-tagged or stale-cached images that bats wouldn't.
           BASE_VERSION=$(printf '%s' "${VERSION}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
-          docker run --rm "${IMAGE}" --version | grep -qF "${BASE_VERSION}" \
+          docker run --rm "${IMAGE}" asadm --version | grep -qF "${BASE_VERSION}" \
             || { echo "ERROR: expected ${BASE_VERSION} in --version output" >&2; exit 1; }
 
           if [[ -n "${SNYK_TOKEN:-}" ]]; then
