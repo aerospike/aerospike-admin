@@ -552,7 +552,6 @@ jobs:
 
   docker-build-arch:
     name: Docker build, test & push (${{ matrix.arch }})
-    if: inputs.release == true
     needs: [get-version, organize-signed-artifacts]
     strategy:
       fail-fast: false
@@ -586,6 +585,7 @@ jobs:
         run: npm install -g snyk@1.1304.3
 
       - name: Install JFrog CLI
+        if: inputs.release == true
         id: jf
         uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
         env:
@@ -597,6 +597,7 @@ jobs:
           oidc-audience: database-gh-aerospike
 
       - name: Docker login to Artifactory
+        if: inputs.release == true
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: artifact.aerospike.io
@@ -633,7 +634,7 @@ jobs:
           # Verify the loaded image actually carries the version we built —
           # catches mis-tagged or stale-cached images that bats wouldn't.
           BASE_VERSION=$(printf '%s' "${VERSION}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
-          docker run --rm "${IMAGE}" --version | grep -qF "${BASE_VERSION}" \
+          docker run --rm "${IMAGE}" asadm --version | grep -qF "${BASE_VERSION}" \
             || { echo "ERROR: expected ${BASE_VERSION} in --version output" >&2; exit 1; }
 
           if [[ -n "${SNYK_TOKEN:-}" ]]; then
@@ -643,6 +644,7 @@ jobs:
           fi
 
       - name: Push native per-arch tag to JFrog
+        if: inputs.release == true
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
@@ -655,6 +657,7 @@ jobs:
 
   docker-manifest:
     name: Docker multi-arch manifest (stitch native tags)
+    if: inputs.release == true
     needs: [get-version, docker-build-arch]
     runs-on: ubuntu-24.04
     permissions:
