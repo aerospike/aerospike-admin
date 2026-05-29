@@ -1,0 +1,100 @@
+# Bump the project version (VERSION file) and open a PR.
+#
+# Usage: trigger manually via workflow_dispatch, providing a semver version string.
+# The PR must be reviewed and merged before running the release workflow.
+
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version (e.g. 5.0.0 or 5.0.0-rc1)"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Validate version format
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "::error::Version must be MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-suffix (e.g. 5.0.0, 5.0.0-rc1). Got '$VERSION'." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse to bump to an existing version
+        run: |
+          set -euo pipefail
+          # File may not exist on first bootstrap; treat as empty.
+          CURRENT=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || true)
+          if [[ -n "$CURRENT" && "$CURRENT" == "$VERSION" ]]; then
+            echo "::error::VERSION is already '$VERSION'. Nothing to bump." >&2
+            exit 1
+          fi
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            echo "::error::Tag '${VERSION}' already exists. Pick a different version." >&2
+            exit 1
+          fi
+
+      - name: Create branch and update VERSION
+        run: |
+          set -euo pipefail
+          git checkout -b "version-bump/$VERSION"
+          echo "$VERSION" > VERSION
+
+      - name: Configure git author
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version bump
+        run: |
+          set -euo pipefail
+          git add VERSION
+          if git diff --cached --quiet; then
+            echo "::error::No file changes — VERSION may already be at '$VERSION'." >&2
+            exit 1
+          fi
+          git commit -m "chore(release): bump version to $VERSION"
+
+      - name: Push branch
+        run: git push --force -u origin "version-bump/$VERSION"
+
+      - name: Open or update release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          existing_pr=$(gh pr list --head "version-bump/$VERSION" --base master --json number --jq '.[0].number // empty' --repo "${{ github.repository }}")
+          if [[ -n "$existing_pr" ]]; then
+            echo "PR #$existing_pr already exists for this version (updated by force-push)."
+          else
+            gh pr create \
+              --base master \
+              --head "version-bump/$VERSION" \
+              --title "chore(release): bump version to $VERSION" \
+              --body "Bumps VERSION to **$VERSION**. Merge, then dispatch the Build and Release workflow with \`release=true\` to tag and publish." \
+              --repo "${{ github.repository }}"
+          fi

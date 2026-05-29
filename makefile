@@ -28,6 +28,16 @@ endif
 
 SHELL := /bin/bash
 
+# Source of truth for the version, in precedence order:
+#   1. $VERSION env (CI sets this from VERSION file via build_package.sh)
+#   2. VERSION file at repo root
+#   3. git describe (legacy clones without VERSION file)
+ifeq ($(wildcard $(SOURCE_ROOT)/VERSION),)
+VERSION_DEFAULT := $(shell git describe --tags --always --abbrev=9)
+else
+VERSION_DEFAULT := $(shell tr -d '[:space:]' < $(SOURCE_ROOT)/VERSION)
+endif
+
 define make_build
 	mkdir -p $(BUILD_ROOT)tmp
 	mkdir -p $(BUILD_ROOT)bin
@@ -38,14 +48,13 @@ define make_build
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
-	(git describe --tags --always --abbrev=9 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g $(BUILD_ROOT)tmp/asadm.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g" $(BUILD_ROOT)tmp/asadm.py) || true
+	sed -i "" "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asadm.py || true ,
+	sed -i'' "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asadm.py || true
 	)
-	
 
 	$(if $(filter $(OS),Darwin),
-	(git describe --tags --always --abbrev=9 && sed -i "" s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g $(BUILD_ROOT)tmp/asinfo.py) || true ,
-	(sed -i'' "s/[$$][$$]__version__[$$][$$]/`git describe --tags --always --abbrev=9`/g" $(BUILD_ROOT)tmp/asinfo.py) || true
+	sed -i "" "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asinfo.py || true ,
+	sed -i'' "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asinfo.py || true
 	)
 
 endef
@@ -79,6 +88,24 @@ rpm: prep
 .PHONY: tar
 tar: prep
 	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+
+.PHONY: osx-pkg
+ifeq ($(OS),Darwin)
+osx-pkg: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+else
+osx-pkg:
+	$(error osx-pkg is only supported on macOS (Darwin))
+endif
+
+.PHONY: osx-dmg
+ifeq ($(OS),Darwin)
+osx-dmg: prep
+	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
+else
+osx-dmg:
+	$(error osx-dmg is only supported on macOS (Darwin))
+endif
 
 .PHONY: prep
 prep: one-dir

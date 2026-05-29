@@ -1493,7 +1493,9 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get statistics", resp)
 
-        return client_util.info_to_dict(resp)
+        result = client_util.info_to_dict(resp)
+        logger.debug("info_statistics for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_namespaces(self):
@@ -1507,7 +1509,9 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get namespaces", resp)
 
-        return client_util.info_to_list(resp)
+        namespaces = client_util.info_to_list(resp)
+        logger.debug("info_namespaces node=%s response=%s", self.ip, namespaces)
+        return namespaces
 
     @async_return_exceptions
     async def info_namespace_statistics(self, namespace):
@@ -1536,6 +1540,12 @@ class Node(AsyncObject):
             and ns_stat["type"] == "unknown"
         ):
             ns_stat = {}
+        logger.debug(
+            "info_namespace_statistics for node %s namespace %s returned: %s",
+            self.ip,
+            namespace,
+            ns_stat,
+        )
         return ns_stat
 
     @async_return_exceptions
@@ -1549,6 +1559,9 @@ class Node(AsyncObject):
         for ns in namespaces:
             stats[ns] = await self.info_namespace_statistics(ns)
 
+        logger.debug(
+            "info_all_namespace_statistics for node %s returned: %s", self.ip, stats
+        )
         return stats
 
     @async_return_exceptions
@@ -1562,6 +1575,13 @@ class Node(AsyncObject):
         else:
             set_stat = client_util.info_colon_to_dict(set_stat)
 
+        logger.debug(
+            "info_set_statistics for node %s namespace %s set %s returned: %s",
+            self.ip,
+            namespace,
+            set_,
+            set_stat,
+        )
         return set_stat
 
     @async_return_exceptions
@@ -1589,6 +1609,7 @@ class Node(AsyncObject):
 
             set_dict.update(stat)
 
+        logger.debug("info_all_set_statistics for node %s returned: %s", self.ip, sets)
         return sets
 
     @async_return_exceptions
@@ -1607,6 +1628,9 @@ class Node(AsyncObject):
             key = "outlier" + str(i)
             health_dict[key] = stat
 
+        logger.debug(
+            "info_health_outliers for node %s returned: %s", self.ip, health_dict
+        )
         return health_dict
 
     @async_return_exceptions
@@ -1626,6 +1650,9 @@ class Node(AsyncObject):
                 resp_dict["failed_best_practices"], delimiter=","
             )
 
+        logger.debug(
+            "info_best_practices for node %s returned: %s", self.ip, failed_practices
+        )
         return failed_practices
 
     @async_return_exceptions
@@ -1660,6 +1687,7 @@ class Node(AsyncObject):
             values = client_util.info_to_dict(values)
             stat_dict[stat[0]] = values
 
+        logger.debug("info_bin_statistics for node %s returned: %s", self.ip, stat_dict)
         return stat_dict
 
     @async_return_exceptions
@@ -1686,14 +1714,22 @@ class Node(AsyncObject):
                 raise ASInfoResponseError(
                     "Failed to get DC statistics for {}".format(dc), resp
                 )
-            return client_util.info_to_dict(resp)
+            result = client_util.info_to_dict(resp)
+            logger.debug(
+                "info_dc_statistics for node %s dc %s returned: %s", self.ip, dc, result
+            )
+            return result
 
         resp = await self._info("get-stats:context=xdr;dc=%s" % dc)
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError(
                 "Failed to get DC statistics for {}".format(dc), resp
             )
-        return client_util.info_to_dict(resp)
+        result = client_util.info_to_dict(resp)
+        logger.debug(
+            "info_dc_statistics for node %s dc %s returned: %s", self.ip, dc, result
+        )
+        return result
 
     @async_return_exceptions
     async def info_all_dc_statistics(self, dcs: list[str] | None = None):
@@ -1706,7 +1742,9 @@ class Node(AsyncObject):
 
         stat_list = await asyncio.gather(*[self.info_dc_statistics(dc) for dc in dcs])
 
-        return dict(zip(dcs, stat_list))
+        result = dict(zip(dcs, stat_list))
+        logger.debug("info_all_dc_statistics for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_XDR_statistics(self):
@@ -1731,7 +1769,9 @@ class Node(AsyncObject):
         resp = await self._info("statistics/xdr")
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get XDR statistics", resp)
-        return client_util.info_to_dict(resp)
+        result = client_util.info_to_dict(resp)
+        logger.debug("info_XDR_statistics for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_xdr_dc_namespaces_statistics(self, dc: str, namespaces: list[str]):
@@ -1744,7 +1784,14 @@ class Node(AsyncObject):
 
         all_ns_stats = list(map(client_util.info_to_dict, all_ns_stats))
 
-        return dict(zip(namespaces, all_ns_stats))
+        result = dict(zip(namespaces, all_ns_stats))
+        logger.debug(
+            "info_xdr_dc_namespaces_statistics for node %s dc %s returned: %s",
+            self.ip,
+            dc,
+            result,
+        )
+        return result
 
     @async_return_exceptions
     async def info_all_xdr_namespaces_statistics(
@@ -1789,7 +1836,13 @@ class Node(AsyncObject):
 
         xdr_namespace_stats = await asyncio.gather(*[helper(dc) for dc in dcs])
 
-        return dict(zip(dcs, xdr_namespace_stats))
+        result = dict(zip(dcs, xdr_namespace_stats))
+        logger.debug(
+            "info_all_xdr_namespaces_statistics for node %s returned: %s",
+            self.ip,
+            result,
+        )
+        return result
 
     @async_return_exceptions
     async def info_set_config_xdr_create_dc(self, dc):
@@ -2020,6 +2073,7 @@ class Node(AsyncObject):
             id, file = pair.split(":")
             id_file_dict[file] = id
 
+        logger.debug("info_logs_ids for node %s returned: %s", self.ip, id_file_dict)
         return id_file_dict
 
     @async_return_exceptions
@@ -2039,7 +2093,9 @@ class Node(AsyncObject):
             *[get_logging_config(id) for id in log_ids.values()]
         )
 
-        return dict(zip(log_names, configs))
+        result = dict(zip(log_names, configs))
+        logger.debug("info_logging_config for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_set_config_logging(self, file, param, value):
@@ -2254,6 +2310,12 @@ class Node(AsyncObject):
                     f"Failed to get config for context {stanza}", resp
                 )
             config = client_util.info_to_dict(resp)
+        logger.debug(
+            "info_get_config for node %s stanza %s returned: %s",
+            self.ip,
+            stanza,
+            config,
+        )
         return config
 
     @async_return_exceptions
@@ -2283,11 +2345,15 @@ class Node(AsyncObject):
         )
 
         if namespace != "":
-            return {
+            result = {
                 namespace: await self.info_single_namespace_config(
                     getconfig_namespace_command, namespace
                 )
             }
+            logger.debug(
+                "info_namespace_config for node %s returned: %s", self.ip, result
+            )
+            return result
         else:
             namespaces = await self.info_namespaces()
             config_list = await client_util.concurrent_map(
@@ -2297,14 +2363,20 @@ class Node(AsyncObject):
                 namespaces,
             )
 
-            return dict(zip(namespaces, config_list))
+            result = dict(zip(namespaces, config_list))
+            logger.debug(
+                "info_namespace_config for node %s returned: %s", self.ip, result
+            )
+            return result
 
     @async_return_exceptions
     async def info_xdr_config(self):
         resp = await self._info("get-config:context=xdr")
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get XDR config", resp)
-        return client_util.info_to_dict(resp)
+        result = client_util.info_to_dict(resp)
+        logger.debug("info_xdr_config for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_xdr_single_dc_config(self, dc):
@@ -2356,17 +2428,22 @@ class Node(AsyncObject):
                 if dc not in dcs:
                     result.pop(dc)
 
+            logger.debug(
+                "info_xdr_dcs_config for node %s returned: %s", self.ip, result
+            )
             return result
 
         if isinstance(dcs, Exception):
             logger.error(dcs)
             return dcs
 
-        result = await asyncio.gather(
+        configs = await asyncio.gather(
             *[self.info_xdr_single_dc_config(dc) for dc in dcs]
         )
 
-        return dict(zip(dcs, result))
+        result = dict(zip(dcs, configs))
+        logger.debug("info_xdr_dcs_config for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_xdr_dc_single_namespace_config(self, dc: str, ns: str):
@@ -2433,7 +2510,11 @@ class Node(AsyncObject):
 
         xdr_ns_configs = await asyncio.gather(*[helper(dc) for dc in dcs])
 
-        return dict(zip(dcs, xdr_ns_configs))
+        result = dict(zip(dcs, xdr_ns_configs))
+        logger.debug(
+            "info_xdr_namespaces_config for node %s returned: %s", self.ip, result
+        )
+        return result
 
     async def _get_xdr_filter_helper(
         self, dc: str
@@ -2458,7 +2539,9 @@ class Node(AsyncObject):
 
         filters = await asyncio.gather(*[self._get_xdr_filter_helper(dc) for dc in dcs])
 
-        return dict(zip(dcs, filters))
+        result = dict(zip(dcs, filters))
+        logger.debug("info_get_xdr_filter for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_get_originalconfig(self, stanza=""):
@@ -2826,7 +2909,9 @@ class Node(AsyncObject):
             if dcs == "":
                 return []
 
-            return client_util.info_to_list(dcs, delimiter=",")
+            result = client_util.info_to_list(dcs, delimiter=",")
+            logger.debug("info_dcs node=%s response=%s", self.ip, result)
+            return result
 
         dcs = await self._info("dcs")
         if dcs.startswith("ERROR") or dcs.startswith("error"):
@@ -2835,7 +2920,9 @@ class Node(AsyncObject):
         if dcs == "":
             return []
 
-        return client_util.info_to_list(dcs)
+        result = client_util.info_to_list(dcs)
+        logger.debug("info_dcs node=%s response=%s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_udf_list(self):
@@ -2852,9 +2939,11 @@ class Node(AsyncObject):
         if not udf_data:
             return {}
 
-        return client_util.info_to_dict_multi_level(
+        result = client_util.info_to_dict_multi_level(
             udf_data, "filename", delimiter2=","
         )
+        logger.debug("info_udf_list node=%s response=%s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_udf_get(self, filename):
@@ -2870,7 +2959,14 @@ class Node(AsyncObject):
         if not udf_data:
             return {}
 
-        return client_util.info_to_dict(udf_data)
+        result = client_util.info_to_dict(udf_data)
+        logger.debug(
+            "info_udf_get node=%s filename=%s content_length=%s",
+            self.ip,
+            filename,
+            len(result.get("content", "")),
+        )
+        return result
 
     @async_return_exceptions
     async def info_udf_put(self, udf_file_name, udf_str, udf_type="LUA"):
@@ -2952,6 +3048,12 @@ class Node(AsyncObject):
                         response[key], delimiter=","
                     )
 
+        logger.debug(
+            "info_roster_namespace node=%s namespace=%s response=%s",
+            self.ip,
+            namespace,
+            response,
+        )
         return response
 
     @async_return_exceptions
@@ -2981,6 +3083,7 @@ class Node(AsyncObject):
                 else:
                     ns_roster_data[k] = v
 
+        logger.debug("info_roster node=%s response=%s", self.ip, roster_data)
         return roster_data
 
     @async_return_exceptions
@@ -3029,6 +3132,14 @@ class Node(AsyncObject):
         if "error" in resp.lower():
             raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp)
 
+        logger.debug(
+            "info_cluster_stable node=%s cluster_size=%s namespace=%s ignore_migrations=%s response=%s",
+            self.ip,
+            cluster_size,
+            namespace,
+            ignore_migrations,
+            resp,
+        )
         return resp
 
     @async_return_exceptions
@@ -3078,6 +3189,7 @@ class Node(AsyncObject):
                 except Exception:
                     continue
 
+        logger.debug("info_racks for node %s returned: %s", self.ip, rack_dict)
         return rack_dict
 
     @async_return_exceptions
@@ -3106,6 +3218,7 @@ class Node(AsyncObject):
             if id_ != "":
                 rack_data[ns] = id_
 
+        logger.debug("info_rack_ids for node %s returned: %s", self.ip, rack_data)
         return rack_data
 
     async def _collect_histogram_data(
@@ -3141,28 +3254,49 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_histogram(self, histogram, logarithmic=False, raw_output=False):
         if not self.new_histogram_version:
-            return await self._collect_histogram_data(
+            result = await self._collect_histogram_data(
                 histogram, command="hist-dump:ns=%s;hist=%s", raw_output=raw_output
             )
+            logger.debug(
+                "info_histogram for node %s histogram %s returned: %s",
+                self.ip,
+                histogram,
+                result,
+            )
+            return result
 
         command = "histogram:namespace=%s;type=%s"
 
         if logarithmic:
             if histogram == "objsz":
                 histogram = "object-size"
-            return await self._collect_histogram_data(
+            result = await self._collect_histogram_data(
                 histogram,
                 command=command,
                 logarithmic=logarithmic,
                 raw_output=raw_output,
             )
+            logger.debug(
+                "info_histogram for node %s histogram %s returned: %s",
+                self.ip,
+                histogram,
+                result,
+            )
+            return result
 
         if histogram == "objsz":
             histogram = "object-size-linear"
 
-        return await self._collect_histogram_data(
+        result = await self._collect_histogram_data(
             histogram, command=command, logarithmic=logarithmic, raw_output=raw_output
         )
+        logger.debug(
+            "info_histogram for node %s histogram %s returned: %s",
+            self.ip,
+            histogram,
+            result,
+        )
+        return result
 
     @async_return_exceptions
     async def info_sindex(self):
@@ -3172,11 +3306,13 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get sindex list", resp)
 
-        return [
+        result = [
             client_util.info_to_dict(v, ":")
             for v in client_util.info_to_list(resp)
             if v != ""
         ]
+        logger.debug("info_sindex node=%s response=%s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_user_agents(self):
@@ -3188,11 +3324,13 @@ class Node(AsyncObject):
         if response.startswith("ERROR") or response.startswith("error"):
             raise ASInfoResponseError("Failed to get user agents", response)
 
-        return [
+        result = [
             client_util.info_to_dict(v, ":")
             for v in client_util.info_to_list(response)
             if v != ""
         ]
+        logger.debug("info_user_agents for node %s returned: %s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_sindex_statistics(self, namespace, indexname):
@@ -3209,7 +3347,15 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp)
 
-        return client_util.info_to_dict(resp)
+        result = client_util.info_to_dict(resp)
+        logger.debug(
+            "info_sindex_statistics node=%s namespace=%s indexname=%s response=%s",
+            self.ip,
+            namespace,
+            indexname,
+            result,
+        )
+        return result
 
     @async_return_exceptions
     async def info_sindex_create(
@@ -3424,7 +3570,9 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get release info", resp)
 
-        return client_util.info_to_dict(resp)
+        result = client_util.info_to_dict(resp)
+        logger.debug("info_release node=%s response=%s", self.ip, result)
+        return result
 
     @async_return_exceptions
     async def info_feature_key(self):
@@ -3438,7 +3586,9 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get feature-key", resp)
 
-        return client_util.info_to_dict(resp)
+        result = client_util.info_to_dict(resp)
+        logger.debug("info_feature_key node=%s response=%s", self.ip, result)
+        return result
 
     async def _use_new_truncate_command(self):
         """
@@ -3604,6 +3754,12 @@ class Node(AsyncObject):
 
         jobs = client_util.info_to_dict_multi_level(resp, "trid")
 
+        logger.debug(
+            "info_jobs node=%s module=%s response=%s",
+            self.ip,
+            module,
+            jobs,
+        )
         return jobs
 
     @async_return_exceptions
@@ -3638,6 +3794,7 @@ class Node(AsyncObject):
         resp = await self._jobs_helper(old_req, new_req)
         resp = client_util.info_to_dict_multi_level(resp, "trid")
 
+        logger.debug("info_query_show node=%s response=%s", self.ip, resp)
         return resp
 
     @async_return_exceptions
@@ -3670,6 +3827,7 @@ class Node(AsyncObject):
         resp = await self._jobs_helper(old_req, new_req)
         resp = client_util.info_to_dict_multi_level(resp, "trid")
 
+        logger.debug("info_scan_show node=%s response=%s", self.ip, resp)
         return resp
 
     # TODO: Deprecated but still needed to support killing old job types that have been
@@ -3737,6 +3895,11 @@ class Node(AsyncObject):
         resp = await self._info("scan-abort-all:")
 
         if resp.startswith("OK - number of"):
+            logger.debug(
+                "info_scan_abort_all node=%s response=%s",
+                self.ip,
+                resp,
+            )
             return resp.lower()
 
         raise ASInfoResponseError("Failed to abort all scans", resp)
@@ -3752,6 +3915,11 @@ class Node(AsyncObject):
 
         # TODO: Check actual response
         if resp.startswith("OK - number of"):
+            logger.debug(
+                "info_query_abort_all node=%s response=%s",
+                self.ip,
+                resp,
+            )
             return resp.lower()
 
         raise ASInfoResponseError("Failed to abort all queries", resp)
@@ -3825,11 +3993,19 @@ class Node(AsyncObject):
         if resp.startswith("error") or resp.startswith("ERROR"):
             raise ASInfoResponseError("Failed to list masking rules", resp)
 
-        return [
+        result = [
             client_util.info_to_dict(v, ";")
             for v in client_util.info_to_list(resp, delimiter=":")
             if v != ""
         ]
+        logger.debug(
+            "info_masking_list_rules node=%s namespace=%s set=%s response=%s",
+            self.ip,
+            namespace,
+            set_,
+            result,
+        )
+        return result
 
     ############################################################################
     #
@@ -3920,7 +4096,13 @@ class Node(AsyncObject):
         Returns: {username1: [role1, role2, . . .], username2: [. . .],  . . .},
         ASProtocolError on fail
         """
-        return await self._admin_cadmin(ASSocket.query_users, (), self.ip)
+        result = await self._admin_cadmin(ASSocket.query_users, (), self.ip)
+        logger.debug(
+            "admin_query_users node=%s response=%s",
+            self.ip,
+            result,
+        )
+        return result
 
     @async_return_exceptions
     async def admin_query_user(self, user):
@@ -3930,7 +4112,14 @@ class Node(AsyncObject):
         Returns: {username: [role1, role2, . . .]},
         ASProtocolError on fail
         """
-        return await self._admin_cadmin(ASSocket.query_user, [user], self.ip)
+        result = await self._admin_cadmin(ASSocket.query_user, [user], self.ip)
+        logger.debug(
+            "admin_query_user node=%s user=%s response=%s",
+            self.ip,
+            user,
+            result,
+        )
+        return result
 
     @async_return_exceptions
     async def admin_create_role(
@@ -4047,7 +4236,13 @@ class Node(AsyncObject):
                  },
         ASProtocolError on fail
         """
-        return await self._admin_cadmin(ASSocket.query_roles, (), self.ip)
+        result = await self._admin_cadmin(ASSocket.query_roles, (), self.ip)
+        logger.debug(
+            "admin_query_roles node=%s response=%s",
+            self.ip,
+            result,
+        )
+        return result
 
     @async_return_exceptions
     async def admin_query_role(self, role):
@@ -4060,7 +4255,14 @@ class Node(AsyncObject):
                  },
         ASProtocolError on fail
         """
-        return await self._admin_cadmin(ASSocket.query_role, [role], self.ip)
+        result = await self._admin_cadmin(ASSocket.query_role, [role], self.ip)
+        logger.debug(
+            "admin_query_role node=%s role=%s response=%s",
+            self.ip,
+            role,
+            result,
+        )
+        return result
 
     ############################################################################
     #
@@ -4108,6 +4310,11 @@ class Node(AsyncObject):
             f"({self.ip}:{self.port}): Finished collecting system info for localhost."
         )
 
+        logger.debug(
+            "_get_localhost_system_statistics node=%s response=%s",
+            self.ip,
+            sys_stats,
+        )
         return sys_stats
 
     async def _get_remote_host_system_statistics(
@@ -4185,6 +4392,11 @@ class Node(AsyncObject):
         finally:
             await conn.close()
 
+        logger.debug(
+            "_get_remote_host_system_statistics node=%s response=%s",
+            self.ip,
+            sys_stats,
+        )
         return sys_stats
 
     @async_return_exceptions
@@ -4233,6 +4445,11 @@ class Node(AsyncObject):
                 ssh_port=ssh_port,
             )
 
+        logger.debug(
+            "info_system_statistics node=%s response=%s",
+            self.ip,
+            {},
+        )
         return {}
 
     ############################################################################

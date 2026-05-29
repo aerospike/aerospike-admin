@@ -1335,7 +1335,7 @@ class CliView(object):
         )
         CliView.print_result(
             "Following Aerospike's best-practices are required for optimal stability and performance.\n"
-            + "Descriptions of each can be found @ https://docs.aerospike.com/docs/operations/install/linux/bestpractices/index.html"
+            + "Descriptions of each can be found @ https://aerospike.com/docs/database/learn/best-practices"
         )
 
     @staticmethod
