@@ -220,7 +220,7 @@ jobs:
           build_packages
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.distro }}-${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}
           path: pkg/target/
@@ -294,7 +294,7 @@ jobs:
              "aerospike-asadm-${VERSION}-${{ matrix.os }}-${{ runner.arch }}.pkg"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}
           path: aerospike-asadm-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}.pkg
@@ -318,7 +318,7 @@ jobs:
           merge-multiple: true
  
       - name: Upload packaged Artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: build-artifacts
@@ -531,7 +531,7 @@ jobs:
           ls -la deploy-artifacts/
           [[ ${count} -gt 0 ]] || { echo "ERROR: no deploy artifacts found" >&2; exit 1; }
       - name: Upload deploy artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: deploy-artifacts/
