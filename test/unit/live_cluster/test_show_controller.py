@@ -18,6 +18,7 @@ import unittest
 import warnings
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
+from parameterized import parameterized
 from pytest import PytestUnraisableExceptionWarning
 
 from lib.base_controller import ShellException
@@ -32,9 +33,13 @@ from lib.live_cluster.get_controller import (
     GetStatisticsController,
     GetUserAgentsController,
 )
+from lib.live_cluster.live_cluster_command_controller import (
+    LiveClusterCommandController,
+)
 from lib.live_cluster.show_controller import (
     ShowBestPracticesController,
     ShowConfigController,
+    ShowController,
     ShowConfigXDRController,
     ShowJobsController,
     ShowMaskingController,
@@ -51,6 +56,34 @@ from lib.live_cluster.show_controller import (
 )
 from lib.view.view import CliView
 from test.unit import util as test_util
+
+
+class ShowControllerAliasTest(unittest.TestCase):
+    def setUp(self):
+        # Sub-controllers read the cluster off the class attribute during _init().
+        LiveClusterCommandController.cluster = create_autospec(Cluster)
+        self.controller = ShowController()
+        self.controller._init()
+        self.addCleanup(patch.stopall)
+
+    def test_stats_is_alias_for_statistics(self):
+        self.assertEqual(self.controller.aliases, {"stats": "statistics"})
+
+    def test_stats_alias_does_not_register_a_command(self):
+        # The alias must not become a command key, otherwise the shared "stat"
+        # prefix would resolve ambiguously.
+        self.assertNotIn("stats", self.controller.commands.keys())
+        self.assertIn("statistics", self.controller.commands.keys())
+
+    def test_stats_alias_resolves_to_statistics_controller(self):
+        method = self.controller._find_method(["stats"])
+        self.assertIsInstance(method, ShowStatisticsController)
+
+    @parameterized.expand([["stat"], ["statistics"]])
+    def test_statistics_prefix_still_resolves(self, command):
+        # Adding the alias must not break the existing prefix shorthand.
+        method = self.controller._find_method([command])
+        self.assertIsInstance(method, ShowStatisticsController)
 
 
 class ShowConfigControllerTest(unittest.IsolatedAsyncioTestCase):
