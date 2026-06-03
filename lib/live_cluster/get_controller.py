@@ -1212,7 +1212,8 @@ _WHERE_FIELD_ALIASES = {
 
 
 def _resolve_where_field(field):
-    return _WHERE_FIELD_ALIASES.get(field.strip().lower(), field)
+    key = field.strip().lower()
+    return _WHERE_FIELD_ALIASES.get(key, key)
 
 
 def filter_jobs(jobs_data, for_mods=None, where=None):
@@ -1260,18 +1261,20 @@ def filter_jobs(jobs_data, for_mods=None, where=None):
                 raise ShellException(f"invalid -where regex in '{clause}': {e}")
             where_compiled.append((resolved, compiled))
 
+    # Compile the namespace/set patterns once rather than per job row.
+    ns_pattern = util.compile_likes(ns_filter) if ns_filter else None
+    set_pattern = util.compile_likes(set_filter) if set_filter else None
+
     for host, host_jobs in list(jobs_data.items()):
         if not isinstance(host_jobs, dict):
             continue
         for trid in list(host_jobs.keys()):
             job = host_jobs[trid]
-            if ns_filter and not next(
-                iter(util.filter_list([str(job.get("ns", ""))], ns_filter)), None
-            ):
+            if ns_pattern is not None and not ns_pattern.search(str(job.get("ns", ""))):
                 del host_jobs[trid]
                 continue
-            if set_filter and not next(
-                iter(util.filter_list([str(job.get("set", ""))], set_filter)), None
+            if set_pattern is not None and not set_pattern.search(
+                str(job.get("set", ""))
             ):
                 del host_jobs[trid]
                 continue

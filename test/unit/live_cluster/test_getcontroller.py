@@ -1030,6 +1030,25 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
             {"1.1.1.1": {"1": {"ns": "test", "trid": "111", "status": "active(ok)"}}},
         )
 
+    async def test_get_query_where_raw_key_case_and_whitespace_insensitive(self):
+        # A raw server key typed with different case / stray whitespace (here
+        # "Status " for "status") must still resolve — not trip the
+        # unknown-field check — matching the case-insensitivity offered to
+        # display-header aliases.
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["Status =active"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
+        )
+
     async def test_get_query_where_empty_data_does_not_raise(self):
         # When no hosts have job dicts to introspect, the unknown-field check
         # is skipped — we can't verify and a spurious error would be worse than
