@@ -61,7 +61,13 @@ from test.unit import util as test_util
 class ShowControllerAliasTest(unittest.TestCase):
     def setUp(self):
         # Sub-controllers read the cluster off the class attribute during _init().
-        LiveClusterCommandController.cluster = create_autospec(Cluster)
+        # Patch it so the mock is restored and doesn't leak into other tests.
+        patch.object(
+            LiveClusterCommandController,
+            "cluster",
+            create_autospec(Cluster),
+            create=True,
+        ).start()
         self.controller = ShowController()
         self.controller._init()
         self.addCleanup(patch.stopall)

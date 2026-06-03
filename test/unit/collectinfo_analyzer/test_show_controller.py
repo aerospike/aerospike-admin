@@ -32,10 +32,14 @@ from lib.base_controller import ShellException
 
 class ShowControllerAliasTest(unittest.TestCase):
     def setUp(self):
-        # Sub-controllers read the log_handler off the class attribute during _init().
-        CollectinfoCommandController.log_handler = create_autospec(
-            CollectinfoLogHandler
-        )
+        # Sub-controllers read the log_handler off the class attribute during
+        # _init(). Patch it so the mock is restored and doesn't leak into others.
+        patch.object(
+            CollectinfoCommandController,
+            "log_handler",
+            create_autospec(CollectinfoLogHandler),
+            create=True,
+        ).start()
         self.controller = ShowController()
         self.controller._init()
         self.addCleanup(patch.stopall)
