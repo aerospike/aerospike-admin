@@ -12,15 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import io
+import os
 from contextlib import redirect_stdout
 import datetime
 import unittest
 from mock import MagicMock, call, patch
+from unittest.mock import patch as patch_
 from lib.utils.common import SummaryClusterDict, SummaryNamespacesDict
 from lib.view import templates, terminal
 from lib.view.view import CliView
 from lib.view.sheet.const import SheetStyle
+from lib.view.sheet.decleration import Subgroup
 from lib.live_cluster.client.node import ASInfoResponseError
 
 
@@ -297,9 +301,6 @@ class CliViewTest(unittest.TestCase):
         Unmocks sheet.render and captures stdout. Without the fix and with this
         wider data, the title renders twice; with the fix, exactly once.
         """
-        import os
-        from unittest.mock import patch as patch_
-
         # Width-bloated values + multiple hosts/jobs push the rendered column
         # table past 2x terminal width, which is the threshold for the
         # title-fill-repeat path.
@@ -339,9 +340,13 @@ class CliViewTest(unittest.TestCase):
         patch.stopall()
 
         narrow_size = os.terminal_size((80, 24))
-        with patch_(
-            "lib.view.sheet.render.base_rsheet.get_terminal_size",
-            return_value=narrow_size,
+        # Patch the module object directly rather than a dotted string target:
+        # lib/view/sheet/__init__.py rebinds `render` to the function, shadowing
+        # the `render` submodule, so the string path "...render.base_rsheet" is
+        # unresolvable via attribute walking on Python 3.10.
+        base_rsheet_mod = importlib.import_module("lib.view.sheet.render.base_rsheet")
+        with patch_.object(
+            base_rsheet_mod, "get_terminal_size", return_value=narrow_size
         ):
             f = io.StringIO()
             with redirect_stdout(f):
@@ -1700,8 +1705,6 @@ class CliViewTest(unittest.TestCase):
 
     def test_info_namespace_usage_sheet_has_stop_pct_field(self):
         """Verify lib/view/templates.py wires Stop% -> stop-writes-sys-memory-pct in the System Memory subgroup."""
-        from lib.view.sheet.decleration import Subgroup
-
         system_memory_subgroup = next(
             (
                 f

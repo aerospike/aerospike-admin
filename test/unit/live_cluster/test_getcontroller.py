@@ -17,6 +17,7 @@ import warnings
 from pytest import PytestUnraisableExceptionWarning
 from mock import patch, MagicMock
 from mock.mock import AsyncMock
+from lib.base_controller import ShellException
 from lib.live_cluster.client.cluster import Cluster
 
 from lib.live_cluster.get_controller import (
@@ -967,7 +968,6 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
     async def test_get_query_invalid_regex_raises_shell_exception(self):
         # Malformed regex like `-where status=(` must surface a ShellException
         # naming the offending clause — not crash with re.error.
-        from lib.base_controller import ShellException
 
         self.cluster_mock.info_query_show.return_value = {
             "1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}
@@ -982,7 +982,6 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         # An unknown -where field must surface a ShellException rather than
         # silently filter every row, so users can tell typo-on-field from
         # zero-matches.
-        from lib.base_controller import ShellException
 
         self.cluster_mock.info_query_show.return_value = {
             "1.1.1.1": {
@@ -1049,6 +1048,22 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
             {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
         )
 
+    async def test_get_query_where_known_alias_absent_in_data_filters_empty(self):
+        # A legitimate alias/field (here `set`) that the current jobs simply
+        # don't populate must filter to empty — NOT raise "unknown field" while
+        # listing `set` as known. Distinguishes "field empty for these jobs"
+        # from a real typo (which still raises, see below).
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "test", "status": "done(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["set=foo"])
+
+        self.assertDictEqual(actual, {"1.1.1.1": {}})
+
     async def test_get_query_where_empty_data_does_not_raise(self):
         # When no hosts have job dicts to introspect, the unknown-field check
         # is skipped — we can't verify and a spurious error would be worse than
@@ -1112,7 +1127,6 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
     async def test_get_query_where_unknown_field_error_lists_known_names(self):
         # Error message must surface both raw keys present in data AND display
         # aliases so users can discover valid names without re-reading help.
-        from lib.base_controller import ShellException
 
         self.cluster_mock.info_query_show.return_value = {
             "1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}

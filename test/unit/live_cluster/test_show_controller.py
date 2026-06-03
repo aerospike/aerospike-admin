@@ -1273,8 +1273,6 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_queries_where_invalid_raises(self):
-        from lib.base_controller import ShellException
-
         self.getter_mock.get_query.return_value = "queries"
         self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
 
@@ -1285,8 +1283,6 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("status", str(ctx.exception))
 
     async def test_queries_trailing_where_no_value_raises(self):
-        from lib.base_controller import ShellException
-
         self.getter_mock.get_query.return_value = "queries"
         self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
 

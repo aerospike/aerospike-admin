@@ -1250,7 +1250,15 @@ def filter_jobs(jobs_data, for_mods=None, where=None):
         for clause in where:
             field, _, pattern = clause.partition("=")
             resolved = _resolve_where_field(field)
-            if known_fields and resolved not in known_fields:
+            # Only error on a genuinely unrecognized field. A legitimate alias
+            # (e.g. `set`, `progress%`) that simply isn't populated by the
+            # current jobs should match nothing — not be rejected as "unknown"
+            # while the same name appears in the "Known fields" list.
+            if (
+                known_fields
+                and resolved not in known_fields
+                and field.strip().lower() not in _WHERE_FIELD_ALIASES
+            ):
                 legal = sorted(known_fields | set(_WHERE_FIELD_ALIASES.keys()))
                 raise ShellException(
                     f"unknown -where field '{field}'. Known fields: {legal}"
