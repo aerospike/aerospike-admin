@@ -148,7 +148,7 @@ _install_python_via_asdf_and_fpm() {
       unset PYTHON_CONFIGURE_OPTS
     fi
     # Fail on HTTP errors (-f); checksum pins bootstrap.pypa.io content (bump when updating intentionally).
-    local get_pip_expected_sha="${GET_PIP_SHA256:-66904bccb878e363db6236ea900e6935e507dcb887e9f178f6212edfe7f46a76}"
+    local get_pip_expected_sha="${GET_PIP_SHA256:-a341e1a43e38001c551a1508a73ff23636a11970b61d901d9a1cad2a18f57055}"
     curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
     echo "${get_pip_expected_sha}  /tmp/get-pip.py" | sha256sum -c - >/dev/null
     "$HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python" /tmp/get-pip.py --no-warn-script-location
