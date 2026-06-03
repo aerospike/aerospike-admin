@@ -16,10 +16,11 @@ import asyncio
 import copy
 import re
 from typing import Iterable, Optional
-from lib.base_controller import ShellException
+from lib.base_controller import ModifierHelp, ShellException
 from lib.base_get_controller import BaseGetConfigController
 
 from lib.utils import common, util, constants
+from lib.utils.constants import Modifiers
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
 
@@ -1171,12 +1172,58 @@ class GetUserAgentsController:
         return await self.cluster.info_user_agents(nodes=nodes)
 
 
+flip_jobs_modifier_help = ModifierHelp(
+    "--flip",
+    "Flip output table to show jobs on Y axis and fields on X axis.",
+)
+where_jobs_modifier_help = ModifierHelp(
+    "--where",
+    "Filter jobs by <field>=<regex>. <field> accepts either the raw server key (e.g. 'ns', 'set', 'job-type', 'trid', 'status') or the display column header (e.g. 'Namespace', 'Set', 'Type', 'Transaction ID') case-insensitively. Plain text matches as a substring; regex metacharacters (^ $ . * etc.) are supported. Unknown fields raise an error. Repeatable; multiple clauses AND together. E.g. --where status=active.",
+)
+like_jobs_modifier_help = ModifierHelp(
+    Modifiers.LIKE,
+    "Filter by field-name substring match",
+)
+for_jobs_modifier_help = ModifierHelp(
+    Modifiers.FOR,
+    "Filter by namespace [and set] substring match",
+)
+jobs_usage_extras = f"[--flip] [--where <field>=<regex> [...]] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{Modifiers.LIKE} <field-substring>]"
+
+
+# Maps user-facing display headers (as they appear in `show jobs` output) to
+# the raw server keys present in the per-job dict. Lookup is case-insensitive.
+# Raw keys also map to themselves so users can use either form.
+_WHERE_FIELD_ALIASES = {
+    "namespace": "ns",
+    "ns": "ns",
+    "set": "set",
+    "module": "module",
+    "type": "job-type",
+    "job-type": "job-type",
+    "progress%": "job-progress",
+    "progress": "job-progress",
+    "job-progress": "job-progress",
+    "transaction id": "trid",
+    "trid": "trid",
+    "time since done": "time-since-done",
+    "time-since-done": "time-since-done",
+}
+
+
+def _resolve_where_field(field):
+    return _WHERE_FIELD_ALIASES.get(field.strip().lower(), field)
+
+
 def filter_jobs(jobs_data, for_mods=None, where=None):
     """Filter per-host job dicts by namespace/set (for_mods) and field=regex (where).
 
     Mutates and returns jobs_data. Empty hosts are kept (rendered as no rows).
     Returns ``jobs_data`` unchanged when it is None (e.g. a collectinfo capture
     that has no rows for this module).
+
+    Raises ShellException if a `-where` field is unknown after alias
+    resolution and the data contains at least one job to compare against.
     """
     if jobs_data is None:
         return jobs_data
@@ -1190,15 +1237,28 @@ def filter_jobs(jobs_data, for_mods=None, where=None):
         except IndexError:
             pass
 
+    known_fields = set()
+    for host_jobs in jobs_data.values():
+        if isinstance(host_jobs, dict):
+            for job in host_jobs.values():
+                if isinstance(job, dict):
+                    known_fields.update(job.keys())
+
     where_compiled = []
     if where:
         for clause in where:
             field, _, pattern = clause.partition("=")
+            resolved = _resolve_where_field(field)
+            if known_fields and resolved not in known_fields:
+                legal = sorted(known_fields | set(_WHERE_FIELD_ALIASES.keys()))
+                raise ShellException(
+                    f"unknown -where field '{field}'. Known fields: {legal}"
+                )
             try:
                 compiled = util.compile_likes([pattern])
             except re.error as e:
                 raise ShellException(f"invalid -where regex in '{clause}': {e}")
-            where_compiled.append((field, compiled))
+            where_compiled.append((resolved, compiled))
 
     for host, host_jobs in list(jobs_data.items()):
         if not isinstance(host_jobs, dict):
@@ -1224,10 +1284,10 @@ def filter_jobs(jobs_data, for_mods=None, where=None):
 
 
 def parse_jobs_mods(line, modifiers, mods):
-    """Parse ``--flip``/``-flip`` and repeatable ``-where <field>=<pattern>`` out of line.
+    """Parse ``--flip``/``-flip`` and repeatable ``-where``/``--where <field>=<pattern>`` out of line.
 
     Returns ``(flip_output, where_or_None)``. Mutates ``line`` and ``mods`` via
-    ``util.*_and_delete_from_mods``. Raises ShellException for malformed -where.
+    ``util.*_and_delete_from_mods``. Raises ShellException for malformed where.
     """
     flip_output = util.check_arg_and_delete_from_mods(
         line=line, arg="-flip", default=False, modifiers=modifiers, mods=mods
@@ -1236,10 +1296,18 @@ def parse_jobs_mods(line, modifiers, mods):
     )
 
     where = []
-    while "-where" in line:
+    while "-where" in line or "--where" in line:
+        # Prefer the form that appears first so consecutive identical-form clauses
+        # consume in order (token-equality match in util.get_arg_and_delete_from_mods).
+        if "--where" in line and (
+            "-where" not in line or line.index("--where") <= line.index("-where")
+        ):
+            arg_name = "--where"
+        else:
+            arg_name = "-where"
         w = util.get_arg_and_delete_from_mods(
             line=line,
-            arg="-where",
+            arg=arg_name,
             return_type=str,
             default=None,
             modifiers=modifiers,
@@ -1247,11 +1315,11 @@ def parse_jobs_mods(line, modifiers, mods):
         )
         if w is None:
             raise ShellException(
-                "invalid -where clause: missing <field>=<pattern> value"
+                f"invalid {arg_name} clause: missing <field>=<pattern> value"
             )
         if "=" not in w:
             raise ShellException(
-                f"invalid -where clause: '{w}' — expected <field>=<pattern>"
+                f"invalid {arg_name} clause: '{w}' — expected <field>=<pattern>"
             )
         where.append(w)
 

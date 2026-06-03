@@ -1385,6 +1385,7 @@ class CliView(object):
                 common=common,
                 selectors=like,
                 style=style,
+                disable_title_fill_repeat=flip_output,
             )
         )
 

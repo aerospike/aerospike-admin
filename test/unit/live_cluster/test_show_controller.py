@@ -1214,6 +1214,45 @@ class ShowJobsControllerTest(unittest.IsolatedAsyncioTestCase):
             **self.controller.mods,
         )
 
+    async def test_queries_with_double_dash_where(self):
+        # --where must be accepted as a synonym for -where, mirroring -flip/--flip.
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(["queries", "--where", "status=active"])
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=["status=active"]
+        )
+
+    async def test_queries_with_mixed_dash_where(self):
+        # Mixing -where and --where in one line, processed left-to-right.
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(
+            ["queries", "-where", "ns=test", "--where", "status=active"]
+        )
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=["ns=test", "status=active"]
+        )
+
+    async def test_queries_with_double_dash_where_first(self):
+        # --where appearing before -where exercises the opposite branch of the
+        # order-detection in parse_jobs_mods. Order in the resulting `where`
+        # list must reflect argv order, not dash-form precedence.
+        self.getter_mock.get_query.return_value = "queries"
+        self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}
+
+        await self.controller.execute(
+            ["queries", "--where", "ns=test", "-where", "status=active"]
+        )
+
+        self.getter_mock.get_query.assert_called_with(
+            nodes="all", for_mods=[], where=["ns=test", "status=active"]
+        )
+
     async def test_queries_with_multiple_where(self):
         self.getter_mock.get_query.return_value = "queries"
         self.cluster_mock.info_build.return_value = {"1.1.1.1": "6.0"}

@@ -20,7 +20,15 @@ from lib.collectinfo_analyzer.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )
-from lib.live_cluster.get_controller import filter_jobs, parse_jobs_mods
+from lib.live_cluster.get_controller import (
+    filter_jobs,
+    flip_jobs_modifier_help,
+    for_jobs_modifier_help,
+    jobs_usage_extras,
+    like_jobs_modifier_help,
+    parse_jobs_mods,
+    where_jobs_modifier_help,
+)
 from lib.utils import common, constants, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -89,23 +97,6 @@ flip_config_modifier = ModifierHelp(
     "--flip",
     "Flip output table to show Nodes on Y axis and config on X axis.",
 )
-flip_jobs_modifier_help = ModifierHelp(
-    "--flip",
-    "Flip output table to show fields on Y axis and jobs on X axis.",
-)
-where_jobs_modifier_help = ModifierHelp(
-    "-where",
-    "Filter jobs by <field>=<regex>. Plain text matches as a substring; regex metacharacters (^ $ . * etc.) are supported. Repeatable; multiple clauses AND together. E.g. -where status=active",
-)
-like_jobs_modifier_help = ModifierHelp(
-    Modifiers.LIKE,
-    "Filter by field-name substring match",
-)
-for_jobs_modifier_help = ModifierHelp(
-    Modifiers.FOR,
-    "Filter by namespace [and set] substring match",
-)
-jobs_usage_extras = f"[--flip] [-where <field>=<regex> [...]] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{Modifiers.LIKE} <field-substring>]"
 
 
 @CommandHelp(

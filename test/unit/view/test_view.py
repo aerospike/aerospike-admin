@@ -260,6 +260,7 @@ class CliViewTest(unittest.TestCase):
             common=common,
             selectors=["foo"],
             style=None,
+            disable_title_fill_repeat=False,
         )
 
     def test_show_jobs_flip(self):
@@ -287,6 +288,76 @@ class CliViewTest(unittest.TestCase):
             common={"principal": "principal"},
             selectors=None,
             style=SheetStyle.columns,
+            disable_title_fill_repeat=True,
+        )
+
+    def test_show_jobs_flip_actual_output_title_once(self):
+        """End-to-end: with --flip on a narrow terminal, the title bar must not
+        repeat (regression guard for `~~Query Jobs (ts)~~Query Jobs (ts)~~`).
+        Unmocks sheet.render and captures stdout. Without the fix and with this
+        wider data, the title renders twice; with the fix, exactly once.
+        """
+        import os
+        from unittest.mock import patch as patch_
+
+        # Width-bloated values + multiple hosts/jobs push the rendered column
+        # table past 2x terminal width, which is the threshold for the
+        # title-fill-repeat path.
+        node_names = {
+            f"host-{i}.long-suffix.example.com:3000": f"node-{i}-name"
+            for i in range(15)
+        }
+        node_ids = {
+            f"host-{i}.long-suffix.example.com:3000": f"NODE-{i}" for i in range(15)
+        }
+        jobs_data = {}
+        for i in range(15):
+            host = f"host-{i}.long-suffix.example.com:3000"
+            jobs_data[host] = {}
+            for j in range(3):
+                jobs_data[host][f"trid-{i}-{j}"] = {
+                    "ns": f"namespace-{i}",
+                    "module": "query",
+                    "job-type": "aggregation-basic",
+                    "job-progress": "99.999",
+                    "trid": f"{i}{j}{i}{j}{i}{j}",
+                    "time-since-done": "12345678",
+                    "status": "active(running)",
+                    "set": f"set-{j}-very-long-name",
+                    "recs-read": "9876543210",
+                    "mem-usage": "1234567890",
+                    "from-proxy": "false",
+                    "user-id": "administrator",
+                    "rps": "1000",
+                    "active-threads": "64",
+                    "priority": "high",
+                }
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+
+        patch.stopall()
+
+        narrow_size = os.terminal_size((80, 24))
+        with patch_(
+            "lib.view.sheet.render.base_rsheet.get_terminal_size",
+            return_value=narrow_size,
+        ):
+            f = io.StringIO()
+            with redirect_stdout(f):
+                CliView.show_jobs(
+                    "Query Jobs",
+                    self.cluster_mock,
+                    jobs_data,
+                    timestamp="ts",
+                    flip_output=True,
+                )
+            output = f.getvalue()
+
+        self.assertEqual(
+            output.count("Query Jobs (ts)"),
+            1,
+            msg=f"Title rendered more than once with --flip:\n{output}",
         )
 
     def test_show_racks(self):

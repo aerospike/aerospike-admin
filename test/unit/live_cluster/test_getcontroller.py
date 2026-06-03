@@ -978,10 +978,12 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("status=(", str(ctx.exception))
 
-    async def test_get_query_where_nonexistent_field_filters_all(self):
-        # A -where clause on a field that no job has should filter every row out.
-        # Documents current behavior so an unintended change (e.g. erroring on
-        # missing fields) is a deliberate decision rather than a silent regression.
+    async def test_get_query_where_unknown_field_raises_shell_exception(self):
+        # An unknown -where field must surface a ShellException rather than
+        # silently filter every row, so users can tell typo-on-field from
+        # zero-matches.
+        from lib.base_controller import ShellException
+
         self.cluster_mock.info_query_show.return_value = {
             "1.1.1.1": {
                 "1": {"ns": "test", "status": "active(ok)"},
@@ -989,9 +991,123 @@ class GetJobsControllerTest(unittest.IsolatedAsyncioTestCase):
             }
         }
 
+        with self.assertRaises(ShellException) as ctx:
+            await self.controller.get_query(where=["nonexistent=foo"])
+
+        self.assertIn("nonexistent", str(ctx.exception))
+        self.assertIn("Known fields", str(ctx.exception))
+
+    async def test_get_query_where_display_alias_namespace(self):
+        # Users see `Namespace` in the rendered table; -where should accept it
+        # (case-insensitively) and translate to the raw `ns` key.
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active(ok)"},
+                "2": {"ns": "other", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["Namespace=test"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_where_display_alias_transaction_id(self):
+        # `Transaction ID` (with space) must alias to raw key `trid`.
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "trid": "111", "status": "active(ok)"},
+                "2": {"ns": "test", "trid": "222", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["Transaction ID=111"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "trid": "111", "status": "active(ok)"}}},
+        )
+
+    async def test_get_query_where_empty_data_does_not_raise(self):
+        # When no hosts have job dicts to introspect, the unknown-field check
+        # is skipped — we can't verify and a spurious error would be worse than
+        # silent.
+        self.cluster_mock.info_query_show.return_value = {"1.1.1.1": {}}
+
         actual = await self.controller.get_query(where=["nonexistent=foo"])
 
         self.assertDictEqual(actual, {"1.1.1.1": {}})
+
+    async def test_get_query_where_alias_substring_match(self):
+        # Display-name alias resolves to a raw key AND substring matching still
+        # works against the raw value — guards against accidentally swapping in
+        # an exact-equality comparison during alias resolution.
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "job-type": "aggregation-basic"},
+                "2": {"ns": "test", "job-type": "udf-background"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["Type=basic"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "job-type": "aggregation-basic"}}},
+        )
+
+    async def test_get_query_where_regex_anchors_enforced(self):
+        # Help text promises regex metacharacters work; lock in that ^/$ anchors
+        # really do anchor (i.e., we're using re.search on a parenthesized
+        # alternation, not bare substring).
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {
+                "1": {"ns": "test", "status": "active"},
+                "2": {"ns": "test", "status": "active(ok)"},
+            }
+        }
+
+        actual = await self.controller.get_query(where=["status=^active$"])
+
+        self.assertDictEqual(
+            actual,
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active"}}},
+        )
+
+    async def test_get_query_where_preserves_empty_hosts(self):
+        # When every job at a host is filtered out, the host key must remain
+        # (with an empty dict) so the renderer can still surface the node
+        # rather than silently dropping it. Documented in filter_jobs docstring.
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}},
+            "2.2.2.2": {"1": {"ns": "test", "status": "done(ok)"}},
+        }
+
+        actual = await self.controller.get_query(where=["status=active"])
+
+        self.assertEqual(set(actual.keys()), {"1.1.1.1", "2.2.2.2"})
+        self.assertEqual(actual["2.2.2.2"], {})
+
+    async def test_get_query_where_unknown_field_error_lists_known_names(self):
+        # Error message must surface both raw keys present in data AND display
+        # aliases so users can discover valid names without re-reading help.
+        from lib.base_controller import ShellException
+
+        self.cluster_mock.info_query_show.return_value = {
+            "1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}
+        }
+
+        with self.assertRaises(ShellException) as ctx:
+            await self.controller.get_query(where=["bogus=foo"])
+
+        msg = str(ctx.exception)
+        self.assertIn("bogus", msg)
+        # Raw key from data
+        self.assertIn("ns", msg)
+        # Display alias from the alias map
+        self.assertIn("namespace", msg)
 
 
 class GetACLControllerTest(unittest.IsolatedAsyncioTestCase):
