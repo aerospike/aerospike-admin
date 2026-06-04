@@ -1090,10 +1090,10 @@ class ManageSIndexController(LiveClusterManageCommandController):
     modifiers=(
         ModifierHelp(
             "bin-type",
-            "The bin type of the provided <bin-name>. Must be one of: integer, string,"
+            "The bin type of the provided <bin-name>. One of: integer, string,"
             " geo2dsphere, or blob."
-            f" 'numeric' is deprecated as of server {constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION}"
-            " and replaced by 'integer'; it is still accepted as an alias. Omit bin-type entirely"
+            f" 'numeric' is a deprecated alias for 'integer' (deprecated as of server {constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION})"
+            " and is still accepted. Omit bin-type entirely"
             " and provide 'set <set>' to create a set-based index"
             f" (requires server >= {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}).",
         ),
