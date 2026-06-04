@@ -3381,6 +3381,13 @@ class Node(AsyncObject):
         """
         command = "sindex-create:indexname={};".format(index_name)
 
+        # The server renamed the "numeric" sindex type to "integer" starting with
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.1.3). Translate the deprecated
+        # "numeric" alias forward on servers that support "integer". ("integer" against
+        # an older server is rejected up front by the controller.)
+        if bin_type == "numeric" and feature_support.get("integer_type_support"):
+            bin_type = "integer"
+
         if index_type:
             command += "indextype={};".format(index_type)
 

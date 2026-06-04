@@ -4030,6 +4030,68 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_sindex_create_numeric_mapped_to_integer(self):
+        """Server >= 8.1.3: the deprecated 'numeric' type is sent as 'integer'."""
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
+
+        actual = await self.node.info_sindex_create(
+            "int-idx",
+            "test",
+            "mybin",
+            "numeric",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+                "integer_type_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_integer_passthrough(self):
+        """Server >= 8.1.3: 'integer' is sent as-is."""
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
+
+        actual = await self.node.info_sindex_create(
+            "int-idx",
+            "test",
+            "mybin",
+            "integer",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+                "integer_type_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_numeric_unchanged_on_old_server(self):
+        """Server < 8.1.3: the legacy 'numeric' type is sent as-is."""
+        self.info_mock.return_value = "OK"
+        expected_call = (
+            "sindex-create:indexname=num-idx;ns=test;indexdata=mybin,numeric"
+        )
+
+        actual = await self.node.info_sindex_create(
+            "num-idx",
+            "test",
+            "mybin",
+            "numeric",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+                "integer_type_support": False,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
     async def test_info_sindex_delete_success(self):
         self.info_mock.return_value = "OK"
         expected_call = "sindex-delete:ns={};indexname={}".format(

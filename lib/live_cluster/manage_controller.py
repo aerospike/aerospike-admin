@@ -1090,9 +1090,12 @@ class ManageSIndexController(LiveClusterManageCommandController):
     modifiers=(
         ModifierHelp(
             "bin-type",
-            "The bin type of the provided <bin-name>. Must be one of: numeric, string,"
-            " geo2dsphere, or blob. Omit bin-type entirely and provide 'set <set>' to create a"
-            f" set-based index (requires server >= {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}).",
+            "The bin type of the provided <bin-name>. Must be one of: integer, string,"
+            " geo2dsphere, or blob."
+            f" 'numeric' is deprecated as of server {constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION}"
+            " and replaced by 'integer'; it is still accepted as an alias. Omit bin-type entirely"
+            " and provide 'set <set>' to create a set-based index"
+            f" (requires server >= {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}).",
         ),
         ModifierHelp(
             "index-name",
@@ -1341,9 +1344,31 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 "cdt_indexing": constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION,
                 "expression_indexing": constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION,
                 "namespace_query_selector_support": constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION,
+                "integer_type_support": constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION,
             },
             builds=builds,
         )
+
+        # The 'numeric' type was renamed to 'integer' in
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION. 'integer' is only understood by
+        # servers at/after that version, while the deprecated 'numeric' alias is
+        # transparently upgraded to 'integer' on those servers (with a warning).
+        if bin_type == "integer" and not feature_support["integer_type_support"]:
+            raise ShellException(
+                "The 'integer' sindex type requires server v. {0} or later. "
+                "Use 'numeric' on servers older than {0}.".format(
+                    constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+                )
+            )
+
+        if bin_type == "numeric" and feature_support["integer_type_support"]:
+            logger.warning(
+                "The 'numeric' sindex type is deprecated as of server v. {} and "
+                "has been replaced by 'integer'. Creating index with type "
+                "'integer' instead.".format(
+                    constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+                )
+            )
 
         # Validate mutually exclusive ctx modifiers
         if ctx_list and cdt_ctx_base64:
@@ -1441,6 +1466,12 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         )
 
     # Hack for auto-complete
+    async def do_integer(self, line):
+        await self._do_create(line, "integer")
+
+    # Hack for auto-complete. Deprecated alias for 'integer' (server renamed the
+    # type in SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION); kept for backwards
+    # compatibility. info_sindex_create normalizes the wire type per server version.
     async def do_numeric(self, line):
         await self._do_create(line, "numeric")
 
@@ -1578,7 +1609,8 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             )
         else:
             raise ShellException(
-                "bin-type is required. Must be one of: numeric, string, geo2dsphere, blob. "
+                "bin-type is required. Must be one of: integer, string, geo2dsphere, blob "
+                "('numeric' is a deprecated alias for 'integer'). "
                 "To create a set-based index, use: <index-name> ns <ns> set <set>"
             )
 
