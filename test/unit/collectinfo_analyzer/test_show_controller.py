@@ -18,8 +18,13 @@ from mock import create_autospec, patch, MagicMock
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
-from lib.collectinfo_analyzer.show_controller import ShowMaskingController
+from lib.collectinfo_analyzer.show_controller import (
+    ShowJobsController,
+    ShowMaskingController,
+)
 from lib.base_controller import ShellException
+from lib.utils import constants
+from lib.utils.constants import Modifiers
 
 
 class ShowMaskingControllerTest(unittest.TestCase):
@@ -150,3 +155,112 @@ class ShowMaskingControllerTest(unittest.TestCase):
         self.view_mock.show_masking_rules.assert_called_once_with(
             expected_filtered, timestamp="2023-01-01", **{}
         )
+
+
+class ShowJobsControllerTest(unittest.TestCase):
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.controller = ShowJobsController()
+        self.controller.log_handler = self.log_handler
+        # parse_modifiers would normally populate these; do it manually for tests
+        self.controller.mods = {Modifiers.LIKE: [], Modifiers.FOR: [], "trid": []}
+
+    def tearDown(self):
+        patch.stopall()
+
+    def _set_jobs_data(self, per_host):
+        self.log_handler.info_meta_data.return_value = {"ts": per_host}
+        self.log_handler.get_cinfo_log_at.return_value = "cinfo"
+
+    def test_job_helper_missing_module_passes_none(self):
+        # Capture only has SCAN data; asking for QUERY yields None from
+        # jobs_data.get(module). filter_jobs must not crash.
+        self._set_jobs_data(
+            {"1.1.1.1": {constants.JobType.SCAN: {"1": {"ns": "test"}}}}
+        )
+
+        self.controller._job_helper(constants.JobType.QUERY, "Query Jobs", [])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            "cinfo",
+            None,
+            flip_output=False,
+            **self.controller.mods,
+        )
+
+    def test_job_helper_filters_where(self):
+        self._set_jobs_data(
+            {
+                "1.1.1.1": {
+                    constants.JobType.QUERY: {
+                        "1": {"ns": "test", "status": "active(ok)"},
+                        "2": {"ns": "test", "status": "done(ok)"},
+                    }
+                }
+            }
+        )
+
+        self.controller._job_helper(
+            constants.JobType.QUERY, "Query Jobs", ["-where", "status=active"]
+        )
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            "cinfo",
+            {"1.1.1.1": {"1": {"ns": "test", "status": "active(ok)"}}},
+            flip_output=False,
+            **self.controller.mods,
+        )
+
+    def test_job_helper_flip(self):
+        self._set_jobs_data(
+            {"1.1.1.1": {constants.JobType.QUERY: {"1": {"ns": "test"}}}}
+        )
+
+        self.controller._job_helper(constants.JobType.QUERY, "Query Jobs", ["--flip"])
+
+        _, kwargs = self.view_mock.show_jobs.call_args
+        self.assertTrue(kwargs["flip_output"])
+
+    def test_job_helper_for_ns_only(self):
+        # One-element for_mods — exercises the len(for_mods) > 1 branch.
+        self._set_jobs_data(
+            {
+                "1.1.1.1": {
+                    constants.JobType.QUERY: {
+                        "1": {"ns": "test", "set": "demo"},
+                        "2": {"ns": "other", "set": "x"},
+                    }
+                }
+            }
+        )
+        self.controller.mods[Modifiers.FOR] = ["test"]
+
+        self.controller._job_helper(constants.JobType.QUERY, "Query Jobs", [])
+
+        self.view_mock.show_jobs.assert_called_once_with(
+            "Query Jobs",
+            "cinfo",
+            {"1.1.1.1": {"1": {"ns": "test", "set": "demo"}}},
+            flip_output=False,
+            **self.controller.mods,
+        )
+
+    def test_job_helper_invalid_where_raises(self):
+        self._set_jobs_data({})
+
+        with self.assertRaises(ShellException):
+            self.controller._job_helper(
+                constants.JobType.QUERY, "Query Jobs", ["-where", "status"]
+            )
+
+    def test_job_helper_trailing_where_no_value_raises(self):
+        # Previously silently swallowed; new parser raises.
+        self._set_jobs_data({})
+
+        with self.assertRaises(ShellException):
+            self.controller._job_helper(
+                constants.JobType.QUERY, "Query Jobs", ["-where"]
+            )

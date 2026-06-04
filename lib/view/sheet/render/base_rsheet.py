@@ -47,6 +47,7 @@ class BaseRSheet(object):
         title_repeat=False,
         disable_aggregations=False,
         dynamic_diff=False,
+        disable_title_fill_repeat=False,
     ):
         """
         Arguments:
@@ -79,6 +80,7 @@ class BaseRSheet(object):
         self.title_repeat = title_repeat
         self.disable_aggregations = disable_aggregations
         self.dynamic_diff = dynamic_diff
+        self.disable_title_fill_repeat = disable_title_fill_repeat
         self.terminal_size = get_terminal_size()
 
         self.dfields = self.get_dfields()
@@ -859,7 +861,11 @@ class BaseRSheetCLI(BaseRSheet):
 
         n_repeates = width // min_columns
 
-        if width > min_columns and n_repeates != 1:
+        if (
+            width > min_columns
+            and n_repeates != 1
+            and not self.disable_title_fill_repeat
+        ):
             extra_columns = (columns % min_columns) // n_repeates
             new_width = min_columns + extra_columns
 
