@@ -85,6 +85,7 @@ class ShowController(CollectinfoCommandController):
             "statistics": ShowStatisticsController,
             "masking": ShowMaskingController,
         }
+        self.aliases = {"stats": "statistics"}
         self.modifiers = set()
 
 

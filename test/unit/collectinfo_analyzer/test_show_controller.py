@@ -14,17 +14,57 @@
 
 import unittest
 from mock import create_autospec, patch, MagicMock
+from parameterized import parameterized
 
+from lib.collectinfo_analyzer.collectinfo_command_controller import (
+    CollectinfoCommandController,
+)
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
 from lib.collectinfo_analyzer.show_controller import (
+    ShowController,
     ShowJobsController,
     ShowMaskingController,
+    ShowStatisticsController,
 )
 from lib.base_controller import ShellException
 from lib.utils import constants
 from lib.utils.constants import Modifiers
+
+
+class ShowControllerAliasTest(unittest.TestCase):
+    def setUp(self):
+        # Sub-controllers read the log_handler off the class attribute during
+        # _init(). Patch it so the mock is restored and doesn't leak into others.
+        patch.object(
+            CollectinfoCommandController,
+            "log_handler",
+            create_autospec(CollectinfoLogHandler),
+            create=True,
+        ).start()
+        self.controller = ShowController()
+        self.controller._init()
+        self.addCleanup(patch.stopall)
+
+    def test_stats_is_alias_for_statistics(self):
+        self.assertEqual(self.controller.aliases, {"stats": "statistics"})
+
+    def test_stats_alias_does_not_register_a_command(self):
+        # The alias must not become a command key, otherwise the shared "stat"
+        # prefix would resolve ambiguously.
+        self.assertNotIn("stats", self.controller.commands.keys())
+        self.assertIn("statistics", self.controller.commands.keys())
+
+    def test_stats_alias_resolves_to_statistics_controller(self):
+        method = self.controller._find_method(["stats"])
+        self.assertIsInstance(method, ShowStatisticsController)
+
+    @parameterized.expand([["stat"], ["statistics"]])
+    def test_statistics_prefix_still_resolves(self, command):
+        # Adding the alias must not break the existing prefix shorthand.
+        method = self.controller._find_method([command])
+        self.assertIsInstance(method, ShowStatisticsController)
 
 
 class ShowMaskingControllerTest(unittest.TestCase):

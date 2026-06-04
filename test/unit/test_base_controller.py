@@ -46,6 +46,8 @@ class FakeRoot(BaseController):
         self.modifiers = set()
 
         self.controller_map = {"fakea1": FakeCommand1, "fakeb2": FakeCommand2}
+        # "renamed" is an alias for the canonical "fakeb2" command.
+        self.aliases = {"renamed": "fakeb2"}
 
 
 @CommandHelp(
@@ -177,6 +179,60 @@ class BaseControllerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(expected_result, "ShellException")
         else:
             self.assertEqual(expected_result, actual_result)
+
+    def test_alias_not_registered_as_command(self):
+        # Aliases must resolve to a command without being added to the command
+        # map, otherwise they would compete in prefix matching.
+        r = FakeRoot()
+        r._init()
+
+        self.assertNotIn("renamed", r.commands.keys())
+        # The canonical commands (and their prefixes) still resolve as before.
+        self.assertEqual(r.complete([]), ["fakea1", "fakeb2"])
+
+    @parameterized.expand(
+        [
+            # The alias resolves to the canonical command's controller ...
+            (["renamed"], "_do_default"),
+            # ... and routing into its sub-commands still works.
+            (["renamed", "foo"], "do_foo"),
+        ]
+    )
+    def test_find_method_resolves_alias(self, line, expected_method):
+        r = FakeRoot()
+        r._init()
+
+        tline = line[:]
+        actual_method = r._find_method(tline)
+
+        try:
+            while True:
+                actual_method._init()
+                actual_method = actual_method._find_method(tline)
+        except AttributeError:
+            pass
+
+        self.assertEqual(actual_method.__name__, expected_method)
+
+    @parameterized.expand(
+        [
+            # "renamed" is an alias for "fakeb2" so both behave identically.
+            (["renamed"], "fake2"),
+            (["renamed", "foo"], "foo"),
+        ]
+    )
+    async def test_execute_alias(self, line, expected_result):
+        r = FakeRoot()
+
+        actual_result = await r(line)
+
+        self.assertEqual(expected_result, actual_result[0])
+
+    def test_complete_alias(self):
+        # Completing an alias yields the canonical command's sub-commands.
+        r = FakeRoot()
+
+        self.assertEqual(r.complete(["renamed"]), ["cmd", "foo", "for", "zoo"])
 
     @parameterized.expand(
         [

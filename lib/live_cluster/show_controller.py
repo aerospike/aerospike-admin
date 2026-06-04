@@ -97,6 +97,7 @@ class ShowController(LiveClusterCommandController):
             "user-agents": ShowUserAgentsController,
             "masking": ShowMaskingController,
         }
+        self.aliases = {"stats": "statistics"}
 
         self.modifiers = set()
 
