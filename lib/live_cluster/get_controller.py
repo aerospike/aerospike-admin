@@ -14,10 +14,13 @@
 
 import asyncio
 import copy
+import re
 from typing import Iterable, Optional
+from lib.base_controller import ModifierHelp, ShellException
 from lib.base_get_controller import BaseGetConfigController
 
 from lib.utils import common, util, constants
+from lib.utils.constants import Modifiers
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
 
@@ -1169,6 +1172,171 @@ class GetUserAgentsController:
         return await self.cluster.info_user_agents(nodes=nodes)
 
 
+flip_jobs_modifier_help = ModifierHelp(
+    "--flip",
+    "Flip output table to show jobs on Y axis and fields on X axis.",
+)
+where_jobs_modifier_help = ModifierHelp(
+    "--where",
+    "Filter jobs by <field>=<regex>. <field> accepts either the raw server key (e.g. 'ns', 'set', 'job-type', 'trid', 'status') or the display column header (e.g. 'Namespace', 'Set', 'Type', 'Transaction ID') case-insensitively. Plain text matches as a substring; regex metacharacters (^ $ . * etc.) are supported. Unknown fields raise an error. Repeatable; multiple clauses AND together. E.g. --where status=active.",
+)
+like_jobs_modifier_help = ModifierHelp(
+    Modifiers.LIKE,
+    "Filter by field-name substring match",
+)
+for_jobs_modifier_help = ModifierHelp(
+    Modifiers.FOR,
+    "Filter by namespace [and set] substring match",
+)
+jobs_usage_extras = f"[--flip] [--where <field>=<regex> [...]] [{Modifiers.FOR} <ns-substring> [<set-substring>]] [{Modifiers.LIKE} <field-substring>]"
+
+
+# Maps user-facing display headers (as they appear in `show jobs` output) to
+# the raw server keys present in the per-job dict. Lookup is case-insensitive.
+# Raw keys also map to themselves so users can use either form.
+_WHERE_FIELD_ALIASES = {
+    "namespace": "ns",
+    "ns": "ns",
+    "set": "set",
+    "module": "module",
+    "type": "job-type",
+    "job-type": "job-type",
+    "progress%": "job-progress",
+    "progress": "job-progress",
+    "job-progress": "job-progress",
+    "transaction id": "trid",
+    "trid": "trid",
+    "time since done": "time-since-done",
+    "time-since-done": "time-since-done",
+}
+
+
+def _resolve_where_field(field):
+    key = field.strip().lower()
+    return _WHERE_FIELD_ALIASES.get(key, key)
+
+
+def filter_jobs(jobs_data, for_mods=None, where=None):
+    """Filter per-host job dicts by namespace/set (for_mods) and field=regex (where).
+
+    Mutates and returns jobs_data. Empty hosts are kept (rendered as no rows).
+    Returns ``jobs_data`` unchanged when it is None (e.g. a collectinfo capture
+    that has no rows for this module).
+
+    Raises ShellException if a `-where` field is unknown after alias
+    resolution and the data contains at least one job to compare against.
+    """
+    if jobs_data is None:
+        return jobs_data
+
+    ns_filter = None
+    set_filter = None
+    if for_mods:
+        try:
+            ns_filter = [for_mods[0]]
+            set_filter = [for_mods[1]]
+        except IndexError:
+            pass
+
+    known_fields = set()
+    for host_jobs in jobs_data.values():
+        if isinstance(host_jobs, dict):
+            for job in host_jobs.values():
+                if isinstance(job, dict):
+                    known_fields.update(job.keys())
+
+    where_compiled = []
+    if where:
+        for clause in where:
+            field, _, pattern = clause.partition("=")
+            resolved = _resolve_where_field(field)
+            # Only error on a genuinely unrecognized field. A legitimate alias
+            # (e.g. `set`, `progress%`) that simply isn't populated by the
+            # current jobs should match nothing — not be rejected as "unknown"
+            # while the same name appears in the "Known fields" list.
+            if (
+                known_fields
+                and resolved not in known_fields
+                and field.strip().lower() not in _WHERE_FIELD_ALIASES
+            ):
+                legal = sorted(known_fields | set(_WHERE_FIELD_ALIASES.keys()))
+                raise ShellException(
+                    f"unknown -where field '{field}'. Known fields: {legal}"
+                )
+            try:
+                compiled = util.compile_likes([pattern])
+            except re.error as e:
+                raise ShellException(f"invalid -where regex in '{clause}': {e}")
+            where_compiled.append((resolved, compiled))
+
+    # Compile the namespace/set patterns once rather than per job row.
+    ns_pattern = util.compile_likes(ns_filter) if ns_filter else None
+    set_pattern = util.compile_likes(set_filter) if set_filter else None
+
+    for host, host_jobs in list(jobs_data.items()):
+        if not isinstance(host_jobs, dict):
+            continue
+        for trid in list(host_jobs.keys()):
+            job = host_jobs[trid]
+            if ns_pattern is not None and not ns_pattern.search(str(job.get("ns", ""))):
+                del host_jobs[trid]
+                continue
+            if set_pattern is not None and not set_pattern.search(
+                str(job.get("set", ""))
+            ):
+                del host_jobs[trid]
+                continue
+            if any(
+                not pat.search(str(job.get(field, ""))) for field, pat in where_compiled
+            ):
+                del host_jobs[trid]
+
+    return jobs_data
+
+
+def parse_jobs_mods(line, modifiers, mods):
+    """Parse ``--flip``/``-flip`` and repeatable ``-where``/``--where <field>=<pattern>`` out of line.
+
+    Returns ``(flip_output, where_or_None)``. Mutates ``line`` and ``mods`` via
+    ``util.*_and_delete_from_mods``. Raises ShellException for malformed where.
+    """
+    flip_output = util.check_arg_and_delete_from_mods(
+        line=line, arg="-flip", default=False, modifiers=modifiers, mods=mods
+    ) or util.check_arg_and_delete_from_mods(
+        line=line, arg="--flip", default=False, modifiers=modifiers, mods=mods
+    )
+
+    where = []
+    while "-where" in line or "--where" in line:
+        # Prefer the form that appears first so consecutive identical-form clauses
+        # consume in order (token-equality match in util.get_arg_and_delete_from_mods).
+        if "--where" in line and (
+            "-where" not in line or line.index("--where") <= line.index("-where")
+        ):
+            arg_name = "--where"
+        else:
+            arg_name = "-where"
+        w = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg=arg_name,
+            return_type=str,
+            default=None,
+            modifiers=modifiers,
+            mods=mods,
+        )
+        if w is None:
+            raise ShellException(
+                f"invalid {arg_name} clause: missing <field>=<pattern> value"
+            )
+        if "=" not in w:
+            raise ShellException(
+                f"invalid {arg_name} clause: '{w}' — expected <field>=<pattern>"
+            )
+        where.append(w)
+
+    return flip_output, (where or None)
+
+
 class GetJobsController:
     def __init__(self, cluster):
         self.cluster = cluster
@@ -1189,25 +1357,25 @@ class GetJobsController:
 
         return job_map
 
-    async def get_scans(self, nodes="all"):
+    async def get_scans(self, nodes="all", for_mods=None, where=None):
         scan_data = await self.cluster.info_scan_show(nodes=nodes)
 
         for host, data in list(scan_data.items()):
             if isinstance(data, Exception):
                 del scan_data[host]
 
-        return scan_data
+        return filter_jobs(scan_data, for_mods=for_mods, where=where)
 
-    async def get_query(self, nodes="all"):
+    async def get_query(self, nodes="all", for_mods=None, where=None):
         query_data = await self.cluster.info_query_show(nodes=nodes)
 
         for host, data in list(query_data.items()):
             if isinstance(data, Exception):
                 del query_data[host]
 
-        return query_data
+        return filter_jobs(query_data, for_mods=for_mods, where=where)
 
-    async def get_sindex_builder(self, nodes="all"):
+    async def get_sindex_builder(self, nodes="all", for_mods=None, where=None):
         sindex_builder_data = await self.cluster.info_jobs(
             module="sindex-builder", nodes=nodes
         )
@@ -1216,4 +1384,4 @@ class GetJobsController:
             if isinstance(data, Exception):
                 del sindex_builder_data[host]
 
-        return sindex_builder_data
+        return filter_jobs(sindex_builder_data, for_mods=for_mods, where=where)

@@ -30,6 +30,12 @@ from lib.live_cluster.get_controller import (
     GetLatenciesController,
     GetUserAgentsController,
     GetMaskingRulesController,
+    flip_jobs_modifier_help,
+    for_jobs_modifier_help,
+    jobs_usage_extras,
+    like_jobs_modifier_help,
+    parse_jobs_mods,
+    where_jobs_modifier_help,
 )
 
 from .client import ASProtocolError
@@ -1757,7 +1763,7 @@ class ShowBestPracticesController(LiveClusterCommandController):
 )
 class ShowJobsController(LiveClusterCommandController):
     def __init__(self):
-        self.modifiers = set([Modifiers.WITH, "trid"])
+        self.modifiers = set([Modifiers.WITH, Modifiers.LIKE, Modifiers.FOR, "trid"])
         self.getter = GetJobsController(self.cluster)
 
     # TODO: This should be a utility
@@ -1791,16 +1797,30 @@ class ShowJobsController(LiveClusterCommandController):
     @CommandHelp(
         'Displays query jobs. For easier viewing run "page on" first.',
         modifiers=(
+            flip_jobs_modifier_help,
+            where_jobs_modifier_help,
+            for_jobs_modifier_help,
+            like_jobs_modifier_help,
             ModifierHelp("trid", "List of transaction IDs to filter for."),
             with_modifier_help,
         ),
-        usage=f"[trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
         short_msg="Displays query jobs",
     )
     async def do_queries(self, line):
-        jobs = await self.getter.get_query(nodes=self.nodes)
+        flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
+        jobs = await self.getter.get_query(
+            nodes=self.nodes,
+            for_mods=self.mods[Modifiers.FOR],
+            where=where,
+        )
         return util.callable(
-            self.view.show_jobs, "Query Jobs", self.cluster, jobs, **self.mods
+            self.view.show_jobs,
+            "Query Jobs",
+            self.cluster,
+            jobs,
+            flip_output=flip_output,
+            **self.mods,
         )
 
     # TODO: Should be removed eventually. "scan-show" was removed in server 6.0.
@@ -1808,10 +1828,14 @@ class ShowJobsController(LiveClusterCommandController):
     @CommandHelp(
         f'Displays scan jobs. For easier viewing run "page on" first. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later.',
         modifiers=(
+            flip_jobs_modifier_help,
+            where_jobs_modifier_help,
+            for_jobs_modifier_help,
+            like_jobs_modifier_help,
             ModifierHelp("trid", "List of transaction IDs to filter for."),
             with_modifier_help,
         ),
-        usage=f"[trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
         short_msg=f"Displays scan jobs. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
     )
     async def do_scans(self, line, default=False):
@@ -1825,9 +1849,19 @@ class ShowJobsController(LiveClusterCommandController):
                 )
             return
 
-        jobs = await self.getter.get_scans(nodes=self.nodes)
+        flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
+        jobs = await self.getter.get_scans(
+            nodes=self.nodes,
+            for_mods=self.mods[Modifiers.FOR],
+            where=where,
+        )
         return util.callable(
-            self.view.show_jobs, "Scan Jobs", self.cluster, jobs, **self.mods
+            self.view.show_jobs,
+            "Scan Jobs",
+            self.cluster,
+            jobs,
+            flip_output=flip_output,
+            **self.mods,
         )
 
     # TODO: Should be removed eventually. "sindex-builder" was removed in server 5.7.
@@ -1837,10 +1871,14 @@ class ShowJobsController(LiveClusterCommandController):
             constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
         ),
         modifiers=(
+            flip_jobs_modifier_help,
+            where_jobs_modifier_help,
+            for_jobs_modifier_help,
+            like_jobs_modifier_help,
             ModifierHelp("trid", "List of transaction IDs to filter for."),
             with_modifier_help,
         ),
-        usage=f"[trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
+        usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]] [{ModifierUsage.WITH}]",
         short_msg="Displays sindex-builder jobs. Removed in server v. {} and later".format(
             constants.SERVER_SINDEX_BUILDER_REMOVED_VERSION
         ),
@@ -1857,9 +1895,19 @@ class ShowJobsController(LiveClusterCommandController):
                 )
             return
 
-        jobs = await self.getter.get_sindex_builder(nodes=self.nodes)
+        flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
+        jobs = await self.getter.get_sindex_builder(
+            nodes=self.nodes,
+            for_mods=self.mods[Modifiers.FOR],
+            where=where,
+        )
         return util.callable(
-            self.view.show_jobs, "SIndex Builder Jobs", self.cluster, jobs, **self.mods
+            self.view.show_jobs,
+            "SIndex Builder Jobs",
+            self.cluster,
+            jobs,
+            flip_output=flip_output,
+            **self.mods,
         )
 
 
