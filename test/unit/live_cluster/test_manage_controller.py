@@ -1991,12 +1991,105 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
                 "cdt_indexing": True,
                 "expression_indexing": False,
                 "namespace_query_selector_support": False,
+                "integer_type_support": False,
             },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
             "Use 'show sindex' to confirm a-index was created successfully."
         )
+
+    @parameterized.expand([("integer",), ("numeric",)])
+    async def test_create_integer_type_on_new_server(self, bin_type):
+        """On server >= 8.1.3, both 'integer' and its deprecated 'numeric' alias
+        pass integer_type_support=True so node.py can emit the 'integer' wire type."""
+        line = f"{bin_type} a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "a-index",
+            "test",
+            "a",
+            bin_type,
+            None,
+            None,
+            None,
+            None,
+            None,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": True,
+                "namespace_query_selector_support": True,
+                "integer_type_support": True,
+            },
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm a-index was created successfully."
+        )
+
+    async def test_create_integer_not_supported_on_old_server(self):
+        """The 'integer' type requires server >= 8.1.3; older servers error out."""
+        line = "integer a-index ns test bin a".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "The 'integer' sindex type requires server v. {} or later".format(
+                constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+            ),
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_numeric_warns_on_new_server(self):
+        """Typing the deprecated 'numeric' alias against a server >= 8.1.3 warns
+        that it is replaced by 'integer'."""
+        line = "numeric a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.logger_mock.warning.assert_called_once_with(
+            "The 'numeric' sindex type is deprecated as of server v. {} and "
+            "has been replaced by 'integer'. Creating index with type "
+            "'integer' instead.".format(
+                constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+            )
+        )
+
+    async def test_create_numeric_no_warning_on_old_server(self):
+        """On a server < 8.1.3 'numeric' is still the valid type, so no warning."""
+        line = "numeric a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        await self.controller.execute(line)
+
+        self.logger_mock.warning.assert_not_called()
+
+    async def test_create_integer_no_warning_on_new_server(self):
+        """Typing 'integer' directly on a server >= 8.1.3 produces no deprecation warning."""
+        line = "integer a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.logger_mock.warning.assert_not_called()
 
     async def test_create_fails_with_asinfo_error(self):
         line = "numeric a-index ns test bin a ctx list_value(1)".split()
@@ -2057,6 +2150,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
                 "cdt_indexing": True,
                 "expression_indexing": True,
                 "namespace_query_selector_support": True,
+                "integer_type_support": False,
             },
             nodes="principal",
         )
@@ -2087,6 +2181,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
                 "cdt_indexing": True,
                 "expression_indexing": False,
                 "namespace_query_selector_support": False,
+                "integer_type_support": False,
             },
             nodes="principal",
         )
