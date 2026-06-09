@@ -3300,8 +3300,21 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_sindex(self):
+        command = "sindex-list:"
 
-        resp = await self._info("sindex-list:")
+        # The "numeric" sindex type was renamed to "integer" in
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.1.3). The v2 list format
+        # reports the renamed "integer" type, so request it on servers that
+        # support it. Older servers only understand the default (v1) format.
+        if (
+            self.build is not None
+            and not isinstance(self.build, Exception)
+            and version.LooseVersion(self.build)
+            >= version.LooseVersion(constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION)
+        ):
+            command = "sindex-list:v=v2"
+
+        resp = await self._info(command)
 
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get sindex list", resp)
