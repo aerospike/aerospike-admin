@@ -15,8 +15,12 @@
 import logging
 import unittest
 from unittest import mock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from lib.live_cluster.collectinfo_controller import CollectinfoController
+from lib.live_cluster.collectinfo_controller import (
+    CollectinfoController,
+    COLLECTINFO_NODE_TIMEOUT,
+)
 
 LOGGER_NAME = "lib.live_cluster.collectinfo_controller"
 
@@ -33,18 +37,30 @@ class BuildDumpMapTest(unittest.TestCase):
         self.controller = CollectinfoController()
         self.empty = {}
 
-    def _build(self, expected, as_map, sys_map, meta_map):
+    def _build(
+        self,
+        expected,
+        as_map,
+        sys_map,
+        meta_map,
+        histogram_map=None,
+        latency_map=None,
+        pmap_map=None,
+        acl_map=None,
+        user_agents_map=None,
+        masking_map=None,
+    ):
         return self.controller._build_dump_map(
             expected,
             as_map,
             sys_map,
             meta_map,
-            self.empty,  # histogram_map
-            self.empty,  # latency_map
-            None,  # pmap_map
-            self.empty,  # acl_map
-            self.empty,  # user_agents_map
-            self.empty,  # masking_map
+            histogram_map if histogram_map is not None else {},
+            latency_map if latency_map is not None else {},
+            pmap_map,
+            acl_map if acl_map is not None else {},
+            user_agents_map if user_agents_map is not None else {},
+            masking_map if masking_map is not None else {},
         )
 
     def test_node_absent_from_as_map_is_still_included(self):
@@ -66,6 +82,54 @@ class BuildDumpMapTest(unittest.TestCase):
         self.assertEqual(dump_map["A"]["as_stat"]["config"], {"c": 1})
         self.assertEqual(dump_map["A"]["as_stat"]["meta_data"], {"asd_build": "8.0"})
         self.assertEqual(dump_map["A"]["sys_stat"], {"sys": 1})
+
+    def test_all_sections_attach_under_the_right_keys(self):
+        # Every section map carries data for node "A" so each attach branch is exercised.
+        as_map = {"A": {"statistics": {"s": 1}}}
+        sys_map = {"A": {"sys": 1}}
+        meta_map = {"A": {"asd_build": "8.0"}}
+        histogram_map = {"A": {"ttl": {"h": 1}}}
+        latency_map = {"A": {"read": {"l": 1}}}
+        pmap_map = {"A": {"p": 1}}
+        acl_map = {"A": {"users": {}}}
+        user_agents_map = {"A": [{"agent": "x"}]}
+        masking_map = {"A": [{"rule": "y"}]}
+
+        dump_map = self._build(
+            {"A"},
+            as_map,
+            sys_map,
+            meta_map,
+            histogram_map=histogram_map,
+            latency_map=latency_map,
+            pmap_map=pmap_map,
+            acl_map=acl_map,
+            user_agents_map=user_agents_map,
+            masking_map=masking_map,
+        )
+
+        as_stat = dump_map["A"]["as_stat"]
+        self.assertEqual(as_stat["statistics"], {"s": 1})
+        self.assertEqual(as_stat["meta_data"], {"asd_build": "8.0"})
+        self.assertEqual(as_stat["histogram"], {"ttl": {"h": 1}})
+        self.assertEqual(as_stat["latency"], {"read": {"l": 1}})
+        self.assertEqual(as_stat["pmap"], {"p": 1})
+        self.assertEqual(as_stat["acl"], {"users": {}})
+        self.assertEqual(as_stat["user_agents"], [{"agent": "x"}])
+        self.assertEqual(as_stat["masking"], [{"rule": "y"}])
+        self.assertEqual(dump_map["A"]["sys_stat"], {"sys": 1})
+
+    def test_node_only_in_pmap_is_included(self):
+        # pmap is gathered separately and is the only optional map that can be None.
+        as_map = {"A": {"statistics": {"s": 1}}}
+        pmap_map = {"B": {"p": 1}}
+
+        dump_map = self._build(
+            {"A", "B"}, as_map, self.empty, self.empty, pmap_map=pmap_map
+        )
+
+        self.assertIn("B", dump_map)
+        self.assertEqual(dump_map["B"]["as_stat"], {"pmap": {"p": 1}})
 
     def test_node_with_no_data_anywhere_is_warned_and_absent(self):
         # "A" produced data; expected node "C" produced nothing in any section map.
@@ -91,6 +155,146 @@ class BuildDumpMapTest(unittest.TestCase):
 
         warn_mock.assert_not_called()
         self.assertEqual(set(dump_map), {"A", "B"})
+
+
+class GetCollectinfoDataJsonTest(unittest.IsolatedAsyncioTestCase):
+    """Tests for the async orchestration in _get_collectinfo_data_json (TOOLS-3596).
+
+    Verifies the union merge end-to-end and that the "expected" node set used for the
+    missing-node warning comes from the same alive+selected node selection the info calls
+    used (self.cluster.get_nodes(self.nodes))."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+
+        node_a = MagicMock()
+        node_a.key = "A"
+        node_b = MagicMock()
+        node_b.key = "B"
+
+        self.controller.cluster = MagicMock()
+        self.controller.cluster.get_nodes.return_value = [node_a, node_b]
+        self.controller.cluster.info_system_statistics = AsyncMock(
+            return_value={"A": {"sys": 1}}
+        )
+
+        # Node "B" lost statistics/config (absent from as_map) but answered metadata.
+        patches = {
+            "_get_as_cluster_name": "testcluster",
+            "_get_as_data_json": {"A": {"statistics": {"s": 1}}},
+            "_get_as_metadata": {"A": {"asd_build": "8.0"}, "B": {"asd_build": "8.0"}},
+            "_get_as_histograms": {},
+            "_get_as_latency": {},
+            "_get_as_access_control_list": {},
+            "_get_as_user_agents": {},
+            "_get_as_masking_rules": {},
+        }
+        for name, ret in patches.items():
+            patch.object(
+                CollectinfoController, name, AsyncMock(return_value=ret)
+            ).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_union_snapshot_and_expected_nodes_from_get_nodes(self):
+        result = await self.controller._get_collectinfo_data_json(enable_ssh=False)
+
+        self.assertIn("testcluster", result)
+        dump_map = result["testcluster"]
+
+        # B was absent from as_map yet still lands in the snapshot via metadata.
+        self.assertEqual(set(dump_map), {"A", "B"})
+        self.assertEqual(dump_map["B"]["as_stat"], {"meta_data": {"asd_build": "8.0"}})
+        self.assertEqual(dump_map["A"]["as_stat"]["statistics"], {"s": 1})
+
+        # Expected-node set is derived from the queried selection, not all cluster nodes.
+        self.controller.cluster.get_nodes.assert_called_once_with("all")
+
+
+class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
+    """Tests for the collectinfo-only per-node timeout override in _run_collectinfo
+    (TOOLS-3596): the timeout is raised for the run and always restored afterwards."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.controller.asadm_version = "test-version"
+
+        self.controller.cluster = MagicMock()
+        self.controller.cluster.is_localhost_a_node.return_value = False
+
+        # Neutralize the heavy collaborators so only the timeout wiring is under test.
+        patch.object(CollectinfoController, "setup_loggers").start()
+        patch.object(CollectinfoController, "teardown_loggers").start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_json", AsyncMock()
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_ascollectinfo", AsyncMock()
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_summary", AsyncMock()
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_health", AsyncMock()
+        ).start()
+
+        cf_info = MagicMock()
+        cf_info.cf_dir = "/tmp/collectinfo_test"
+        cf_info.files_prefix = "prefix_"
+
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.get_collectinfo_path",
+            return_value=cf_info,
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.archive_dir",
+            return_value=("/tmp/collectinfo_test.tgz", True),
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.print_collectinfo_failed_cmds"
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.print_collect_summary"
+        ).start()
+        patch("lib.live_cluster.collectinfo_controller.terminal").start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.CollectinfoRootController"
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def _run(self):
+        await self.controller._run_collectinfo(
+            ssh_user=None,
+            ssh_pwd=None,
+            ssh_port=None,
+            ssh_key=None,
+            ssh_key_pwd=None,
+            snp_count=1,
+            wait_time=0,
+            ignore_errors=True,
+        )
+
+    async def test_raises_then_restores_default_timeout(self):
+        self.controller.cluster._timeout = 1
+
+        await self._run()
+
+        calls = self.controller.cluster.set_timeout.call_args_list
+        # Raised to the collectinfo default at the start...
+        self.assertEqual(calls[0], mock.call(COLLECTINFO_NODE_TIMEOUT))
+        # ...and restored to the original in the finally.
+        self.assertEqual(calls[-1], mock.call(1))
+
+    async def test_does_not_lower_explicit_larger_timeout(self):
+        self.controller.cluster._timeout = 10
+
+        await self._run()
+
+        # max(10, 5) == 10, so no raise; only the finally restore to the original 10.
+        self.assertEqual(
+            self.controller.cluster.set_timeout.call_args_list, [mock.call(10)]
+        )
 
 
 if __name__ == "__main__":
