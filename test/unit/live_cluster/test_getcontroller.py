@@ -358,6 +358,32 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertDictEqual(result, expected)
 
+    async def test_get_namespace_logs_failed_node(self):
+        """TOOLS-3596: a node whose namespace stats failed is excluded and logged at DEBUG
+        so the missing data is diagnosable instead of vanishing silently."""
+        self.cluster_mock.info_namespaces.return_value = {"1.1.1.1": ["foo"]}
+
+        async def side_effect(namespace, nodes):
+            return {
+                "1.1.1.1": {"stat1": 1},
+                "2.2.2.2": Exception("boom"),
+            }
+
+        self.cluster_mock.info_namespace_statistics.side_effect = side_effect
+
+        with self.assertLogs("lib.live_cluster.get_controller", level="DEBUG") as cm:
+            result = await self.controller.get_namespace(for_mods=["foo"])
+
+        # Healthy node kept, failed node excluded.
+        self.assertDictEqual(result, {"1.1.1.1": {"foo": {"stat1": 1}}})
+        self.assertTrue(
+            any(
+                "2.2.2.2" in msg and "Failed to get statistics" in msg
+                for msg in cm.output
+            ),
+            cm.output,
+        )
+
     async def test_get_sets(self):
         self.cluster_mock.info_all_set_statistics.return_value = {
             "1.1.1.1": {

@@ -528,6 +528,18 @@ class Cluster(AsyncObject):
 
         return use_nodes
 
+    def set_timeout(self, timeout):
+        """
+        Update the per-node info-call timeout for the whole cluster: every existing node
+        (including its pooled sockets) plus the cluster default so nodes created later by a
+        refresh inherit it. Used to temporarily raise the timeout for collectinfo
+        (TOOLS-3596) and restore it afterwards.
+        """
+        self._timeout = timeout
+
+        for node in self.nodes.values():
+            node.set_timeout(timeout)
+
     async def _register_node(self, addr_port_tls):
         if not addr_port_tls:
             return None

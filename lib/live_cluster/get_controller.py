@@ -14,6 +14,7 @@
 
 import asyncio
 import copy
+import logging
 import re
 from typing import Iterable, Optional
 from lib.base_controller import ModifierHelp, ShellException
@@ -23,6 +24,8 @@ from lib.utils import common, util, constants
 from lib.utils.constants import Modifiers
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
+
+logger = logging.getLogger(__name__)
 
 
 # Helpers
@@ -609,12 +612,24 @@ class GetStatisticsController:
             ns_stats[namespace] = await stat_task
 
             if isinstance(ns_stats[namespace], Exception):
+                # TOOLS-3596: log so the missing data is diagnosable from the debug log.
+                logger.debug(
+                    "Failed to get statistics for namespace %r: %r",
+                    namespace,
+                    ns_stats[namespace],
+                )
                 continue
 
             for node in list(ns_stats[namespace].keys()):
                 if not ns_stats[namespace][node] or isinstance(
                     ns_stats[namespace][node], Exception
                 ):
+                    logger.debug(
+                        "Failed to get statistics for namespace %r from node %r: %r",
+                        namespace,
+                        node,
+                        ns_stats[namespace][node],
+                    )
                     ns_stats[namespace].pop(node)
 
         # Inverted match common structure of other getters, i.e. host is top level key
@@ -650,12 +665,24 @@ class GetStatisticsController:
             ns_stats[namespace] = await stat_task
 
             if isinstance(ns_stats[namespace], Exception):
+                # TOOLS-3596: log so the missing data is diagnosable from the debug log.
+                logger.debug(
+                    "Failed to get statistics for namespace %r: %r",
+                    namespace,
+                    ns_stats[namespace],
+                )
                 continue
 
             for node in list(ns_stats[namespace].keys()):
                 if not ns_stats[namespace][node] or isinstance(
                     ns_stats[namespace][node], Exception
                 ):
+                    logger.debug(
+                        "Failed to get statistics for namespace %r from node %r: %r",
+                        namespace,
+                        node,
+                        ns_stats[namespace][node],
+                    )
                     ns_stats[namespace].pop(node)
                     continue
 

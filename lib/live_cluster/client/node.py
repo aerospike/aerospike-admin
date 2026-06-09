@@ -94,6 +94,17 @@ def async_return_exceptions(func):
         except Exception as e:
             exception = e
 
+        # Without this log, per-node info-call failures (e.g. asyncio.TimeoutError during a
+        # collectinfo burst) are swallowed silently and become undiagnosable from the debug
+        # log. See TOOLS-3596.
+        logger.debug(
+            "info call %s on %s:%s returned exception: %r",
+            getattr(func, "__name__", func),
+            getattr(args[0], "ip", "?"),
+            getattr(args[0], "port", "?"),
+            exception,
+        )
+
         if raise_exception:
             raise
 
@@ -383,6 +394,21 @@ class Node(AsyncObject):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
         self.socket_pool: dict[int, deque[ASSocket]] = {}
         self.socket_pool[self.port] = deque(maxlen=MAX_SOCKET_POOL_SIZE)
+
+    def set_timeout(self, timeout):
+        """
+        Update the per-node info-call timeout. New sockets pick this up at creation; any
+        already-pooled sockets are updated in place so a reused connection also honors the
+        new timeout. Used to temporarily raise the timeout for collectinfo (TOOLS-3596).
+        """
+        self._timeout = timeout
+
+        if not self.socket_pool:
+            return
+
+        for sock_deque in self.socket_pool.values():
+            for sock in sock_deque:
+                sock._timeout = timeout
 
     def _is_any_my_ip(self, ips):
         if not ips:

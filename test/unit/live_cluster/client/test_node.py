@@ -5385,6 +5385,30 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         last_sock = self.node.socket_pool[self.node.port][-1]
         self.assertEqual(last_sock.name, f"sock_{MAX_SOCKET_POOL_SIZE + 4}")
 
+    async def test_set_timeout_updates_node_and_pooled_sockets(self):
+        """TOOLS-3596: set_timeout updates the node timeout and every pooled socket so a
+        reused connection also honors the new timeout."""
+        sock_a = AsyncMock()
+        sock_a._timeout = 1
+        sock_b = AsyncMock()
+        sock_b._timeout = 1
+        self.node.socket_pool[self.node.port].append(sock_a)
+        self.node.socket_pool[self.node.port].append(sock_b)
+
+        self.node.set_timeout(7)
+
+        self.assertEqual(self.node._timeout, 7)
+        self.assertEqual(sock_a._timeout, 7)
+        self.assertEqual(sock_b._timeout, 7)
+
+    async def test_set_timeout_handles_closed_socket_pool(self):
+        """set_timeout must not crash when the pool has been closed (socket_pool is None)."""
+        self.node.socket_pool = None
+
+        self.node.set_timeout(7)
+
+        self.assertEqual(self.node._timeout, 7)
+
     async def test_get_connection_fifo_order(self):
         """Test that _get_connection returns sockets in FIFO order"""
         # Add sockets in order
@@ -6209,6 +6233,23 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, dict)
         self.assertEqual(result["cs"], "2")
         self.assertEqual(result["ck"], "71")
+
+    async def test_swallowed_exception_is_logged(self):
+        """TOOLS-3596: a swallowed per-node exception is logged at DEBUG so the failure is
+        diagnosable from the (collectinfo) debug log instead of vanishing silently."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        with self.assertLogs("lib.live_cluster.client.node", level="DEBUG") as cm:
+            result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertTrue(
+            any(
+                "returned exception" in msg and "info_statistics" in msg
+                for msg in cm.output
+            ),
+            cm.output,
+        )
 
 
 class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):

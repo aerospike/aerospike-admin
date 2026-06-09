@@ -53,6 +53,12 @@ from .show_controller import ShowController
 
 logger = logging.getLogger(__name__)
 
+# The default 1s per-node timeout is too tight for the high-fanout parallel bursts that
+# collectinfo issues, causing transient timeouts that drop nodes from the bundle. Raise it
+# for the duration of a collectinfo run only (TOOLS-3596). An explicit larger --timeout is
+# still honored.
+COLLECTINFO_NODE_TIMEOUT = 5
+
 
 @CommandHelp(
     "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
@@ -445,8 +451,6 @@ class CollectinfoController(LiveClusterCommandController):
     ):
         logger.debug("Collectinfo data to store in collectinfo_*.json")
 
-        dump_map = {}
-
         # Split operations into batches to reduce socket contention and timeouts
         # Batch 1: Core data collection (most resource intensive)
         (
@@ -499,9 +503,71 @@ class CollectinfoController(LiveClusterCommandController):
         if CollectinfoController.get_pmap:
             pmap_map = await self._get_as_pmap()
 
-        for node in as_map:
+        # The set of nodes we actually queried (alive + selected). A node that fails its
+        # stats/config calls is still present in the other section maps under its node.key,
+        # so building the dump over the union below recovers it; this set only drives the
+        # "node produced no data at all" warning.
+        expected_node_keys = {node.key for node in self.cluster.get_nodes(self.nodes)}
+
+        dump_map = self._build_dump_map(
+            expected_node_keys,
+            as_map,
+            sys_map,
+            meta_map,
+            histogram_map,
+            latency_map,
+            pmap_map,
+            acl_map,
+            user_agents_map,
+            masking_map,
+        )
+
+        snp_map = {}
+        snp_map[cluster_name] = dump_map
+        return snp_map
+
+    def _build_dump_map(
+        self,
+        expected_node_keys,
+        as_map,
+        sys_map,
+        meta_map,
+        histogram_map,
+        latency_map,
+        pmap_map,
+        acl_map,
+        user_agents_map,
+        masking_map,
+    ):
+        """
+        Merge the per-section maps into the per-node collectinfo dump.
+
+        Iterates over the union of node keys across every section map rather than just
+        ``as_map`` (statistics + config). A node whose stats/config calls all failed in the
+        first parallel burst is absent from ``as_map`` but still present in the other maps
+        under its ``node.key``; gating on ``as_map`` alone silently dropped such nodes from
+        ``ascinfo.json``. Nodes missing ``as_map`` data get an empty ``as_stat`` that the
+        other sections attach to (the offline analyzer tolerates an empty ``as_stat``).
+        """
+        dump_map = {}
+
+        all_nodes = set(as_map)
+        for section_map in (
+            sys_map,
+            meta_map,
+            histogram_map,
+            latency_map,
+            acl_map,
+            user_agents_map,
+            masking_map,
+        ):
+            all_nodes.update(section_map)
+        if pmap_map:
+            all_nodes.update(pmap_map)
+
+        for node in all_nodes:
             dump_map[node] = {}
-            dump_map[node]["as_stat"] = as_map[node]
+            dump_map[node]["as_stat"] = as_map.get(node, {})
             if node in sys_map:
                 dump_map[node]["sys_stat"] = sys_map[node]
             if node in meta_map:
@@ -527,9 +593,15 @@ class CollectinfoController(LiveClusterCommandController):
             if node in masking_map:
                 dump_map[node]["as_stat"]["masking"] = masking_map[node]
 
-        snp_map = {}
-        snp_map[cluster_name] = dump_map
-        return snp_map
+        missing = set(expected_node_keys) - set(dump_map)
+        if missing:
+            logger.warning(
+                "collectinfo snapshot is missing %d node(s) that returned no data: %s",
+                len(missing),
+                ", ".join(sorted(missing)),
+            )
+
+        return dump_map
 
     def _dump_in_json_file(self, complete_name, dump):
         try:
@@ -921,10 +993,24 @@ class CollectinfoController(LiveClusterCommandController):
         )
         ignore_errors_msg = "Aborting collectinfo. To bypass use --ignore-errors."
 
+        # Capture before the try so the finally can always restore, even if setup fails.
+        original_timeout = self.cluster._timeout
+
         try:
             # Coloring might writes extra characters to file, to avoid it we need to disable terminal coloring
             self.setup_loggers(individual_file_prefix)
             terminal.enable_color(False)
+
+            # Raise the per-node timeout for the collectinfo run to avoid transient
+            # timeouts dropping nodes from the bundle (TOOLS-3596). Never lower an explicit
+            # larger --timeout.
+            collectinfo_timeout = max(original_timeout, COLLECTINFO_NODE_TIMEOUT)
+            if collectinfo_timeout != original_timeout:
+                logger.debug(
+                    "Raising per-node timeout to %ss for collectinfo",
+                    collectinfo_timeout,
+                )
+                self.cluster.set_timeout(collectinfo_timeout)
 
             file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
             self.failed_cmds = []
@@ -1012,6 +1098,8 @@ class CollectinfoController(LiveClusterCommandController):
             # printing collectinfo summary
             self.teardown_loggers()
             terminal.enable_color(True)
+            # Restore the per-node timeout for any subsequent interactive use (TOOLS-3596).
+            self.cluster.set_timeout(original_timeout)
 
     async def _do_default(self, line):
         snp_count = util.get_arg_and_delete_from_mods(

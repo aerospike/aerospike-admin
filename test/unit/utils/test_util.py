@@ -142,6 +142,29 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             result, expected, "deep_merge_dicts did not return the expected result"
         )
 
+    def test_filter_exceptions_removes_and_logs(self):
+        """TOOLS-3596: exception-valued keys are removed (existing behavior) and logged at
+        DEBUG so the missing data is diagnosable."""
+        err = TimeoutError("boom")
+        data = {
+            "node_a": {"stat": 1},
+            "node_b": err,
+        }
+
+        with self.assertLogs("lib.utils.util", level="DEBUG") as cm:
+            result = util.filter_exceptions(data)
+
+        self.assertEqual(result, {"node_a": {"stat": 1}})
+        self.assertTrue(
+            any("node_b" in msg and "due to error" in msg for msg in cm.output),
+            cm.output,
+        )
+
+    def test_filter_exceptions_keeps_clean_data(self):
+        data = {"node_a": {"stat": 1}, "node_b": {"stat": 2}}
+        result = util.filter_exceptions(data)
+        self.assertEqual(result, {"node_a": {"stat": 1}, "node_b": {"stat": 2}})
+
     def test_is_valid_base64(self):
         # Test valid base64 string
         try:
