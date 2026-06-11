@@ -152,7 +152,6 @@ jobs:
           - debian11
           - debian12
           - debian13
-          - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
           - ubuntu26.04
@@ -165,7 +164,6 @@ jobs:
         matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
         matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
-        matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
         matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' ||
         matrix.distro == 'ubuntu26.04' && 'ubuntu:resolute-20260421' }}
@@ -377,7 +375,6 @@ jobs:
           - debian11
           - debian12
           - debian13
-          - ubuntu20.04
           - ubuntu22.04
           - ubuntu24.04
           - ubuntu26.04
@@ -390,7 +387,6 @@ jobs:
         matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
         matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
-        matrix.distro == 'ubuntu20.04' && 'ubuntu:focal-20210723' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
         matrix.distro == 'ubuntu24.04' && 'ubuntu:noble-20251013' ||
         matrix.distro == 'ubuntu26.04' && 'ubuntu:resolute-20260421' }}
