@@ -148,6 +148,7 @@ class CliView(object):
 
         common = dict(
             principal=cluster.get_expected_principal(),
+            self_node=cluster.get_self_node(),
             common_size=common_size,
             common_key=common_key,
             common_principal=common_principal,
@@ -172,7 +173,7 @@ class CliView(object):
             ns_stats=ns_stats,
             service_stats=service_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(
@@ -206,7 +207,7 @@ class CliView(object):
             node_names=node_names,
             ns_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(
@@ -234,7 +235,7 @@ class CliView(object):
             node_names=node_names,
             ns_stats=ns_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(
@@ -263,7 +264,7 @@ class CliView(object):
             node_names=node_names,
             ns_stats=ns_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(
@@ -286,7 +287,7 @@ class CliView(object):
             node_names=node_names,
             set_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.info_set_sheet, title, sources, common=common)
@@ -305,7 +306,7 @@ class CliView(object):
             node_names=node_names,
             dc_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.info_dc_sheet, title, sources, common=common)
@@ -331,7 +332,7 @@ class CliView(object):
             builds=builds,
             xdr_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.info_old_xdr_sheet, title, sources, common=common)
@@ -342,7 +343,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         node_names = cluster.get_node_names()
         node_ids = cluster.get_node_ids()
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
         stats = util.flip_keys(stats)
         dcs = list(stats.keys())
         dcs.sort()
@@ -390,7 +391,7 @@ class CliView(object):
             node_names=node_names,
             sindex_stats=sindex_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.info_sindex_sheet, title, sources, common=common)
@@ -582,7 +583,7 @@ class CliView(object):
         sources = dict(node_names=node_names, data=service_configs, node_ids=node_ids)
         disable_aggregations = not show_total
         style = SheetStyle.columns if flip_output else None
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(
@@ -622,7 +623,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
         style = SheetStyle.columns if flip_output else None
 
         # dict format starts at {node: {dc: {ns:{}}}}
@@ -674,7 +675,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
         style = SheetStyle.columns if flip_output else None
 
         # dict format starts at {node: {dc: {ns:{}}}}
@@ -1097,7 +1098,7 @@ class CliView(object):
             node_ids=node_ids,
             pmap=pmap_data,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.show_pmap_sheet, title, sources, common=common)
@@ -1149,7 +1150,7 @@ class CliView(object):
 
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Users Statistics{}".format(title_timestamp)
 
@@ -1301,7 +1302,7 @@ class CliView(object):
             node_ids=node_ids,
             data=roster_data,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
         style = SheetStyle.columns
 
         if flip:
@@ -1327,7 +1328,7 @@ class CliView(object):
         title = "Best Practices{}".format(title_timestamp)
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
         sources = dict(data=failed_practices, node_names=node_names, node_ids=node_ids)
 
         CliView.print_result(
@@ -1374,7 +1375,7 @@ class CliView(object):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         sources = dict(data=filtered_data, node_names=node_names, node_ids=node_ids)
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
         style = SheetStyle.columns if flip_output else None
 
         CliView.print_result(
@@ -1439,7 +1440,7 @@ class CliView(object):
         node_names = cluster.get_node_names(hosts)
         node_ids = cluster.get_node_ids(hosts)
         sources = dict(data=jobs_data, node_names=node_names, node_ids=node_ids)
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.kill_jobs, title, sources, common=common)
@@ -1623,7 +1624,7 @@ class CliView(object):
     def print_info_responses(title, responses, cluster, **mods):
         node_names = cluster.get_node_names(mods.get("with", []))
         sources = dict(data=responses, node_names=node_names)
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.node_info_responses, title, sources, common=common)
@@ -2760,7 +2761,7 @@ class CliView(object):
             node_names=node_names,
             node_ids=node_ids,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = dict(principal=cluster.get_expected_principal(), self_node=cluster.get_self_node())
 
         CliView.print_result(
             sheet.render(templates.info_release_sheet, title, sources, common=common)

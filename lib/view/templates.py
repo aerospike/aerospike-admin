@@ -130,6 +130,9 @@ node_field = Field(
     "Node",
     Projectors.String("node_names", None),
     formatters=(
+        Formatters.bold_cyan_alert(
+            lambda edata: edata.record["Node ID"] == edata.common.get("self_node")
+        ),
         Formatters.green_alert(
             lambda edata: edata.record["Node ID"] == edata.common["principal"]
         ),
@@ -332,6 +335,17 @@ info_namespace_usage_sheet = Sheet(
                                 "index-type.mounts-size-limit",
                             ),
                         ),
+                        Projectors.Div(  # shmem with indexes-memory-budget (7.1+)
+                            Projectors.Number(
+                                "ns_stats",
+                                "index_used_bytes",
+                                "memory_used_index_bytes",
+                            ),
+                            Projectors.Number(
+                                "ns_stats",
+                                "indexes-memory-budget",
+                            ),
+                        ),
                     ),
                     converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
@@ -405,6 +419,17 @@ info_namespace_usage_sheet = Sheet(
                             Projectors.Number(
                                 "ns_stats",
                                 "sindex-type.mounts-size-limit",
+                            ),
+                        ),
+                        Projectors.Div(  # shmem with indexes-memory-budget (7.1+)
+                            Projectors.Number(
+                                "ns_stats",
+                                "sindex_used_bytes",
+                                "memory_used_sindex_bytes",
+                            ),
+                            Projectors.Number(
+                                "ns_stats",
+                                "indexes-memory-budget",
                             ),
                         ),
                     ),

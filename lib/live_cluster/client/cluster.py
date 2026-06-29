@@ -814,5 +814,11 @@ class Cluster(AsyncObject):
         self.nodes = {}
         self.node_lookup = LookupDict()
 
+    def get_self_node(self):
+        for node in self.nodes.values():
+            if node.localhost:
+                return node.node_id
+        return ""
+
     def get_seed_nodes(self):
         return list(self._seed_nodes)
