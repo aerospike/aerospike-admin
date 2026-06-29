@@ -131,7 +131,7 @@ node_field = Field(
     Projectors.String("node_names", None),
     formatters=(
         Formatters.bold_cyan_alert(
-            lambda edata: edata.record["Node ID"] == edata.common.get("self_node")
+            lambda edata: edata.record["Node ID"] == edata.common["self_node"]
         ),
         Formatters.green_alert(
             lambda edata: edata.record["Node ID"] == edata.common["principal"]

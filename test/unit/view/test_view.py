@@ -57,7 +57,10 @@ class CliViewTest(unittest.TestCase):
         node_names = {"1.1.1.1": "1.1.1.1 is my name"}
         node_ids = {"1.1.1.1": "ABCD"}
         principal = "test-principal"
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
         self.cluster_mock.get_node_names.return_value = node_names
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = principal
@@ -165,7 +168,10 @@ class CliViewTest(unittest.TestCase):
         node_names = {"1.1.1.1": "1.1.1.1 is my name", "2.2.2.2": "2.2.2.2 is my name"}
         node_ids = {"1.1.1.1": "ABCD", "2.2.2.2": "EFGH"}
         principal = "test-principal"
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
         self.cluster_mock.get_node_names.return_value = node_names
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = principal
@@ -206,7 +212,10 @@ class CliViewTest(unittest.TestCase):
             "node_names": "node_names",
             "node_ids": "node_ids",
         }
-        common = {"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": "principal",
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.show_best_practices(
             self.cluster_mock,
@@ -245,7 +254,10 @@ class CliViewTest(unittest.TestCase):
             "node_names": "node_names",
             "node_ids": "node_ids",
         }
-        common = {"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": "principal",
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.show_jobs(
             "Jobs",
@@ -289,7 +301,10 @@ class CliViewTest(unittest.TestCase):
                 "node_names": "node_names",
                 "node_ids": "node_ids",
             },
-            common={"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value},
+            common={
+                "principal": "principal",
+                "self_node": self.cluster_mock.get_self_node.return_value,
+            },
             selectors=None,
             style=SheetStyle.columns,
             disable_title_fill_repeat=True,
@@ -528,7 +543,10 @@ class CliViewTest(unittest.TestCase):
                     title_repeat=False,
                     dynamic_diff=False,
                     disable_aggregations=True,
-                    common={"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value},
+                    common={
+                        "principal": "principal",
+                        "self_node": self.cluster_mock.get_self_node.return_value,
+                    },
                 ),
                 call(
                     templates.show_xdr_ns_sheet,
@@ -539,7 +557,10 @@ class CliViewTest(unittest.TestCase):
                     title_repeat=False,
                     dynamic_diff=False,
                     disable_aggregations=True,
-                    common={"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value},
+                    common={
+                        "principal": "principal",
+                        "self_node": self.cluster_mock.get_self_node.return_value,
+                    },
                 ),
             ],
             any_order=False,
@@ -602,7 +623,10 @@ class CliViewTest(unittest.TestCase):
                     style=SheetStyle.columns,
                     title_repeat=False,
                     disable_aggregations=True,
-                    common={"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value},
+                    common={
+                        "principal": "principal",
+                        "self_node": self.cluster_mock.get_self_node.return_value,
+                    },
                 ),
                 call(
                     templates.show_xdr_ns_sheet,
@@ -612,7 +636,10 @@ class CliViewTest(unittest.TestCase):
                     style=SheetStyle.columns,
                     title_repeat=False,
                     disable_aggregations=True,
-                    common={"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value},
+                    common={
+                        "principal": "principal",
+                        "self_node": self.cluster_mock.get_self_node.return_value,
+                    },
                 ),
             ],
             any_order=False,
@@ -679,7 +706,10 @@ class CliViewTest(unittest.TestCase):
                     style=SheetStyle.columns,
                     title_repeat=False,
                     disable_aggregations=True,
-                    common={"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value},
+                    common={
+                        "principal": "principal",
+                        "self_node": self.cluster_mock.get_self_node.return_value,
+                    },
                 ),
                 call(
                     templates.show_xdr_ns_sheet_by_dc,
@@ -689,7 +719,10 @@ class CliViewTest(unittest.TestCase):
                     style=SheetStyle.columns,
                     title_repeat=False,
                     disable_aggregations=True,
-                    common={"principal": "principal", "self_node": self.cluster_mock.get_self_node.return_value},
+                    common={
+                        "principal": "principal",
+                        "self_node": self.cluster_mock.get_self_node.return_value,
+                    },
                 ),
             ],
             any_order=False,
@@ -823,7 +856,10 @@ class CliViewTest(unittest.TestCase):
         node_names = {"1.1.1.1": "1.1.1.1 is my name"}
         node_ids = {"1.1.1.1": "ABCD"}
         principal = "test-principal"
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
         self.cluster_mock.get_node_names.return_value = node_names
         self.cluster_mock.get_node_ids.return_value = node_ids
         self.cluster_mock.get_expected_principal.return_value = principal
@@ -1260,7 +1296,10 @@ class CliViewTest(unittest.TestCase):
             "ns_stats": ns_stats,
             "service_stats": service_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_namespace_usage(
             ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
@@ -1303,7 +1342,10 @@ class CliViewTest(unittest.TestCase):
             "ns_stats": ns_stats,
             "service_stats": service_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_namespace_usage(
             ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
@@ -1346,7 +1388,10 @@ class CliViewTest(unittest.TestCase):
             "ns_stats": ns_stats,
             "service_stats": service_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_namespace_usage(
             ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
@@ -1396,7 +1441,10 @@ class CliViewTest(unittest.TestCase):
             "ns_stats": ns_stats,
             "service_stats": service_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_namespace_usage(
             ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
@@ -1438,7 +1486,10 @@ class CliViewTest(unittest.TestCase):
             "ns_stats": ns_stats,
             "service_stats": service_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_namespace_usage(
             ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
@@ -1484,7 +1535,10 @@ class CliViewTest(unittest.TestCase):
             "ns_stats": ns_stats,
             "service_stats": service_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_namespace_usage(
             ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
@@ -1515,7 +1569,10 @@ class CliViewTest(unittest.TestCase):
             "ns_stats": ns_stats,
             "service_stats": service_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_namespace_usage(
             ns_stats, service_stats, self.cluster_mock, timestamp="test-stamp"
@@ -1810,7 +1867,10 @@ class CliViewTest(unittest.TestCase):
             "node_names": node_names,
             "ns_stats": ns_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_transactions_monitors(ns_stats, self.cluster_mock)
 
@@ -1854,7 +1914,13 @@ class CliViewTest(unittest.TestCase):
 
         # Verify the title and common data
         self.assertEqual(args[1], "Transaction Monitor Metrics (test-timestamp)")
-        self.assertEqual(kwargs.get("common"), {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value})
+        self.assertEqual(
+            kwargs.get("common"),
+            {
+                "principal": principal,
+                "self_node": self.cluster_mock.get_self_node.return_value,
+            },
+        )
 
         # Verify the sources structure
         sources = args[2]
@@ -2207,7 +2273,10 @@ class CliViewTest(unittest.TestCase):
             "node_names": node_names,
             "ns_stats": ns_stats,
         }
-        common = {"principal": principal, "self_node": self.cluster_mock.get_self_node.return_value}
+        common = {
+            "principal": principal,
+            "self_node": self.cluster_mock.get_self_node.return_value,
+        }
 
         CliView.info_transactions_provisionals(
             ns_stats, self.cluster_mock, timestamp="test-stamp"
