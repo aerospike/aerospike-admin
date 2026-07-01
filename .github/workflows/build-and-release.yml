@@ -769,3 +769,109 @@ jobs:
           git tag -a "$VERSION" -m "$VERSION" "$GITHUB_SHA"
           git push origin "refs/tags/${VERSION}"
           echo "Pushed tag: $VERSION"
+
+  promote-to-test:
+    name: Promote release bundle to TEST
+    if: github.ref == 'refs/heads/master'
+    needs: [get-version, create-release-bundle]
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Setup JFrog CLI
+        uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
+        env:
+          JF_URL: https://artifact.aerospike.io
+          JF_PROJECT: database
+        with:
+          version: 2.78.8
+          oidc-provider-name: database-gh-aerospike
+          oidc-audience: database-gh-aerospike
+
+      - name: Promote release bundle to TEST
+        env:
+          JFROG_PROJECT: database
+          RELEASE_BUNDLE_NAME: aerospike-asadm
+          JF_SIGNING_KEY: aerospike
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          # Check if already promoted to TEST; surface any API error rather than swallowing it.
+          resp=$(jf rt curl -s -XGET "/lifecycle/api/v2/promotion/records/${RELEASE_BUNDLE_NAME}/${VERSION}?project=${JFROG_PROJECT}" 2>/dev/null) || {
+            echo "Warning: could not query promotion status — proceeding with promotion attempt."
+            resp=""
+          }
+          status=$(echo "$resp" | jq -r '.promotions[]? | select(.environment == "TEST") | .status' 2>/dev/null || true)
+          if [[ "$status" == "COMPLETED" ]]; then
+            echo "Release bundle '${RELEASE_BUNDLE_NAME}:${VERSION}' is already promoted to TEST — skipping."
+            exit 0
+          fi
+          echo "Promoting release bundle '${RELEASE_BUNDLE_NAME}:${VERSION}' to TEST environment..."
+          jf rbp \
+            --signing-key="${JF_SIGNING_KEY}" \
+            --project="${JFROG_PROJECT}" \
+            --sync=true \
+            "${RELEASE_BUNDLE_NAME}" "${VERSION}" TEST
+
+  notify-slack:
+    name: Notify Slack
+    needs: [get-version, promote-to-test]
+    if: always() && needs.promote-to-test.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    env:
+      VERSION: ${{ needs.get-version.outputs.VERSION }}
+      BRANCH: ${{ github.ref_name }}
+      ACTOR: ${{ github.actor }}
+      RUN_NUMBER: ${{ github.run_number }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Set Slack message text
+        id: slack_text
+        env:
+          SLACK_TITLE: ${{ env.VERSION }} promoted to JFrog TEST
+        run: |
+          set -euo pipefail
+          timestamp=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          SLACK_MSG="*Branch:* ${BRANCH}"$'\n'"*Bundle Version:* ${VERSION}"$'\n'"*Triggered by:* ${ACTOR}"$'\n'"*Run:* #${RUN_NUMBER}"$'\n'"*Time:* ${timestamp}"
+          delimiter="SLACK_$(openssl rand -hex 8)"
+          {
+            echo "title<<${delimiter}"
+            echo "$SLACK_TITLE"
+            echo "${delimiter}"
+            echo "body<<${delimiter}"
+            echo "$SLACK_MSG"
+            echo "${delimiter}"
+            echo "workflow_mrk<<${delimiter}"
+            echo "<${RUN_URL}|Workflow run #${RUN_NUMBER}>"
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send Slack message to TOOLS
+        continue-on-error: true
+        uses: step-security/slack-github-action@16410fbfd088e8034b2d1cda051d29ada4097065 # v3.0.3
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.TOOLS_SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.TOOLS_SLACK_CHANNEL }}",
+              "text": ${{ toJSON(steps.slack_text.outputs.title) }},
+              "blocks": [
+                { "type": "header", "text": { "type": "plain_text", "text": ${{ toJSON(steps.slack_text.outputs.title) }}, "emoji": true } },
+                { "type": "section", "text": { "type": "mrkdwn", "text": ${{ toJSON(steps.slack_text.outputs.body) }} } },
+                { "type": "section", "text": { "type": "mrkdwn", "text": ${{ toJSON(steps.slack_text.outputs.workflow_mrk) }} } }
+              ]
+            }
