@@ -841,11 +841,11 @@ jobs:
       - name: Set Slack message text
         id: slack_text
         env:
-          SLACK_TITLE: ${{ env.VERSION }} promoted to JFrog TEST
+          SLACK_TITLE: aerospike-asadm ${{ env.VERSION }} promoted to JFrog TEST
         run: |
           set -euo pipefail
           timestamp=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          SLACK_MSG="*Branch:* ${BRANCH}"$'\n'"*Bundle Version:* ${VERSION}"$'\n'"*Triggered by:* ${ACTOR}"$'\n'"*Run:* #${RUN_NUMBER}"$'\n'"*Time:* ${timestamp}"
+          SLACK_MSG="*Product:* aerospike-asadm"$'\n'"*Branch:* ${BRANCH}"$'\n'"*Bundle Version:* ${VERSION}"$'\n'"*Triggered by:* ${ACTOR}"$'\n'"*Run:* #${RUN_NUMBER}"$'\n'"*Time:* ${timestamp}"
           delimiter="SLACK_$(openssl rand -hex 8)"
           {
             echo "title<<${delimiter}"
