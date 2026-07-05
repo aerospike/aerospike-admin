@@ -3325,8 +3325,21 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_sindex(self):
+        command = "sindex-list:"
 
-        resp = await self._info("sindex-list:")
+        # The "numeric" sindex type was renamed to "integer" in
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.1.3). The v2 list format
+        # reports the renamed "integer" type, so request it on servers that
+        # support it. Older servers only understand the default (v1) format.
+        if (
+            self.build is not None
+            and not isinstance(self.build, Exception)
+            and version.LooseVersion(self.build)
+            >= version.LooseVersion(constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION)
+        ):
+            command = "sindex-list:v=v2"
+
+        resp = await self._info(command)
 
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get sindex list", resp)
@@ -3405,6 +3418,13 @@ class Node(AsyncObject):
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
         command = "sindex-create:indexname={};".format(index_name)
+
+        # The server renamed the "numeric" sindex type to "integer" starting with
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.1.3). Translate the deprecated
+        # "numeric" alias forward on servers that support "integer". ("integer" against
+        # an older server is rejected up front by the controller.)
+        if bin_type == "numeric" and feature_support.get("integer_type_support"):
+            bin_type = "integer"
 
         if index_type:
             command += "indextype={};".format(index_type)

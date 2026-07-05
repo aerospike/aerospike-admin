@@ -3850,6 +3850,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with("hist-dump:ns=test;hist=objsz", self.ip)
 
     async def test_info_sindex(self):
+        """Server < 8.1.3: the default (v1) sindex-list format is requested."""
+        self.node.build = "8.1.2.0"
         self.info_mock.return_value = "a=1:b=2:c=3:d=4:e=5;a=6:b=7:c=8:d=9:e=10;"
         expected = [
             {"a": "1", "b": "2", "c": "3", "d": "4", "e": "5"},
@@ -3860,6 +3862,27 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.info_mock.assert_called_with("sindex-list:", self.ip)
         self.assertListEqual(actual, expected)
+
+    async def test_info_sindex_v2_on_new_server(self):
+        """Server >= 8.1.3: the v2 sindex-list format is requested so the renamed
+        'integer' type is reported."""
+        self.node.build = "8.1.3.0"
+        self.info_mock.return_value = "a=1:b=2;"
+        expected = [{"a": "1", "b": "2"}]
+
+        actual = await self.node.info_sindex()
+
+        self.info_mock.assert_called_with("sindex-list:v=v2", self.ip)
+        self.assertListEqual(actual, expected)
+
+    async def test_info_sindex_v2_when_build_unavailable(self):
+        """If the build version is unknown, fall back to the default (v1) format."""
+        self.node.build = None
+        self.info_mock.return_value = "a=1:b=2;"
+
+        await self.node.info_sindex()
+
+        self.info_mock.assert_called_with("sindex-list:", self.ip)
 
     async def test_info_sindex_statistics(self):
         self.info_mock.return_value = "a=b;c=d;e=f"
@@ -4024,6 +4047,68 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             set_="myset",
             feature_support={
                 "namespace_query_selector_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_numeric_mapped_to_integer(self):
+        """Server >= 8.1.3: the deprecated 'numeric' type is sent as 'integer'."""
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
+
+        actual = await self.node.info_sindex_create(
+            "int-idx",
+            "test",
+            "mybin",
+            "numeric",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+                "integer_type_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_integer_passthrough(self):
+        """Server >= 8.1.3: 'integer' is sent as-is."""
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
+
+        actual = await self.node.info_sindex_create(
+            "int-idx",
+            "test",
+            "mybin",
+            "integer",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+                "integer_type_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_numeric_unchanged_on_old_server(self):
+        """Server < 8.1.3: the legacy 'numeric' type is sent as-is."""
+        self.info_mock.return_value = "OK"
+        expected_call = (
+            "sindex-create:indexname=num-idx;ns=test;indexdata=mybin,numeric"
+        )
+
+        actual = await self.node.info_sindex_create(
+            "num-idx",
+            "test",
+            "mybin",
+            "numeric",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+                "integer_type_support": False,
             },
         )
 
