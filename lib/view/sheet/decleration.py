@@ -544,8 +544,9 @@ class Projectors(object):
             value = super().do_project(sheet, sources)
 
             try:
+                # int(value) raises OverflowError when value is float inf.
                 return int(value)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 try:
                     as_float = float(value)
 

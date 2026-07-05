@@ -332,12 +332,13 @@ class BaseRSheet(object):
 
         for entry in entries:
             try:
+                # int(entry) raises OverflowError when entry is float inf.
                 int(entry)
 
                 if not "." in str(entry):
                     has_int = True
                     continue
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 pass
 
             try:

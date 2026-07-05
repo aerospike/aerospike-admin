@@ -177,6 +177,10 @@ class SheetTest(unittest.TestCase):
             ("nan", "nan", "nan"),
             ("inf", "inf", "inf"),
             (10**400, 10**400, str(10**400)),
+            # An actual float inf (e.g. Infinity in collectinfo JSON) raises
+            # OverflowError from int(inf); keep the raw value.
+            (float("inf"), float("inf"), "inf"),
+            (float("-inf"), float("-inf"), "-inf"),
         ]
     )
     def test_sheet_project_number(self, input, expected_raw, expected_converted):
@@ -911,6 +915,19 @@ class SheetTest(unittest.TestCase):
             self.assertEqual(record["h"]["raw"], "1234E2")
             self.assertEqual(record["i"]["raw"], 1)
             self.assertEqual(record["j"]["raw"], 1.0)
+
+    def test_sheet_dynamic_field_infer_projectors_inf(self):
+        """A float inf value (e.g. Infinity in collectinfo JSON) previously
+        crashed projector inference with OverflowError from int(inf)
+        (TOOLS-3772)."""
+        test_sheet = Sheet((DynamicFields("d"),), from_source="d")
+        sources = dict(d=dict(n0=dict(f=float("inf"), g=1)))
+        render = do_render(test_sheet, "test", sources)
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["f"]["raw"], float("inf"))
+        self.assertEqual(record["f"]["converted"], "inf")
+        self.assertEqual(record["g"]["raw"], 1)
 
     def test_sheet_dynamic_field_selector(self):
         test_sheet = Sheet((DynamicFields("d"),), from_source="d")
