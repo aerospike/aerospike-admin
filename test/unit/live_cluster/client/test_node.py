@@ -5389,17 +5389,15 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         """TOOLS-3596: set_timeout updates the node timeout and every pooled socket so a
         reused connection also honors the new timeout."""
         sock_a = AsyncMock()
-        sock_a._timeout = 1
         sock_b = AsyncMock()
-        sock_b._timeout = 1
         self.node.socket_pool[self.node.port].append(sock_a)
         self.node.socket_pool[self.node.port].append(sock_b)
 
         self.node.set_timeout(7)
 
         self.assertEqual(self.node._timeout, 7)
-        self.assertEqual(sock_a._timeout, 7)
-        self.assertEqual(sock_b._timeout, 7)
+        sock_a.settimeout.assert_called_once_with(7)
+        sock_b.settimeout.assert_called_once_with(7)
 
     async def test_set_timeout_handles_closed_socket_pool(self):
         """set_timeout must not crash when the pool has been closed (socket_pool is None)."""
@@ -6250,6 +6248,24 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
             ),
             cm.output,
         )
+
+    async def test_raise_exception_propagates_original_error(self):
+        """raise_exception=True must raise the original exception instead of returning
+        it; previously the kwarg was unconditionally overwritten to False."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        with self.assertRaises(ASInfoResponseError):
+            await self.node.info_logs_ids(raise_exception=True)
+
+    async def test_info_logging_config_surfaces_real_error(self):
+        """info_logging_config depends on info_logs_ids(raise_exception=True); the
+        returned error must be the original ASInfoResponseError, not an AttributeError
+        from calling .keys() on a returned exception object."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        result = await self.node.info_logging_config()
+
+        self.assertIsInstance(result, ASInfoResponseError)
 
 
 class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):

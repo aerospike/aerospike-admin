@@ -79,6 +79,13 @@ class ASSocket:
         self.ssl_context = ssl_context
         self._timeout = timeout
 
+    def settimeout(self, timeout):
+        """
+        Update the timeout applied to subsequent operations on this socket. Allows a
+        pooled connection to honor a timeout raised after it was created (TOOLS-3596).
+        """
+        self._timeout = timeout
+
     def _wrap_socket(self, sock, ctx):
         if ctx:
             sock = _AsyncioSSLConnectionAdapter(ctx, sock)

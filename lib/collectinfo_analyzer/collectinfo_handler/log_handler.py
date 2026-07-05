@@ -136,7 +136,11 @@ class CollectinfoLogHandler(object):
             return {}
 
         for node_ip in meta_data[timestamp]:
-            node_id = meta_data[timestamp][node_ip]["node_id"]
+            # A node collected without an id (its info calls failed, TOOLS-3596) must
+            # not break the mapping for the healthy nodes.
+            node_id = meta_data[timestamp][node_ip].get("node_id")
+            if not node_id:
+                continue
             node_to_ip[node_id] = node_ip
 
         return node_to_ip
@@ -149,7 +153,9 @@ class CollectinfoLogHandler(object):
             return {}
 
         for node_ip in meta_data[timestamp]:
-            node_id = meta_data[timestamp][node_ip]["node_id"]
+            node_id = meta_data[timestamp][node_ip].get("node_id")
+            if not node_id:
+                continue
             ip_to_node[node_ip] = node_id
 
         return ip_to_node

@@ -131,17 +131,35 @@ class BuildDumpMapTest(unittest.TestCase):
         self.assertIn("B", dump_map)
         self.assertEqual(dump_map["B"]["as_stat"], {"pmap": {"p": 1}})
 
-    def test_node_with_no_data_anywhere_is_warned_and_absent(self):
-        # "A" produced data; expected node "C" produced nothing in any section map.
+    def test_node_with_no_data_anywhere_is_included_and_warned(self):
+        # "A" produced data; expected node "C" produced nothing in any section map. The
+        # snapshot must still contain "C" (with an empty as_stat) and warn about it.
         as_map = {"A": {"statistics": {"s": 1}}}
 
         with self.assertLogs(LOGGER_NAME, level="WARNING") as cm:
             dump_map = self._build({"A", "C"}, as_map, self.empty, self.empty)
 
         self.assertIn("A", dump_map)
-        self.assertNotIn("C", dump_map)
+        self.assertIn("C", dump_map)
+        self.assertEqual(dump_map["C"]["as_stat"], {})
         self.assertTrue(
-            any("missing" in msg and "C" in msg for msg in cm.output),
+            any("no Aerospike data" in msg and "C" in msg for msg in cm.output),
+            cm.output,
+        )
+
+    def test_node_with_only_sys_stat_is_included_and_warned(self):
+        # A node reachable over SSH but whose every info call failed has sys_stat data
+        # and an empty as_stat; it is kept but warned about.
+        as_map = {"A": {"statistics": {"s": 1}}}
+        sys_map = {"A": {"sys": 1}, "B": {"sys": 2}}
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as cm:
+            dump_map = self._build({"A", "B"}, as_map, sys_map, self.empty)
+
+        self.assertEqual(dump_map["B"]["as_stat"], {})
+        self.assertEqual(dump_map["B"]["sys_stat"], {"sys": 2})
+        self.assertTrue(
+            any("no Aerospike data" in msg and "B" in msg for msg in cm.output),
             cm.output,
         )
 
@@ -291,10 +309,20 @@ class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
 
         await self._run()
 
-        # max(10, 5) == 10, so no raise; only the finally restore to the original 10.
-        self.assertEqual(
-            self.controller.cluster.set_timeout.call_args_list, [mock.call(10)]
-        )
+        # max(10, 5) == 10, so the timeout is never touched: no raise, no restore.
+        self.controller.cluster.set_timeout.assert_not_called()
+
+    async def test_restores_timeout_even_when_teardown_fails(self):
+        """The restore must run before teardown so a teardown failure cannot leak the
+        elevated timeout into subsequent interactive use."""
+        self.controller.cluster._timeout = 1
+        CollectinfoController.teardown_loggers.side_effect = OSError("disk full")
+
+        with self.assertRaises(OSError):
+            await self._run()
+
+        calls = self.controller.cluster.set_timeout.call_args_list
+        self.assertEqual(calls[-1], mock.call(1))
 
 
 if __name__ == "__main__":

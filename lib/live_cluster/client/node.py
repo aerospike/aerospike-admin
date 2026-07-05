@@ -80,7 +80,6 @@ def get_fully_qualified_domain_name(address, timeout=0.5):
 
 def async_return_exceptions(func):
     async def wrapper(*args, raise_exception=False, **kwargs):
-        raise_exception = False
         exception = None
 
         try:
@@ -106,7 +105,7 @@ def async_return_exceptions(func):
         )
 
         if raise_exception:
-            raise
+            raise exception
 
         return exception
 
@@ -408,7 +407,7 @@ class Node(AsyncObject):
 
         for sock_deque in self.socket_pool.values():
             for sock in sock_deque:
-                sock._timeout = timeout
+                sock.settimeout(timeout)
 
     def _is_any_my_ip(self, ips):
         if not ips:

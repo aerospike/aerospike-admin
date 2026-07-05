@@ -158,16 +158,20 @@ class _CollectinfoSnapshot:
     def get_node_names(self, nodes=None):
         if not self.node_names:
             if self.cinfo_data:
+                # "node_name" was stored in collectinfo file in asadm 2.15.0
                 node_names_dict: NodeNamesDict | None = self.get_data(
                     type="meta_data", stanza="node_names"
                 )
 
-                # "node_name" was stored in collectinfo file in asadm 2.15.0
-                for node_ips in node_names_dict:
-                    if not node_names_dict[node_ips]:
-                        self.node_names[node_ips] = node_ips
-                    else:
-                        self.node_names[node_ips] = node_names_dict[node_ips]
+                # Register every node present in the snapshot, not just those with
+                # meta_data: a node whose info calls failed during collection can have
+                # an empty as_stat but must still be visible offline (TOOLS-3596).
+                for node_ip, node_data in self.cinfo_data.items():
+                    if not node_ip or not node_data:
+                        continue
+
+                    node_name = node_names_dict.get(node_ip)
+                    self.node_names[node_ip] = node_name if node_name else node_ip
             else:
                 return {}
 
@@ -402,14 +406,20 @@ class _CollectinfoSnapshot:
 
     def get_expected_principal(self) -> str:
         try:
+            # A node without meta_data (info calls failed during collection, TOOLS-3596)
+            # keeps the default id "N/E"; compute a best-effort principal from the nodes
+            # whose ids are known instead of giving up on the whole snapshot.
+            known_ids = [n.node_id for n in self.nodes.values() if n.node_id != "N/E"]
+
+            if not known_ids:
+                if self._get_node_count() == 1:
+                    return list(self.nodes.values())[0].node_id
+                return "UNKNOWN_PRINCIPAL"
+
             principal = "0"
-            for n in self.nodes.values():
-                if n.node_id == "N/E":
-                    if self._get_node_count() == 1:
-                        return n.node_id
-                    return "UNKNOWN_PRINCIPAL"
-                if n.node_id.zfill(16) > principal.zfill(16):
-                    principal = n.node_id
+            for node_id in known_ids:
+                if node_id.zfill(16) > principal.zfill(16):
+                    principal = node_id
             return principal
         except Exception:
             return "UNKNOWN_PRINCIPAL"

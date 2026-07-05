@@ -45,6 +45,13 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
 
         self.addCleanup(patch.stopall)
 
+    async def test_settimeout_updates_timeout(self):
+        """TOOLS-3596: settimeout applies to subsequent operations on the socket so a
+        pooled connection honors a timeout raised after it was created."""
+        self.as_socket.settimeout(9)
+
+        self.assertEqual(self.as_socket._timeout, 9)
+
     @patch("socket.socket")
     @patch("socket.getaddrinfo")
     @patch("asyncio.open_connection", new_callable=AsyncMock)

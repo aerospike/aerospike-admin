@@ -382,8 +382,7 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
         # Per-node failure logged.
         self.assertTrue(
             any(
-                "2.2.2.2" in msg and "Failed to get statistics" in msg
-                for msg in cm.output
+                "2.2.2.2" in msg and "Excluding statistics" in msg for msg in cm.output
             ),
             cm.output,
         )
@@ -426,8 +425,7 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(
             any(
-                "2.2.2.2" in msg and "Failed to get statistics" in msg
-                for msg in cm.output
+                "2.2.2.2" in msg and "Excluding statistics" in msg for msg in cm.output
             ),
             cm.output,
         )
