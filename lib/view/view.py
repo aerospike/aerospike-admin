@@ -452,7 +452,7 @@ class CliView(object):
         like=None,
         with_=None,
         timestamp="",
-        loganalyser_mode=False,
+        loganalyzer_mode=False,
         **ignore,
     ):
         node_names = cluster.get_node_names(with_)
@@ -489,7 +489,7 @@ class CliView(object):
     @staticmethod
     def format_latency(orig_latency):
         # XXX - eventually, node.py could return this format. Changing here
-        #       because loganalyser also sends this format.
+        #       because loganalyzer also sends this format.
         latency = {}
 
         for node, nodes_data in orig_latency.items():

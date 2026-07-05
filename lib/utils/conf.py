@@ -72,7 +72,7 @@ _confdefault = {
         "collectinfo": False,
         "execute": False,
         "enable": False,
-        "log-analyser": False,
+        "log-analyzer": False,
         "log-path": "",
         "pmap": False,
     },
@@ -118,6 +118,7 @@ _confspec = """{
                 "collectinfo": { "type" : "boolean" },
                 "execute": { "type" : "boolean" },
                 "enable": { "type" : "boolean" },
+                "log-analyzer": { "type" : "boolean" },
                 "log-analyser": { "type" : "boolean" },
                 "log-path" : { "type" : "string" }
             },
@@ -227,6 +228,11 @@ def _flatten(conf_dict, instance=None):
                     asadm_conf[decode(k.replace("-", "_"))] = str(v)
                 else:
                     asadm_conf[decode(k.replace("-", "_"))] = decode(v)
+
+    # Backward compatibility: accept the British "log-analyser" spelling from
+    # config files while standardizing on "log-analyzer" internally.
+    if "log_analyser" in asadm_conf:
+        asadm_conf.setdefault("log_analyzer", asadm_conf.pop("log_analyser"))
 
     return asadm_conf
 
@@ -454,7 +460,7 @@ def print_config_help():
     print(" --collectinfo        Start asadm to run against offline collectinfo files.")
     print(" --pmap               Include partition map analysis in collectinfo files.")
     print(
-        " --log-analyser       Start asadm in log-analyser mode and analyse data from log files."
+        " --log-analyzer       Start asadm in log-analyzer mode and analyze data from log files."
     )
     print(
         " -f --log-path=path   Path of cluster collectinfo file or directory \n"
@@ -631,7 +637,11 @@ def get_cli_args():
     add_fn("--enable", action="store_true")
     add_fn("-o", "--out-file")
     add_fn("-c", "--collectinfo", action="store_true")
-    add_fn("-l", "--log-analyser", action="store_true")
+    # "--log-analyser" (British spelling) is kept as a silent, backward-compatible
+    # alias. "--log-analyzer" is the canonical spelling and both set log_analyzer.
+    add_fn(
+        "-l", "--log-analyzer", "--log-analyser", action="store_true", dest="log_analyzer"
+    )
     add_fn("-f", "--log-path")
     add_fn("-j", "--json", action="store_true")
     add_fn("--no-color", action="store_true")
@@ -671,7 +681,7 @@ def get_cli_args():
     # And parameters which needs to be passed through
     # asinfo (they come with underscore).
     add_fn("--line_separator", action="store_true")
-    add_fn("--log_analyser", action="store_true")
+    add_fn("--log_analyzer", "--log_analyser", action="store_true", dest="log_analyzer")
     add_fn("--file_path", dest="log_path")
     add_fn("--asinfo_mode", action="store_true")
     add_fn("--asinfo-mode", action="store_true")

@@ -783,10 +783,10 @@ async def main():
     if cli_args.collectinfo:
         mode = AdminMode.COLLECTINFO_ANALYZER
 
-    if cli_args.log_analyser:
+    if cli_args.log_analyzer:
         if cli_args.collectinfo:
             logger.critical(
-                "collectinfo-analyser and log-analyser are mutually exclusive options. Please enable only one."
+                "collectinfo-analyzer and log-analyzer are mutually exclusive options. Please enable only one."
             )
         mode = AdminMode.LOG_ANALYZER
 
@@ -822,7 +822,7 @@ async def main():
     if cli_args.asinfo_mode:
         if mode == AdminMode.COLLECTINFO_ANALYZER or mode == AdminMode.LOG_ANALYZER:
             logger.critical(
-                "asinfo mode cannot work with Collectinfo-analyser or Log-analyser mode."
+                "asinfo mode cannot work with Collectinfo-analyzer or Log-analyzer mode."
             )
 
         commands_arg = cli_args.execute

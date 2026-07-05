@@ -3,7 +3,7 @@
 ## Description
 Aerospike Admin provides an interface for Aerospike users to view the stat
 of their Aerospike Cluster by fetching information from a running cluster (Cluster mode) 
-a collectinfo file (Collectinfo-Analyzer), or logs (Log-analyser mode).
+a collectinfo file (Collectinfo-Analyzer), or logs (Log-analyzer mode).
 To get started run `asadm` and issue the `help` command. The
 full documentation can be found [here](https://docs.aerospike.com/tools/asadm).
 
@@ -53,7 +53,7 @@ asadm -h <Aerospike Server Address>
 Admin> help
 ```
 
-## Running Aerospike Admin in Log-analyser Mode.
+## Running Aerospike Admin in Log-analyzer Mode.
 ```
 asadm -l [-f <location of logs>]
 Admin> help
