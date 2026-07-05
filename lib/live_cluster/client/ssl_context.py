@@ -343,24 +343,37 @@ class SSLContext(object):
             self.ctx.set_verify(
                 SSL.VERIFY_PEER | SSL.VERIFY_CLIENT_ONCE, self._verify_cb
             )
+            if capath and path.exists(capath) and not path.isdir(capath):
+                raise Exception(
+                    "--tls-capath must be a directory, not a file: %s" % capath
+                )
+            if cafile and path.exists(cafile) and path.isdir(cafile):
+                raise Exception(
+                    "--tls-cafile must be a file, not a directory: %s" % cafile
+                )
             if cafile or capath:
                 try:
                     self.ctx.load_verify_locations(cafile, capath)
                 except (crypto.Error, OSError) as e:
-                    path = ""
+                    location = ""
 
                     if cafile:
-                        path = "cafile=%s" % (str(cafile))
+                        location = "cafile=%s" % (str(cafile))
 
                     if capath:
-                        if path:
-                            path += " and "
-                        path += "capath=%s" % (str(capath))
+                        if location:
+                            location += " and "
+                        location += "capath=%s" % (str(capath))
 
                     raise Exception(
-                        "Failed to load CA certificate from %s \n %s" % (path, str(e))
+                        "Failed to load CA certificate from %s \n %s"
+                        % (location, str(e))
                     )
 
+            if certfile and path.exists(certfile) and path.isdir(certfile):
+                raise Exception(
+                    "--tls-certfile must be a file, not a directory: %s" % certfile
+                )
             if certfile:
                 try:
                     self.ctx.use_certificate_chain_file(certfile)
@@ -370,6 +383,10 @@ class SSLContext(object):
                         % (certfile, str(e))
                     )
 
+            if keyfile and path.exists(keyfile) and path.isdir(keyfile):
+                raise Exception(
+                    "--tls-keyfile must be a file, not a directory: %s" % keyfile
+                )
             if keyfile:
                 pkey = None
                 pwd = None

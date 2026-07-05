@@ -55,6 +55,7 @@ def render(
     title_repeat=False,
     disable_aggregations=False,
     dynamic_diff=False,
+    disable_title_fill_repeat=False,
 ):
     """
     Arguments:
@@ -73,6 +74,11 @@ def render(
     title_repeat -- Repeat title and row headers every n columns. TODO: Add for column style tables
     disable_aggregations -- Disable sheet aggregations.
     dynamic_diff     -- Only show dynamic fields that aren't uniform.
+    disable_title_fill_repeat -- When the rendered table is wider than the
+                    terminal, the title bar normally fills with repeated
+                    copies of the title (e.g. "~~Query Jobs~~Query Jobs~~").
+                    Set this to render a single centered title regardless of
+                    width.
     """
     tcommon = defaultdict(lambda: None)
 
@@ -100,4 +106,5 @@ def render(
         title_repeat=title_repeat,
         disable_aggregations=disable_aggregations,
         dynamic_diff=dynamic_diff,
+        disable_title_fill_repeat=disable_title_fill_repeat,
     ).render()

@@ -300,6 +300,7 @@ class BaseController(object):
     def complete(self, line):
         self._init()
         command = line.pop(0) if line else ""
+        command = self.aliases.get(command, command)
         commands = self.commands.get_key(command)
 
         logger.debug("Auto-complete: command {}".format(command))
@@ -373,10 +374,24 @@ class BaseController(object):
         except Exception:
             self._context = []
 
+    def _init_aliases(self):
+        """
+        Define aliases if not defined. Maps an alias to its canonical command
+        name so alternate spellings (e.g. 'stats' -> 'statistics') resolve to the
+        same command without competing in prefix matching. This way, not all
+        sub-commands need to define it or call super().
+        """
+        try:
+            if self.aliases:
+                pass
+        except Exception:
+            self.aliases: dict[str, str] = {}
+
     def _init(self):
         self._init_modifiers()
         self._init_controller_map()
         self._init_context()
+        self._init_aliases()
         self._init_commands()
 
     def _find_method(self, line):
@@ -391,6 +406,9 @@ class BaseController(object):
 
             if method is not None:
                 return method
+
+        # Resolve aliases to their canonical command name before lookup.
+        command = self.aliases.get(command, command)
 
         try:
             logger.debug("Looking for {} in command_map".format(command))

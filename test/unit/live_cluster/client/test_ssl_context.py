@@ -774,6 +774,85 @@ class TestCreateSSLContext(unittest.TestCase):
         self.assertIn("capath=/bad/dir", str(ctx.exception))
 
     @patch("lib.live_cluster.client.ssl_context.SSL")
+    def test_capath_as_file_raises(self, mock_ssl):
+        mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
+        mock_ssl.VERIFY_PEER = 1
+        mock_ssl.VERIFY_CLIENT_ONCE = 2
+        mock_ssl.OP_NO_SSLv2 = 0x01000000
+        mock_ssl.OP_NO_SSLv3 = 0x02000000
+        mock_ctx = unittest.mock.MagicMock()
+        mock_ssl.Context.return_value = mock_ctx
+        ssl_ctx = SSLContext.__new__(SSLContext)
+        with tempfile.NamedTemporaryFile() as tmp:
+            with self.assertRaises(Exception) as ctx:
+                ssl_ctx._create_ssl_context(
+                    enable_tls=True, encrypt_only=False, capath=tmp.name
+                )
+        self.assertIn(
+            "--tls-capath must be a directory, not a file", str(ctx.exception)
+        )
+        mock_ctx.load_verify_locations.assert_not_called()
+
+    @patch("lib.live_cluster.client.ssl_context.SSL")
+    def test_cafile_as_directory_raises(self, mock_ssl):
+        mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
+        mock_ssl.VERIFY_PEER = 1
+        mock_ssl.VERIFY_CLIENT_ONCE = 2
+        mock_ssl.OP_NO_SSLv2 = 0x01000000
+        mock_ssl.OP_NO_SSLv3 = 0x02000000
+        mock_ctx = unittest.mock.MagicMock()
+        mock_ssl.Context.return_value = mock_ctx
+        ssl_ctx = SSLContext.__new__(SSLContext)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(Exception) as ctx:
+                ssl_ctx._create_ssl_context(
+                    enable_tls=True, encrypt_only=False, cafile=tmpdir
+                )
+        self.assertIn(
+            "--tls-cafile must be a file, not a directory", str(ctx.exception)
+        )
+        mock_ctx.load_verify_locations.assert_not_called()
+
+    @patch("lib.live_cluster.client.ssl_context.SSL")
+    def test_certfile_as_directory_raises(self, mock_ssl):
+        mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
+        mock_ssl.VERIFY_PEER = 1
+        mock_ssl.VERIFY_CLIENT_ONCE = 2
+        mock_ssl.OP_NO_SSLv2 = 0x01000000
+        mock_ssl.OP_NO_SSLv3 = 0x02000000
+        mock_ctx = unittest.mock.MagicMock()
+        mock_ssl.Context.return_value = mock_ctx
+        ssl_ctx = SSLContext.__new__(SSLContext)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(Exception) as ctx:
+                ssl_ctx._create_ssl_context(
+                    enable_tls=True, encrypt_only=False, certfile=tmpdir
+                )
+        self.assertIn(
+            "--tls-certfile must be a file, not a directory", str(ctx.exception)
+        )
+        mock_ctx.use_certificate_chain_file.assert_not_called()
+
+    @patch("lib.live_cluster.client.ssl_context.SSL")
+    def test_keyfile_as_directory_raises(self, mock_ssl):
+        mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
+        mock_ssl.VERIFY_PEER = 1
+        mock_ssl.VERIFY_CLIENT_ONCE = 2
+        mock_ssl.OP_NO_SSLv2 = 0x01000000
+        mock_ssl.OP_NO_SSLv3 = 0x02000000
+        mock_ctx = unittest.mock.MagicMock()
+        mock_ssl.Context.return_value = mock_ctx
+        ssl_ctx = SSLContext.__new__(SSLContext)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(Exception) as ctx:
+                ssl_ctx._create_ssl_context(
+                    enable_tls=True, encrypt_only=False, keyfile=tmpdir
+                )
+        self.assertIn(
+            "--tls-keyfile must be a file, not a directory", str(ctx.exception)
+        )
+
+    @patch("lib.live_cluster.client.ssl_context.SSL")
     def test_bad_ca_with_both_cafile_and_capath(self, mock_ssl):
         mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
         mock_ssl.VERIFY_PEER = 1
