@@ -16,7 +16,7 @@ import unittest
 from parameterized import parameterized
 
 from lib.view import templates
-from lib.view.sheet.decleration import EntryData
+from lib.view.sheet.decleration import EntryData, Subgroup
 
 
 class HelperTests(unittest.TestCase):
@@ -85,3 +85,48 @@ class HelperTests(unittest.TestCase):
             license_data, compression_enabled
         )
         self.assertEqual(result, expected)
+
+
+class InfoNamespaceUsageIndexFormattersTests(unittest.TestCase):
+    """Covers the Used% alert tiers for the Primary/Secondary Index subgroups
+    of 'info namespace usage': yellow when eviction is running, red when near
+    the mounts/memory budget (TOOLS-3456)."""
+
+    @staticmethod
+    def _get_used_pct_field(subgroup_title):
+        for field in templates.info_namespace_usage_sheet.fields:
+            if isinstance(field, Subgroup) and field.title == subgroup_title:
+                for sub_field in field.fields:
+                    if sub_field.title == "Used%":
+                        return sub_field
+        raise AssertionError(f"Used% field not found in {subgroup_title}")
+
+    @staticmethod
+    def _applied_formatter(field, edata):
+        # Mirrors sheet behavior: first formatter to not return None wins.
+        for name, formatter_fn in field.formatters:
+            if formatter_fn(edata) is not None:
+                return name
+        return None
+
+    @parameterized.expand(
+        [
+            # (used ratio, evict pct, expected formatter)
+            (0.50, 80, None),  # healthy
+            (0.85, 80, "yellow-alert"),  # eviction running
+            (0.92, 80, "red-alert"),  # near budget, red wins over yellow
+            (0.92, 0, "red-alert"),  # near budget even with eviction disabled
+            (0.89, 0, None),  # eviction disabled, below red threshold
+        ]
+    )
+    def test_used_pct_alert_tiers(self, used_ratio, evict_pct, expected):
+        for subgroup in ("Primary Index", "Secondary Index"):
+            field = self._get_used_pct_field(subgroup)
+            edata = EntryData(
+                used_ratio, None, {subgroup: {"Evict%": evict_pct}}, None, False, False
+            )
+            self.assertEqual(
+                self._applied_formatter(field, edata),
+                expected,
+                f"{subgroup} Used%={used_ratio} Evict%={evict_pct}",
+            )

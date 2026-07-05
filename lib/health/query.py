@@ -338,14 +338,56 @@ ASSERT(ixs_nominal, True, "High namespace indexes memory usage (stop-write enabl
 				"Listed namespace[s] have higher than normal combined memory usage for indexes. Probable cause - namespace size misconfiguration.",
 				"Critical Namespace indexes memory used check.", ixs_has_budget);
 
-SET CONSTRAINT VERSION >= 7.0.0;
-sindex_used = select "sindex_used_bytes" as "stats" from NAMESPACE.STATISTICS save;
-sindex_budget = select "sindex-type.mounts-budget" as "stats" from NAMESPACE.CONFIG save;
-sindex_budget_configured = do sindex_budget > 0;
-sindex_nominal = do sindex_used <= sindex_budget;
-ASSERT(sindex_nominal, True, "High namespace sindex mounts usage.", "OPERATIONS", CRITICAL,
-				"Listed namespace[s] have higher than normal sindex mounts usage. Probable cause - namespace size misconfiguration.",
-				"Critical Namespace sindex mounts used check.", sindex_budget_configured);
+ixs_evict_pct = select "evict-indexes-memory-pct" as "stats" from NAMESPACE.CONFIG save;
+ixs_evict_configured = do ixs_evict_pct > 0;
+ixs_below_evict = do ixs_used_pct < ixs_evict_pct;
+ASSERT(ixs_below_evict, True, "High namespace indexes memory usage (eviction range).", "OPERATIONS", WARNING,
+				"Listed namespace[s] have combined indexes memory usage at or above evict-indexes-memory-pct, so eviction should be in progress. Verify eviction is keeping pace with the write load, or increase indexes-memory-budget.",
+				"Namespace indexes memory eviction range check.", ixs_evict_configured);
+
+/*
+Persisted (flash/pmem) index mounts usage checks.
+The server never triggers stop-writes on mounts usage - eval_stop_writes() excludes
+persisted indexes. Instead, eviction starts at index-type.evict-mounts-pct
+(mounts-high-water-pct pre 7.0), and index allocations fail with per-record write
+errors once usage reaches index-type.mounts-budget (mounts-size-limit pre 7.0).
+The mounts usage pct statistics are only reported for flash/pmem index types, so
+these checks are skipped for in-memory index namespaces.
+*/
+SET CONSTRAINT VERSION >= 4.3.0;
+pi_mounts_used_pct = select "index_mounts_used_pct" as "stats", "index_flash_used_pct" as "stats", "index_pmem_used_pct" as "stats" from NAMESPACE.STATISTICS save;
+pi_evict_mounts_pct = select "index-type.evict-mounts-pct" as "stats", "index-type.mounts-high-water-pct" as "stats" from NAMESPACE.CONFIG save;
+pi_evict_configured = do pi_evict_mounts_pct > 0;
+pi_below_evict = do pi_mounts_used_pct < pi_evict_mounts_pct;
+ASSERT(pi_below_evict, True, "High namespace index mounts usage (eviction range).", "OPERATIONS", WARNING,
+				"Listed namespace[s] have primary index mounts usage at or above the eviction threshold (index-type.evict-mounts-pct, mounts-high-water-pct pre 7.0), so eviction should be in progress. Verify eviction is keeping pace with the write load, or increase index-type.mounts-budget (mounts-size-limit pre 7.0).",
+				"Namespace index mounts eviction range check.", pi_evict_configured);
+
+pi_mounts_nominal = do pi_mounts_used_pct < 95;
+ASSERT(pi_mounts_nominal, True, "High namespace index mounts usage (near capacity).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have primary index mounts usage at or above 95% of index-type.mounts-budget (mounts-size-limit pre 7.0). Index allocations fail with write errors once the budget is exhausted. Increase the budget or reduce index usage.",
+				"Critical Namespace index mounts used check.");
+
+// Flash arena allocation can run ahead of usage (stages are pre-allocated and
+// freed elements are reused but not returned), so also watch alloc pct.
+pi_flash_alloc_pct = select "index_flash_alloc_pct" as "stats" from NAMESPACE.STATISTICS save;
+pi_alloc_nominal = do pi_flash_alloc_pct < 95;
+ASSERT(pi_alloc_nominal, True, "High namespace index mounts allocation (flash).", "OPERATIONS", WARNING,
+				"Listed namespace[s] have flash primary index arena allocation at or above 95% of index-type.mounts-budget (mounts-size-limit pre 7.0). New arena stage allocations fail once the budget is exhausted and writes then depend on reusing freed index elements. Increase the budget or reduce index usage.",
+				"Namespace index mounts allocation check.");
+
+sindex_mounts_used_pct = select "sindex_mounts_used_pct" as "stats", "sindex_flash_used_pct" as "stats", "sindex_pmem_used_pct" as "stats" from NAMESPACE.STATISTICS save;
+sindex_evict_mounts_pct = select "sindex-type.evict-mounts-pct" as "stats", "sindex-type.mounts-high-water-pct" as "stats" from NAMESPACE.CONFIG save;
+sindex_evict_configured = do sindex_evict_mounts_pct > 0;
+sindex_below_evict = do sindex_mounts_used_pct < sindex_evict_mounts_pct;
+ASSERT(sindex_below_evict, True, "High namespace sindex mounts usage (eviction range).", "OPERATIONS", WARNING,
+				"Listed namespace[s] have secondary index mounts usage at or above the eviction threshold (sindex-type.evict-mounts-pct, mounts-high-water-pct pre 7.0), so eviction should be in progress. Verify eviction is keeping pace with the write load, or increase sindex-type.mounts-budget (mounts-size-limit pre 7.0).",
+				"Namespace sindex mounts eviction range check.", sindex_evict_configured);
+
+sindex_mounts_nominal = do sindex_mounts_used_pct < 95;
+ASSERT(sindex_mounts_nominal, True, "High namespace sindex mounts usage (near capacity).", "OPERATIONS", CRITICAL,
+				"Listed namespace[s] have secondary index mounts usage at or above 95% of sindex-type.mounts-budget (mounts-size-limit pre 7.0). Sindex allocations fail with write errors once the budget is exhausted. Increase the budget or reduce sindex usage.",
+				"Critical Namespace sindex mounts used check.");
 
 SET CONSTRAINT VERSION >= 7.0.0;
 used = select "data_used_pct" as "stats" from NAMESPACE.STATISTICS save;

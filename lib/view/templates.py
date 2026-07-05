@@ -339,6 +339,9 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
+                        # Near the mounts/memory budget - index allocations
+                        # fail once the budget is exhausted.
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
                             >= edata.record["Primary Index"]["Evict%"]
@@ -414,6 +417,9 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
+                        # Near the mounts/memory budget - sindex allocations
+                        # fail once the budget is exhausted.
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
                             >= edata.record["Secondary Index"]["Evict%"]
