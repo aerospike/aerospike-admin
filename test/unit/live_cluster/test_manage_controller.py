@@ -1180,7 +1180,7 @@ class ManageConfigControllerTest(unittest.IsolatedAsyncioTestCase):
         # Registering a param in require_recluster is all that is needed for
         # the recluster reminder to be printed.
         line = "service param test-param to test-value with 1.1.1.1 2.2.2.2"
-        resp = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": ASINFO_RESPONSE_OK}
         self.cluster_mock.info_set_config_service.return_value = resp
 
         with patch.object(
@@ -1188,6 +1188,9 @@ class ManageConfigControllerTest(unittest.IsolatedAsyncioTestCase):
         ):
             await self.controller.execute(line.split())
 
+        self.cluster_mock.info_set_config_service.assert_called_once_with(
+            "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
+        )
         self.view_mock.print_result.assert_called_once_with(
             'Run "manage recluster" for your changes to test-param to take effect.'
         )
