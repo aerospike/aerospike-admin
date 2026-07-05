@@ -526,7 +526,7 @@ class Projectors(object):
 
             try:
                 result = float(value)
-            except ValueError:
+            except (ValueError, TypeError, OverflowError):
                 return value
 
             # Hex strings like "9E0123456789" parse as scientific notation
@@ -545,7 +545,7 @@ class Projectors(object):
 
             try:
                 return int(value)
-            except ValueError:
+            except (ValueError, TypeError):
                 try:
                     as_float = float(value)
 
@@ -557,7 +557,7 @@ class Projectors(object):
                         return value
 
                     return int(as_float)
-                except (ValueError, OverflowError):
+                except (ValueError, TypeError, OverflowError):
                     pass
 
                 return value
