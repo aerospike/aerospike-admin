@@ -50,6 +50,8 @@ from lib.live_cluster.manage_controller import (
     ManageACLQuotasRoleController,
     ManageConfigController,
     ManageConfigLeafController,
+    ManageConfigNamespaceController,
+    ManageConfigServiceController,
     ManageJobsKillAllScansController,
     ManageJobsKillAllQueriesController,
     ManageJobsKillTridController,
@@ -1161,6 +1163,47 @@ class ManageConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             title, resp, self.cluster_mock, **mods
         )
 
+    async def test_service_cluster_name_does_not_print_recluster_msg(self):
+        # TOOLS-2975: cluster-name takes effect immediately, no recluster needed.
+        line = "service param cluster-name to new-name with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_service.return_value = resp
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_service.assert_called_once_with(
+            "cluster-name", "new-name", nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_service_param_requiring_recluster_prints_msg(self):
+        # Registering a param in require_recluster is all that is needed for
+        # the recluster reminder to be printed.
+        line = "service param test-param to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_service.return_value = resp
+
+        with patch.object(
+            ManageConfigServiceController, "require_recluster", {"test-param"}
+        ):
+            await self.controller.execute(line.split())
+
+        self.view_mock.print_result.assert_called_once_with(
+            'Run "manage recluster" for your changes to test-param to take effect.'
+        )
+
+    def test_cluster_name_not_registered_as_requiring_recluster(self):
+        # Regression guard for TOOLS-2975.
+        self.assertNotIn(
+            "cluster-name", ManageConfigServiceController.require_recluster
+        )
+
+    def test_namespace_recluster_params_registered(self):
+        self.assertSetEqual(
+            ManageConfigNamespaceController.require_recluster,
+            {"prefer-uniform-balance", "rack-id"},
+        )
+
     async def test_network_subcontext_required(self):
         line = "network param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
@@ -1293,13 +1336,33 @@ class ManageConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             **self._get_controller_mods(self.controller, ["namespace"]),
         )
         self.view_mock.print_result.assert_called_once_with(
-            'Run "manage recluster" for your changes to rack-id to take affect.'
+            'Run "manage recluster" for your changes to rack-id to take effect.'
         )
 
     async def test_namespace_success_with_pair(self):
         line = "namespace test-ns sub-context param compression-level to test-value with 1.1.1.1 2.2.2.2"
 
         await self.controller.execute(line.split())
+
+    async def test_namespace_prefer_uniform_balance_prints_recluster_msg(self):
+        line = "namespace test-ns param prefer-uniform-balance to true with 1.1.1.1"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_namespace.return_value = resp
+
+        await self.controller.execute(line.split())
+
+        self.view_mock.print_result.assert_called_once_with(
+            'Run "manage recluster" for your changes to prefer-uniform-balance to take effect.'
+        )
+
+    async def test_namespace_param_does_not_print_recluster_msg(self):
+        line = "namespace test-ns param evict-tenths-pct to 5 with 1.1.1.1"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_namespace.return_value = resp
+
+        await self.controller.execute(line.split())
+
+        self.view_mock.print_result.assert_not_called()
 
     async def test_set_prompt(self):
         line = "namespace test-ns set test-set param test-param to test-value with 1.1.1.1 2.2.2.2"
