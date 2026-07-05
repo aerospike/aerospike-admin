@@ -180,6 +180,60 @@ class PersistedIndexHealthCheckTests(unittest.TestCase):
         self.assertNotIn(self.PI_EVICTION, failed)
         self.assertEqual(failed.get(self.PI_CAPACITY), AssertLevel.CRITICAL)
 
+    def test_memory_only_cluster_skips_mounts_checks(self):
+        # No flash/pmem namespaces: the mounts stats/configs match nothing, so
+        # the DSL select raises internally (visible only via 'health -d'), the
+        # checks are skipped, and no mounts alert can fire.
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {"memns": {"index-type": "shmem", "indexes_memory_used_pct": 12}},
+            {"memns": {"indexes-memory-budget": 8 * 1024**3}},
+        )
+
+        for msg in (
+            self.PI_EVICTION,
+            self.PI_CAPACITY,
+            self.PI_FLASH_ALLOC,
+            self.SI_EVICTION,
+            self.SI_CAPACITY,
+        ):
+            self.assertNotIn(msg, failed)
+
+    def test_mixed_cluster_alerts_flash_namespace_only(self):
+        failed_keys = {}
+        hc = HealthChecker()
+        hc.set_health_input_data(
+            create_health_input(
+                "8.1.1.1",
+                {
+                    "flashns": {"index-type": "flash", "index_mounts_used_pct": 96},
+                    "memns": {"index-type": "shmem", "indexes_memory_used_pct": 12},
+                },
+                {
+                    "flashns": {
+                        "index-type.mounts-budget": 100 * 1024**3,
+                        "index-type.evict-mounts-pct": 80,
+                    },
+                    "memns": {"indexes-memory-budget": 8 * 1024**3},
+                },
+            )
+        )
+        result = hc.execute()
+
+        for asserts in result[HealthResultType.ASSERT].values():
+            for a in asserts:
+                if not a[AssertResultKey.SUCCESS]:
+                    failed_keys[a[AssertResultKey.FAIL_MSG]] = [
+                        k[0] for k in (a[AssertResultKey.KEYS] or [])
+                    ]
+
+        self.assertEqual(
+            failed_keys.get(self.PI_CAPACITY), ["C1/1.1.1.1:3000/flashns/stats"]
+        )
+        self.assertEqual(
+            failed_keys.get(self.PI_EVICTION), ["C1/1.1.1.1:3000/flashns/stats"]
+        )
+
     def test_flash_index_high_arena_alloc_warns(self):
         # Flash arena allocation can approach the budget while used stays lower
         # (freed elements are reused but stages are never returned).
