@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import unittest
 from parameterized import parameterized
 
-from lib.view import templates
+from lib.view import sheet, templates
+from lib.view.sheet import SheetStyle
 from lib.view.sheet.decleration import EntryData
 
 
@@ -85,3 +87,70 @@ class HelperTests(unittest.TestCase):
             license_data, compression_enabled
         )
         self.assertEqual(result, expected)
+
+
+class ShowPmapSheetTest(unittest.TestCase):
+    """Regression tests for TOOLS-3772: cluster keys shaped like an
+    overflowing float literal (e.g. 9E0123456789) rendered as the error
+    entry '~~' in 'show pmap'."""
+
+    def render_pmap(self, cluster_key, style):
+        node = "127.0.0.1:3000"
+        sources = dict(
+            node_names={node: "node-A"},
+            node_ids={node: "BB9040011AC4202"},
+            pmap={
+                node: {
+                    "test": {
+                        "cluster_key": cluster_key,
+                        "master_partition_count": 683,
+                        "prole_partition_count": 1365,
+                        "unavailable_partitions": 0,
+                        "dead_partitions": 0,
+                    }
+                }
+            },
+        )
+        common = dict(principal="BB9040011AC4202")
+
+        return sheet.render(
+            templates.show_pmap_sheet,
+            "Partition Map Analysis",
+            sources,
+            common=common,
+            style=style,
+        )
+
+    @parameterized.expand(
+        [
+            # <digit>E<digits> parses as overflowing scientific notation.
+            ("9E0123456789",),
+            # <digit>E<digits> that parses as a valid float without overflow.
+            ("1E9",),
+            # Hex key that cannot parse as a float at all.
+            ("B40E9AE14C62",),
+            # All-digit key must not be reformatted as a number.
+            ("123456789012",),
+            # Default when service statistics are unavailable for a node.
+            ("N/E",),
+        ]
+    )
+    def test_cluster_key_renders_verbatim(self, cluster_key):
+        record = json.loads(self.render_pmap(cluster_key, SheetStyle.json))["groups"][
+            0
+        ]["records"][0]
+
+        self.assertEqual(record["Cluster Key"]["raw"], cluster_key)
+        self.assertEqual(record["Cluster Key"]["converted"], cluster_key)
+
+        rendered = self.render_pmap(cluster_key, SheetStyle.columns)
+        self.assertIn(cluster_key, rendered)
+
+    def test_partition_counts_still_aggregate(self):
+        render = json.loads(self.render_pmap("9E0123456789", SheetStyle.json))
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["Partitions"]["Primary"]["raw"], 683)
+        self.assertEqual(record["Partitions"]["Secondary"]["raw"], 1365)
+        self.assertEqual(record["Partitions"]["Unavailable"]["raw"], 0)
+        self.assertEqual(record["Partitions"]["Dead"]["raw"], 0)

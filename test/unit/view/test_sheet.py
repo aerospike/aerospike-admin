@@ -139,6 +139,13 @@ class SheetTest(unittest.TestCase):
             (1.25, 1.25, "1.25"),
             ("42", 42.0, "42.0"),
             (42, 42.0, "42.0"),
+            ("1e3", 1000.0, "1000.0"),
+            # Hex strings fall back to the raw value, including "9E..."
+            # shapes that parse as overflowing scientific notation
+            # (TOOLS-3772).
+            ("B40E9AE14C62", "B40E9AE14C62", "B40E9AE14C62"),
+            ("9E0123456789", "9E0123456789", "9E0123456789"),
+            ("1e999", "1e999", "1e999"),
         ]
     )
     def test_sheet_project_float(self, input, expected_raw, expected_converted):
@@ -151,7 +158,23 @@ class SheetTest(unittest.TestCase):
         self.assertEqual(value["converted"], expected_converted)
 
     @parameterized.expand(
-        [("42", 42, "42"), (42, 42, "42"), ("1.25", 1, "1"), (1.25, 1, "1")]
+        [
+            ("42", 42, "42"),
+            (42, 42, "42"),
+            ("1.25", 1, "1"),
+            (1.25, 1, "1"),
+            ("1e3", 1000, "1000"),
+            # Hex strings fall back to the raw value, including "9E..."
+            # shapes that parse as overflowing scientific notation and
+            # previously raised OverflowError, rendering the error entry
+            # "~~" (TOOLS-3772).
+            ("B40E9AE14C62", "B40E9AE14C62", "B40E9AE14C62"),
+            ("9E0123456789", "9E0123456789", "9E0123456789"),
+            ("1e999", "1e999", "1e999"),
+            ("-1e999", "-1e999", "-1e999"),
+            ("nan", "nan", "nan"),
+            ("inf", "inf", "inf"),
+        ]
     )
     def test_sheet_project_number(self, input, expected_raw, expected_converted):
         test_sheet = Sheet((Field("F", Projectors.Number("d", "f")),), from_source="d")

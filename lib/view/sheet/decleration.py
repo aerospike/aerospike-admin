@@ -14,6 +14,7 @@
 from collections import Counter
 from functools import reduce
 import logging
+import math
 from operator import itemgetter
 from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
@@ -524,9 +525,16 @@ class Projectors(object):
             value = super().do_project(sheet, sources)
 
             try:
-                return float(value)
+                result = float(value)
             except ValueError:
                 return value
+
+            # Hex strings like "9E0123456789" parse as scientific notation
+            # and overflow to inf; keep the original value in that case.
+            if math.isinf(result) or math.isnan(result):
+                return value
+
+            return result
 
     class Number(SimpleProjector):
         def __init__(self, source: str, *keys, **kwargs):
@@ -539,8 +547,17 @@ class Projectors(object):
                 return int(value)
             except ValueError:
                 try:
-                    return int(float(value))
-                except ValueError:
+                    as_float = float(value)
+
+                    # Hex strings like "9E0123456789" parse as scientific
+                    # notation and overflow to inf, and int(inf) raises
+                    # OverflowError; keep the original value instead of
+                    # failing the entry and rendering it as error_entry.
+                    if math.isinf(as_float) or math.isnan(as_float):
+                        return value
+
+                    return int(as_float)
+                except (ValueError, OverflowError):
                     pass
 
                 return value

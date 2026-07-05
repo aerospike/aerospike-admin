@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import math
 
 from lib.utils import util
 
@@ -233,7 +234,13 @@ def h_eval(data):
                 pass
 
             try:
-                return float(data)
+                as_float = float(data)
+
+                # Hex strings like "9E0123456789" (e.g. cluster_key) parse
+                # as scientific notation and overflow to inf, making
+                # different values compare equal; keep the original string.
+                if not math.isinf(as_float) and not math.isnan(as_float):
+                    return as_float
             except Exception:
                 pass
 
