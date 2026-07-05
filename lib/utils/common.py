@@ -888,7 +888,15 @@ def compute_license_data_size(
             )
 
             if host_build_version is None:
-                raise Exception("could not find host %s in build responses" % host_id)
+                # A node can report namespace stats while its build call failed
+                # (TOOLS-3596); skip its contribution instead of aborting the whole
+                # summary.
+                logger.warning(
+                    "Could not find host %s in build responses; license usage may be "
+                    "under-reported",
+                    host_id,
+                )
+                continue
 
             host_record_overhead = 35
 

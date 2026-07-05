@@ -163,6 +163,15 @@ class BuildDumpMapTest(unittest.TestCase):
             cm.output,
         )
 
+    def test_dump_map_node_order_is_stable(self):
+        # ascinfo.json ordering must not depend on set-iteration order.
+        as_map = {"B": {"statistics": {"s": 1}}, "A": {"statistics": {"s": 2}}}
+        meta_map = {"C": {"asd_build": "8.0"}}
+
+        dump_map = self._build({"A", "B", "C"}, as_map, self.empty, meta_map)
+
+        self.assertEqual(list(dump_map), ["A", "B", "C"])
+
     def test_no_warning_when_all_expected_nodes_present(self):
         as_map = {"A": {"statistics": {"s": 1}}}
         meta_map = {"B": {"asd_build": "8.0"}}

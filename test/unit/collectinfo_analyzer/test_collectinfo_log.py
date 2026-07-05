@@ -17,6 +17,7 @@ import unittest
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_log import (
     _CollectinfoSnapshot,
 )
+from lib.utils.constants import NodeSelection
 
 TIMESTAMP = "2026-07-05 00:00:00 UTC"
 
@@ -93,6 +94,47 @@ class CollectinfoSnapshotExpectedPrincipalTest(unittest.TestCase):
         snapshot = _snapshot(cinfo_data)
 
         self.assertEqual(snapshot.get_expected_principal(), "N/E")
+
+
+class CollectinfoSnapshotPrincipalScopedDataTest(unittest.TestCase):
+    """TOOLS-3596: principal-scoped data (e.g. ACL) is stored only on the node it was
+    collected from. When the true principal's node_id was not collected, the computed
+    principal points at another node; get_data must fall back to all nodes instead of
+    returning nothing."""
+
+    def test_principal_scoped_get_data_falls_back_to_all_nodes(self):
+        acl = {"users": {"admin": {"roles": ["sys-admin"]}}}
+        cinfo_data = {
+            "1.1.1.1:3000": {"as_stat": {"meta_data": {"node_id": "A1"}}},
+            # True principal: ACL was collected from it, but its node_id call failed.
+            "2.2.2.2:3000": {"as_stat": {"acl": acl}},
+        }
+
+        snapshot = _snapshot(cinfo_data)
+
+        # Best-effort principal resolves to 1.1.1.1, which has no acl data.
+        self.assertEqual(snapshot.get_expected_principal(), "A1")
+        self.assertEqual(
+            snapshot.get_data(type="acl", nodes=NodeSelection.PRINCIPAL),
+            {"2.2.2.2:3000": acl},
+        )
+
+    def test_principal_scoped_get_data_stays_narrow_when_principal_has_data(self):
+        acl = {"users": {"admin": {"roles": ["sys-admin"]}}}
+        cinfo_data = {
+            "1.1.1.1:3000": {"as_stat": {"meta_data": {"node_id": "A1"}, "acl": acl}},
+            "2.2.2.2:3000": {"as_stat": {"meta_data": {"node_id": "B2"}, "acl": {}}},
+        }
+
+        snapshot = _snapshot(cinfo_data)
+
+        # Principal is B2 (higher id) but has empty acl; A1's data must not leak in
+        # since the principal produced an (empty) entry.
+        self.assertEqual(snapshot.get_expected_principal(), "B2")
+        self.assertEqual(
+            snapshot.get_data(type="acl", nodes=NodeSelection.PRINCIPAL),
+            {"2.2.2.2:3000": {}},
+        )
 
 
 if __name__ == "__main__":

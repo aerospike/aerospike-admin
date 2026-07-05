@@ -563,7 +563,8 @@ class CollectinfoController(LiveClusterCommandController):
 
         dump_map = {}
 
-        for node in all_nodes:
+        # Sorted so the ascinfo.json node ordering is stable across runs.
+        for node in sorted(all_nodes):
             dump_map[node] = {}
             dump_map[node]["as_stat"] = as_map.get(node, {})
             if node in sys_map:
@@ -606,8 +607,10 @@ class CollectinfoController(LiveClusterCommandController):
 
     def _dump_in_json_file(self, complete_name, dump):
         try:
+            # Exception values cannot reach here (json.dumps would fail on them);
+            # they are filtered/logged upstream. A filter_exceptions(json_dump) call
+            # that used to sit here was a no-op on the serialized string.
             json_dump = json.dumps(dump, indent=2, separators=(",", ":"))
-            util.filter_exceptions(json_dump)
             self._dump_collectinfo_file(complete_name, json_dump)
         except Exception:
             pretty_json = pprint.pformat(dump, indent=1)

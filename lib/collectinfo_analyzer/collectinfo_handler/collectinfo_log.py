@@ -356,6 +356,13 @@ class _CollectinfoSnapshot:
         except Exception:
             pass
 
+        if nodes == NodeSelection.PRINCIPAL and principal_ip and not data:
+            # The computed principal can be wrong when the true principal's node_id
+            # was not collected (TOOLS-3596). Principal-scoped data (e.g. ACL) is
+            # stored only on the node it was collected from, so fall back to every
+            # node rather than returning nothing.
+            return self.get_data(type=type, stanza=stanza, nodes=NodeSelection.ALL)
+
         return data
 
     def get_sys_data(self, stanza=""):

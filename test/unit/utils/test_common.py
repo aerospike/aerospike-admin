@@ -47,6 +47,39 @@ class ComputeLicenseDataSizeTest(unittest.IsolatedAsyncioTestCase):
             expected_summary_dict, summary_dict, "Input: " + str(namespace_stats)
         )
 
+    def test_host_missing_from_builds_is_skipped_with_warning(self):
+        """TOOLS-3596: a node can report namespace stats while its build call failed
+        (its build is then absent from server_builds). Its contribution is skipped
+        with a warning instead of aborting the whole summary."""
+        namespace_stats = {
+            "foo": {
+                "1.1.1.1": {
+                    "master_objects": 100,
+                    "effective_replication_factor": 2,
+                    "pmem_used_bytes": 99000,
+                },
+                "2.2.2.2": {
+                    "master_objects": 100,
+                    "effective_replication_factor": 2,
+                    "pmem_used_bytes": 99000,
+                },
+            }
+        }
+        server_builds = {"1.1.1.1": "5.0.0.0"}
+        expected = int((99000 / 2) - (35 * 100))
+
+        with self.assertLogs("lib.utils.common", level="WARNING") as cm:
+            self.run_test_case(
+                namespace_stats,
+                server_builds,
+                {
+                    "CLUSTER": {"license_data": {"latest": expected}},
+                    "NAMESPACES": {"foo": {"license_data": {"latest": expected}}},
+                },
+            )
+
+        self.assertTrue(any("2.2.2.2" in msg for msg in cm.output), cm.output)
+
     @parameterized.expand(
         [
             (
