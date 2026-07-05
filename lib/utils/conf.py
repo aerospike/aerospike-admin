@@ -640,7 +640,11 @@ def get_cli_args():
     # "--log-analyser" (British spelling) is kept as a silent, backward-compatible
     # alias. "--log-analyzer" is the canonical spelling and both set log_analyzer.
     add_fn(
-        "-l", "--log-analyzer", "--log-analyser", action="store_true", dest="log_analyzer"
+        "-l",
+        "--log-analyzer",
+        "--log-analyser",
+        action="store_true",
+        dest="log_analyzer",
     )
     add_fn("-f", "--log-path")
     add_fn("-j", "--json", action="store_true")
