@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import unittest
 from parameterized import parameterized
 
-from lib.view import templates
+from lib.view import sheet, templates
+from lib.view.sheet import SheetStyle
 from lib.view.sheet.decleration import EntryData
 
 
@@ -85,3 +87,112 @@ class HelperTests(unittest.TestCase):
             license_data, compression_enabled
         )
         self.assertEqual(result, expected)
+
+
+class NodeHighlightingTest(unittest.TestCase):
+    """Behavioral coverage for the principal (green, "*") and self-node
+    (cyan, "@") highlighting on info_network_sheet's Node / Node ID columns."""
+
+    node_keys = ("1.1.1.1:3000", "2.2.2.2:3000", "3.3.3.3:3000")
+    node_ids = ("NODE1", "NODE2", "NODE3")
+
+    def render_network_sheet(self, principal, self_node):
+        stats = {
+            key: {
+                "cluster_size": 3,
+                "cluster_key": "CK",
+                "cluster_integrity": True,
+                "paxos_principal": "NODE1",
+                "migrate_partitions_remaining": 0,
+                "client_connections": 1,
+                "uptime": 100,
+            }
+            for key in self.node_keys
+        }
+        sources = dict(
+            node_names={key: key for key in self.node_keys},
+            node_ids=dict(zip(self.node_keys, self.node_ids)),
+            hosts={key: key for key in self.node_keys},
+            builds={key: "7.1.0.0" for key in self.node_keys},
+            versions={key: "7.1.0.0" for key in self.node_keys},
+            stats=stats,
+        )
+        common = dict(
+            principal=principal,
+            self_node=self_node,
+            common_size="3",
+            common_key="CK",
+            common_principal="NODE1",
+        )
+        render = json.loads(
+            sheet.render(
+                templates.info_network_sheet,
+                "test",
+                sources,
+                common=common,
+                style=SheetStyle.json,
+            )
+        )
+        records = render["groups"][0]["records"]
+        return {record["Node ID"]["raw"]: record for record in records}
+
+    def test_principal_is_green_and_star_prefixed(self):
+        records = self.render_network_sheet(principal="NODE1", self_node="NODE2")
+
+        self.assertEqual(records["NODE1"]["Node"]["format"], "green-alert")
+        self.assertEqual(records["NODE1"]["Node"]["converted"], "*1.1.1.1:3000")
+        self.assertEqual(records["NODE1"]["Node ID"]["format"], "green-alert")
+        self.assertEqual(records["NODE1"]["Node ID"]["converted"], "*NODE1")
+
+    def test_self_node_is_cyan_and_at_prefixed(self):
+        records = self.render_network_sheet(principal="NODE1", self_node="NODE2")
+
+        self.assertEqual(records["NODE2"]["Node"]["format"], "bold-cyan-alert")
+        self.assertEqual(records["NODE2"]["Node"]["converted"], "@2.2.2.2:3000")
+        self.assertEqual(records["NODE2"]["Node ID"]["format"], "bold-cyan-alert")
+        self.assertEqual(records["NODE2"]["Node ID"]["converted"], "@NODE2")
+
+    def test_plain_node_has_no_format_or_prefix(self):
+        records = self.render_network_sheet(principal="NODE1", self_node="NODE2")
+
+        self.assertNotIn("format", records["NODE3"]["Node"])
+        self.assertEqual(records["NODE3"]["Node"]["converted"], "3.3.3.3:3000")
+        self.assertNotIn("format", records["NODE3"]["Node ID"])
+        self.assertEqual(records["NODE3"]["Node ID"]["converted"], "NODE3")
+
+    def test_principal_wins_when_node_is_both_principal_and_self(self):
+        records = self.render_network_sheet(principal="NODE1", self_node="NODE1")
+
+        self.assertEqual(records["NODE1"]["Node"]["format"], "green-alert")
+        self.assertEqual(records["NODE1"]["Node"]["converted"], "*1.1.1.1:3000")
+        self.assertEqual(records["NODE1"]["Node ID"]["format"], "green-alert")
+        self.assertEqual(records["NODE1"]["Node ID"]["converted"], "*NODE1")
+
+    def test_no_marker_when_self_node_unknown(self):
+        """Empty self_node (collectinfo / no localhost node) must not mark anything."""
+        records = self.render_network_sheet(principal="NODE1", self_node="")
+
+        self.assertEqual(records["NODE2"]["Node"]["converted"], "2.2.2.2:3000")
+        self.assertNotIn("format", records["NODE2"]["Node"])
+
+    def test_sheet_without_node_id_column_renders_unmarked(self):
+        """node_info_responses has no Node ID field; the Node converter must
+        degrade to no marker instead of raising KeyError."""
+        sources = dict(
+            node_names={"1.1.1.1:3000": "node1"},
+            data={"1.1.1.1:3000": "ok."},
+        )
+        common = dict(principal="NODE1", self_node="NODE2")
+
+        render = json.loads(
+            sheet.render(
+                templates.node_info_responses,
+                "test",
+                sources,
+                common=common,
+                style=SheetStyle.json,
+            )
+        )
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["Node"]["converted"], "node1")

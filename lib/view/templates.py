@@ -126,15 +126,33 @@ def weighted_avg(values: Iterable[float], weights: Iterable[float]):
 # Common fields.
 #
 
+
+def _node_marker(node_id, common):
+    """Plain-text counterpart of the green/cyan node highlighting, so the
+    signal survives copy/paste and --no-color: "*" = expected principal,
+    "@" = self node. Principal wins when a node is both."""
+    common = common or {}
+    if node_id:
+        if node_id == common.get("principal"):
+            return "*"
+        if node_id == common.get("self_node"):
+            return "@"
+    return ""
+
+
 node_field = Field(
     "Node",
     Projectors.String("node_names", None),
+    converter=(
+        lambda edata: _node_marker(edata.record.get("Node ID"), edata.common)
+        + edata.value
+    ),
     formatters=(
-        Formatters.bold_cyan_alert(
-            lambda edata: edata.record["Node ID"] == edata.common["self_node"]
-        ),
         Formatters.green_alert(
             lambda edata: edata.record["Node ID"] == edata.common["principal"]
+        ),
+        Formatters.bold_cyan_alert(
+            lambda edata: edata.record["Node ID"] == edata.common["self_node"]
         ),
     ),
 )
@@ -155,15 +173,14 @@ info_network_sheet = Sheet(
             "Node ID",
             Projectors.String("node_ids", None),
             converter=(
-                lambda edata: (
-                    "*" + edata.value
-                    if edata.value == edata.common["principal"]
-                    else edata.value
-                )
+                lambda edata: _node_marker(edata.value, edata.common) + edata.value
             ),
             formatters=(
                 Formatters.green_alert(
                     lambda edata: edata.record["Node ID"] == edata.common["principal"]
+                ),
+                Formatters.bold_cyan_alert(
+                    lambda edata: edata.record["Node ID"] == edata.common["self_node"]
                 ),
             ),
             align=FieldAlignment.right,
@@ -339,7 +356,6 @@ info_namespace_usage_sheet = Sheet(
                             Projectors.Number(
                                 "ns_stats",
                                 "index_used_bytes",
-                                "memory_used_index_bytes",
                             ),
                             Projectors.Number(
                                 "ns_stats",
@@ -425,7 +441,6 @@ info_namespace_usage_sheet = Sheet(
                             Projectors.Number(
                                 "ns_stats",
                                 "sindex_used_bytes",
-                                "memory_used_sindex_bytes",
                             ),
                             Projectors.Number(
                                 "ns_stats",
@@ -2517,15 +2532,14 @@ show_roster = Sheet(
             "Node ID",
             Projectors.String("node_ids", None),
             converter=(
-                lambda edata: (
-                    "*" + edata.value
-                    if edata.value == edata.common["principal"]
-                    else edata.value
-                )
+                lambda edata: _node_marker(edata.value, edata.common) + edata.value
             ),
             formatters=(
                 Formatters.green_alert(
                     lambda edata: edata.record["Node ID"] == edata.common["principal"]
+                ),
+                Formatters.bold_cyan_alert(
+                    lambda edata: edata.record["Node ID"] == edata.common["self_node"]
                 ),
             ),
             align=FieldAlignment.left,

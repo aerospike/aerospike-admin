@@ -1757,7 +1757,8 @@ class CliViewTest(unittest.TestCase):
         output = f.getvalue()
 
         self.assertIn("Used%", output)
-        self.assertIn("25.0 %", output)
+        self.assertIn("25.0 %", output)  # primary: 250000 / 1000000
+        self.assertIn("10.0 %", output)  # secondary: 100000 / 1000000
 
     def test_info_namespace_usage_renders_system_memory_stop_pct(self):
         """The System Memory subgroup must surface stop-writes-sys-memory-pct as a Stop% column."""
@@ -2737,3 +2738,20 @@ class CliViewInfoReleaseTest(unittest.TestCase):
         # Verify cluster methods were called with filter
         cluster_mock.get_node_names.assert_called_once_with(["node1"])
         cluster_mock.get_node_ids.assert_called_once_with(["node1"])
+
+
+class CliViewCollectinfoCompatTest(unittest.TestCase):
+    """Verify CliView._common works with _CollectinfoSnapshot, not just Cluster."""
+
+    def test_common_with_collectinfo_snapshot(self):
+        from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_log import (
+            _CollectinfoSnapshot,
+        )
+
+        snapshot = MagicMock(spec=_CollectinfoSnapshot)
+        snapshot.get_expected_principal.return_value = "ABCD"
+
+        result = CliView._common(snapshot)
+
+        self.assertEqual(result["principal"], "ABCD")
+        self.assertIn("self_node", result)
