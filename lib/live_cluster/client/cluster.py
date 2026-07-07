@@ -21,7 +21,11 @@ import inspect
 from OpenSSL import SSL
 from typing import Any, Callable, Coroutine, Union
 from time import time
-from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
+from lib.live_cluster.client import (
+    ASInfoNotAuthenticatedError,
+    ASNoNodesError,
+    ASProtocolError,
+)
 from lib.live_cluster.client.types import Addr_Port_TLSName
 from lib.utils.async_object import AsyncObject
 
@@ -677,7 +681,7 @@ class Cluster(AsyncObject):
         use_nodes = self.get_nodes(nodes)
 
         if len(use_nodes) == 0:
-            raise IOError("Unable to find any Aerospike nodes")
+            raise ASNoNodesError()
 
         async def key_to_method(node) -> tuple[str, Any]:
             node_result = getattr(node, method_name)(*args, **kwargs)
@@ -703,7 +707,7 @@ class Cluster(AsyncObject):
         use_nodes = self.get_nodes(nodes)
 
         if len(use_nodes) == 0:
-            raise IOError("Unable to find any Aerospike nodes")
+            raise ASNoNodesError()
 
         def key_to_method(node):
             node_result = getattr(node, method_name)(*args, **kwargs)

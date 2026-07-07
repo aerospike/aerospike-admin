@@ -24,6 +24,7 @@ from pytest import PytestUnraisableExceptionWarning
 import lib
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
+from lib.live_cluster.client.types import ASClusterError, ASNoNodesError
 from lib.utils import constants
 
 
@@ -540,6 +541,60 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
         n._info_cinfo.assert_any_call("build", n.ip)
         n = cl.get_node(keys[0])[1]
         n._info_cinfo.assert_any_call("build", n.ip)
+
+    async def test_call_node_method_async_raises_no_nodes_error_when_empty(self):
+        """When no alive nodes are known, call_node_method_async should raise
+        ASNoNodesError (a ShellException-equivalent typed cluster error) rather
+        than a generic IOError. The default message must include actionable
+        remediation hints."""
+        cl = await self.get_cluster_mock(0)
+        # Avoid refreshing during the call so we exercise the no-nodes branch
+        # deterministically.
+        cl.need_to_refresh_cluster = lambda: False
+
+        with self.assertRaises(ASNoNodesError) as ctx:
+            await cl.call_node_method_async(nodes="all", method_name="info_peers")
+
+        # Inherits from the cluster-error base — preserves the contract callers
+        # can match on.
+        self.assertIsInstance(ctx.exception, ASClusterError)
+        # Remediation guidance must reach the user.
+        message = str(ctx.exception)
+        self.assertIn("Cannot reach any Aerospike nodes", message)
+        self.assertIn("-h", message)
+        self.assertIn("Try", message)
+
+    async def test_call_node_method_sync_raises_no_nodes_error_when_empty(self):
+        """Sync sibling: call_node_method must raise ASNoNodesError when no
+        alive nodes exist."""
+        cl = await self.get_cluster_mock(0)
+
+        with self.assertRaises(ASNoNodesError):
+            cl.call_node_method(nodes="all", method_name="info_peers")
+
+    async def test_call_node_method_async_raises_when_named_nodes_unknown(self):
+        """Even with live nodes in the cluster, asking for a specific node
+        that doesn't match anything yields ASNoNodesError — the contract is
+        about resolved-target-set, not just total cluster size."""
+        cl = await self.get_cluster_mock(2)
+        cl.need_to_refresh_cluster = lambda: False
+
+        with self.assertRaises(ASNoNodesError):
+            await cl.call_node_method_async(
+                nodes=["10.255.255.255:3000"], method_name="info", command="build"
+            )
+
+    def test_no_nodes_error_accepts_custom_message(self):
+        """The exception's constructor accepts an explicit override so
+        callers with more context (e.g. an auth-rejected crawl) can
+        surface a more specific reason while keeping the clean-no-traceback
+        contract. When no message is given, the actionable default applies."""
+        custom = ASNoNodesError("cluster auth rejected for user 'admin'")
+        self.assertIn("auth rejected", str(custom))
+
+        default = ASNoNodesError()
+        self.assertIn("Cannot reach any Aerospike nodes", str(default))
+        self.assertIn("Try", str(default))
 
     async def test_is_XDR_enabled(self):
         cl = await self.get_cluster_mock(

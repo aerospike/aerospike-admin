@@ -336,3 +336,23 @@ class ASInfoNotAuthenticatedError(ASInfoResponseError):
 class ASInfoClusterStableError(ASInfoResponseError):
     def __init__(self, server_resp: str):
         super().__init__("Cluster is unstable", server_resp)
+
+
+class ASClusterError(Exception):
+    """Base for cluster-level reachability and state errors surfaced to the user."""
+
+    pass
+
+
+class ASNoNodesError(ASClusterError):
+    """Raised when no live Aerospike node is available to serve a request."""
+
+    DEFAULT_MESSAGE = (
+        "Cannot reach any Aerospike nodes.\n"
+        "  Try: verify the cluster connection options used at startup "
+        "(-h/-p, -U/-P, --auth, --tls-*) and that the service port is "
+        "reachable from this host."
+    )
+
+    def __init__(self, message: str | None = None):
+        super().__init__(message or self.DEFAULT_MESSAGE)

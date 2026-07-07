@@ -40,6 +40,7 @@ class BaseLogger(logging.Logger, object):
             and not isinstance(msg, ShellException)
             and not isinstance(msg, ASProtocolError)
             and not isinstance(msg, ASInfoError)
+            and not isinstance(msg, ASClusterError)
         ):
             traceback.print_exc()
 
@@ -164,4 +165,5 @@ from lib.base_controller import (  # noqa: E402 - suppress flake warning
 from lib.live_cluster.client import (  # noqa: E402 - suppress flake warning
     ASProtocolError,
     ASInfoError,
+    ASClusterError,
 )
