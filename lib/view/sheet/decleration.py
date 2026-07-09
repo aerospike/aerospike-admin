@@ -252,6 +252,20 @@ class Formatters(object):
             Formatters._should_apply(predicate_fn, terminal.bold, terminal.unbold),
         )
 
+    @staticmethod
+    def bold_cyan_alert(
+        predicate_fn: FormatterPredicateFnType,
+    ) -> FormatterType:
+        """Applies bold + cyan (light blue) formatting if predicate evaluates to True."""
+        return (
+            "bold-cyan-alert",
+            Formatters._should_apply(
+                predicate_fn,
+                lambda: terminal.bold() + terminal.fg_cyan(),
+                lambda: terminal.fg_not_cyan() + terminal.unbold(),
+            ),
+        )
+
 
 AggregatorFunc = Callable[..., Any]
 

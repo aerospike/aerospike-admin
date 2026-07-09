@@ -418,6 +418,28 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
             "get_expected_principal did not return the expected result",
         )
 
+    async def test_get_self_node(self):
+        cl = await self.get_cluster_mock(3)
+        for node in cl.nodes.values():
+            node.localhost = False
+        self_node = cl.nodes["127.0.0.1:3000"]
+        self_node.localhost = True
+        self.assertEqual(
+            cl.get_self_node(),
+            self_node.node_id,
+            "get_self_node did not return the localhost node's id",
+        )
+
+    async def test_get_self_node_returns_empty_when_no_localhost(self):
+        cl = await self.get_cluster_mock(3)
+        for node in cl.nodes.values():
+            node.localhost = False
+        self.assertEqual(
+            cl.get_self_node(),
+            "",
+            "get_self_node did not return '' when no node is localhost",
+        )
+
     async def test_get_visibility_error_nodes_returns_empty(self):
         cl = await self.get_cluster_mock(3)
         cl._refresh_node_liveliness()
