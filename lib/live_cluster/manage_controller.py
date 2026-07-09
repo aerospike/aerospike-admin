@@ -1704,6 +1704,19 @@ class ManageConfigLeafController(ManageLeafCommandController):
     PARAM = "param"
     TO = "to"
 
+    # Config params that only take effect after "manage recluster" is run.
+    # Subclasses override this with the params for their config context. Params
+    # not listed here take effect immediately and print no recluster reminder.
+    require_recluster: set[str] = set()
+
+    def print_recluster_msg_if_needed(self, param):
+        if param in self.require_recluster:
+            self.view.print_result(
+                'Run "manage recluster" for your changes to {} to take effect.'.format(
+                    param
+                )
+            )
+
     def extract_param_value(self, line):
         param = util.get_arg_and_delete_from_mods(
             line=line,
@@ -2033,10 +2046,13 @@ class ManageConfigLoggingController(ManageConfigLeafController):
     ),
 )
 class ManageConfigServiceController(ManageConfigLeafController):
+    # No service params currently require a recluster. cluster-name takes
+    # effect immediately (TOOLS-2975).
+    require_recluster = set()
+
     def __init__(self):
         self.required_modifiers = set([self.PARAM, self.TO])
         self.modifiers = set(["with"])
-        self.require_recluster = set(["cluster-name"])
 
     async def _do_default(self, line):
         param, value = self.extract_param_value(line)
@@ -2053,12 +2069,7 @@ class ManageConfigServiceController(ManageConfigLeafController):
         title = "Set Service Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
-        if param in self.require_recluster:
-            self.view.print_result(
-                'Run "manage recluster" for your changes to {} to take affect.'.format(
-                    param
-                )
-            )
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -2102,6 +2113,8 @@ class ManageConfigNetworkController(ManageConfigLeafController):
 
         title = "Set Network Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -2149,6 +2162,8 @@ class ManageConfigSecurityController(ManageConfigLeafController):
         title = "Set Security Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
+        self.print_recluster_msg_if_needed(param)
+
 
 @CommandHelp(
     "Change a namespace context's dynamic runtime configuration",
@@ -2170,6 +2185,8 @@ class ManageConfigSecurityController(ManageConfigLeafController):
     ),
 )
 class ManageConfigNamespaceController(ManageConfigLeafController):
+    require_recluster = set(["prefer-uniform-balance", "rack-id"])
+
     def __init__(self):
         self.required_modifiers = set([self.PARAM, self.TO])
         self.modifiers = set(["with"])
@@ -2177,7 +2194,6 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
         self.controller_map = {
             "set": ManageConfigNamespaceSetController,
         }
-        self.require_recluster = set(["prefer-uniform-balance", "rack-id"])
 
     async def _do_default(self, line):
         param, value = self.extract_param_value(line)
@@ -2201,12 +2217,7 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
         title = "Set Namespace Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
-        if param in self.require_recluster:
-            self.view.print_result(
-                'Run "manage recluster" for your changes to {} to take affect.'.format(
-                    param
-                )
-            )
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -2249,6 +2260,8 @@ class ManageConfigNamespaceSetController(ManageConfigLeafController):
         title = "Set Namespace Set Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
+        self.print_recluster_msg_if_needed(param)
+
 
 @CommandHelp(
     "A collection of commands to add/remove xdr nodes, namespace, and change dynamic runtime configuration",
@@ -2288,6 +2301,8 @@ class ManageConfigXDRController(ManageConfigLeafController):
 
         title = "Set XDR Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -2400,6 +2415,8 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
 
         title = "Set XDR DC param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp("Add a node or namespace to xdr datacenter")
@@ -2601,6 +2618,8 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
 
         title = "Set XDR Namespace Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
