@@ -37,7 +37,7 @@ SS = 2
 
 # for zipped files
 COLLECTINFO_DIR = constants.ADMIN_HOME + "collectinfo/"
-COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
+COLLECTINFO_INTERNAL_DIR = "collectinfo_analyzer_extracted_files"
 
 ######################
 
@@ -314,8 +314,8 @@ class CollectinfoLogHandler(object):
             if os.path.exists(self.collectinfo_dir):
                 # ToDo: Before adding file from collectinfo_dir, we need to check file already exists in input file list or not,
                 # ToDo: collectinfo_parser fails if same file exists twice in input file list. This is possible if input has zip file and
-                # ToDo: user unzipped it but did not remove zipped file, in that case collectinfo-analyser creates new unzipped file,
-                # ToDo: which results in two copies of same file (one unzipped by user and one unzipped by collectinfo-analyser).
+                # ToDo: user unzipped it but did not remove zipped file, in that case collectinfo-analyzer creates new unzipped file,
+                # ToDo: which results in two copies of same file (one unzipped by user and one unzipped by collectinfo-analyzer).
 
                 files += self._get_valid_files(self.collectinfo_dir)
 

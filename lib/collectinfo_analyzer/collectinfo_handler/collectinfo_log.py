@@ -400,6 +400,9 @@ class _CollectinfoSnapshot:
     def get_summary(self, stanza=""):
         return self.get_data(type="summary", stanza=stanza)
 
+    def get_self_node(self) -> str:
+        return ""
+
     def get_expected_principal(self) -> str:
         try:
             principal = "0"

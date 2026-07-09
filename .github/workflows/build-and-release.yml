@@ -15,9 +15,11 @@
 #   Dispatch this workflow on any branch with `release=true`:
 #      - No git tag is created (tags are master-only).
 #      - VERSION is computed as a SemVer 2.0 pre-release identifier so it
-#        sorts correctly in apt/dnf and never collides with master:
+#        sorts correctly in apt/dnf and never collides with master. The branch
+#        qualifier is always hyphen-joined, whether or not the base carries a
+#        pre-release suffix (matches the sibling tools' convention):
 #            5.0.0-rc1 + branch feature/foo, sha abc123456
-#          → 5.0.0-rc1.feature-foo.abc123456
+#          → 5.0.0-rc1-feature-foo.abc123456
 #      - Packages are uploaded to the JFrog dev repo and installable via
 #        apt/dnf with that version pin. A release bundle is created so the
 #        artifacts can be promoted through JFrog.
@@ -25,7 +27,7 @@
 # === Master feature-style build (publish from master without tagging) ===
 #   Dispatch on master with `release=true` and `skip_tagging=true`:
 #      - Behaves like a feature-branch build: VERSION gets the master+sha
-#        suffix (e.g. 5.0.0-rc1.master.abc123456) and no git tag is created.
+#        suffix (e.g. 5.0.0-rc1-master.abc123456) and no git tag is created.
 #        A release bundle is still produced (same as feature-branch publish).
 #      - Use when you want to publish a build from master for testing/
 #        validation without committing to a real release.
@@ -129,11 +131,13 @@ jobs:
             BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
             # 9-char SHA matches `git describe --abbrev=9` elsewhere in the repo.
             SHORT_SHA="${GITHUB_SHA::9}"
-            if [[ "${BASE}" == *-* ]]; then
-              VERSION="${BASE}.${BRANCH_SLUG}.${SHORT_SHA}"
-            else
-              VERSION="${BASE}-${BRANCH_SLUG}.${SHORT_SHA}"
-            fi
+            # Always hyphen-join the branch qualifier, regardless of whether BASE
+            # already carries a pre-release suffix. This keeps the branch-append
+            # rule uniform and matches the sibling tools' naming:
+            #   9.2.7      + main   -> 9.2.7-main.<sha>
+            #   5.0.1-rc2  + master -> 5.0.1-rc2-master.<sha>   (was ...rc2.master...)
+            # Both are valid SemVer 2.0 pre-release identifiers.
+            VERSION="${BASE}-${BRANCH_SLUG}.${SHORT_SHA}"
           fi
           echo "VERSION: ${VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
