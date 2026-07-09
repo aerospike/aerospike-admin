@@ -361,7 +361,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.no_color = False
                 mock_args.pmap = False
                 mock_args.collectinfo = False
-                mock_args.log_analyser = False
+                mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -397,7 +397,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.no_color = False
                 mock_args.pmap = False
                 mock_args.collectinfo = False
-                mock_args.log_analyser = False
+                mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -446,7 +446,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.no_color = False
                 mock_args.pmap = False
                 mock_args.collectinfo = False
-                mock_args.log_analyser = False
+                mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_get_cli_args.return_value = mock_args
 

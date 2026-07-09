@@ -701,7 +701,7 @@ class ShowDistributionController(CollectinfoCommandController):
                 True,
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
-                loganalyser_mode=True,
+                loganalyzer_mode=True,
                 like=self.mods["for"],
             )
 
