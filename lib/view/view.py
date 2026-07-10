@@ -15,6 +15,7 @@
 from collections.abc import Iterator
 import datetime
 import locale
+import math
 from os import path
 import sys
 import time
@@ -1828,8 +1829,13 @@ class CliView(object):
             return CliView._format_value(int(val))
         elif isinstance(val, str):
             try:
-                val = float(val)
-                return CliView._format_value(val)
+                as_float = float(val)
+
+                # Hex strings like "9E0123456789" (e.g. cluster_key) parse
+                # as scientific notation and overflow to inf; keep the
+                # original string.
+                if not math.isinf(as_float) and not math.isnan(as_float):
+                    return CliView._format_value(as_float)
             except Exception:
                 pass
 

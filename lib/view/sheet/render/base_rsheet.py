@@ -332,12 +332,13 @@ class BaseRSheet(object):
 
         for entry in entries:
             try:
+                # int(entry) raises OverflowError when entry is float inf.
                 int(entry)
 
                 if not "." in str(entry):
                     has_int = True
                     continue
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 pass
 
             try:
@@ -758,7 +759,14 @@ class BaseRField(object):
             aggregate_value = ErrorEntry
         else:
             group_entries = [e for e in group if not e.is_no_entry]
-            aggregate_value = self.decleration.aggregator.compute(group_entries)
+
+            try:
+                aggregate_value = self.decleration.aggregator.compute(group_entries)
+            except Exception:
+                # Aggregating a numeric column that contains a non-numeric
+                # fallback value (e.g. a hex string in a Number field) must
+                # not crash the render.
+                aggregate_value = ErrorEntry
 
             if aggregate_value is None:
                 aggregate_value = NoEntry
@@ -783,7 +791,13 @@ class BaseRField(object):
                     else:
                         group_converted.append(self.rsheet.decleration.no_entry)
                 else:
-                    group_converted.append(str(self.decleration.converter(edata)))
+                    try:
+                        group_converted.append(str(self.decleration.converter(edata)))
+                    except Exception:
+                        # Converters assume numeric input; a non-numeric
+                        # fallback value (e.g. a hex string in a Number
+                        # field) must not crash the render.
+                        group_converted.append(str(edata.value))
 
     def _prepare_convert_aggregates(self):
         if self.decleration.aggregator is None:
@@ -804,9 +818,12 @@ class BaseRField(object):
             elif aggregate is ErrorEntry:
                 self.aggregates_converted.append(self.rsheet.decleration.error_entry)
             else:
-                self.aggregates_converted.append(
-                    str(converter(EntryValue(value=aggregate)))
-                )
+                try:
+                    self.aggregates_converted.append(
+                        str(converter(EntryValue(value=aggregate)))
+                    )
+                except Exception:
+                    self.aggregates_converted.append(str(aggregate))
 
     def entry_value(self, entry):
         if entry is ErrorEntry or entry is NoEntry:

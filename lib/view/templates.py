@@ -1948,7 +1948,9 @@ show_pmap_sheet = Sheet(
         Field("Namespace", Projectors.String("pmap", None, for_each_key=True)),
         node_field,
         hidden_node_id_field,
-        Field("Cluster Key", Projectors.Number("pmap", "cluster_key")),
+        # The cluster key is a hex string; keys like "9E0123456789" parse as
+        # overflowing scientific notation if projected as a Number.
+        Field("Cluster Key", Projectors.String("pmap", "cluster_key")),
         Subgroup(
             "Partitions",
             (
