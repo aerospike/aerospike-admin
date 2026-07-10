@@ -801,6 +801,7 @@ def compute_license_data_size(
         return
 
     cl_unique_data = 0.0
+    missing_build_hosts = set()
 
     for ns, ns_stats in namespace_stats.items():
         if not ns_stats or isinstance(ns_stats, Exception):
@@ -888,7 +889,8 @@ def compute_license_data_size(
             )
 
             if host_build_version is None:
-                raise Exception("could not find host %s in build responses" % host_id)
+                missing_build_hosts.add(host_id)
+                continue
 
             host_record_overhead = 35
 
@@ -924,6 +926,13 @@ def compute_license_data_size(
             round(ns_unique_data_clamped)
         )
         cl_unique_data += ns_unique_data_clamped
+
+    if missing_build_hosts:
+        logger.warning(
+            "Could not find host(s) %s in build responses; license usage may be "
+            "under-reported",
+            ", ".join(sorted(missing_build_hosts)),
+        )
 
     summary_dict["CLUSTER"]["license_data"]["latest"] = int(round(cl_unique_data))
 

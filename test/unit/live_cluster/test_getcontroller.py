@@ -358,6 +358,93 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertDictEqual(result, expected)
 
+    async def test_get_namespace_logs_failed_node_and_namespace(self):
+        """TOOLS-3596: a node whose namespace stats failed, and a whole namespace that
+        failed, are both excluded and logged at DEBUG so the missing data is diagnosable
+        instead of vanishing silently."""
+        self.cluster_mock.info_namespaces.return_value = {"1.1.1.1": ["foo", "bad"]}
+
+        async def side_effect(namespace, nodes):
+            if namespace == "bad":
+                return Exception("namespace failed")
+            return {
+                "1.1.1.1": {"stat1": 1},
+                "2.2.2.2": Exception("boom"),
+                "3.3.3.3": {},  # empty (non-exception) result -> also excluded
+            }
+
+        self.cluster_mock.info_namespace_statistics.side_effect = side_effect
+
+        with self.assertLogs("lib.live_cluster.get_controller", level="DEBUG") as cm:
+            result = await self.controller.get_namespace(for_mods=["foo", "bad"])
+
+        # Healthy node kept; failed node, empty node, and failed namespace excluded.
+        self.assertDictEqual(result, {"1.1.1.1": {"foo": {"stat1": 1}}})
+        # Per-node failure logged.
+        self.assertTrue(
+            any(
+                "2.2.2.2" in msg and "Excluding statistics" in msg for msg in cm.output
+            ),
+            cm.output,
+        )
+        # Empty (non-exception) node result also excluded and logged.
+        self.assertTrue(
+            any(
+                "3.3.3.3" in msg and "Excluding statistics" in msg for msg in cm.output
+            ),
+            cm.output,
+        )
+        # Whole-namespace failure logged.
+        self.assertTrue(
+            any(
+                "'bad'" in msg and "Failed to get statistics" in msg
+                for msg in cm.output
+            ),
+            cm.output,
+        )
+
+    async def test_get_strong_consistency_namespace_logs_failures(self):
+        """TOOLS-3596: get_strong_consistency_namespace logs excluded failed nodes and
+        failed namespaces, and still filters out non-SC nodes (without logging those).
+        """
+        self.cluster_mock.info_namespaces.return_value = {"1.1.1.1": ["foo", "bad"]}
+
+        async def side_effect(namespace, nodes):
+            if namespace == "bad":
+                return Exception("namespace failed")
+            return {
+                "1.1.1.1": {"strong-consistency": "true", "stat1": 1},
+                "2.2.2.2": Exception("boom"),  # failed -> logged + excluded
+                "3.3.3.3": {
+                    "strong-consistency": "false"
+                },  # non-SC -> excluded silently
+            }
+
+        self.cluster_mock.info_namespace_statistics.side_effect = side_effect
+
+        with self.assertLogs("lib.live_cluster.get_controller", level="DEBUG") as cm:
+            result = await self.controller.get_strong_consistency_namespace(
+                for_mods=["foo", "bad"]
+            )
+
+        # Only the SC node for the healthy namespace survives.
+        self.assertDictEqual(
+            result, {"1.1.1.1": {"foo": {"strong-consistency": "true", "stat1": 1}}}
+        )
+        self.assertTrue(
+            any(
+                "2.2.2.2" in msg and "Excluding statistics" in msg for msg in cm.output
+            ),
+            cm.output,
+        )
+        self.assertTrue(
+            any(
+                "'bad'" in msg and "Failed to get statistics" in msg
+                for msg in cm.output
+            ),
+            cm.output,
+        )
+
     async def test_get_sets(self):
         self.cluster_mock.info_all_set_statistics.return_value = {
             "1.1.1.1": {

@@ -14,6 +14,7 @@
 
 import asyncio
 import copy
+import logging
 import re
 from typing import Iterable, Optional
 from lib.base_controller import ModifierHelp, ShellException
@@ -24,8 +25,26 @@ from lib.utils.constants import Modifiers
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
 from .client import Cluster
 
+logger = logging.getLogger(__name__)
+
 
 # Helpers
+def _remove_and_log_failed_nodes(namespace: str, ns_node_stats: dict) -> None:
+    """
+    Drop per-node entries that errored or came back empty, logging each drop so the
+    missing data is diagnosable from the debug log (TOOLS-3596).
+    """
+    for node in list(ns_node_stats.keys()):
+        if not ns_node_stats[node] or isinstance(ns_node_stats[node], Exception):
+            logger.debug(
+                "Excluding statistics for namespace %r from node %r (error or empty): %r",
+                namespace,
+                node,
+                ns_node_stats[node],
+            )
+            ns_node_stats.pop(node)
+
+
 def _union_iterable(vals: Iterable[Iterable[str]]) -> set[str]:
     val_set = set()
 
@@ -609,13 +628,15 @@ class GetStatisticsController:
             ns_stats[namespace] = await stat_task
 
             if isinstance(ns_stats[namespace], Exception):
+                # TOOLS-3596: log so the missing data is diagnosable from the debug log.
+                logger.debug(
+                    "Failed to get statistics for namespace %r: %r",
+                    namespace,
+                    ns_stats[namespace],
+                )
                 continue
 
-            for node in list(ns_stats[namespace].keys()):
-                if not ns_stats[namespace][node] or isinstance(
-                    ns_stats[namespace][node], Exception
-                ):
-                    ns_stats[namespace].pop(node)
+            _remove_and_log_failed_nodes(namespace, ns_stats[namespace])
 
         # Inverted match common structure of other getters, i.e. host is top level key
         if not flip:
@@ -650,15 +671,17 @@ class GetStatisticsController:
             ns_stats[namespace] = await stat_task
 
             if isinstance(ns_stats[namespace], Exception):
+                # TOOLS-3596: log so the missing data is diagnosable from the debug log.
+                logger.debug(
+                    "Failed to get statistics for namespace %r: %r",
+                    namespace,
+                    ns_stats[namespace],
+                )
                 continue
 
-            for node in list(ns_stats[namespace].keys()):
-                if not ns_stats[namespace][node] or isinstance(
-                    ns_stats[namespace][node], Exception
-                ):
-                    ns_stats[namespace].pop(node)
-                    continue
+            _remove_and_log_failed_nodes(namespace, ns_stats[namespace])
 
+            for node in list(ns_stats[namespace].keys()):
                 strong_consistency = (
                     ns_stats[namespace][node].get("strong-consistency", "false").lower()
                     == "true"

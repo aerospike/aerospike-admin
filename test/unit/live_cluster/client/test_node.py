@@ -5470,6 +5470,28 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         last_sock = self.node.socket_pool[self.node.port][-1]
         self.assertEqual(last_sock.name, f"sock_{MAX_SOCKET_POOL_SIZE + 4}")
 
+    async def test_set_timeout_updates_node_and_pooled_sockets(self):
+        """TOOLS-3596: set_timeout updates the node timeout and every pooled socket so a
+        reused connection also honors the new timeout."""
+        sock_a = AsyncMock()
+        sock_b = AsyncMock()
+        self.node.socket_pool[self.node.port].append(sock_a)
+        self.node.socket_pool[self.node.port].append(sock_b)
+
+        self.node.set_timeout(7)
+
+        self.assertEqual(self.node._timeout, 7)
+        sock_a.settimeout.assert_called_once_with(7)
+        sock_b.settimeout.assert_called_once_with(7)
+
+    async def test_set_timeout_handles_closed_socket_pool(self):
+        """set_timeout must not crash when the pool has been closed (socket_pool is None)."""
+        self.node.socket_pool = None
+
+        self.node.set_timeout(7)
+
+        self.assertEqual(self.node._timeout, 7)
+
     async def test_get_connection_fifo_order(self):
         """Test that _get_connection returns sockets in FIFO order"""
         # Add sockets in order
@@ -6294,6 +6316,62 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, dict)
         self.assertEqual(result["cs"], "2")
         self.assertEqual(result["ck"], "71")
+
+    async def test_swallowed_exception_is_logged(self):
+        """TOOLS-3596: a swallowed per-node exception is logged at DEBUG so the failure is
+        diagnosable from the (collectinfo) debug log instead of vanishing silently."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        with self.assertLogs("lib.live_cluster.client.node", level="DEBUG") as cm:
+            result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertTrue(
+            any(
+                "returned exception" in msg and "info_statistics" in msg
+                for msg in cm.output
+            ),
+            cm.output,
+        )
+
+    async def test_raise_exception_propagates_original_error(self):
+        """raise_exception=True must raise the original exception instead of returning
+        it; previously the kwarg was unconditionally overwritten to False."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        with self.assertRaises(ASInfoResponseError):
+            await self.node.info_logs_ids(raise_exception=True)
+
+    async def test_info_logging_config_surfaces_real_error(self):
+        """info_logging_config depends on info_logs_ids(raise_exception=True); the
+        returned error must be the original ASInfoResponseError, not an AttributeError
+        from calling .keys() on a returned exception object."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        result = await self.node.info_logging_config()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+
+    async def test_timeout_does_not_mark_node_dead(self):
+        """TOOLS-3596: a transient info-call timeout must not flip alive=False (on 3.11+
+        asyncio.TimeoutError subclasses OSError)."""
+        self.node.alive = True
+        self.info_mock.side_effect = asyncio.TimeoutError()
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, asyncio.TimeoutError)
+        self.assertTrue(self.node.alive)
+
+    async def test_os_error_still_marks_node_dead(self):
+        """A genuine OSError (e.g. connection reset) must still mark the node dead."""
+        self.node.alive = True
+        self.info_mock.side_effect = OSError("connection reset")
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, OSError)
+        self.assertFalse(self.node.alive)
 
 
 class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):

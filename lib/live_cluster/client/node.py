@@ -80,11 +80,14 @@ def get_fully_qualified_domain_name(address, timeout=0.5):
 
 def async_return_exceptions(func):
     async def wrapper(*args, raise_exception=False, **kwargs):
-        raise_exception = False
         exception = None
 
         try:
             return await func(*args, **kwargs)
+        except asyncio.TimeoutError as e:
+            # asyncio.TimeoutError subclasses OSError on 3.11+; keep this before the OSError
+            # branch so a transient timeout does not flip alive=False (TOOLS-3596).
+            exception = e
         except (ASInfoNotAuthenticatedError, ASProtocolConnectionError) as e:
             args[0].alive = False
             exception = e
@@ -94,8 +97,19 @@ def async_return_exceptions(func):
         except Exception as e:
             exception = e
 
+        # Without this log, per-node info-call failures (e.g. asyncio.TimeoutError during a
+        # collectinfo burst) are swallowed silently and become undiagnosable from the debug
+        # log. See TOOLS-3596.
+        logger.debug(
+            "info call %s on %s:%s returned exception: %r",
+            getattr(func, "__name__", func),
+            getattr(args[0], "ip", "?"),
+            getattr(args[0], "port", "?"),
+            exception,
+        )
+
         if raise_exception:
-            raise
+            raise exception
 
         return exception
 
@@ -383,6 +397,21 @@ class Node(AsyncObject):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
         self.socket_pool: dict[int, deque[ASSocket]] = {}
         self.socket_pool[self.port] = deque(maxlen=MAX_SOCKET_POOL_SIZE)
+
+    def set_timeout(self, timeout):
+        """
+        Update the per-node info-call timeout. New sockets pick this up at creation; any
+        already-pooled sockets are updated in place so a reused connection also honors the
+        new timeout. Used to temporarily raise the timeout for collectinfo (TOOLS-3596).
+        """
+        self._timeout = timeout
+
+        if not self.socket_pool:
+            return
+
+        for sock_deque in self.socket_pool.values():
+            for sock in sock_deque:
+                sock.settimeout(timeout)
 
     def _is_any_my_ip(self, ips):
         if not ips:

@@ -113,7 +113,10 @@ def _create_node_ip_map(parsed_map):
     for timestamp, pm_timestamp in parsed_map.items():  # normally length = 1
         pmt_cluster_name = list(pm_timestamp.values())[0]  # length always = 1
         for ip, pmtc_ip in pmt_cluster_name.items():
-            meta_map = pmtc_ip["as_stat"]["meta_data"]
+            # A node whose info calls failed during collection can land in the snapshot
+            # without meta_data (TOOLS-3596); it must not break the mapping for the
+            # healthy nodes.
+            meta_map = pmtc_ip.get("as_stat", {}).get("meta_data", {})
             node_id = meta_map.get("node_id", "")
 
             if node_id == "":
