@@ -369,8 +369,8 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
-                        # Near the mounts/memory budget - index allocations
-                        # fail once the budget is exhausted.
+                        # Near the mounts/memory budget: stop-writes for in-memory
+                        # indexes; for flash/pmem, allocations fail as the mounts fill.
                         Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
@@ -457,8 +457,8 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
-                        # Near the mounts/memory budget - sindex allocations
-                        # fail once the budget is exhausted.
+                        # Near the mounts/memory budget: stop-writes for in-memory
+                        # indexes; for flash/pmem, allocations fail as the mounts fill.
                         Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100

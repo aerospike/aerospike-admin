@@ -18,7 +18,7 @@ from parameterized import parameterized
 
 from lib.view import sheet, templates
 from lib.view.sheet import SheetStyle
-from lib.view.sheet.decleration import EntryData, Subgroup
+from lib.view.sheet.decleration import EntryData
 
 
 class HelperTests(unittest.TestCase):
@@ -91,46 +91,64 @@ class HelperTests(unittest.TestCase):
 
 class InfoNamespaceUsageIndexFormattersTests(unittest.TestCase):
     """Covers the Used% alert tiers for the Primary/Secondary Index subgroups
-    of 'info namespace usage': yellow when eviction is running, red when near
-    the mounts/memory budget (TOOLS-3456)."""
+    of 'info namespace usage', rendered through the real sheet pipeline so
+    formatter precedence is exercised: yellow when eviction is running, red
+    when near the mounts/memory budget (TOOLS-3456)."""
 
-    @staticmethod
-    def _get_used_pct_field(subgroup_title):
-        for field in templates.info_namespace_usage_sheet.fields:
-            if isinstance(field, Subgroup) and field.title == subgroup_title:
-                for sub_field in field.fields:
-                    if sub_field.title == "Used%":
-                        return sub_field
-        raise AssertionError(f"Used% field not found in {subgroup_title}")
+    def render_usage(self, used_pct, evict_pct):
+        node = "127.0.0.1:3000"
+        budget = 100 * 1024**3
+        used_bytes = int(budget * used_pct / 100)
+        sources = dict(
+            node_names={node: "node-A"},
+            node_ids={node: "BB9040011AC4202"},
+            ns_stats={
+                node: {
+                    "test": {
+                        "index-type": "flash",
+                        "index-type.mounts-budget": budget,
+                        "index-type.evict-mounts-pct": evict_pct,
+                        "index_used_bytes": used_bytes,
+                        "index_mounts_used_pct": used_pct,
+                        "sindex-type": "flash",
+                        "sindex-type.mounts-budget": budget,
+                        "sindex-type.evict-mounts-pct": evict_pct,
+                        "sindex_used_bytes": used_bytes,
+                        "sindex_mounts_used_pct": used_pct,
+                    }
+                }
+            },
+            service_stats={node: {}},
+        )
+        common = dict(principal="BB9040011AC4202")
 
-    @staticmethod
-    def _applied_formatter(field, edata):
-        # Mirrors sheet behavior: first formatter to not return None wins.
-        for name, formatter_fn in field.formatters:
-            if formatter_fn(edata) is not None:
-                return name
-        return None
+        render = sheet.render(
+            templates.info_namespace_usage_sheet,
+            "Namespace Usage Information",
+            sources,
+            common=common,
+            style=SheetStyle.json,
+        )
+        return json.loads(render)["groups"][0]["records"][0]
 
     @parameterized.expand(
         [
-            # (used ratio, evict pct, expected formatter)
-            (0.50, 80, None),  # healthy
-            (0.85, 80, "yellow-alert"),  # eviction running
-            (0.92, 80, "red-alert"),  # near budget, red wins over yellow
-            (0.92, 0, "red-alert"),  # near budget even with eviction disabled
-            (0.89, 0, None),  # eviction disabled, below red threshold
+            (50, 80, None),  # healthy
+            (85, 80, "yellow-alert"),  # eviction running
+            (92, 80, "red-alert"),  # near budget, red wins over yellow
+            (92, 0, "red-alert"),  # near budget even with eviction disabled
+            (89, 0, None),  # eviction disabled, below red threshold
         ]
     )
-    def test_used_pct_alert_tiers(self, used_ratio, evict_pct, expected):
+    def test_used_pct_alert_tiers(self, used_pct, evict_pct, expected):
+        record = self.render_usage(used_pct, evict_pct)
+
         for subgroup in ("Primary Index", "Secondary Index"):
-            field = self._get_used_pct_field(subgroup)
-            edata = EntryData(
-                used_ratio, None, {subgroup: {"Evict%": evict_pct}}, None, False, False
-            )
+            entry = record[subgroup]["Used%"]
             self.assertEqual(
-                self._applied_formatter(field, edata),
+                entry.get("format"),
                 expected,
-                f"{subgroup} Used%={used_ratio} Evict%={evict_pct}",
+                f"{subgroup} Used%={used_pct} Evict%={evict_pct}",
             )
 
 
