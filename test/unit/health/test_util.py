@@ -179,6 +179,12 @@ class UtilTest(unittest.TestCase):
                         ("CONFIG1", "KEY"): "abcd",
                         ("CONFIG2", "KEY"): "100%",
                         ("CONFIG3", "KEY"): "n/e",
+                        # Hex values like cluster_key that parse as
+                        # overflowing scientific notation (TOOLS-3772).
+                        ("CONFIG4", "KEY"): "9E0123456789",
+                        ("CONFIG5", "KEY"): "B40E9AE14C62",
+                        ("CONFIG6", "KEY"): "1E2",
+                        ("CONFIG7", "KEY"): "nan",
                     },
                 }
             }
@@ -196,6 +202,10 @@ class UtilTest(unittest.TestCase):
                     ("NS2", "NAMESPACE"): {
                         ("CONFIG1", "KEY"): "abcd",
                         ("CONFIG2", "KEY"): 100,
+                        ("CONFIG4", "KEY"): "9E0123456789",
+                        ("CONFIG5", "KEY"): "B40E9AE14C62",
+                        ("CONFIG6", "KEY"): 100.0,
+                        ("CONFIG7", "KEY"): "nan",
                     },
                 }
             }

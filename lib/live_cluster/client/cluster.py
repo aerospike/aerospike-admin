@@ -814,5 +814,13 @@ class Cluster(AsyncObject):
         self.nodes = {}
         self.node_lookup = LookupDict()
 
+    def get_self_node(self):
+        # Returns the first node flagged localhost; if multiple co-located
+        # nodes are flagged, dict-iteration order decides which wins.
+        for node in self.nodes.values():
+            if node.is_localhost():
+                return node.node_id
+        return ""
+
     def get_seed_nodes(self):
         return list(self._seed_nodes)

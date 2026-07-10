@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 @CommandHelp(
-    "Displays health summary. If remote server System credentials provided, then it will collect remote system stats and analyse that also. If credentials are not available then it will collect only localhost system statistics. This command is still in beta and its output should not be directly acted upon without further analysis.",
+    "Displays health summary. If remote server System credentials provided, then it will collect remote system stats and analyze that also. If credentials are not available then it will collect only localhost system statistics. This command is still in beta and its output should not be directly acted upon without further analysis.",
     "Note: This command is deprecated and is no longer actively maintained. It will be removed in a future release.",
     short_msg="Displays health summary (deprecated)",
     usage=f"[-dv] [-f <query_file>] [-o <output_file>] [-n <num_snapshots>] [-s <sleep_seconds>] [-oc <output_filter_category>] [-wl <output_filter_warn_level>] [{SSH_MODIFIER_USAGE}]",

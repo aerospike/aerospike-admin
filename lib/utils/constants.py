@@ -119,9 +119,9 @@ AdminMode = Enumeration(
     [
         # Connect to live cluster
         "LIVE_CLUSTER",
-        # Analyse collectinfo
+        # Analyze collectinfo
         "COLLECTINFO_ANALYZER",
-        # Analyse Aerospike logs
+        # Analyze Aerospike logs
         "LOG_ANALYZER",
     ]
 )

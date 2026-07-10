@@ -13,7 +13,7 @@
 # limitations under the License.
 
 #############################################################################################################
-# Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyser / log-analyser)
+# Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyzer / log-analyzer)
 #############################################################################################################
 
 import datetime
