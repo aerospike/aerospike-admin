@@ -185,14 +185,20 @@ class BuildDumpMapTest(unittest.TestCase):
 
     def test_node_with_only_seeded_empty_sections_is_warned(self):
         """TOOLS-3596: a fully-failed node has a truthy but empty as_stat (empty-string
-        meta plus seeded empty sections); the no-data warning must still fire."""
+        meta plus locally derived node_names/ip plus seeded empty sections); the no-data
+        warning must still fire."""
         as_map = {
             "A": {"statistics": {"s": 1}},
             "B": {"statistics": {}, "config": {}},
         }
         meta_map = {
             "A": {"asd_build": "8.0"},
-            "B": {"asd_build": "", "node_id": "", "node_names": "B-name"},
+            "B": {
+                "asd_build": "",
+                "node_id": "",
+                "node_names": "B-name",
+                "ip": "2.2.2.2:3000",
+            },
         }
 
         with self.assertLogs(LOGGER_NAME, level="WARNING") as cm:
@@ -265,6 +271,106 @@ class GetCollectinfoDataJsonTest(unittest.IsolatedAsyncioTestCase):
 
         # Expected-node set is derived from the queried selection, not all cluster nodes.
         self.controller.cluster.get_nodes.assert_called_once_with("all")
+
+
+class NoDataWarningProductionShapeTest(unittest.IsolatedAsyncioTestCase):
+    """TOOLS-3596: a reachable node whose every info call fails must still trigger the
+    no-data warning.
+
+    Collection runs through the real _get_as_metadata/_get_as_histograms/_get_as_latency/
+    _get_as_user_agents with only the cluster info calls mocked, so the section maps carry
+    the shapes production produces: empty-string meta values, locally derived ip and
+    node_names, and seeded-empty histogram/latency/user_agents sections."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+
+        node_a = MagicMock()
+        node_a.key = "A"
+        node_b = MagicMock()
+        node_b.key = "B"
+
+        failed = TimeoutError("info call timed out")
+
+        def ok_and_failed(a_value):
+            return AsyncMock(return_value={"A": a_value, "B": failed})
+
+        cluster = MagicMock()
+        cluster.get_nodes.return_value = [node_a, node_b]
+        cluster.get_node_names.return_value = {"A": "A-name", "B": "B-name"}
+        cluster.info_system_statistics = AsyncMock(return_value={"A": {"sys": 1}})
+        cluster.info_build = ok_and_failed("8.0.0.0")
+        cluster.info_version = ok_and_failed(
+            "Aerospike Enterprise Edition build 8.0.0.0"
+        )
+        cluster.info_node = ok_and_failed("A1")
+        cluster.info_ip_port = AsyncMock(
+            return_value={"A": "1.1.1.1:3000", "B": "2.2.2.2:3000"}
+        )
+        cluster.info_service_list = ok_and_failed([("1.1.1.1", 3000, None)])
+        cluster.info_peers_flat_list = ok_and_failed([("1.1.1.1", 3000, None)])
+        cluster.info_udf_list = ok_and_failed({})
+        cluster.info_health_outliers = ok_and_failed({})
+        cluster.info_best_practices = ok_and_failed([])
+        cluster.info_feature_key = ok_and_failed({"asdb-compression": "true"})
+        cluster.info_release = ok_and_failed(
+            {"edition": "Aerospike Enterprise Edition"}
+        )
+        cluster.info_scan_show = ok_and_failed({})
+        cluster.info_query_show = ok_and_failed({})
+        cluster.info_jobs = ok_and_failed({})
+        cluster.info_histogram = ok_and_failed("0,1,2")
+        cluster.info_latencies = ok_and_failed({"read": {}})
+        cluster.info_user_agents = ok_and_failed([{"user-agent": "x", "count": "1"}])
+        self.controller.cluster = cluster
+
+        patches = {
+            "_get_as_cluster_name": "testcluster",
+            "_get_as_data_json": {
+                "A": {"statistics": {"s": 1}},
+                "B": {"statistics": {}, "config": {}},
+            },
+            "_get_as_access_control_list": {},
+            "_get_as_masking_rules": {},
+        }
+        for name, ret in patches.items():
+            patch.object(
+                CollectinfoController, name, AsyncMock(return_value=ret)
+            ).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_reachable_node_with_all_failed_info_calls_is_warned(self):
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as cm:
+            result = await self.controller._get_collectinfo_data_json(enable_ssh=False)
+
+        dump_map = result["testcluster"]
+        self.assertEqual(set(dump_map), {"A", "B"})
+
+        b_as_stat = dump_map["B"]["as_stat"]
+        self.assertEqual(b_as_stat["meta_data"]["ip"], "2.2.2.2:3000")
+        self.assertEqual(b_as_stat["meta_data"]["node_names"], "B-name")
+        self.assertEqual(b_as_stat["meta_data"]["node_id"], "")
+        self.assertEqual(b_as_stat["meta_data"]["asd_build"], "")
+        self.assertEqual(b_as_stat["histogram"], {})
+        self.assertEqual(b_as_stat["user_agents"], [])
+
+        self.assertTrue(
+            any("no Aerospike data for 1 node(s): B" in msg for msg in cm.output),
+            cm.output,
+        )
+
+    async def test_healthy_node_with_empty_optional_sections_is_not_warned(self):
+        self.controller.cluster.get_nodes.return_value = [
+            n for n in self.controller.cluster.get_nodes.return_value if n.key == "A"
+        ]
+
+        logger = logging.getLogger(LOGGER_NAME)
+        with mock.patch.object(logger, "warning") as warn_mock:
+            result = await self.controller._get_collectinfo_data_json(enable_ssh=False)
+
+        warn_mock.assert_not_called()
+        self.assertIn("A", result["testcluster"])
 
 
 class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):

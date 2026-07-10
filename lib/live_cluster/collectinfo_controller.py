@@ -61,15 +61,22 @@ COLLECTINFO_NODE_TIMEOUT = 5
 
 
 def _as_stat_has_aerospike_data(as_stat):
+    """Report whether an as_stat section holds any server-returned data.
+
+    node_names (get_node_names) and ip (info_ip_port) are computed from the node
+    object without an info call, so they are populated even when every info call
+    failed; counting them would make a fully-failed node read as having data
+    (TOOLS-3596).
+    """
     if not as_stat:
         return False
 
     for key, section in as_stat.items():
         if key == "meta_data":
-            # node_names is derived locally, so it is present even when every info call
-            # failed; exclude it or a fully-failed node reads as having data (TOOLS-3596).
             if any(
-                util.has_content(v) for k, v in section.items() if k != "node_names"
+                util.has_content(v)
+                for k, v in section.items()
+                if k not in constants.COLLECTINFO_LOCALLY_DERIVED_META_KEYS
             ):
                 return True
         elif util.has_content(section):

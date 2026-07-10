@@ -79,6 +79,7 @@ JSON_FILE = 3
 
 COLLECTINFO_SEPERATOR = "\n====ASCOLLECTINFO====\n"
 COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress..."
+COLLECTINFO_LOCALLY_DERIVED_META_KEYS = frozenset(("node_names", "ip"))
 
 MRT_SET = "<ERO~MRT"
 
