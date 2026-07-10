@@ -6352,6 +6352,27 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, ASInfoResponseError)
 
+    async def test_timeout_does_not_mark_node_dead(self):
+        """TOOLS-3596: a transient info-call timeout must not flip alive=False (on 3.11+
+        asyncio.TimeoutError subclasses OSError)."""
+        self.node.alive = True
+        self.info_mock.side_effect = asyncio.TimeoutError()
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, asyncio.TimeoutError)
+        self.assertTrue(self.node.alive)
+
+    async def test_os_error_still_marks_node_dead(self):
+        """A genuine OSError (e.g. connection reset) must still mark the node dead."""
+        self.node.alive = True
+        self.info_mock.side_effect = OSError("connection reset")
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, OSError)
+        self.assertFalse(self.node.alive)
+
 
 class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):
     """Test build version caching functionality"""

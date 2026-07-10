@@ -60,6 +60,24 @@ logger = logging.getLogger(__name__)
 COLLECTINFO_NODE_TIMEOUT = 5
 
 
+def _as_stat_has_aerospike_data(as_stat):
+    if not as_stat:
+        return False
+
+    for key, section in as_stat.items():
+        if key == "meta_data":
+            # node_names is derived locally, so it is present even when every info call
+            # failed; exclude it or a fully-failed node reads as having data (TOOLS-3596).
+            if any(
+                util.has_content(v) for k, v in section.items() if k != "node_names"
+            ):
+                return True
+        elif util.has_content(section):
+            return True
+
+    return False
+
+
 @CommandHelp(
     "Collects cluster info, aerospike conf file for local node and system stats from all nodes if remote server credentials provided. If credentials are not available then it will collect system stats from local node only.",
     usage=f"[-n <num-snapshots>] [-s <sleep>] [{SSH_MODIFIER_USAGE}] [--output-prefix <prefix>] [--asconfig-file <path>]",
@@ -593,7 +611,9 @@ class CollectinfoController(LiveClusterCommandController):
                 dump_map[node]["as_stat"]["masking"] = masking_map[node]
 
         no_data_nodes = [
-            node for node in expected_node_keys if not dump_map[node]["as_stat"]
+            node
+            for node in expected_node_keys
+            if not _as_stat_has_aerospike_data(dump_map[node]["as_stat"])
         ]
         if no_data_nodes:
             logger.warning(
@@ -1098,13 +1118,14 @@ class CollectinfoController(LiveClusterCommandController):
                     "Failed to archive collectinfo logs. See earlier errors for more details."
                 )
         finally:
-            # Restore the per-node timeout first so an elevated timeout cannot leak into
-            # subsequent interactive use if teardown fails (TOOLS-3596).
-            if collectinfo_timeout != original_timeout:
-                self.cluster.set_timeout(original_timeout)
-            # printing collectinfo summary
-            self.teardown_loggers()
-            terminal.enable_color(True)
+            # Best-effort restore before teardown (in-flight sockets may briefly retain the
+            # raised timeout); wrapped so a failure here cannot skip teardown (TOOLS-3596).
+            try:
+                if collectinfo_timeout != original_timeout:
+                    self.cluster.set_timeout(original_timeout)
+            finally:
+                self.teardown_loggers()
+                terminal.enable_color(True)
 
     async def _do_default(self, line):
         snp_count = util.get_arg_and_delete_from_mods(

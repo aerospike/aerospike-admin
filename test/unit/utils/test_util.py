@@ -21,6 +21,15 @@ from lib.utils import util
 
 
 class UtilTest(unittest.IsolatedAsyncioTestCase):
+    def test_has_content(self):
+        for empty in [{}, [], (), set(), "", None, {"a": {}}, {"a": ""}, [{}, []]]:
+            with self.subTest(value=empty):
+                self.assertFalse(util.has_content(empty))
+
+        for full in [0, False, "x", ["", "y"], {"a": {"b": 1}}, {"a": "", "b": "v"}]:
+            with self.subTest(value=full):
+                self.assertTrue(util.has_content(full))
+
     def test_get_value_from_dict(self):
         value = {"a": 123, "b": "8.9", "c": "abc"}
 

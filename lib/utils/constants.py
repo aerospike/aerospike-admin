@@ -136,6 +136,9 @@ class NodeSelection:
     RANDOM = "random"
 
 
+PRINCIPAL_SCOPED_TYPES = ("acl", "masking")
+
+
 class Modifiers:
     WITH = "with"
     FOR = "for"

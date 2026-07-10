@@ -183,6 +183,35 @@ class BuildDumpMapTest(unittest.TestCase):
         warn_mock.assert_not_called()
         self.assertEqual(set(dump_map), {"A", "B"})
 
+    def test_node_with_only_seeded_empty_sections_is_warned(self):
+        """TOOLS-3596: a fully-failed node has a truthy but empty as_stat (empty-string
+        meta plus seeded empty sections); the no-data warning must still fire."""
+        as_map = {
+            "A": {"statistics": {"s": 1}},
+            "B": {"statistics": {}, "config": {}},
+        }
+        meta_map = {
+            "A": {"asd_build": "8.0"},
+            "B": {"asd_build": "", "node_id": "", "node_names": "B-name"},
+        }
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as cm:
+            dump_map = self._build(
+                {"A", "B"},
+                as_map,
+                self.empty,
+                meta_map,
+                histogram_map={"B": {}},
+                latency_map={"B": {}},
+                user_agents_map={"B": []},
+            )
+
+        self.assertIn("B", dump_map)
+        self.assertTrue(
+            any("no Aerospike data for 1 node(s): B" in msg for msg in cm.output),
+            cm.output,
+        )
+
 
 class GetCollectinfoDataJsonTest(unittest.IsolatedAsyncioTestCase):
     """Tests for the async orchestration in _get_collectinfo_data_json (TOOLS-3596).

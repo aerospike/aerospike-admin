@@ -16,7 +16,11 @@ import copy
 from typing import Any
 
 from lib.utils import common, util
-from lib.utils.constants import NodeSelection, NodeSelectionType
+from lib.utils.constants import (
+    NodeSelection,
+    NodeSelectionType,
+    PRINCIPAL_SCOPED_TYPES,
+)
 from lib.utils.lookup_dict import LookupDict
 
 from .collectinfo_parser import collectinfo_parser
@@ -356,7 +360,12 @@ class _CollectinfoSnapshot:
         except Exception:
             pass
 
-        if nodes == NodeSelection.PRINCIPAL and principal_ip and not data:
+        if (
+            nodes == NodeSelection.PRINCIPAL
+            and principal_ip
+            and not data
+            and type in PRINCIPAL_SCOPED_TYPES
+        ):
             # The computed principal can be wrong when the true principal's node_id
             # was not collected (TOOLS-3596). Principal-scoped data (e.g. ACL) is
             # stored only on the node it was collected from, so fall back to every
@@ -416,7 +425,11 @@ class _CollectinfoSnapshot:
             # A node without meta_data (info calls failed during collection, TOOLS-3596)
             # keeps the default id "N/E"; compute a best-effort principal from the nodes
             # whose ids are known instead of giving up on the whole snapshot.
-            known_ids = [n.node_id for n in self.nodes.values() if n.node_id != "N/E"]
+            known_ids = [
+                n.node_id
+                for n in self.nodes.values()
+                if n.node_id and n.node_id != "N/E"
+            ]
 
             if not known_ids:
                 if self._get_node_count() == 1:

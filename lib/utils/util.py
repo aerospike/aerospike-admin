@@ -655,6 +655,20 @@ def filter_exceptions(data: Any):
     return data
 
 
+def has_content(value: Any) -> bool:
+    """
+    Recursively report whether a value holds any non-empty leaf. Empty containers,
+    empty strings, and None count as no content; any other scalar counts as content.
+    """
+    if isinstance(value, dict):
+        return any(has_content(v) for v in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(has_content(v) for v in value)
+    if isinstance(value, str):
+        return value != ""
+    return value is not None
+
+
 def pct_to_value(data, d_pct):
     """
     Function takes dictionary with base value, and dictionary with percentage and converts percentage to value.

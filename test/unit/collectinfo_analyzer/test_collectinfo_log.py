@@ -76,7 +76,19 @@ class CollectinfoSnapshotExpectedPrincipalTest(unittest.TestCase):
 
         snapshot = _snapshot(cinfo_data)
 
+        self.assertIn("3.3.3.3:3000", snapshot.nodes)
         self.assertEqual(snapshot.get_expected_principal(), "B2")
+
+    def test_principal_unknown_when_all_ids_are_empty_string(self):
+        # node_id "" (failed `node` call) must be treated as unknown, not the "0" sentinel.
+        cinfo_data = {
+            "1.1.1.1:3000": {"as_stat": {"meta_data": {"node_id": ""}}},
+            "2.2.2.2:3000": {"as_stat": {"meta_data": {"node_id": ""}}},
+        }
+
+        snapshot = _snapshot(cinfo_data)
+
+        self.assertEqual(snapshot.get_expected_principal(), "UNKNOWN_PRINCIPAL")
 
     def test_principal_unknown_when_no_ids_known_on_multiple_nodes(self):
         cinfo_data = {
@@ -135,6 +147,46 @@ class CollectinfoSnapshotPrincipalScopedDataTest(unittest.TestCase):
             snapshot.get_data(type="acl", nodes=NodeSelection.PRINCIPAL),
             {"2.2.2.2:3000": {}},
         )
+
+    def test_principal_fallback_does_not_fire_for_all_node_types(self):
+        # config is an all-node section, so a principal request with no principal config
+        # must return nothing, not every node's config.
+        cfg = {"service": {"proto-fd-max": "15000"}}
+        cinfo_data = {
+            "1.1.1.1:3000": {"as_stat": {"meta_data": {"node_id": "B2"}}},
+            "2.2.2.2:3000": {
+                "as_stat": {"meta_data": {"node_id": "A1"}, "config": cfg}
+            },
+        }
+
+        snapshot = _snapshot(cinfo_data)
+
+        self.assertEqual(snapshot.get_expected_principal(), "B2")
+        result = snapshot.get_data(type="config", nodes=NodeSelection.PRINCIPAL)
+        self.assertNotIn("2.2.2.2:3000", result)
+        self.assertEqual(result, {})
+
+
+class CollectinfoSnapshotDegradedNodeGetDataTest(unittest.TestCase):
+    """TOOLS-3596: a registered node with an empty as_stat (every info call failed) must
+    flow through get_data without raising; it simply contributes no data."""
+
+    def test_get_data_over_snapshot_with_degraded_node_does_not_raise(self):
+        cinfo_data = {
+            "1.1.1.1:3000": {
+                "as_stat": {
+                    "meta_data": {"node_id": "A1"},
+                    "statistics": {"service": {"x": 1}},
+                }
+            },
+            "2.2.2.2:3000": {"as_stat": {}},  # degraded
+        }
+
+        snapshot = _snapshot(cinfo_data)
+
+        result = snapshot.get_data(type="statistics")
+        self.assertIn("1.1.1.1:3000", result)
+        self.assertNotIn("2.2.2.2:3000", result)
 
 
 if __name__ == "__main__":

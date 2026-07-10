@@ -84,6 +84,10 @@ def async_return_exceptions(func):
 
         try:
             return await func(*args, **kwargs)
+        except asyncio.TimeoutError as e:
+            # asyncio.TimeoutError subclasses OSError on 3.11+; keep this before the OSError
+            # branch so a transient timeout does not flip alive=False (TOOLS-3596).
+            exception = e
         except (ASInfoNotAuthenticatedError, ASProtocolConnectionError) as e:
             args[0].alive = False
             exception = e

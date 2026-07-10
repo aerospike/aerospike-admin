@@ -80,6 +80,38 @@ class ComputeLicenseDataSizeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(any("2.2.2.2" in msg for msg in cm.output), cm.output)
 
+    def test_missing_host_warned_once_across_namespaces(self):
+        """TOOLS-3596: a missing build is a whole-node condition. A node absent from
+        server_builds while reporting stats in many namespaces must produce a single
+        warning, not one per namespace."""
+        ns = {
+            "1.1.1.1": {
+                "master_objects": 100,
+                "effective_replication_factor": 2,
+                "pmem_used_bytes": 99000,
+            },
+            "2.2.2.2": {
+                "master_objects": 100,
+                "effective_replication_factor": 2,
+                "pmem_used_bytes": 99000,
+            },
+        }
+        namespace_stats = {"foo": ns, "bar": ns, "baz": ns}
+        server_builds = {"1.1.1.1": "5.0.0.0"}
+
+        summary_dict = common._initialize_summary_output(namespace_stats.keys())
+        with self.assertLogs("lib.utils.common", level="WARNING") as cm:
+            common.compute_license_data_size(
+                namespace_stats=namespace_stats,
+                server_builds=server_builds,
+                summary_dict=summary_dict,
+            )
+
+        warnings_about_host = [
+            msg for msg in cm.output if "2.2.2.2" in msg and "build responses" in msg
+        ]
+        self.assertEqual(len(warnings_about_host), 1, cm.output)
+
     @parameterized.expand(
         [
             (
