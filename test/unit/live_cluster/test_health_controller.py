@@ -43,6 +43,7 @@ CLUSTER_INFO_METHODS = (
 
 class HealthCheckControllerDeprecationTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        self.enterContext(warnings.catch_warnings())
         warnings.filterwarnings("error", category=RuntimeWarning)
         HealthCheckController.last_snapshot_collection_time = 0
         HealthCheckController.last_snapshot_count = 0
