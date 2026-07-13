@@ -369,6 +369,9 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
+                        # Near the mounts/memory budget: stop-writes for in-memory
+                        # indexes; for flash/pmem, allocations fail as the mounts fill.
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
                             >= edata.record["Primary Index"]["Evict%"]
@@ -454,6 +457,9 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
+                        # Near the mounts/memory budget: stop-writes for in-memory
+                        # indexes; for flash/pmem, allocations fail as the mounts fill.
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
                             >= edata.record["Secondary Index"]["Evict%"]
