@@ -364,32 +364,22 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         #       new parser or correct shlex behavior.
         commands = []
         command = []
-        build_token = ""
 
         # Maybe someday we should not allow most of the characters below without
         # quotes surrounding them.  These characters below define what can be in
         # an unquotes string.
-        lexer.wordchars += r"`~!@#$;%^&*()_-+={}[]|:<>,./\?"
+        lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|:<>,./\?"
         lexer.escapedquotes += "'"
 
         try:
             for token in lexer:
-                build_token += token
-
                 if token == ";":
                     if command:
                         commands.append(command)
                         command = []
-                elif token.endswith(";"):
-                    command.append(build_token[:-1])
-                    commands.append(command)
-                    command = []
                 else:
-                    command.append(build_token)
-                build_token = ""
+                    command.append(token)
             else:
-                if build_token:
-                    command.append(build_token)
                 if command:
                     commands.append(command)
 
@@ -461,7 +451,11 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         for line in lines:
             if line[0] in self.commands:
-                return " ".join(line)
+                if line[0] in ("exit", "quit", "EOF"):
+                    return " ".join(line)
+
+                await self.onecmd(" ".join(line))
+                continue
 
             if len(lines) > max_commands_to_print_header:
                 if len(line) > 1 and any(
@@ -923,7 +917,6 @@ async def main():
                 command_index_to_print_from=command_index_to_print_from,
             )
 
-            await shell.onecmd(line)
             func = shell.onecmd
             args = (line,)
 
@@ -972,21 +965,23 @@ async def cmdloop(
     use_yappi: bool,
     single_command: bool,
 ):
-    try:
-        if use_yappi:
-            yappi.start()
-            await func(*args)
-            yappi.get_func_stats().print_all()
-        else:
-            await func(*args)
-    except (KeyboardInterrupt, SystemExit):
-        if not single_command:
+    while True:
+        try:
+            if use_yappi:
+                yappi.start()
+                await func(*args)
+                yappi.get_func_stats().print_all()
+            else:
+                await func(*args)
+            return
+        except (KeyboardInterrupt, SystemExit):
+            if single_command:
+                raise
             shell.intro = (
                 terminal.fg_red()
                 + "\nTo exit asadm utility please run the 'exit' command."
                 + terminal.fg_clear()
             )
-        await cmdloop(shell, func, args, use_yappi, single_command)
 
 
 def parse_commands(file):
