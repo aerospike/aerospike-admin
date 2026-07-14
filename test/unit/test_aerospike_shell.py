@@ -574,5 +574,36 @@ class PrecmdDispatchTest(unittest.IsolatedAsyncioTestCase):
         shell.ctrl.execute.assert_not_called()
 
 
+class CmdloopTest(unittest.IsolatedAsyncioTestCase):
+    """Module-level cmdloop re-raises interrupts in single-command (execute)
+    mode and retries func, resetting shell.intro, in interactive mode."""
+
+    async def test_single_command_reraises_keyboard_interrupt(self):
+        func = AsyncMock(side_effect=KeyboardInterrupt)
+        with self.assertRaises(KeyboardInterrupt):
+            await asadm.cmdloop(Mock(), func, (), False, True)
+        func.assert_awaited_once()
+
+    async def test_single_command_reraises_system_exit(self):
+        func = AsyncMock(side_effect=SystemExit)
+        with self.assertRaises(SystemExit):
+            await asadm.cmdloop(Mock(), func, (), False, True)
+        func.assert_awaited_once()
+
+    async def test_normal_completion_runs_once(self):
+        func = AsyncMock(return_value=None)
+        await asadm.cmdloop(Mock(), func, ("line",), False, False)
+        func.assert_awaited_once_with("line")
+
+    async def test_interactive_retries_and_sets_intro(self):
+        func = AsyncMock(side_effect=[KeyboardInterrupt(), None])
+        shell = Mock()
+        await asadm.cmdloop(shell, func, (), False, False)
+        self.assertEqual(func.await_count, 2)
+        self.assertIn(
+            "To exit asadm utility please run the 'exit' command", shell.intro
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
