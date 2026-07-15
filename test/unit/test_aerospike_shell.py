@@ -705,7 +705,10 @@ class ExecuteModeDoubleRunTest(unittest.IsolatedAsyncioTestCase):
     async def test_emptyline_is_noop(self):
         """Stock cmd.Cmd re-runs lastcmd on a blank line; the override must stay."""
         shell = object.__new__(AerospikeShell)
+        shell.lastcmd = "info network"
+        shell.onecmd = Mock()
         self.assertIsNone(shell.emptyline())
+        shell.onecmd.assert_not_called()
 
 
 if __name__ == "__main__":
