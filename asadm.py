@@ -369,7 +369,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
         # Maybe someday we should not allow most of the characters below without
         # quotes surrounding them.  These characters below define what can be in
-        # an unquotes string.
+        # an unquoted string.
         lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|:<>,./\?"
         lexer.escapedquotes += "'"
 

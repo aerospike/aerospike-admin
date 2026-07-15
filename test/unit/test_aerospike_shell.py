@@ -519,6 +519,7 @@ class CleanLineTest(unittest.TestCase):
         """Known limitation: posix shlex strips quotes before we see the token."""
         self.assertEqual(self.clean("info ';'"), [["info"]])
         self.assertEqual(self.clean('info ";"'), [["info"]])
+        self.assertEqual(self.clean(r"info \;"), [["info"]])
         self.assertEqual(
             self.clean("grep -s ';' statistics"), [["grep", "-s"], ["statistics"]]
         )
