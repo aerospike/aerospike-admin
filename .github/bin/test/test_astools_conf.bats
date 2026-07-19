@@ -14,7 +14,7 @@ setup() {
 
 @test "astools.conf is created on install and matches the sample" {
   [ -f "$CONF" ]
-  cmp "$CONF" "$SAMPLE"
+  [ "$(cat "$CONF")" = "$(cat "$SAMPLE")" ]
 }
 
 @test "astools.conf is recreated after removal + reinstall (after-upgrade wiring)" {
@@ -22,7 +22,7 @@ setup() {
   [ ! -e "$CONF" ]
   eval "${ASTOOLS_REINSTALL}"
   [ -f "$CONF" ]
-  cmp "$CONF" "$SAMPLE"
+  [ "$(cat "$CONF")" = "$(cat "$SAMPLE")" ]
 }
 
 @test "user edits survive reinstall" {
