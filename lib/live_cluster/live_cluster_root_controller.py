@@ -45,7 +45,16 @@ from .manage_controller import (
 )
 
 
-@CommandHelp("A tool for interacting with your Aerospike cluster")
+@CommandHelp(
+    "A tool for interacting with your Aerospike cluster.",
+    "Color legend for the Node column of 'info' and 'show' output:",
+    "a node shown in green (node name and Node ID prefixed with *) is the",
+    "cluster's expected principal (the node with the highest node ID among",
+    "the nodes asadm is connected to, which may differ from the actual",
+    "cluster principal when not connected to every node); a node shown in",
+    "cyan (prefixed with @) is the local self node that asadm connected from.",
+    short_msg="A tool for interacting with your Aerospike cluster",
+)
 class LiveClusterRootController(BaseController, AsyncObject):
     cluster: Cluster
 

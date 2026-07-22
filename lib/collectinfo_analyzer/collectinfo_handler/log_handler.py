@@ -37,7 +37,7 @@ SS = 2
 
 # for zipped files
 COLLECTINFO_DIR = constants.ADMIN_HOME + "collectinfo/"
-COLLECTINFO_INTERNAL_DIR = "collectinfo_analyser_extracted_files"
+COLLECTINFO_INTERNAL_DIR = "collectinfo_analyzer_extracted_files"
 
 ######################
 
@@ -136,7 +136,11 @@ class CollectinfoLogHandler(object):
             return {}
 
         for node_ip in meta_data[timestamp]:
-            node_id = meta_data[timestamp][node_ip]["node_id"]
+            # A node collected without an id (its info calls failed, TOOLS-3596) must
+            # not break the mapping for the healthy nodes.
+            node_id = meta_data[timestamp][node_ip].get("node_id")
+            if not node_id:
+                continue
             node_to_ip[node_id] = node_ip
 
         return node_to_ip
@@ -149,7 +153,9 @@ class CollectinfoLogHandler(object):
             return {}
 
         for node_ip in meta_data[timestamp]:
-            node_id = meta_data[timestamp][node_ip]["node_id"]
+            node_id = meta_data[timestamp][node_ip].get("node_id")
+            if not node_id:
+                continue
             ip_to_node[node_ip] = node_id
 
         return ip_to_node
@@ -314,8 +320,8 @@ class CollectinfoLogHandler(object):
             if os.path.exists(self.collectinfo_dir):
                 # ToDo: Before adding file from collectinfo_dir, we need to check file already exists in input file list or not,
                 # ToDo: collectinfo_parser fails if same file exists twice in input file list. This is possible if input has zip file and
-                # ToDo: user unzipped it but did not remove zipped file, in that case collectinfo-analyser creates new unzipped file,
-                # ToDo: which results in two copies of same file (one unzipped by user and one unzipped by collectinfo-analyser).
+                # ToDo: user unzipped it but did not remove zipped file, in that case collectinfo-analyzer creates new unzipped file,
+                # ToDo: which results in two copies of same file (one unzipped by user and one unzipped by collectinfo-analyzer).
 
                 files += self._get_valid_files(self.collectinfo_dir)
 

@@ -79,6 +79,7 @@ JSON_FILE = 3
 
 COLLECTINFO_SEPERATOR = "\n====ASCOLLECTINFO====\n"
 COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress..."
+COLLECTINFO_LOCALLY_DERIVED_META_KEYS = frozenset(("node_names", "ip"))
 
 MRT_SET = "<ERO~MRT"
 
@@ -119,9 +120,9 @@ AdminMode = Enumeration(
     [
         # Connect to live cluster
         "LIVE_CLUSTER",
-        # Analyse collectinfo
+        # Analyze collectinfo
         "COLLECTINFO_ANALYZER",
-        # Analyse Aerospike logs
+        # Analyze Aerospike logs
         "LOG_ANALYZER",
     ]
 )
@@ -134,6 +135,9 @@ class NodeSelection:
     ALL = "all"
     PRINCIPAL = "principal"
     RANDOM = "random"
+
+
+PRINCIPAL_SCOPED_TYPES = ("acl", "masking")
 
 
 class Modifiers:
@@ -162,9 +166,12 @@ class JobType:
 # server versions with critical changes
 # TODO: Change to functions on the node
 SERVER_INFO_BINS_REMOVAL_VERSION = "7.0"
+SERVER_INDEX_TYPE_PREFIX_FIRST_VERSION = "7.0"
 SERVER_SINDEX_BLOB_TYPE_FIRST_VERSION = "7.0"
 SERVER_SINDEX_ON_CDT_FIRST_VERSION = "6.1"
 SERVER_SINDEX_ON_EXP_FIRST_VERSION = "8.1"
+SERVER_SINDEX_SET_INDEX_FIRST_VERSION = "8.1.2"
+SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION = "8.1.3"  # "numeric" type renamed "integer"
 SERVER_DATA_MASKING_FIRST_VERSION = "8.1.1"
 SERVER_RELEASE_INFO_FIRST_VERSION = "8.1.1"
 SERVER_INFO_NAMESPACE_SELECTOR_VERSION = "7.2"  # before this namespace can be id/ns

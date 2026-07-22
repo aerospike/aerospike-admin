@@ -139,6 +139,15 @@ class SheetTest(unittest.TestCase):
             (1.25, 1.25, "1.25"),
             ("42", 42.0, "42.0"),
             (42, 42.0, "42.0"),
+            ("1e3", 1000.0, "1000.0"),
+            # Hex strings fall back to the raw value, including "9E..."
+            # shapes that parse as overflowing scientific notation
+            # (TOOLS-3772).
+            ("B40E9AE14C62", "B40E9AE14C62", "B40E9AE14C62"),
+            ("9E0123456789", "9E0123456789", "9E0123456789"),
+            ("1e999", "1e999", "1e999"),
+            # Ints too large for float() raise OverflowError; keep raw value.
+            (10**400, 10**400, str(10**400)),
         ]
     )
     def test_sheet_project_float(self, input, expected_raw, expected_converted):
@@ -151,7 +160,28 @@ class SheetTest(unittest.TestCase):
         self.assertEqual(value["converted"], expected_converted)
 
     @parameterized.expand(
-        [("42", 42, "42"), (42, 42, "42"), ("1.25", 1, "1"), (1.25, 1, "1")]
+        [
+            ("42", 42, "42"),
+            (42, 42, "42"),
+            ("1.25", 1, "1"),
+            (1.25, 1, "1"),
+            ("1e3", 1000, "1000"),
+            # Hex strings fall back to the raw value, including "9E..."
+            # shapes that parse as overflowing scientific notation and
+            # previously raised OverflowError, rendering the error entry
+            # "~~" (TOOLS-3772).
+            ("B40E9AE14C62", "B40E9AE14C62", "B40E9AE14C62"),
+            ("9E0123456789", "9E0123456789", "9E0123456789"),
+            ("1e999", "1e999", "1e999"),
+            ("-1e999", "-1e999", "-1e999"),
+            ("nan", "nan", "nan"),
+            ("inf", "inf", "inf"),
+            (10**400, 10**400, str(10**400)),
+            # An actual float inf (e.g. Infinity in collectinfo JSON) raises
+            # OverflowError from int(inf); keep the raw value.
+            (float("inf"), float("inf"), "inf"),
+            (float("-inf"), float("-inf"), "-inf"),
+        ]
     )
     def test_sheet_project_number(self, input, expected_raw, expected_converted):
         test_sheet = Sheet((Field("F", Projectors.Number("d", "f")),), from_source="d")
@@ -161,6 +191,25 @@ class SheetTest(unittest.TestCase):
 
         self.assertEqual(value["raw"], expected_raw)
         self.assertEqual(value["converted"], expected_converted)
+
+    @parameterized.expand(
+        [
+            ("number", Projectors.Number),
+            ("float", Projectors.Float),
+        ]
+    )
+    def test_sheet_project_none_is_no_entry(self, _, projector):
+        """A present-but-None value renders as no_entry, not error_entry;
+        int(None)/float(None) previously raised TypeError which surfaced as
+        the error entry '~~'."""
+        test_sheet = Sheet(
+            (Field("F", projector("d", "f"), hidden=False),), from_source="d"
+        )
+        sources = dict(d=dict(n0=dict(f=None)))
+        render = do_render(test_sheet, "test", sources)
+        value = render["groups"][0]["records"][0]["F"]
+
+        self.assertEqual(value["converted"], test_sheet.no_entry)
 
     @parameterized.expand(
         [
@@ -362,6 +411,45 @@ class SheetTest(unittest.TestCase):
 
         self.assertEqual(value["raw"], "error")
         self.assertEqual(value["converted"], test_sheet.error_entry)
+
+    def test_sheet_aggregation_mixed_types_is_error_entry(self):
+        """A numeric column containing a non-numeric fallback value (e.g. a
+        hex string in a Number field) must render the aggregate as
+        error_entry instead of crashing the render (TOOLS-3772)."""
+        test_sheet = Sheet(
+            (Field("F", Projectors.Number("d", "f"), aggregator=Aggregators.sum()),),
+            from_source=("d",),
+        )
+        sources = dict(d=dict(n0=dict(f="1"), n1=dict(f="9E0123456789")))
+        render = do_render(test_sheet, "test", sources)
+        group = render["groups"][0]
+
+        records = {r["F"]["raw"] for r in group["records"]}
+        self.assertEqual(records, {1, "9E0123456789"})
+
+        value = group["aggregates"]["F"]
+
+        self.assertEqual(value["raw"], "error")
+        self.assertEqual(value["converted"], test_sheet.error_entry)
+
+    def test_sheet_converter_failure_falls_back_to_raw(self):
+        """A converter that assumes numeric input must not crash the render
+        when the field falls back to a non-numeric value (TOOLS-3772)."""
+        test_sheet = Sheet(
+            (
+                Field(
+                    "F",
+                    Projectors.Number("d", "f"),
+                    converter=Converters.time_seconds,
+                ),
+            ),
+            from_source=("d",),
+        )
+        sources = dict(d=dict(n0=dict(f="9E0123456789"), n1=dict(f="90061")))
+        render = do_render(test_sheet, "test", sources)
+        converted = {r["F"]["converted"] for r in render["groups"][0]["records"]}
+
+        self.assertEqual(converted, {"9E0123456789", "25:01:01"})
 
     def test_sheet_tuple_field(self):
         test_sheet = Sheet(
@@ -827,6 +915,19 @@ class SheetTest(unittest.TestCase):
             self.assertEqual(record["h"]["raw"], "1234E2")
             self.assertEqual(record["i"]["raw"], 1)
             self.assertEqual(record["j"]["raw"], 1.0)
+
+    def test_sheet_dynamic_field_infer_projectors_inf(self):
+        """A float inf value (e.g. Infinity in collectinfo JSON) previously
+        crashed projector inference with OverflowError from int(inf)
+        (TOOLS-3772)."""
+        test_sheet = Sheet((DynamicFields("d"),), from_source="d")
+        sources = dict(d=dict(n0=dict(f=float("inf"), g=1)))
+        render = do_render(test_sheet, "test", sources)
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["f"]["raw"], float("inf"))
+        self.assertEqual(record["f"]["converted"], "inf")
+        self.assertEqual(record["g"]["raw"], 1)
 
     def test_sheet_dynamic_field_selector(self):
         test_sheet = Sheet((DynamicFields("d"),), from_source="d")

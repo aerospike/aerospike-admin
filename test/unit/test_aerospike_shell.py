@@ -3,7 +3,9 @@ import asadm
 
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch, call
+from lib.base_controller import ShellException
 from lib.utils import async_object
 from lib.utils.constants import AdminMode
 
@@ -361,7 +363,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.no_color = False
                 mock_args.pmap = False
                 mock_args.collectinfo = False
-                mock_args.log_analyser = False
+                mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -397,7 +399,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.no_color = False
                 mock_args.pmap = False
                 mock_args.collectinfo = False
-                mock_args.log_analyser = False
+                mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -446,7 +448,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.no_color = False
                 mock_args.pmap = False
                 mock_args.collectinfo = False
-                mock_args.log_analyser = False
+                mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -469,3 +471,245 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                                 mock_makedirs.assert_not_called()
                                 # isdir should also not be called since we skip the whole block
                                 mock_isdir.assert_not_called()
+
+
+class CleanLineTest(unittest.TestCase):
+    """Bare instance skips the async cluster-connect setup."""
+
+    def clean(self, line):
+        shell = object.__new__(AerospikeShell)
+        return AerospikeShell.clean_line(shell, line)
+
+    def test_single_command(self):
+        self.assertEqual(self.clean("show config"), [["show", "config"]])
+
+    def test_extra_whitespace_collapsed(self):
+        self.assertEqual(self.clean("  show    config  "), [["show", "config"]])
+
+    def test_empty_and_whitespace_only(self):
+        self.assertEqual(self.clean(""), [])
+        self.assertEqual(self.clean("   "), [])
+
+    def test_semicolon_with_spaces_splits(self):
+        self.assertEqual(
+            self.clean("show config ; show statistics"),
+            [["show", "config"], ["show", "statistics"]],
+        )
+
+    def test_semicolon_without_spaces_splits(self):
+        self.assertEqual(
+            self.clean("show config;show statistics"),
+            [["show", "config"], ["show", "statistics"]],
+        )
+
+    def test_leading_and_trailing_semicolons_ignored(self):
+        self.assertEqual(self.clean(";show config;"), [["show", "config"]])
+
+    def test_multiple_consecutive_semicolons(self):
+        self.assertEqual(
+            self.clean("show config ;; show statistics"),
+            [["show", "config"], ["show", "statistics"]],
+        )
+
+    def test_quoted_semicolon_embedded_in_token_is_literal(self):
+        self.assertEqual(self.clean("info 'a;b'"), [["info", "a;b"]])
+        self.assertEqual(self.clean("info foo';'bar"), [["info", "foo;bar"]])
+
+    def test_standalone_quoted_semicolon_still_splits(self):
+        """Known limitation: posix shlex strips quotes before we see the token."""
+        self.assertEqual(self.clean("info ';'"), [["info"]])
+        self.assertEqual(self.clean('info ";"'), [["info"]])
+        self.assertEqual(self.clean(r"info \;"), [["info"]])
+        self.assertEqual(
+            self.clean("grep -s ';' statistics"), [["grep", "-s"], ["statistics"]]
+        )
+
+    def test_unterminated_quote_raises_shell_exception(self):
+        with self.assertRaises(ShellException):
+            self.clean("show 'unterminated")
+
+
+class PrecmdDispatchTest(unittest.IsolatedAsyncioTestCase):
+    def make_shell(self):
+        shell = object.__new__(AerospikeShell)
+        shell.commands = set(asadm.TERMINATOR_COMMANDS) | {"cake"}
+        shell.execute_only_mode = False
+        shell.ctrl = Mock()
+        shell.ctrl.execute = AsyncMock(return_value="")
+        shell.onecmd = AsyncMock(return_value=None)
+        return shell
+
+    async def test_ctrl_command_routes_to_execute(self):
+        shell = self.make_shell()
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            result = await shell.precmd("info network")
+        self.assertEqual(result, "")
+        shell.ctrl.execute.assert_called_once_with(["info", "network"])
+        shell.onecmd.assert_not_called()
+
+    async def test_do_command_routes_to_onecmd(self):
+        shell = self.make_shell()
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            result = await shell.precmd("cake")
+        self.assertEqual(result, "")
+        shell.onecmd.assert_awaited_once_with("cake")
+        shell.ctrl.execute.assert_not_called()
+
+    async def test_exit_returns_line_without_inline_dispatch(self):
+        shell = self.make_shell()
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            result = await shell.precmd("exit")
+        self.assertEqual(result, "exit")
+        shell.onecmd.assert_not_called()
+
+    async def test_multiple_commands_all_run(self):
+        shell = self.make_shell()
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            result = await shell.precmd("cake ; info network ; cake")
+        self.assertEqual(result, "")
+        self.assertEqual(shell.onecmd.await_args_list, [call("cake"), call("cake")])
+        shell.ctrl.execute.assert_called_once_with(["info", "network"])
+
+    async def test_exit_after_command_stops_and_skips_rest(self):
+        shell = self.make_shell()
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            result = await shell.precmd("cake ; exit ; info network")
+        self.assertEqual(result, "exit")
+        shell.onecmd.assert_awaited_once_with("cake")
+        shell.ctrl.execute.assert_not_called()
+
+    async def test_ctrl_execute_failure_is_logged_and_batch_continues(self):
+        shell = self.make_shell()
+        shell.ctrl.execute = AsyncMock(side_effect=[Exception("boom"), ""])
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            with patch("asadm.logger") as mock_logger:
+                result = await shell.precmd("info network ; info statistics")
+        self.assertEqual(result, "")
+        self.assertEqual(shell.ctrl.execute.await_count, 2)
+        mock_logger.error.assert_called_once()
+
+    async def test_inline_do_command_failure_is_logged_and_batch_continues(self):
+        shell = self.make_shell()
+        shell.onecmd = AsyncMock(side_effect=Exception("boom"))
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            with patch("asadm.logger") as mock_logger:
+                result = await shell.precmd("cake ; info network")
+        self.assertEqual(result, "")
+        mock_logger.error.assert_called_once()
+        shell.ctrl.execute.assert_called_once_with(["info", "network"])
+
+    async def test_cancel_reraises_keyboard_interrupt_in_execute_mode(self):
+        shell = self.make_shell()
+        shell.execute_only_mode = True
+        shell.ctrl.execute = AsyncMock(side_effect=asyncio.CancelledError)
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            with self.assertRaises(KeyboardInterrupt):
+                await shell.precmd("info network")
+
+    async def test_cancel_is_swallowed_in_interactive_mode(self):
+        shell = self.make_shell()
+        shell.execute_only_mode = False
+        shell.ctrl.execute = AsyncMock(side_effect=asyncio.CancelledError)
+        with patch("asadm.asyncio.get_event_loop", return_value=Mock()):
+            result = await shell.precmd("info network")
+        self.assertEqual(result, "")
+
+
+class CmdloopTest(unittest.IsolatedAsyncioTestCase):
+    async def test_single_command_reraises_keyboard_interrupt(self):
+        func = AsyncMock(side_effect=KeyboardInterrupt)
+        with self.assertRaises(KeyboardInterrupt):
+            await asadm.cmdloop(Mock(), func, (), False, True)
+        func.assert_awaited_once()
+
+    async def test_single_command_reraises_system_exit(self):
+        func = AsyncMock(side_effect=SystemExit)
+        with self.assertRaises(SystemExit):
+            await asadm.cmdloop(Mock(), func, (), False, True)
+        func.assert_awaited_once()
+
+    async def test_normal_completion_runs_once(self):
+        func = AsyncMock(return_value=None)
+        await asadm.cmdloop(Mock(), func, ("line",), False, False)
+        func.assert_awaited_once_with("line")
+
+    async def test_interactive_retries_and_sets_intro(self):
+        func = AsyncMock(side_effect=[KeyboardInterrupt(), None])
+        shell = Mock()
+        await asadm.cmdloop(shell, func, (), False, False)
+        self.assertEqual(func.await_count, 2)
+        self.assertIn(
+            "To exit asadm utility please run the 'exit' command", shell.intro
+        )
+
+    async def test_interactive_retry_is_iterative_not_recursive(self):
+        func = AsyncMock(side_effect=[KeyboardInterrupt()] * 2000 + [None])
+        await asadm.cmdloop(Mock(), func, (), False, False)
+        self.assertEqual(func.await_count, 2001)
+
+
+class ExecuteModeDoubleRunTest(unittest.IsolatedAsyncioTestCase):
+    """The duplicate onecmd call lived in main(), upstream of cmdloop, so only
+    driving main()'s execute path catches a double dispatch."""
+
+    def _make_args(self):
+        return SimpleNamespace(
+            execute="cake",
+            debug=False,
+            help=False,
+            version=False,
+            no_color=False,
+            pmap=False,
+            collectinfo=False,
+            log_analyzer=False,
+            json=False,
+            asinfo_mode=False,
+            services_alumni=False,
+            services_alternate=False,
+            tls_enable=False,
+            auth=None,
+            profile=False,
+            out_file=None,
+            user=None,
+            password=None,
+            log_path=None,
+            single_node=False,
+            enable=False,
+            timeout=5,
+        )
+
+    async def test_do_command_dispatched_exactly_once(self):
+        args = self._make_args()
+        shell = AsyncMock()
+        shell.connected = True
+        shell._has_admin_nodes = Mock(return_value=False)
+        shell.precmd = AsyncMock(return_value="")
+        shell.onecmd = AsyncMock(return_value=None)
+        shell.close = AsyncMock()
+
+        async def make_shell(*a, **k):
+            return shell
+
+        with patch("asadm.conf.get_cli_args", return_value=args), patch(
+            "asadm.conf.loadconfig", return_value=(args, [("1.1.1.1", 3000, None)])
+        ), patch("asadm.parse_tls_input", return_value=None), patch(
+            "asadm.AerospikeShell", side_effect=make_shell
+        ), patch(
+            "os.path.isfile", return_value=False
+        ):
+            with self.assertRaises(SystemExit):
+                await asadm.main()
+
+        shell.onecmd.assert_awaited_once_with("")
+
+    async def test_emptyline_is_noop(self):
+        """Stock cmd.Cmd re-runs lastcmd on a blank line; the override must stay."""
+        shell = object.__new__(AerospikeShell)
+        shell.lastcmd = "info network"
+        shell.onecmd = Mock()
+        self.assertIsNone(shell.emptyline())
+        shell.onecmd.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

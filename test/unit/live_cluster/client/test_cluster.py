@@ -17,7 +17,7 @@ import socket
 import unittest
 import warnings
 from collections import deque
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from pytest import PytestUnraisableExceptionWarning
 
@@ -416,6 +416,28 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
             cl.get_expected_principal(),
             expected,
             "get_expected_principal did not return the expected result",
+        )
+
+    async def test_get_self_node(self):
+        cl = await self.get_cluster_mock(3)
+        for node in cl.nodes.values():
+            node.localhost = False
+        self_node = cl.nodes["127.0.0.1:3000"]
+        self_node.localhost = True
+        self.assertEqual(
+            cl.get_self_node(),
+            self_node.node_id,
+            "get_self_node did not return the localhost node's id",
+        )
+
+    async def test_get_self_node_returns_empty_when_no_localhost(self):
+        cl = await self.get_cluster_mock(3)
+        for node in cl.nodes.values():
+            node.localhost = False
+        self.assertEqual(
+            cl.get_self_node(),
+            "",
+            "get_self_node did not return '' when no node is localhost",
         )
 
     async def test_get_visibility_error_nodes_returns_empty(self):
@@ -826,6 +848,20 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         # Should return seed nodes when no nodes exist
         self.assertEqual(set(result), {("192.1.1.1", 3000, None)})
+
+    async def test_set_timeout_updates_cluster_and_all_nodes(self):
+        """TOOLS-3596: set_timeout updates the cluster default (so nodes created by a later
+        refresh inherit it) and fans out to every existing node."""
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        node_a = MagicMock()
+        node_b = MagicMock()
+        cluster.nodes = {"a": node_a, "b": node_b}
+
+        cluster.set_timeout(9)
+
+        self.assertEqual(cluster._timeout, 9)
+        node_a.set_timeout.assert_called_once_with(9)
+        node_b.set_timeout.assert_called_once_with(9)
 
     async def test_find_new_nodes_with_nodes_no_refresh_needed(self):
         """Test find_new_nodes when nodes don't need refresh"""

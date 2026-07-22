@@ -15,6 +15,7 @@
 from collections.abc import Iterator
 import datetime
 import locale
+import math
 from os import path
 import sys
 import time
@@ -102,6 +103,16 @@ class CliView(object):
         return " (" + str(timestamp) + ")"
 
     @staticmethod
+    def _common(cluster, **extra):
+        """Build the 'common' dict passed to sheet rendering. Extra keyword
+        arguments are merged in for sheets that need additional fields."""
+        return dict(
+            principal=cluster.get_expected_principal(),
+            self_node=cluster.get_self_node(),
+            **extra,
+        )
+
+    @staticmethod
     @reserved_modifiers
     def info_network(
         stats,
@@ -146,8 +157,8 @@ class CliView(object):
         common_key = util.find_most_frequent(cluster_keys)
         common_principal = util.find_most_frequent(cluster_principals)
 
-        common = dict(
-            principal=cluster.get_expected_principal(),
+        common = CliView._common(
+            cluster,
             common_size=common_size,
             common_key=common_key,
             common_principal=common_principal,
@@ -194,7 +205,7 @@ class CliView(object):
             ns_stats=ns_stats,
             service_stats=service_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(
@@ -228,7 +239,7 @@ class CliView(object):
             node_names=node_names,
             ns_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(
@@ -256,7 +267,7 @@ class CliView(object):
             node_names=node_names,
             ns_stats=ns_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(
@@ -285,7 +296,7 @@ class CliView(object):
             node_names=node_names,
             ns_stats=ns_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(
@@ -308,7 +319,7 @@ class CliView(object):
             node_names=node_names,
             set_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.info_set_sheet, title, sources, common=common)
@@ -327,7 +338,7 @@ class CliView(object):
             node_names=node_names,
             dc_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.info_dc_sheet, title, sources, common=common)
@@ -353,7 +364,7 @@ class CliView(object):
             builds=builds,
             xdr_stats=stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.info_old_xdr_sheet, title, sources, common=common)
@@ -364,7 +375,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         node_names = cluster.get_node_names()
         node_ids = cluster.get_node_ids()
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
         stats = util.flip_keys(stats)
         dcs = list(stats.keys())
         dcs.sort()
@@ -412,7 +423,7 @@ class CliView(object):
             node_names=node_names,
             sindex_stats=sindex_stats,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.info_sindex_sheet, title, sources, common=common)
@@ -474,7 +485,7 @@ class CliView(object):
         like=None,
         with_=None,
         timestamp="",
-        loganalyser_mode=False,
+        loganalyzer_mode=False,
         **ignore,
     ):
         node_names = cluster.get_node_names(with_)
@@ -511,7 +522,7 @@ class CliView(object):
     @staticmethod
     def format_latency(orig_latency):
         # XXX - eventually, node.py could return this format. Changing here
-        #       because loganalyser also sends this format.
+        #       because loganalyzer also sends this format.
         latency = {}
 
         for node, nodes_data in orig_latency.items():
@@ -604,7 +615,7 @@ class CliView(object):
         sources = dict(node_names=node_names, data=service_configs, node_ids=node_ids)
         disable_aggregations = not show_total
         style = SheetStyle.columns if flip_output else None
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(
@@ -644,7 +655,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
         style = SheetStyle.columns if flip_output else None
 
         # dict format starts at {node: {dc: {ns:{}}}}
@@ -696,7 +707,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
         style = SheetStyle.columns if flip_output else None
 
         # dict format starts at {node: {dc: {ns:{}}}}
@@ -1119,7 +1130,7 @@ class CliView(object):
             node_ids=node_ids,
             pmap=pmap_data,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.show_pmap_sheet, title, sources, common=common)
@@ -1171,7 +1182,7 @@ class CliView(object):
 
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Users Statistics{}".format(title_timestamp)
 
@@ -1323,7 +1334,7 @@ class CliView(object):
             node_ids=node_ids,
             data=roster_data,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
         style = SheetStyle.columns
 
         if flip:
@@ -1349,7 +1360,7 @@ class CliView(object):
         title = "Best Practices{}".format(title_timestamp)
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
         sources = dict(data=failed_practices, node_names=node_names, node_ids=node_ids)
 
         CliView.print_result(
@@ -1357,7 +1368,7 @@ class CliView(object):
         )
         CliView.print_result(
             "Following Aerospike's best-practices are required for optimal stability and performance.\n"
-            + "Descriptions of each can be found @ https://docs.aerospike.com/docs/operations/install/linux/bestpractices/index.html"
+            + "Descriptions of each can be found @ https://aerospike.com/docs/database/learn/best-practices"
         )
 
     @staticmethod
@@ -1370,6 +1381,7 @@ class CliView(object):
         trid=None,
         like=None,
         with_=None,
+        flip_output=False,
         **ignore,
     ):
         if jobs_data is None:
@@ -1395,11 +1407,18 @@ class CliView(object):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         sources = dict(data=filtered_data, node_names=node_names, node_ids=node_ids)
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
+        style = SheetStyle.columns if flip_output else None
 
         CliView.print_result(
             sheet.render(
-                templates.show_jobs, title, sources, common=common, selectors=like
+                templates.show_jobs,
+                title,
+                sources,
+                common=common,
+                selectors=like,
+                style=style,
+                disable_title_fill_repeat=flip_output,
             )
         )
 
@@ -1453,7 +1472,7 @@ class CliView(object):
         node_names = cluster.get_node_names(hosts)
         node_ids = cluster.get_node_ids(hosts)
         sources = dict(data=jobs_data, node_names=node_names, node_ids=node_ids)
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.kill_jobs, title, sources, common=common)
@@ -1637,7 +1656,7 @@ class CliView(object):
     def print_info_responses(title, responses, cluster, **mods):
         node_names = cluster.get_node_names(mods.get("with", []))
         sources = dict(data=responses, node_names=node_names)
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.node_info_responses, title, sources, common=common)
@@ -1832,8 +1851,13 @@ class CliView(object):
             return CliView._format_value(int(val))
         elif isinstance(val, str):
             try:
-                val = float(val)
-                return CliView._format_value(val)
+                as_float = float(val)
+
+                # Hex strings like "9E0123456789" (e.g. cluster_key) parse
+                # as scientific notation and overflow to inf; keep the
+                # original string.
+                if not math.isinf(as_float) and not math.isnan(as_float):
+                    return CliView._format_value(as_float)
             except Exception:
                 pass
 
@@ -2371,6 +2395,15 @@ class CliView(object):
             )
         )
 
+        if "system_memory" in cluster_dict:
+            sm = cluster_dict["system_memory"]
+            numbered_lines.append(
+                CliView.SummaryLine(
+                    "System Memory",
+                    f"{sm['avail_pct']:.2f}% free",
+                )
+            )
+
         if "pmem_index" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
@@ -2395,6 +2428,46 @@ class CliView(object):
                 )
             )
 
+        if "pmem_sindex" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Pmem Sindex",
+                    cluster_dict["pmem_sindex"],
+                )
+            )
+
+        if "flash_sindex" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Flash Sindex",
+                    cluster_dict["flash_sindex"],
+                )
+            )
+
+        if "shmem_sindex" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Shmem Sindex",
+                    cluster_dict["shmem_sindex"],
+                )
+            )
+
+        if "set_index" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Set Index",
+                    cluster_dict["set_index"],
+                )
+            )
+
+        if "indexes_memory" in cluster_dict:
+            numbered_lines.append(
+                CliView.SummaryUsageLine(
+                    "Indexes Memory",
+                    cluster_dict["indexes_memory"],
+                )
+            )
+
         if "memory_data_and_indexes" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
@@ -2405,29 +2478,29 @@ class CliView(object):
                 )
             )
 
-        if "memory" in cluster_dict:
+        if "data_memory" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
-                    "Memory",
-                    cluster_dict["memory"],
+                    "Data Memory",
+                    cluster_dict["data_memory"],
                     contiguous=True,
                 )
             )
 
-        if "device" in cluster_dict:
+        if "data_device" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
-                    "Device",
-                    cluster_dict["device"],
+                    "Data Device",
+                    cluster_dict["data_device"],
                     contiguous=True,
                 )
             )
 
-        if "pmem" in cluster_dict:
+        if "data_pmem" in cluster_dict:
             numbered_lines.append(
                 CliView.SummaryUsageLine(
-                    "Pmem",
-                    cluster_dict["pmem"],
+                    "Data Pmem",
+                    cluster_dict["data_pmem"],
                     contiguous=True,
                 )
             )
@@ -2517,6 +2590,33 @@ class CliView(object):
             except:
                 pass
 
+            if "pmem_sindex" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Pmem Sindex", ns_stats["pmem_sindex"])
+                )
+
+            if "flash_sindex" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Flash Sindex", ns_stats["flash_sindex"])
+                )
+
+            if "shmem_sindex" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Shmem Sindex", ns_stats["shmem_sindex"])
+                )
+
+            if "set_index" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine("Set Index", ns_stats["set_index"])
+                )
+
+            if "indexes_memory" in ns_stats:
+                ns_lines.append(
+                    CliView.SummaryUsageLine(
+                        "Indexes Memory", ns_stats["indexes_memory"]
+                    )
+                )
+
             if "memory_data_and_indexes" in ns_stats:
                 ns_lines.append(
                     CliView.SummaryUsageLine(
@@ -2527,28 +2627,28 @@ class CliView(object):
                     )
                 )
 
-            if "memory" in ns_stats:
+            if "data_memory" in ns_stats:
                 ns_lines.append(
                     CliView.SummaryUsageLine(
-                        "Memory", ns_stats["memory"], contiguous=True
+                        "Data Memory", ns_stats["data_memory"], contiguous=True
                     )
                 )
 
-            if "device" in ns_stats:
+            if "data_device" in ns_stats:
                 try:
                     ns_lines.append(
                         CliView.SummaryUsageLine(
-                            "Device", ns_stats["device"], contiguous=True
+                            "Data Device", ns_stats["data_device"], contiguous=True
                         )
                     )
                 except:
                     pass
 
-            if "pmem" in ns_stats:
+            if "data_pmem" in ns_stats:
                 try:
                     ns_lines.append(
                         CliView.SummaryUsageLine(
-                            "Pmem", ns_stats["pmem"], contiguous=True
+                            "Data Pmem", ns_stats["data_pmem"], contiguous=True
                         )
                     )
                 except:
@@ -2698,7 +2798,7 @@ class CliView(object):
             node_names=node_names,
             node_ids=node_ids,
         )
-        common = dict(principal=cluster.get_expected_principal())
+        common = CliView._common(cluster)
 
         CliView.print_result(
             sheet.render(templates.info_release_sheet, title, sources, common=common)

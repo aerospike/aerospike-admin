@@ -1082,11 +1082,20 @@ class ManageSIndexController(LiveClusterManageCommandController):
 
 @CommandHelp(
     "Create a new secondary index",
-    usage="<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>] [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]",
+    usage=(
+        "<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>]"
+        " [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]\n"
+        "        manage sindex create <index-name> ns <ns> set <set>"
+    ),
     modifiers=(
         ModifierHelp(
             "bin-type",
-            "The bin type of the provided <bin-name>. Should be one of the following values: numeric, string, or geo2dsphere",
+            "The bin type of the provided <bin-name>. One of: integer, string,"
+            " geo2dsphere, or blob."
+            f" 'numeric' is a deprecated alias for 'integer' (deprecated as of server {constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION})"
+            " and is still accepted. Omit bin-type entirely"
+            " and provide 'set <set>' to create a set-based index"
+            f" (requires server >= {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}).",
         ),
         ModifierHelp(
             "index-name",
@@ -1097,7 +1106,11 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ModifierHelp("bin", "Name of bin to create secondary index on."),
         ModifierHelp(
             "in",
-            "Specifies how the secondary index is to collect keys list: Specifies to use the elements of a list as keys. mapkeys: Specifies to use the keys of a map as keys. mapvalues: Specifies to use the values of a map as keys. [default: Specifies to use the contents of a bin as keys.]",
+            "Specifies how the secondary index is to collect keys. "
+            "list: Use the elements of a list as keys. "
+            "mapkeys: Use the keys of a map as keys. "
+            "mapvalues: Use the values of a map as keys. "
+            "[default: Use the contents of a bin as keys.]",
         ),
         ModifierHelp(
             "ctx",
@@ -1118,6 +1131,11 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         self.required_modifiers = set(["line", "ns"])
         self.modifiers = set(["bin", "set", "in", "ctx", "exp_base64", "ctx_base64"])
         self.meta_getter = GetClusterMetadataController(self.cluster)
+
+    def _format_sub_commands_help(self) -> list[str]:
+        # do_* methods are internal autocomplete hooks, not user-facing sub-commands.
+        # Suppress the "Commands: Default" noise that would otherwise appear.
+        return []
 
     @staticmethod
     def _split_ctx_list(ctx_str: str) -> list[str]:
@@ -1326,9 +1344,31 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 "cdt_indexing": constants.SERVER_SINDEX_ON_CDT_FIRST_VERSION,
                 "expression_indexing": constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION,
                 "namespace_query_selector_support": constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION,
+                "integer_type_support": constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION,
             },
             builds=builds,
         )
+
+        # The 'numeric' type was renamed to 'integer' in
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION. 'integer' is only understood by
+        # servers at/after that version, while the deprecated 'numeric' alias is
+        # transparently upgraded to 'integer' on those servers (with a warning).
+        if bin_type == "integer" and not feature_support["integer_type_support"]:
+            raise ShellException(
+                "The 'integer' sindex type requires server v. {0} or later. "
+                "Use 'numeric' on servers older than {0}.".format(
+                    constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+                )
+            )
+
+        if bin_type == "numeric" and feature_support["integer_type_support"]:
+            logger.warning(
+                "The 'numeric' sindex type is deprecated as of server v. {} and "
+                "has been replaced by 'integer'. Creating index with type "
+                "'integer' instead.".format(
+                    constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+                )
+            )
 
         # Validate mutually exclusive ctx modifiers
         if ctx_list and cdt_ctx_base64:
@@ -1426,6 +1466,12 @@ class ManageSIndexCreateController(ManageLeafCommandController):
         )
 
     # Hack for auto-complete
+    async def do_integer(self, line):
+        await self._do_create(line, "integer")
+
+    # Hack for auto-complete. Deprecated alias for 'integer' (server renamed the
+    # type in SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION); kept for backwards
+    # compatibility. info_sindex_create normalizes the wire type per server version.
     async def do_numeric(self, line):
         await self._do_create(line, "numeric")
 
@@ -1452,6 +1498,121 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             )
 
         await self._do_create(line, "blob")
+
+    async def _do_create_set(self, line):
+        index_name = line.pop(0)
+        namespace = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ns",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        set_ = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="set",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if not namespace:
+            raise ShellException(
+                "Set-based indexes require a namespace. "
+                "Correct syntax: <index-name> ns <ns> set <set-name>"
+            )
+
+        if not set_:
+            raise ShellException(
+                "Set-based indexes require a set name. "
+                "Correct syntax: <index-name> ns <ns> set <set-name>"
+            )
+
+        unsupported = [
+            m
+            for m in ("bin", "in", "ctx", "exp_base64", "ctx_base64")
+            if self.mods.get(m)
+        ]
+        if unsupported:
+            if unsupported == ["in"]:
+                in_type = self.mods["in"][0]
+                raise ShellException(
+                    f"Set-based indexes do not support the 'in' modifier. "
+                    f"To index into a CDT with 'in {in_type}', specify a bin-type: "
+                    f"<bin-type> <index-name> ns <ns> bin <bin-name> in {in_type}"
+                )
+            raise ShellException(
+                "Set type secondary index does not support: {}. "
+                "Only 'ns' and 'set' modifiers are valid.".format(
+                    ", ".join(unsupported)
+                )
+            )
+
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+        feature_support = await util.check_version_support(
+            feature_versions={
+                "set_index_support": constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION,
+            },
+            builds=builds,
+        )
+
+        if not feature_support["set_index_support"]:
+            raise ShellException(
+                f"Set type secondary index is not supported on server version "
+                f"< {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}."
+            )
+
+        if self.warn and not self.prompt_challenge(
+            "Adding a secondary index will cause longer restart times."
+        ):
+            return
+
+        # namespace_query_selector_support is always True for servers >= constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION
+        resp = await self.cluster.info_sindex_create(
+            index_name,
+            namespace,
+            None,
+            None,
+            "set",
+            set_,
+            None,
+            None,
+            None,
+            {"namespace_query_selector_support": True},
+            nodes="principal",
+        )
+        resp = list(resp.values())[0]
+
+        if isinstance(resp, Exception):
+            raise resp
+
+        self.view.print_result(
+            "Use 'show sindex' to confirm {} was created successfully.".format(
+                index_name
+            )
+        )
+
+    async def _do_default(self, line):
+        # Note: parse_modifiers initialises every modifier key to [] regardless
+        # of whether the keyword appeared in input, so we cannot distinguish
+        # "user typed 'set' with no value" from "user never typed 'set' at all"
+        # here. The defensive guard inside _do_create_set handles that case.
+        if self.mods.get("set"):
+            await self._do_create_set(line)
+        elif self.mods.get("in"):
+            in_type = self.mods["in"][0]
+            raise ShellException(
+                f"bin-type is required when using 'in {in_type}'. "
+                f"Use: <bin-type> <index-name> ns <ns> bin <bin-name> in {in_type}"
+            )
+        else:
+            raise ShellException(
+                "bin-type is required. Must be one of: integer, string, geo2dsphere, blob "
+                "('numeric' is a deprecated alias for 'integer'). "
+                "To create a set-based index, use: <index-name> ns <ns> set <set>"
+            )
 
 
 @CommandHelp(
@@ -1542,6 +1703,19 @@ class ManageSIndexDeleteController(ManageLeafCommandController):
 class ManageConfigLeafController(ManageLeafCommandController):
     PARAM = "param"
     TO = "to"
+
+    # Config params that only take effect after "manage recluster" is run.
+    # Subclasses override this with the params for their config context. Params
+    # not listed here take effect immediately and print no recluster reminder.
+    require_recluster: set[str] = set()
+
+    def print_recluster_msg_if_needed(self, param):
+        if param in self.require_recluster:
+            self.view.print_result(
+                'Run "manage recluster" for your changes to {} to take effect.'.format(
+                    param
+                )
+            )
 
     def extract_param_value(self, line):
         param = util.get_arg_and_delete_from_mods(
@@ -1872,10 +2046,13 @@ class ManageConfigLoggingController(ManageConfigLeafController):
     ),
 )
 class ManageConfigServiceController(ManageConfigLeafController):
+    # No service params currently require a recluster. cluster-name takes
+    # effect immediately (TOOLS-2975).
+    require_recluster = set()
+
     def __init__(self):
         self.required_modifiers = set([self.PARAM, self.TO])
         self.modifiers = set(["with"])
-        self.require_recluster = set(["cluster-name"])
 
     async def _do_default(self, line):
         param, value = self.extract_param_value(line)
@@ -1892,12 +2069,7 @@ class ManageConfigServiceController(ManageConfigLeafController):
         title = "Set Service Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
-        if param in self.require_recluster:
-            self.view.print_result(
-                'Run "manage recluster" for your changes to {} to take affect.'.format(
-                    param
-                )
-            )
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -1941,6 +2113,8 @@ class ManageConfigNetworkController(ManageConfigLeafController):
 
         title = "Set Network Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -1988,6 +2162,8 @@ class ManageConfigSecurityController(ManageConfigLeafController):
         title = "Set Security Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
+        self.print_recluster_msg_if_needed(param)
+
 
 @CommandHelp(
     "Change a namespace context's dynamic runtime configuration",
@@ -2009,6 +2185,8 @@ class ManageConfigSecurityController(ManageConfigLeafController):
     ),
 )
 class ManageConfigNamespaceController(ManageConfigLeafController):
+    require_recluster = set(["prefer-uniform-balance", "rack-id"])
+
     def __init__(self):
         self.required_modifiers = set([self.PARAM, self.TO])
         self.modifiers = set(["with"])
@@ -2016,7 +2194,6 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
         self.controller_map = {
             "set": ManageConfigNamespaceSetController,
         }
-        self.require_recluster = set(["prefer-uniform-balance", "rack-id"])
 
     async def _do_default(self, line):
         param, value = self.extract_param_value(line)
@@ -2040,12 +2217,7 @@ class ManageConfigNamespaceController(ManageConfigLeafController):
         title = "Set Namespace Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
-        if param in self.require_recluster:
-            self.view.print_result(
-                'Run "manage recluster" for your changes to {} to take affect.'.format(
-                    param
-                )
-            )
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -2088,6 +2260,8 @@ class ManageConfigNamespaceSetController(ManageConfigLeafController):
         title = "Set Namespace Set Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
 
+        self.print_recluster_msg_if_needed(param)
+
 
 @CommandHelp(
     "A collection of commands to add/remove xdr nodes, namespace, and change dynamic runtime configuration",
@@ -2127,6 +2301,8 @@ class ManageConfigXDRController(ManageConfigLeafController):
 
         title = "Set XDR Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(
@@ -2239,6 +2415,8 @@ class ManageConfigXDRDCController(ManageConfigLeafController):
 
         title = "Set XDR DC param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp("Add a node or namespace to xdr datacenter")
@@ -2440,6 +2618,8 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
 
         title = "Set XDR Namespace Param {} to {}".format(param, value)
         self.view.print_info_responses(title, resp, self.cluster, **self.mods)
+
+        self.print_recluster_msg_if_needed(param)
 
 
 @CommandHelp(

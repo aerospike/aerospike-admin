@@ -1665,7 +1665,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual.response, "Invalid subcontext service")
 
-    async def test_info_set_config_namespace_success(self):
+    async def test_info_set_config_namespace_no_subcontext(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace("foo", "bar", "buff")
@@ -1675,6 +1675,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_with_set(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace(
@@ -1686,17 +1687,19 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_storage_engine_no_prefix(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace(
-            "foo", "bar", "buff", subcontext="storage-engine"
+            "defrag-lwm-pct", "50", "buff", subcontext="storage-engine"
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;foo=bar", self.ip
+            "set-config:context=namespace;id=buff;defrag-lwm-pct=50", self.ip
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_geo2dsphere_within_uses_hyphen(self):
         self.info_mock.return_value = "ok"
 
         actual = await self.node.info_set_config_namespace(
@@ -1708,14 +1711,86 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_set_config_namespace_sindex_type_always_prefixed(self):
+        self.info_mock.return_value = "ok"
+
         actual = await self.node.info_set_config_namespace(
-            "mounts-size-limit", "50", "buff", subcontext="index-type"
+            "mounts-size-limit", "1073741824", "buff", subcontext="sindex-type"
         )
 
         self.info_mock.assert_called_with(
-            "set-config:context=namespace;id=buff;mounts-size-limit=50", self.ip
+            "set-config:context=namespace;id=buff;sindex-type.mounts-size-limit=1073741824",
+            self.ip,
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_set_config_namespace_index_type_no_prefix_before_7(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "6.4.0.1"
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_set_config_namespace(
+            "mounts-size-limit", "1073741824", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;mounts-size-limit=1073741824",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        actual = await self.node.info_set_config_namespace(
+            "mounts-high-water-pct", "80", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;mounts-high-water-pct=80",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+
+    async def test_info_set_config_namespace_index_type_prefixed_from_7(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "7.0.0.0"
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_set_config_namespace(
+            "evict-mounts-pct", "80", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;index-type.evict-mounts-pct=80",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        actual = await self.node.info_set_config_namespace(
+            "mounts-budget", "1073741824", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;id=buff;index-type.mounts-budget=1073741824",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
+
+    async def test_info_set_config_namespace_index_type_prefixed_on_8(self):
+        lib.live_cluster.client.node.Node.info_build.return_value = "8.1.0.0"
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_set_config_namespace(
+            "evict-mounts-pct", "80", "buff", subcontext="index-type"
+        )
+
+        self.info_mock.assert_called_with(
+            "set-config:context=namespace;namespace=buff;index-type.evict-mounts-pct=80",
+            self.ip,
+        )
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0.0.11"
 
     async def test_info_set_config_namespace_fail(self):
         self.info_mock.return_value = "error"
@@ -3775,6 +3850,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with("hist-dump:ns=test;hist=objsz", self.ip)
 
     async def test_info_sindex(self):
+        """Server < 8.1.3: the default (v1) sindex-list format is requested."""
+        self.node.build = "8.1.2.0"
         self.info_mock.return_value = "a=1:b=2:c=3:d=4:e=5;a=6:b=7:c=8:d=9:e=10;"
         expected = [
             {"a": "1", "b": "2", "c": "3", "d": "4", "e": "5"},
@@ -3785,6 +3862,27 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.info_mock.assert_called_with("sindex-list:", self.ip)
         self.assertListEqual(actual, expected)
+
+    async def test_info_sindex_v2_on_new_server(self):
+        """Server >= 8.1.3: the v2 sindex-list format is requested so the renamed
+        'integer' type is reported."""
+        self.node.build = "8.1.3.0"
+        self.info_mock.return_value = "a=1:b=2;"
+        expected = [{"a": "1", "b": "2"}]
+
+        actual = await self.node.info_sindex()
+
+        self.info_mock.assert_called_with("sindex-list:v=v2", self.ip)
+        self.assertListEqual(actual, expected)
+
+    async def test_info_sindex_v2_when_build_unavailable(self):
+        """If the build version is unknown, fall back to the default (v1) format."""
+        self.node.build = None
+        self.info_mock.return_value = "a=1:b=2;"
+
+        await self.node.info_sindex()
+
+        self.info_mock.assert_called_with("sindex-list:", self.ip)
 
     async def test_info_sindex_statistics(self):
         self.info_mock.return_value = "a=b;c=d;e=f"
@@ -3927,6 +4025,90 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             feature_support={
                 "namespace_query_selector_support": False,
                 "expression_indexing": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_set_based(self):
+        """Set-based index: command must not include bin= or type= / indexdata= fields."""
+        self.info_mock.return_value = "OK"
+        expected_call = (
+            "sindex-create:indexname=mysetidx;indextype=set;namespace=test;set=myset;"
+        )
+
+        actual = await self.node.info_sindex_create(
+            "mysetidx",
+            "test",
+            None,
+            None,
+            index_type="set",
+            set_="myset",
+            feature_support={
+                "namespace_query_selector_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_numeric_mapped_to_integer(self):
+        """Server >= 8.1.3: the deprecated 'numeric' type is sent as 'integer'."""
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
+
+        actual = await self.node.info_sindex_create(
+            "int-idx",
+            "test",
+            "mybin",
+            "numeric",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+                "integer_type_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_integer_passthrough(self):
+        """Server >= 8.1.3: 'integer' is sent as-is."""
+        self.info_mock.return_value = "OK"
+        expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
+
+        actual = await self.node.info_sindex_create(
+            "int-idx",
+            "test",
+            "mybin",
+            "integer",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+                "integer_type_support": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_sindex_create_numeric_unchanged_on_old_server(self):
+        """Server < 8.1.3: the legacy 'numeric' type is sent as-is."""
+        self.info_mock.return_value = "OK"
+        expected_call = (
+            "sindex-create:indexname=num-idx;ns=test;indexdata=mybin,numeric"
+        )
+
+        actual = await self.node.info_sindex_create(
+            "num-idx",
+            "test",
+            "mybin",
+            "numeric",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": False,
+                "integer_type_support": False,
             },
         )
 
@@ -5288,6 +5470,28 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         last_sock = self.node.socket_pool[self.node.port][-1]
         self.assertEqual(last_sock.name, f"sock_{MAX_SOCKET_POOL_SIZE + 4}")
 
+    async def test_set_timeout_updates_node_and_pooled_sockets(self):
+        """TOOLS-3596: set_timeout updates the node timeout and every pooled socket so a
+        reused connection also honors the new timeout."""
+        sock_a = AsyncMock()
+        sock_b = AsyncMock()
+        self.node.socket_pool[self.node.port].append(sock_a)
+        self.node.socket_pool[self.node.port].append(sock_b)
+
+        self.node.set_timeout(7)
+
+        self.assertEqual(self.node._timeout, 7)
+        sock_a.settimeout.assert_called_once_with(7)
+        sock_b.settimeout.assert_called_once_with(7)
+
+    async def test_set_timeout_handles_closed_socket_pool(self):
+        """set_timeout must not crash when the pool has been closed (socket_pool is None)."""
+        self.node.socket_pool = None
+
+        self.node.set_timeout(7)
+
+        self.assertEqual(self.node._timeout, 7)
+
     async def test_get_connection_fifo_order(self):
         """Test that _get_connection returns sockets in FIFO order"""
         # Add sockets in order
@@ -6112,6 +6316,62 @@ class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, dict)
         self.assertEqual(result["cs"], "2")
         self.assertEqual(result["ck"], "71")
+
+    async def test_swallowed_exception_is_logged(self):
+        """TOOLS-3596: a swallowed per-node exception is logged at DEBUG so the failure is
+        diagnosable from the (collectinfo) debug log instead of vanishing silently."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        with self.assertLogs("lib.live_cluster.client.node", level="DEBUG") as cm:
+            result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertTrue(
+            any(
+                "returned exception" in msg and "info_statistics" in msg
+                for msg in cm.output
+            ),
+            cm.output,
+        )
+
+    async def test_raise_exception_propagates_original_error(self):
+        """raise_exception=True must raise the original exception instead of returning
+        it; previously the kwarg was unconditionally overwritten to False."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        with self.assertRaises(ASInfoResponseError):
+            await self.node.info_logs_ids(raise_exception=True)
+
+    async def test_info_logging_config_surfaces_real_error(self):
+        """info_logging_config depends on info_logs_ids(raise_exception=True); the
+        returned error must be the original ASInfoResponseError, not an AttributeError
+        from calling .keys() on a returned exception object."""
+        self.info_mock.return_value = "ERROR::test error"
+
+        result = await self.node.info_logging_config()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+
+    async def test_timeout_does_not_mark_node_dead(self):
+        """TOOLS-3596: a transient info-call timeout must not flip alive=False (on 3.11+
+        asyncio.TimeoutError subclasses OSError)."""
+        self.node.alive = True
+        self.info_mock.side_effect = asyncio.TimeoutError()
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, asyncio.TimeoutError)
+        self.assertTrue(self.node.alive)
+
+    async def test_os_error_still_marks_node_dead(self):
+        """A genuine OSError (e.g. connection reset) must still mark the node dead."""
+        self.node.alive = True
+        self.info_mock.side_effect = OSError("connection reset")
+
+        result = await self.node.info_statistics()
+
+        self.assertIsInstance(result, OSError)
+        self.assertFalse(self.node.alive)
 
 
 class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):

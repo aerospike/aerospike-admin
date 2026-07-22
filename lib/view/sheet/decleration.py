@@ -14,6 +14,7 @@
 from collections import Counter
 from functools import reduce
 import logging
+import math
 from operator import itemgetter
 from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
@@ -250,6 +251,20 @@ class Formatters(object):
         return (
             "bold",
             Formatters._should_apply(predicate_fn, terminal.bold, terminal.unbold),
+        )
+
+    @staticmethod
+    def bold_cyan_alert(
+        predicate_fn: FormatterPredicateFnType,
+    ) -> FormatterType:
+        """Applies bold + cyan (light blue) formatting if predicate evaluates to True."""
+        return (
+            "bold-cyan-alert",
+            Formatters._should_apply(
+                predicate_fn,
+                lambda: terminal.bold() + terminal.fg_cyan(),
+                lambda: terminal.fg_not_cyan() + terminal.unbold(),
+            ),
         )
 
 
@@ -524,9 +539,16 @@ class Projectors(object):
             value = super().do_project(sheet, sources)
 
             try:
-                return float(value)
-            except ValueError:
+                result = float(value)
+            except (ValueError, TypeError, OverflowError):
                 return value
+
+            # Hex strings like "9E0123456789" parse as scientific notation
+            # and overflow to inf; keep the original value in that case.
+            if math.isinf(result) or math.isnan(result):
+                return value
+
+            return result
 
     class Number(SimpleProjector):
         def __init__(self, source: str, *keys, **kwargs):
@@ -536,11 +558,21 @@ class Projectors(object):
             value = super().do_project(sheet, sources)
 
             try:
+                # int(value) raises OverflowError when value is float inf.
                 return int(value)
-            except ValueError:
+            except (ValueError, TypeError, OverflowError):
                 try:
-                    return int(float(value))
-                except ValueError:
+                    as_float = float(value)
+
+                    # Hex strings like "9E0123456789" parse as scientific
+                    # notation and overflow to inf, and int(inf) raises
+                    # OverflowError; keep the original value instead of
+                    # failing the entry and rendering it as error_entry.
+                    if math.isinf(as_float) or math.isnan(as_float):
+                        return value
+
+                    return int(as_float)
+                except (ValueError, TypeError, OverflowError):
                     pass
 
                 return value

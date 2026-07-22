@@ -15,7 +15,379 @@
 import warnings
 import unittest
 
+from lib.health.constants import AssertLevel, AssertResultKey, HealthResultType
 from lib.health.health_checker import HealthChecker
+
+
+def create_health_input(version, ns_stats=None, ns_config=None, service_stats=None):
+    """Builds a minimal single-node health input.
+
+    ns_stats/ns_config -- {ns_name: {stat_name: value}}
+    """
+    cl = ("C1", "CLUSTER")
+    node = ("1.1.1.1:3000", "NODE")
+
+    def nest_ns(per_ns):
+        return {
+            cl: {
+                node: {
+                    (ns, "NAMESPACE"): {(k, "KEY"): v for k, v in kv.items()}
+                    for ns, kv in per_ns.items()
+                }
+            }
+        }
+
+    return {
+        "SNAPSHOT000": {
+            "NAMESPACE": {
+                "STATISTICS": nest_ns(ns_stats or {}),
+                "CONFIG": nest_ns(ns_config or {}),
+            },
+            "SERVICE": {
+                "STATISTICS": {
+                    cl: {
+                        node: {(k, "KEY"): v for k, v in (service_stats or {}).items()}
+                    }
+                },
+            },
+            "METADATA": {
+                "CLUSTER": {
+                    cl: {
+                        node: {
+                            ("version", "KEY"): version,
+                            ("edition", "KEY"): "Enterprise",
+                        }
+                    }
+                }
+            },
+        }
+    }
+
+
+class PersistedIndexHealthCheckTests(unittest.TestCase):
+    """Covers the flash/pmem index mounts usage checks and the combined
+    indexes memory checks (TOOLS-3456)."""
+
+    PI_EVICTION = "High namespace index mounts usage (eviction range)."
+    PI_CAPACITY = "High namespace index mounts usage (near capacity)."
+    SI_EVICTION = "High namespace sindex mounts usage (eviction range)."
+    SI_CAPACITY = "High namespace sindex mounts usage (near capacity)."
+    IXS_EVICTION = "High namespace indexes memory usage (eviction range)."
+    IXS_STOP_WRITES = "High namespace indexes memory usage (stop-write enabled)."
+    PI_FLASH_ALLOC = "High namespace index mounts allocation (flash)."
+    DATA_USED_STOP_WRITES = (
+        "High namespace storage-engine used pct (stop-write enabled)."
+    )
+
+    def failed_asserts(self, version, ns_stats, ns_config):
+        hc = HealthChecker()
+        hc.set_health_input_data(create_health_input(version, ns_stats, ns_config))
+        result = hc.execute()
+        failed = {}
+
+        for asserts in result[HealthResultType.ASSERT].values():
+            for a in asserts:
+                if not a[AssertResultKey.SUCCESS]:
+                    failed[a[AssertResultKey.FAIL_MSG]] = a[AssertResultKey.LEVEL]
+
+        return failed
+
+    def test_healthy_all_flash_namespace_has_no_index_alerts(self):
+        # TOOLS-3456: a large flash index must not be compared against
+        # indexes-memory-budget. indexes_memory_used_pct is the server-computed
+        # stat and excludes the persisted index.
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {
+                "flashns": {
+                    "index-type": "flash",
+                    "index_used_bytes": 956 * 1024**3,
+                    "index_mounts_used_pct": 50,
+                    "indexes_memory_used_pct": 7,
+                }
+            },
+            {
+                "flashns": {
+                    "indexes-memory-budget": 8053063680,
+                    "index-type.mounts-budget": 2 * 956 * 1024**3,
+                    "index-type.evict-mounts-pct": 80,
+                }
+            },
+        )
+
+        self.assertNotIn(self.IXS_STOP_WRITES, failed)
+        self.assertNotIn(self.PI_EVICTION, failed)
+        self.assertNotIn(self.PI_CAPACITY, failed)
+
+    def test_flash_index_in_eviction_range_warns(self):
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {"flashns": {"index-type": "flash", "index_mounts_used_pct": 85}},
+            {
+                "flashns": {
+                    "index-type.mounts-budget": 100 * 1024**3,
+                    "index-type.evict-mounts-pct": 80,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.PI_EVICTION), AssertLevel.WARNING)
+        self.assertNotIn(self.PI_CAPACITY, failed)
+
+    def test_flash_index_near_capacity_is_critical(self):
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {"flashns": {"index-type": "flash", "index_mounts_used_pct": 96}},
+            {
+                "flashns": {
+                    "index-type.mounts-budget": 100 * 1024**3,
+                    "index-type.evict-mounts-pct": 80,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.PI_EVICTION), AssertLevel.WARNING)
+        self.assertEqual(failed.get(self.PI_CAPACITY), AssertLevel.CRITICAL)
+
+    def test_pre_7_0_flash_index_near_capacity_is_critical(self):
+        # Pre 7.0 servers report index_flash_used_pct / index_pmem_used_pct and
+        # use mounts-high-water-pct / mounts-size-limit config names.
+        failed = self.failed_asserts(
+            "6.4.0.1",
+            {"flashns": {"index-type": "flash", "index_flash_used_pct": 96}},
+            {
+                "flashns": {
+                    "index-type.mounts-size-limit": 100 * 1024**3,
+                    "index-type.mounts-high-water-pct": 80,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.PI_EVICTION), AssertLevel.WARNING)
+        self.assertEqual(failed.get(self.PI_CAPACITY), AssertLevel.CRITICAL)
+
+    def test_pre_7_0_pmem_index_near_capacity_is_critical(self):
+        failed = self.failed_asserts(
+            "6.4.0.1",
+            {"pmemns": {"index-type": "pmem", "index_pmem_used_pct": 96}},
+            {
+                "pmemns": {
+                    "index-type.mounts-size-limit": 100 * 1024**3,
+                    "index-type.mounts-high-water-pct": 80,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.PI_EVICTION), AssertLevel.WARNING)
+        self.assertEqual(failed.get(self.PI_CAPACITY), AssertLevel.CRITICAL)
+
+    def test_pre_7_0_flash_sindex_near_capacity_is_critical(self):
+        failed = self.failed_asserts(
+            "6.4.0.1",
+            {"flashns": {"sindex-type": "flash", "sindex_flash_used_pct": 97}},
+            {
+                "flashns": {
+                    "sindex-type.mounts-size-limit": 10 * 1024**3,
+                    "sindex-type.mounts-high-water-pct": 80,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.SI_EVICTION), AssertLevel.WARNING)
+        self.assertEqual(failed.get(self.SI_CAPACITY), AssertLevel.CRITICAL)
+
+    def test_pre_6_4_pmem_sindex_near_capacity_is_critical(self):
+        failed = self.failed_asserts(
+            "6.3.0.1",
+            {"pmemns": {"sindex-type": "pmem", "sindex_pmem_used_pct": 97}},
+            {
+                "pmemns": {
+                    "sindex-type.mounts-size-limit": 10 * 1024**3,
+                    "sindex-type.mounts-high-water-pct": 80,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.SI_EVICTION), AssertLevel.WARNING)
+        self.assertEqual(failed.get(self.SI_CAPACITY), AssertLevel.CRITICAL)
+
+    def test_flash_index_without_evict_pct_only_capacity_alert(self):
+        # evict-mounts-pct = 0 disables eviction, so no eviction-range warning,
+        # but the near-capacity critical must still fire.
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {"flashns": {"index-type": "flash", "index_mounts_used_pct": 96}},
+            {
+                "flashns": {
+                    "index-type.mounts-budget": 100 * 1024**3,
+                    "index-type.evict-mounts-pct": 0,
+                }
+            },
+        )
+
+        self.assertNotIn(self.PI_EVICTION, failed)
+        self.assertEqual(failed.get(self.PI_CAPACITY), AssertLevel.CRITICAL)
+
+    def test_memory_only_cluster_skips_mounts_checks(self):
+        # No flash/pmem namespaces: the mounts stats/configs match nothing, so
+        # the DSL select raises internally (visible only via 'health -d'), the
+        # checks are skipped, and no mounts alert can fire.
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {
+                "memns": {
+                    "index-type": "shmem",
+                    "indexes_memory_used_pct": 12,
+                    "data_used_pct": 75,
+                }
+            },
+            {
+                "memns": {
+                    "indexes-memory-budget": 8 * 1024**3,
+                    "storage-engine.stop-writes-used-pct": 70,
+                }
+            },
+        )
+
+        for msg in (
+            self.PI_EVICTION,
+            self.PI_CAPACITY,
+            self.PI_FLASH_ALLOC,
+            self.SI_EVICTION,
+            self.SI_CAPACITY,
+        ):
+            self.assertNotIn(msg, failed)
+
+        self.assertEqual(failed.get(self.DATA_USED_STOP_WRITES), AssertLevel.CRITICAL)
+
+    def test_mixed_cluster_alerts_flash_namespace_only(self):
+        failed_keys = {}
+        hc = HealthChecker()
+        hc.set_health_input_data(
+            create_health_input(
+                "8.1.1.1",
+                {
+                    "flashns": {"index-type": "flash", "index_mounts_used_pct": 96},
+                    "memns": {"index-type": "shmem", "indexes_memory_used_pct": 12},
+                },
+                {
+                    "flashns": {
+                        "index-type.mounts-budget": 100 * 1024**3,
+                        "index-type.evict-mounts-pct": 80,
+                    },
+                    "memns": {"indexes-memory-budget": 8 * 1024**3},
+                },
+            )
+        )
+        result = hc.execute()
+
+        for asserts in result[HealthResultType.ASSERT].values():
+            for a in asserts:
+                if not a[AssertResultKey.SUCCESS]:
+                    failed_keys[a[AssertResultKey.FAIL_MSG]] = [
+                        k[0] for k in (a[AssertResultKey.KEYS] or [])
+                    ]
+
+        self.assertEqual(
+            failed_keys.get(self.PI_CAPACITY), ["C1/1.1.1.1:3000/flashns/stats"]
+        )
+        self.assertEqual(
+            failed_keys.get(self.PI_EVICTION), ["C1/1.1.1.1:3000/flashns/stats"]
+        )
+
+    def test_partial_evict_config_still_warns_configured_namespace(self):
+        failed_keys = {}
+        hc = HealthChecker()
+        hc.set_health_input_data(
+            create_health_input(
+                "8.1.1.1",
+                {
+                    "flashns": {"index-type": "flash", "index_mounts_used_pct": 85},
+                    "flashns2": {"index-type": "flash", "index_mounts_used_pct": 50},
+                },
+                {
+                    "flashns": {
+                        "index-type.mounts-budget": 100 * 1024**3,
+                        "index-type.evict-mounts-pct": 80,
+                    },
+                    "flashns2": {"index-type.mounts-budget": 100 * 1024**3},
+                },
+            )
+        )
+        result = hc.execute()
+
+        for asserts in result[HealthResultType.ASSERT].values():
+            for a in asserts:
+                if not a[AssertResultKey.SUCCESS]:
+                    failed_keys[a[AssertResultKey.FAIL_MSG]] = [
+                        k[0] for k in (a[AssertResultKey.KEYS] or [])
+                    ]
+
+        self.assertEqual(
+            failed_keys.get(self.PI_EVICTION), ["C1/1.1.1.1:3000/flashns/stats"]
+        )
+
+    def test_flash_index_high_arena_alloc_warns(self):
+        # Flash arena allocation can approach the budget while used stays lower
+        # (freed elements are reused but stages are never returned).
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {
+                "flashns": {
+                    "index-type": "flash",
+                    "index_mounts_used_pct": 60,
+                    "index_flash_alloc_pct": 96,
+                }
+            },
+            {
+                "flashns": {
+                    "index-type.mounts-budget": 100 * 1024**3,
+                    "index-type.evict-mounts-pct": 0,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.PI_FLASH_ALLOC), AssertLevel.WARNING)
+        self.assertNotIn(self.PI_CAPACITY, failed)
+
+    def test_flash_sindex_near_capacity_is_critical(self):
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {"flashns": {"sindex-type": "flash", "sindex_mounts_used_pct": 97}},
+            {
+                "flashns": {
+                    "sindex-type.mounts-budget": 10 * 1024**3,
+                    "sindex-type.evict-mounts-pct": 80,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.SI_EVICTION), AssertLevel.WARNING)
+        self.assertEqual(failed.get(self.SI_CAPACITY), AssertLevel.CRITICAL)
+
+    def test_indexes_memory_in_eviction_range_warns(self):
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {"memns": {"index-type": "shmem", "indexes_memory_used_pct": 90}},
+            {
+                "memns": {
+                    "indexes-memory-budget": 8 * 1024**3,
+                    "evict-indexes-memory-pct": 85,
+                }
+            },
+        )
+
+        self.assertEqual(failed.get(self.IXS_EVICTION), AssertLevel.WARNING)
+        self.assertNotIn(self.IXS_STOP_WRITES, failed)
+
+    def test_indexes_memory_over_budget_is_critical(self):
+        failed = self.failed_asserts(
+            "8.1.1.1",
+            {"memns": {"index-type": "shmem", "indexes_memory_used_pct": 105}},
+            {"memns": {"indexes-memory-budget": 8 * 1024**3}},
+        )
+
+        self.assertEqual(failed.get(self.IXS_STOP_WRITES), AssertLevel.CRITICAL)
 
 
 class HealthcheckerTest(unittest.TestCase):

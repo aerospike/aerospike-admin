@@ -14,7 +14,7 @@
 
 import datetime
 import hashlib
-import pipes
+import shlex
 import re
 import subprocess
 from collections import OrderedDict
@@ -108,7 +108,7 @@ class ServerLog:
             self.process_end_tm = self.server_end_tm + self.reader.parse_timedelta("10")
 
     def run_linux_cmd(self, cmd):
-        cmd = pipes.quote(" ".join(cmd))
+        cmd = shlex.quote(" ".join(cmd))
         cmd = ["sh", "-c", "'%s'" % (cmd)]
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         for line in iter(process.stdout.readline, ""):

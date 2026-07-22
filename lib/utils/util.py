@@ -676,10 +676,12 @@ def filter_exceptions(data: Any):
     """
     Takes a dict or list and removes all values that are exceptions
     """
-    # TODO: Add debug logging. Any exceptions removed by this function are likely unexpected.
     if isinstance(data, dict):
         for _k in list(data.keys()):
             if isinstance(data[_k], Exception):
+                # Any exceptions here are likely unexpected; log them so the missing data
+                # is diagnosable (e.g. from collectinfo_debug.log). TOOLS-3596.
+                logger.debug("Failed to get data for %r due to error: %r", _k, data[_k])
                 del data[_k]
             else:
                 filter_exceptions(data[_k])
@@ -688,6 +690,20 @@ def filter_exceptions(data: Any):
             filter_exceptions(val)
 
     return data
+
+
+def has_content(value: Any) -> bool:
+    """
+    Recursively report whether a value holds any non-empty leaf. Empty containers,
+    empty strings, and None count as no content; any other scalar counts as content.
+    """
+    if isinstance(value, dict):
+        return any(has_content(v) for v in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(has_content(v) for v in value)
+    if isinstance(value, str):
+        return value != ""
+    return value is not None
 
 
 def pct_to_value(data, d_pct):

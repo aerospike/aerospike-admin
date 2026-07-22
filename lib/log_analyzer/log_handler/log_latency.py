@@ -529,17 +529,17 @@ class LogLatency(object):
 
             # Set histogram tag:
             if arg_ns:
-                # Analysing latency for histogram arg_hist for specific namespace arg_ns
+                # Analyzing latency for histogram arg_hist for specific namespace arg_ns
                 # It needs to read single bucket dump for a slice
                 hist_tags = [s % (arg_ns, arg_hist) for s in NS_HIST_TAG_PATTERNS]
 
             elif re.match(HIST_WITH_NS_PATTERN, arg_hist):
-                # Analysing latency for specific histogram for specific namespace ({namespace}-histogram)
+                # Analyzing latency for specific histogram for specific namespace ({namespace}-histogram)
                 # It needs to read single bucket dump for a slice
                 hist_tags = [HIST_TAG_PREFIX + "%s " % (arg_hist)]
 
             else:
-                # Analysing latency for histogram arg_hist
+                # Analyzing latency for histogram arg_hist
                 # It needs to read all bucket dumps for a slice
                 hist_tags = [s % (arg_hist) for s in HIST_TAG_PATTERNS]
                 read_all_dumps = True

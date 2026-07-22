@@ -50,6 +50,8 @@ from lib.live_cluster.manage_controller import (
     ManageACLQuotasRoleController,
     ManageConfigController,
     ManageConfigLeafController,
+    ManageConfigNamespaceController,
+    ManageConfigServiceController,
     ManageJobsKillAllScansController,
     ManageJobsKillAllQueriesController,
     ManageJobsKillTridController,
@@ -1161,6 +1163,50 @@ class ManageConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             title, resp, self.cluster_mock, **mods
         )
 
+    async def test_service_cluster_name_does_not_print_recluster_msg(self):
+        # TOOLS-2975: cluster-name takes effect immediately, no recluster needed.
+        line = "service param cluster-name to new-name with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_service.return_value = resp
+
+        await self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_service.assert_called_once_with(
+            "cluster-name", "new-name", nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_service_param_requiring_recluster_prints_msg(self):
+        # Registering a param in require_recluster is all that is needed for
+        # the recluster reminder to be printed.
+        line = "service param test-param to test-value with 1.1.1.1 2.2.2.2"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK, "2.2.2.2": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_service.return_value = resp
+
+        with patch.object(
+            ManageConfigServiceController, "require_recluster", {"test-param"}
+        ):
+            await self.controller.execute(line.split())
+
+        self.cluster_mock.info_set_config_service.assert_called_once_with(
+            "test-param", "test-value", nodes=["1.1.1.1", "2.2.2.2"]
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            'Run "manage recluster" for your changes to test-param to take effect.'
+        )
+
+    def test_cluster_name_not_registered_as_requiring_recluster(self):
+        # Regression guard for TOOLS-2975.
+        self.assertNotIn(
+            "cluster-name", ManageConfigServiceController.require_recluster
+        )
+
+    def test_namespace_recluster_params_registered(self):
+        self.assertSetEqual(
+            ManageConfigNamespaceController.require_recluster,
+            {"prefer-uniform-balance", "rack-id"},
+        )
+
     async def test_network_subcontext_required(self):
         line = "network param test-param to test-value with 1.1.1.1 2.2.2.2"
         self.prompt_mock.return_value = False
@@ -1293,13 +1339,33 @@ class ManageConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             **self._get_controller_mods(self.controller, ["namespace"]),
         )
         self.view_mock.print_result.assert_called_once_with(
-            'Run "manage recluster" for your changes to rack-id to take affect.'
+            'Run "manage recluster" for your changes to rack-id to take effect.'
         )
 
     async def test_namespace_success_with_pair(self):
         line = "namespace test-ns sub-context param compression-level to test-value with 1.1.1.1 2.2.2.2"
 
         await self.controller.execute(line.split())
+
+    async def test_namespace_prefer_uniform_balance_prints_recluster_msg(self):
+        line = "namespace test-ns param prefer-uniform-balance to true with 1.1.1.1"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_namespace.return_value = resp
+
+        await self.controller.execute(line.split())
+
+        self.view_mock.print_result.assert_called_once_with(
+            'Run "manage recluster" for your changes to prefer-uniform-balance to take effect.'
+        )
+
+    async def test_namespace_param_does_not_print_recluster_msg(self):
+        line = "namespace test-ns param evict-tenths-pct to 5 with 1.1.1.1"
+        resp = {"1.1.1.1": ASINFO_RESPONSE_OK}
+        self.cluster_mock.info_set_config_namespace.return_value = resp
+
+        await self.controller.execute(line.split())
+
+        self.view_mock.print_result.assert_not_called()
 
     async def test_set_prompt(self):
         line = "namespace test-ns set test-set param test-param to test-value with 1.1.1.1 2.2.2.2"
@@ -1991,12 +2057,105 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
                 "cdt_indexing": True,
                 "expression_indexing": False,
                 "namespace_query_selector_support": False,
+                "integer_type_support": False,
             },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
             "Use 'show sindex' to confirm a-index was created successfully."
         )
+
+    @parameterized.expand([("integer",), ("numeric",)])
+    async def test_create_integer_type_on_new_server(self, bin_type):
+        """On server >= 8.1.3, both 'integer' and its deprecated 'numeric' alias
+        pass integer_type_support=True so node.py can emit the 'integer' wire type."""
+        line = f"{bin_type} a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "a-index",
+            "test",
+            "a",
+            bin_type,
+            None,
+            None,
+            None,
+            None,
+            None,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": True,
+                "namespace_query_selector_support": True,
+                "integer_type_support": True,
+            },
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm a-index was created successfully."
+        )
+
+    async def test_create_integer_not_supported_on_old_server(self):
+        """The 'integer' type requires server >= 8.1.3; older servers error out."""
+        line = "integer a-index ns test bin a".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "The 'integer' sindex type requires server v. {} or later".format(
+                constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+            ),
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_numeric_warns_on_new_server(self):
+        """Typing the deprecated 'numeric' alias against a server >= 8.1.3 warns
+        that it is replaced by 'integer'."""
+        line = "numeric a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.logger_mock.warning.assert_called_once_with(
+            "The 'numeric' sindex type is deprecated as of server v. {} and "
+            "has been replaced by 'integer'. Creating index with type "
+            "'integer' instead.".format(
+                constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+            )
+        )
+
+    async def test_create_numeric_no_warning_on_old_server(self):
+        """On a server < 8.1.3 'numeric' is still the valid type, so no warning."""
+        line = "numeric a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        await self.controller.execute(line)
+
+        self.logger_mock.warning.assert_not_called()
+
+    async def test_create_integer_no_warning_on_new_server(self):
+        """Typing 'integer' directly on a server >= 8.1.3 produces no deprecation warning."""
+        line = "integer a-index ns test bin a".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.logger_mock.warning.assert_not_called()
 
     async def test_create_fails_with_asinfo_error(self):
         line = "numeric a-index ns test bin a ctx list_value(1)".split()
@@ -2057,6 +2216,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
                 "cdt_indexing": True,
                 "expression_indexing": True,
                 "namespace_query_selector_support": True,
+                "integer_type_support": False,
             },
             nodes="principal",
         )
@@ -2087,6 +2247,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
                 "cdt_indexing": True,
                 "expression_indexing": False,
                 "namespace_query_selector_support": False,
+                "integer_type_support": False,
             },
             nodes="principal",
         )
@@ -2243,6 +2404,165 @@ class ManageSIndexDeleteControllerTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(ASInfoResponseError, "bar"):
             await self.controller.execute(line)
+
+
+class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageSIndexCreateController()
+        self.logger_mock = patch("lib.live_cluster.manage_controller.logger").start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.prompt_mock = patch(
+            "lib.live_cluster.manage_controller.ManageSIndexCreateController.prompt_challenge"
+        ).start()
+        self.meta_mock = self.controller.meta_getter = create_autospec(
+            GetClusterMetadataController
+        )
+
+        self.addCleanup(patch.stopall)
+
+    async def test_create_set_successful(self):
+        line = "mysetindex ns test set testset".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "mysetindex",
+            "test",
+            None,
+            None,
+            "set",
+            "testset",
+            None,
+            None,
+            None,
+            {"namespace_query_selector_support": True},
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm mysetindex was created successfully."
+        )
+
+    async def test_create_set_not_supported(self):
+        line = "mysetindex ns test set testset".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            f"Set type secondary index is not supported on server version "
+            f"< {constants.SERVER_SINDEX_SET_INDEX_FIRST_VERSION}",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_set_prompt_challenge_fails(self):
+        line = "mysetindex ns test set testset".split()
+        self.controller.warn = True
+        self.prompt_mock.return_value = False
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        await self.controller.execute(line)
+
+        self.prompt_mock.assert_called_once_with(
+            "Adding a secondary index will cause longer restart times."
+        )
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_set_no_set_no_bintype_raises(self):
+        """No set modifier and no bin-type should raise a helpful error."""
+        line = "mysetindex ns test".split()
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "bin-type is required",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    @parameterized.expand(
+        [
+            ("bin", "mysetindex ns test set testset bin mybin", "bin"),
+            ("ctx", "mysetindex ns test set testset ctx list_index(1)", "ctx"),
+            (
+                "exp_base64",
+                "mysetindex ns test set testset exp_base64 dGVzdA==",
+                "exp_base64",
+            ),
+            (
+                "ctx_base64",
+                "mysetindex ns test set testset ctx_base64 dGVzdA==",
+                "ctx_base64",
+            ),
+        ]
+    )
+    async def test_create_set_with_unsupported_modifier(self, _, line_str, modifier):
+        line = line_str.split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            f"Set type secondary index does not support: {modifier}",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_create_set_fails_with_asinfo_error(self):
+        line = "mysetindex ns test set testset".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASInfoResponseError("foo", "ERROR::bar")
+        }
+
+        with self.assertRaisesRegex(ASInfoResponseError, "bar"):
+            await self.controller.execute(line)
+
+    async def test_create_set_multiple_unsupported_modifiers(self):
+        """Multiple unsupported modifiers should all be listed in the error."""
+        line = "mysetindex ns test set testset bin mybin in list".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            r"Set type secondary index does not support: bin, in\.",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_no_bintype_with_in_modifier_raises_helpful_error(self):
+        """'in list' without a bin-type should suggest adding bin-type."""
+        line = "mysetindex ns test in list".split()
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "bin-type is required when using 'in list'",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_set_index_with_in_modifier_raises_helpful_error(self):
+        """set + 'in list' should suggest using a bin-type instead."""
+        line = "mysetindex ns test set testset in list".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "Set-based indexes do not support the 'in' modifier",
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
 
 
 class ManageTruncateControllerTest(unittest.IsolatedAsyncioTestCase):

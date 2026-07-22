@@ -92,6 +92,8 @@ CMD_FILE_MULTI_LINE_COMMENT_END = "*/"
 
 MULTILEVEL_COMMANDS = ["show", "info", "manage"]
 
+TERMINATOR_COMMANDS = ("exit", "quit", "EOF")
+
 DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
 ADMIN_DEFAULT_PROMPT = "ADMIN> "
@@ -364,35 +366,24 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         #       new parser or correct shlex behavior.
         commands = []
         command = []
-        build_token = ""
 
         # Maybe someday we should not allow most of the characters below without
         # quotes surrounding them.  These characters below define what can be in
-        # an unquotes string.
-        lexer.wordchars += r"`~!@#$;%^&*()_-+={}[]|:<>,./\?"
+        # an unquoted string.
+        lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|:<>,./\?"
         lexer.escapedquotes += "'"
 
         try:
             for token in lexer:
-                build_token += token
-
                 if token == ";":
                     if command:
                         commands.append(command)
                         command = []
-                elif token.endswith(";"):
-                    command.append(build_token[:-1])
-                    commands.append(command)
-                    command = []
                 else:
-                    command.append(build_token)
-                build_token = ""
-            else:
-                if build_token:
-                    command.append(build_token)
-                if command:
-                    commands.append(command)
+                    command.append(token)
 
+            if command:
+                commands.append(command)
         except ValueError as e:
             raise ShellException(e)
 
@@ -460,8 +451,15 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             return ""
 
         for line in lines:
-            if line[0] in self.commands:
+            if line[0] in TERMINATOR_COMMANDS:
                 return " ".join(line)
+
+            if line[0] in self.commands:
+                try:
+                    await self.onecmd(" ".join(line))
+                except Exception as e:
+                    logger.error(e)
+                continue
 
             if len(lines) > max_commands_to_print_header:
                 if len(line) > 1 and any(
@@ -509,13 +507,14 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 """
                 Interrupt in the middle of executing a command.
                 """
-                pass
+                if self.execute_only_mode:
+                    raise KeyboardInterrupt
             except Exception as e:
                 logger.error(e)
             finally:
                 for signal in signals:
                     loop.remove_signal_handler(signal)
-        return ""  # line was handled by execute
+        return ""
 
     # overloaded to support async
     async def onecmd(self, line):
@@ -783,10 +782,10 @@ async def main():
     if cli_args.collectinfo:
         mode = AdminMode.COLLECTINFO_ANALYZER
 
-    if cli_args.log_analyser:
+    if cli_args.log_analyzer:
         if cli_args.collectinfo:
             logger.critical(
-                "collectinfo-analyser and log-analyser are mutually exclusive options. Please enable only one."
+                "collectinfo-analyzer and log-analyzer are mutually exclusive options. Please enable only one."
             )
         mode = AdminMode.LOG_ANALYZER
 
@@ -822,7 +821,7 @@ async def main():
     if cli_args.asinfo_mode:
         if mode == AdminMode.COLLECTINFO_ANALYZER or mode == AdminMode.LOG_ANALYZER:
             logger.critical(
-                "asinfo mode cannot work with Collectinfo-analyser or Log-analyser mode."
+                "asinfo mode cannot work with Collectinfo-analyzer or Log-analyzer mode."
             )
 
         commands_arg = cli_args.execute
@@ -878,81 +877,76 @@ async def main():
     args = ()
     single_command = True
     real_stdout = sys.stdout
-    if not execute_only_mode:
-        if not shell.connected:
-            sys.exit(1)
+    f = None
 
-        func = shell.cmdloop
-        single_command = False
-
-    else:
-        commands_arg = cli_args.execute
-        max_commands_to_print_header = 1
-        command_index_to_print_from = 1
-        if os.path.isfile(commands_arg):
-            commands_arg = parse_commands(commands_arg)
-            max_commands_to_print_header = 0
-            command_index_to_print_from = 0
-
-        if cli_args.out_file:
-            try:
-                f = open(str(cli_args.out_file), "w")
-                sys.stdout = f
-                disable_coloring()
-                max_commands_to_print_header = 0
-                command_index_to_print_from = 0
-            except Exception as e:
-                print(e)
-
-        def cleanup():
-            try:
-                sys.stdout = real_stdout
-                if f:
-                    f.close()
-            except Exception:
-                pass
-
-        if shell.connected:
-            # Print admin port visual cue message in execute mode
-            if shell._has_admin_nodes():
-                print(ADMIN_PORT_VISUAL_CUE_MSG)
-
-            line = await shell.precmd(
-                commands_arg,
-                max_commands_to_print_header=max_commands_to_print_header,
-                command_index_to_print_from=command_index_to_print_from,
-            )
-
-            await shell.onecmd(line)
-            func = shell.onecmd
-            args = (line,)
-
-        else:
-            if "collectinfo" in commands_arg:
-                logger.warning(
-                    "Collecting only System data. Not able to connect any cluster with "
-                    + str(seeds)
-                    + "."
-                )
-
-                func = common.collect_sys_info(port=cli_args.port)
-
-                cleanup()
-                sys.exit(1)
-
-            cleanup()
-
-    if func:
-        await cmdloop(shell, func, args, use_yappi, single_command)
-
-    await shell.close()
-
-    try:
+    def cleanup():
         sys.stdout = real_stdout
         if f:
-            f.close()
-    except Exception:
-        pass
+            try:
+                f.close()
+            except OSError as e:
+                logger.error(e)
+
+    try:
+        if not execute_only_mode:
+            if not shell.connected:
+                sys.exit(1)
+
+            func = shell.cmdloop
+            single_command = False
+
+        else:
+            commands_arg = cli_args.execute
+            max_commands_to_print_header = 1
+            command_index_to_print_from = 1
+            if os.path.isfile(commands_arg):
+                commands_arg = parse_commands(commands_arg)
+                max_commands_to_print_header = 0
+                command_index_to_print_from = 0
+
+            if cli_args.out_file:
+                try:
+                    f = open(str(cli_args.out_file), "w")
+                    sys.stdout = f
+                    disable_coloring()
+                    max_commands_to_print_header = 0
+                    command_index_to_print_from = 0
+                except Exception as e:
+                    print(e)
+
+            if shell.connected:
+                # Print admin port visual cue message in execute mode
+                if shell._has_admin_nodes():
+                    print(ADMIN_PORT_VISUAL_CUE_MSG)
+
+                line = await shell.precmd(
+                    commands_arg,
+                    max_commands_to_print_header=max_commands_to_print_header,
+                    command_index_to_print_from=command_index_to_print_from,
+                )
+
+                func = shell.onecmd
+                args = (line,)
+
+            else:
+                if "collectinfo" in commands_arg:
+                    logger.warning(
+                        "Collecting only System data. Not able to connect any cluster with "
+                        + str(seeds)
+                        + "."
+                    )
+
+                    common.collect_sys_info(port=cli_args.port)
+
+                    sys.exit(1)
+
+        if func:
+            await cmdloop(shell, func, args, use_yappi, single_command)
+    finally:
+        try:
+            await shell.close()
+        finally:
+            cleanup()
 
     sys.exit(get_exit_code())
 
@@ -972,21 +966,23 @@ async def cmdloop(
     use_yappi: bool,
     single_command: bool,
 ):
-    try:
-        if use_yappi:
-            yappi.start()
-            await func(*args)
-            yappi.get_func_stats().print_all()
-        else:
-            await func(*args)
-    except (KeyboardInterrupt, SystemExit):
-        if not single_command:
+    while True:
+        try:
+            if use_yappi:
+                yappi.start()
+                await func(*args)
+                yappi.get_func_stats().print_all()
+            else:
+                await func(*args)
+            return
+        except (KeyboardInterrupt, SystemExit):
+            if single_command:
+                raise
             shell.intro = (
                 terminal.fg_red()
                 + "\nTo exit asadm utility please run the 'exit' command."
                 + terminal.fg_clear()
             )
-        await cmdloop(shell, func, args, use_yappi, single_command)
 
 
 def parse_commands(file):

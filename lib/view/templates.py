@@ -126,12 +126,33 @@ def weighted_avg(values: Iterable[float], weights: Iterable[float]):
 # Common fields.
 #
 
+
+def _node_marker(node_id, common):
+    """Plain-text counterpart of the green/cyan node highlighting, so the
+    signal survives copy/paste and --no-color: "*" = expected principal,
+    "@" = self node. Principal wins when a node is both."""
+    common = common or {}
+    if node_id:
+        if node_id == common.get("principal"):
+            return "*"
+        if node_id == common.get("self_node"):
+            return "@"
+    return ""
+
+
 node_field = Field(
     "Node",
     Projectors.String("node_names", None),
+    converter=(
+        lambda edata: _node_marker(edata.record.get("Node ID"), edata.common)
+        + edata.value
+    ),
     formatters=(
         Formatters.green_alert(
             lambda edata: edata.record["Node ID"] == edata.common["principal"]
+        ),
+        Formatters.bold_cyan_alert(
+            lambda edata: edata.record["Node ID"] == edata.common["self_node"]
         ),
     ),
 )
@@ -152,15 +173,14 @@ info_network_sheet = Sheet(
             "Node ID",
             Projectors.String("node_ids", None),
             converter=(
-                lambda edata: (
-                    "*" + edata.value
-                    if edata.value == edata.common["principal"]
-                    else edata.value
-                )
+                lambda edata: _node_marker(edata.value, edata.common) + edata.value
             ),
             formatters=(
                 Formatters.green_alert(
                     lambda edata: edata.record["Node ID"] == edata.common["principal"]
+                ),
+                Formatters.bold_cyan_alert(
+                    lambda edata: edata.record["Node ID"] == edata.common["self_node"]
                 ),
             ),
             align=FieldAlignment.right,
@@ -276,6 +296,11 @@ info_namespace_usage_sheet = Sheet(
                     "Evict%",
                     Projectors.Percent("ns_stats", "evict-sys-memory-pct"),
                 ),
+                Field(
+                    "Stop%",
+                    Projectors.Number("ns_stats", "stop-writes-sys-memory-pct"),
+                    converter=Converters.pct,
+                ),
             ),
         ),
         Subgroup(
@@ -327,6 +352,16 @@ info_namespace_usage_sheet = Sheet(
                                 "index-type.mounts-size-limit",
                             ),
                         ),
+                        Projectors.Div(  # shmem with indexes-memory-budget (7.1+)
+                            Projectors.Number(
+                                "ns_stats",
+                                "index_used_bytes",
+                            ),
+                            Projectors.Number(
+                                "ns_stats",
+                                "indexes-memory-budget",
+                            ),
+                        ),
                     ),
                     converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
@@ -334,6 +369,9 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
+                        # Near the mounts/memory budget: stop-writes for in-memory
+                        # indexes; for flash/pmem, allocations fail as the mounts fill.
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
                             >= edata.record["Primary Index"]["Evict%"]
@@ -402,6 +440,16 @@ info_namespace_usage_sheet = Sheet(
                                 "sindex-type.mounts-size-limit",
                             ),
                         ),
+                        Projectors.Div(  # shmem with indexes-memory-budget (7.1+)
+                            Projectors.Number(
+                                "ns_stats",
+                                "sindex_used_bytes",
+                            ),
+                            Projectors.Number(
+                                "ns_stats",
+                                "indexes-memory-budget",
+                            ),
+                        ),
                     ),
                     converter=Converters.ratio_to_pct,
                     aggregator=ComplexAggregator(
@@ -409,6 +457,9 @@ info_namespace_usage_sheet = Sheet(
                         converter=Converters.ratio_to_pct,
                     ),
                     formatters=(
+                        # Near the mounts/memory budget: stop-writes for in-memory
+                        # indexes; for flash/pmem, allocations fail as the mounts fill.
+                        Formatters.red_alert(lambda edata: edata.value * 100 >= 90),
                         Formatters.yellow_alert(
                             lambda edata: edata.value * 100
                             >= edata.record["Secondary Index"]["Evict%"]
@@ -1477,6 +1528,13 @@ summary_cluster_sheet = Sheet(
         #      ),
         # ),
         # Subgroup(
+        #     "System Memory",
+        #     (
+        create_summary_used_pct("cluster_dict", "system_memory"),
+        create_summary_avail_pct("cluster_dict", "system_memory"),
+        #     ),
+        # ),
+        # Subgroup(
         #     "Shmem Index", # Sindex added to shmem in EE by default in 6.1. However,
         #     this will only be displayed in 7.0. Pre 7.0 includes shmem index metrics
         #     as apart of memory metrics.
@@ -1505,33 +1563,73 @@ summary_cluster_sheet = Sheet(
         #     ),
         # ),
         # Subgroup(
-        #     "Memory",
+        #     "Shmem Sindex",
         #     (
-        create_summary_total("cluster_dict", "memory"),
-        create_summary_used("cluster_dict", "memory"),
-        create_summary_used_pct("cluster_dict", "memory"),
-        create_summary_avail("cluster_dict", "memory"),
-        create_summary_avail_pct("cluster_dict", "memory"),
-        #      ),
-        # ),
-        # Subgroup(
-        #     "Device",
-        #     (
-        create_summary_total("cluster_dict", "device"),
-        create_summary_used("cluster_dict", "device"),
-        create_summary_used_pct("cluster_dict", "device"),
-        create_summary_avail("cluster_dict", "device"),
-        create_summary_avail_pct("cluster_dict", "device"),
+        create_summary_used("cluster_dict", "shmem_sindex"),
         #     ),
         # ),
         # Subgroup(
-        #     "Pmem",
+        #     "Pmem Sindex",
         #     (
-        create_summary_total("cluster_dict", "pmem"),
-        create_summary_used("cluster_dict", "pmem"),
-        create_summary_used_pct("cluster_dict", "pmem"),
-        create_summary_avail("cluster_dict", "pmem"),
-        create_summary_avail_pct("cluster_dict", "pmem"),
+        create_summary_total("cluster_dict", "pmem_sindex"),
+        create_summary_used("cluster_dict", "pmem_sindex"),
+        create_summary_used_pct("cluster_dict", "pmem_sindex"),
+        create_summary_avail("cluster_dict", "pmem_sindex"),
+        create_summary_avail_pct("cluster_dict", "pmem_sindex"),
+        #     ),
+        # ),
+        # Subgroup(
+        #     "Flash Sindex",
+        #     (
+        create_summary_total("cluster_dict", "flash_sindex"),
+        create_summary_used("cluster_dict", "flash_sindex"),
+        create_summary_used_pct("cluster_dict", "flash_sindex"),
+        create_summary_avail("cluster_dict", "flash_sindex"),
+        create_summary_avail_pct("cluster_dict", "flash_sindex"),
+        #     ),
+        # ),
+        # Subgroup(
+        #     "Set Index",
+        #     (
+        create_summary_used("cluster_dict", "set_index"),
+        #     ),
+        # ),
+        # Subgroup(
+        #     "Indexes Memory",
+        #     (
+        create_summary_total("cluster_dict", "indexes_memory"),
+        create_summary_used("cluster_dict", "indexes_memory"),
+        create_summary_used_pct("cluster_dict", "indexes_memory"),
+        create_summary_avail("cluster_dict", "indexes_memory"),
+        create_summary_avail_pct("cluster_dict", "indexes_memory"),
+        # Subgroup(
+        #     "Data Memory",
+        #     (
+        create_summary_total("cluster_dict", "data_memory"),
+        create_summary_used("cluster_dict", "data_memory"),
+        create_summary_used_pct("cluster_dict", "data_memory"),
+        create_summary_avail("cluster_dict", "data_memory"),
+        create_summary_avail_pct("cluster_dict", "data_memory"),
+        #      ),
+        # ),
+        # Subgroup(
+        #     "Data Device",
+        #     (
+        create_summary_total("cluster_dict", "data_device"),
+        create_summary_used("cluster_dict", "data_device"),
+        create_summary_used_pct("cluster_dict", "data_device"),
+        create_summary_avail("cluster_dict", "data_device"),
+        create_summary_avail_pct("cluster_dict", "data_device"),
+        #     ),
+        # ),
+        # Subgroup(
+        #     "Data Pmem",
+        #     (
+        create_summary_total("cluster_dict", "data_pmem"),
+        create_summary_used("cluster_dict", "data_pmem"),
+        create_summary_used_pct("cluster_dict", "data_pmem"),
+        create_summary_avail("cluster_dict", "data_pmem"),
+        create_summary_avail_pct("cluster_dict", "data_pmem"),
         #     ),
         # ),
         Field(
@@ -1696,27 +1794,59 @@ summary_namespace_sheet = Sheet(
             ),
         ),
         Subgroup(
-            "Memory",
+            "Shmem Sindex",
+            (create_summary_used("ns_stats", "shmem_sindex", subgroup=True),),
+        ),
+        Subgroup(
+            "Pmem Sindex",
             (
-                create_summary_total("ns_stats", "memory", subgroup=True),
-                create_summary_used_pct("ns_stats", "memory", subgroup=True),
-                create_summary_avail_pct("ns_stats", "memory", subgroup=True),
+                create_summary_total("ns_stats", "pmem_sindex", subgroup=True),
+                create_summary_used_pct("ns_stats", "pmem_sindex", subgroup=True),
+                create_summary_avail_pct("ns_stats", "pmem_sindex", subgroup=True),
             ),
         ),
         Subgroup(
-            "Device",
+            "Flash Sindex",
             (
-                create_summary_total("ns_stats", "device", subgroup=True),
-                create_summary_used_pct("ns_stats", "device", subgroup=True),
-                create_summary_avail_pct("ns_stats", "device", subgroup=True),
+                create_summary_total("ns_stats", "flash_sindex", subgroup=True),
+                create_summary_used_pct("ns_stats", "flash_sindex", subgroup=True),
+                create_summary_avail_pct("ns_stats", "flash_sindex", subgroup=True),
             ),
         ),
         Subgroup(
-            "Pmem",
+            "Set Index",
+            (create_summary_used("ns_stats", "set_index", subgroup=True),),
+        ),
+        Subgroup(
+            "Indexes Memory",
             (
-                create_summary_total("ns_stats", "pmem", subgroup=True),
-                create_summary_used_pct("ns_stats", "pmem", subgroup=True),
-                create_summary_avail_pct("ns_stats", "pmem", subgroup=True),
+                create_summary_total("ns_stats", "indexes_memory", subgroup=True),
+                create_summary_used_pct("ns_stats", "indexes_memory", subgroup=True),
+                create_summary_avail_pct("ns_stats", "indexes_memory", subgroup=True),
+            ),
+        ),
+        Subgroup(
+            "Data Memory",
+            (
+                create_summary_total("ns_stats", "data_memory", subgroup=True),
+                create_summary_used_pct("ns_stats", "data_memory", subgroup=True),
+                create_summary_avail_pct("ns_stats", "data_memory", subgroup=True),
+            ),
+        ),
+        Subgroup(
+            "Data Device",
+            (
+                create_summary_total("ns_stats", "data_device", subgroup=True),
+                create_summary_used_pct("ns_stats", "data_device", subgroup=True),
+                create_summary_avail_pct("ns_stats", "data_device", subgroup=True),
+            ),
+        ),
+        Subgroup(
+            "Data Pmem",
+            (
+                create_summary_total("ns_stats", "data_pmem", subgroup=True),
+                create_summary_used_pct("ns_stats", "data_pmem", subgroup=True),
+                create_summary_avail_pct("ns_stats", "data_pmem", subgroup=True),
             ),
         ),
         Field(
@@ -1824,7 +1954,9 @@ show_pmap_sheet = Sheet(
         Field("Namespace", Projectors.String("pmap", None, for_each_key=True)),
         node_field,
         hidden_node_id_field,
-        Field("Cluster Key", Projectors.Number("pmap", "cluster_key")),
+        # The cluster key is a hex string; keys like "9E0123456789" parse as
+        # overflowing scientific notation if projected as a Number.
+        Field("Cluster Key", Projectors.String("pmap", "cluster_key")),
         Subgroup(
             "Partitions",
             (
@@ -2408,15 +2540,14 @@ show_roster = Sheet(
             "Node ID",
             Projectors.String("node_ids", None),
             converter=(
-                lambda edata: (
-                    "*" + edata.value
-                    if edata.value == edata.common["principal"]
-                    else edata.value
-                )
+                lambda edata: _node_marker(edata.value, edata.common) + edata.value
             ),
             formatters=(
                 Formatters.green_alert(
                     lambda edata: edata.record["Node ID"] == edata.common["principal"]
+                ),
+                Formatters.bold_cyan_alert(
+                    lambda edata: edata.record["Node ID"] == edata.common["self_node"]
                 ),
             ),
             align=FieldAlignment.left,
