@@ -1,0 +1,11 @@
+#!/bin/sh
+# Installer postinstall: create astools.conf only when absent, so user edits
+# survive reinstall/upgrade. $3 = target volume ("/" for standard installs).
+vol="${3:-/}"
+conf="$vol/etc/aerospike/astools.conf"
+sample="$vol/usr/local/aerospike/doc/asadm/astools.conf.sample"
+if [ ! -e "$conf" ] && [ ! -L "$conf" ] && [ -f "$sample" ]; then
+    /usr/bin/install -d -m 755 "$vol/etc/aerospike" && \
+    /usr/bin/install -m 644 "$sample" "$conf"
+fi
+exit 0
