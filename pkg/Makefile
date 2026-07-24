@@ -4,6 +4,8 @@ TOP_DIR = $(PKG_DIR)/../build/bin
 BUILD_DIR = $(PKG_DIR)/build
 TARGET_DIR = $(PKG_DIR)/target
 CONFIG_DIR = /etc/aerospike
+DOC_DIR = /opt/aerospike/doc/$(PACKAGE_NAME)
+MAC_DOC_DIR = /usr/local/aerospike/doc/$(PACKAGE_NAME)
 # Package variables
 PACKAGE_NAME = asadm
 # Source of truth for the version, in precedence order:
@@ -52,6 +54,8 @@ deb: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
+		--after-install $(PKG_DIR)/postinst.sh \
+		--after-upgrade $(PKG_DIR)/postinst.sh \
 		--package $(TARGET_DIR)/$(NAME)_$(VERSION)_$(BUILD_DISTRO)_$(ARCH).deb
 
 .PHONY: rpm
@@ -71,6 +75,8 @@ rpm: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
+		--after-install $(PKG_DIR)/postinst.sh \
+		--after-upgrade $(PKG_DIR)/postinst.sh \
 		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
@@ -98,6 +104,8 @@ prep:
 	cp -a $(TOP_DIR)/asadm/. $(BUILD_DIR)/opt/aerospike/bin/asadm/
 	ln -sf /opt/aerospike/bin/asadm/asadm $(BUILD_DIR)/usr/bin/asadm
 	ln -sf /opt/aerospike/bin/asadm/asinfo $(BUILD_DIR)/usr/bin/asinfo
+	install -d $(BUILD_DIR)$(DOC_DIR)
+	install -pm 644 $(PKG_DIR)/astools.conf.sample $(BUILD_DIR)$(DOC_DIR)/astools.conf.sample
 
 # Staging for macOS installer: matches root makefile Darwin INSTALL_ROOT and symlinks.
 .PHONY: prep-mac
@@ -109,6 +117,8 @@ prep-mac:
 	cp -a $(TOP_DIR)/asadm/. $(MAC_ROOT)/usr/local/aerospike/bin/asadm/
 	ln -sf ../aerospike/bin/asadm/asadm $(MAC_ROOT)/usr/local/bin/asadm
 	ln -sf ../aerospike/bin/asadm/asinfo $(MAC_ROOT)/usr/local/bin/asinfo
+	install -d $(MAC_ROOT)$(MAC_DOC_DIR)
+	install -pm 644 $(PKG_DIR)/astools.conf.sample $(MAC_ROOT)$(MAC_DOC_DIR)/astools.conf.sample
 
 .PHONY: osx-pkg
 osx-pkg: prep-mac
@@ -117,6 +127,7 @@ osx-pkg: prep-mac
 		--identifier $(PKG_ID) \
 		--version $(MAC_VERSION) \
 		--install-location / \
+		--scripts $(PKG_DIR)/mac-scripts \
 		$(MAC_PKG)
 
 .PHONY: osx-dmg

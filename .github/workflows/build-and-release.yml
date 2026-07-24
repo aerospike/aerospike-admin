@@ -438,13 +438,16 @@ jobs:
               pkg=$(find ./packages -name "*_${{ matrix.distro }}_*${arch}*.deb" | head -1)
               [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
               apt-get install -y "${pkg}"
+              echo "ASTOOLS_REINSTALL=dpkg -i ${pkg}" >> "$GITHUB_ENV"
               ;;
             el*|amzn*)
               pkg=$(find ./packages -name "*.${{ matrix.distro }}.*${arch}*.rpm" | head -1)
               [[ -n "${pkg}" ]] || { echo "ERROR: no .rpm found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
               dnf install -y "${pkg}"
+              echo "ASTOOLS_REINSTALL=dnf reinstall -y ${pkg}" >> "$GITHUB_ENV"
               ;;
           esac
+          echo "ASTOOLS_SAMPLE=/opt/aerospike/doc/asadm/astools.conf.sample" >> "$GITHUB_ENV"
 
       - name: Install bats
         env:
@@ -458,6 +461,9 @@ jobs:
 
       - name: Verify installation
         run: bats .github/bin/test/test_execute.bats
+
+      - name: Verify astools.conf lifecycle
+        run: bats .github/bin/test/test_astools_conf.bats
 
   test-install-mac-and-execute:
     name: Test install & execute (${{ matrix.os }})
@@ -492,12 +498,17 @@ jobs:
           pkg=$(find ./packages -name "*-${{ matrix.os }}-${{ runner.arch }}.pkg" | head -1)
           [[ -n "${pkg}" ]] || { echo "ERROR: no .pkg found for ${{ matrix.os }}-${{ runner.arch }}" >&2; exit 1; }
           sudo installer -pkg "${pkg}" -target /
+          echo "ASTOOLS_REINSTALL=sudo installer -pkg ${pkg} -target /" >> "$GITHUB_ENV"
+          echo "ASTOOLS_SAMPLE=/usr/local/aerospike/doc/asadm/astools.conf.sample" >> "$GITHUB_ENV"
 
       - name: Install bats
         run: brew install bats-core
 
       - name: Verify installation
         run: bats .github/bin/test/test_execute.bats
+
+      - name: Verify astools.conf lifecycle
+        run: bats .github/bin/test/test_astools_conf.bats
 
   organize-signed-artifacts:
     name: Organize signed artifacts for deploy
@@ -641,6 +652,10 @@ jobs:
           BASE_VERSION=$(printf '%s' "${VERSION}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
           docker run --rm "${IMAGE}" asadm --version | grep -qF "${BASE_VERSION}" \
             || { echo "ERROR: expected ${BASE_VERSION} in --version output" >&2; exit 1; }
+
+          # The postinst seeds astools.conf during image build.
+          docker run --rm --entrypoint sh "${IMAGE}" -c 'test -f /etc/aerospike/astools.conf' \
+            || { echo "ERROR: /etc/aerospike/astools.conf missing in image" >&2; exit 1; }
 
           if [[ -n "${SNYK_TOKEN:-}" ]]; then
             snyk container test "${IMAGE}" \
