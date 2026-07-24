@@ -14,7 +14,7 @@
 
 import unittest
 import warnings
-from unittest.mock import create_autospec, patch
+from unittest.mock import AsyncMock, create_autospec, patch
 
 from pytest import PytestUnraisableExceptionWarning
 
@@ -77,9 +77,11 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         }
         mods = {"with": [], "line": []}
 
+        builds = {"1.1.1.1": "8.1.3"}
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
         self.stat_getter_mock.get_namespace.return_value = ns_stats
+        self.cluster_mock.info_build = AsyncMock(return_value=builds)
         self.controller.mods = mods
 
         await self.controller.execute(["memory"])
@@ -87,6 +89,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.stat_getter_mock.get_service.assert_called_once_with(nodes="all")
         self.config_getter_mock.get_service.assert_called_once_with(nodes="all")
         self.stat_getter_mock.get_namespace.assert_called_once_with(nodes="all")
+        self.cluster_mock.info_build.assert_called_once_with(nodes="all")
 
         call_args = self.view_mock.info_memory.call_args
         self.assertEqual(call_args.args[0], stats)
@@ -97,6 +100,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns_agg["1.1.1.1"]["set_index_used_bytes"], "128")
         self.assertEqual(ns_agg["1.1.1.1"]["shmem_alloc_bytes"], "4096")
         self.assertEqual(ns_agg["1.1.1.1"]["data_in_memory_used_bytes"], "9000")
+        self.assertEqual(call_args.kwargs["builds"], builds)
 
     async def test_do_memory_with_node_filter(self):
         stats = {"1.2.3.4": {}}
@@ -115,6 +119,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
         self.stat_getter_mock.get_namespace.return_value = ns_stats
+        self.cluster_mock.info_build = AsyncMock(return_value={"1.2.3.4": "8.1.3"})
         self.controller.mods = mods
         self.controller.nodes = ["1.2.3.4"]
 
@@ -123,3 +128,4 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.stat_getter_mock.get_service.assert_called_once_with(nodes=["1.2.3.4"])
         self.config_getter_mock.get_service.assert_called_once_with(nodes=["1.2.3.4"])
         self.stat_getter_mock.get_namespace.assert_called_once_with(nodes=["1.2.3.4"])
+        self.cluster_mock.info_build.assert_called_once_with(nodes=["1.2.3.4"])

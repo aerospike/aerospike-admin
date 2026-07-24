@@ -125,6 +125,7 @@ class InfoController(CollectinfoCommandController):
                 service_configs.get(timestamp, {}),
                 ns_agg,
                 cluster=cinfo_log,
+                builds=cinfo_log.get_asd_build(),
                 timestamp=timestamp,
                 verbose=verbose,
                 **self.mods,

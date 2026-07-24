@@ -121,10 +121,11 @@ class InfoController(LiveClusterCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
-        stats, configs, ns_stats = await asyncio.gather(
+        stats, configs, ns_stats, builds = await asyncio.gather(
             self.stat_getter.get_service(nodes=self.nodes),
             self.config_getter.get_service(nodes=self.nodes),
             self.stat_getter.get_namespace(nodes=self.nodes),
+            self.cluster.info_build(nodes=self.nodes),
         )
         ns_agg = util.aggregate_ns_memory_stats(ns_stats)
         return util.callable(
@@ -133,6 +134,7 @@ class InfoController(LiveClusterCommandController):
             configs,
             ns_agg,
             self.cluster,
+            builds=builds,
             verbose=verbose,
             **self.mods,
         )

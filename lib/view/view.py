@@ -25,7 +25,7 @@ from typing import Any, TextIO, Tuple
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
 from lib.live_cluster.client import Cluster, ASInfoError
-from lib.utils import file_size, constants, util
+from lib.utils import file_size, constants, util, version
 from lib.utils.common import (
     StopWritesDict,
     SummaryClusterDict,
@@ -175,6 +175,7 @@ class CliView(object):
         configs,
         ns_agg,
         cluster,
+        builds=None,
         verbose=False,
         timestamp="",
         with_=None,
@@ -183,11 +184,41 @@ class CliView(object):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
+
+        builds = builds or {}
+        min_version = version.LooseVersion(
+            constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION
+        )
+
+        def supported(node):
+            build = builds.get(node)
+            if build is None or isinstance(build, Exception):
+                return False
+            try:
+                return version.LooseVersion(str(build)) >= min_version
+            except (ValueError, TypeError):
+                return False
+
+        unsupported = [node for node in node_names if not supported(node)]
+        if unsupported:
+            skipped = ", ".join(sorted(node_names.get(n, n) for n in unsupported))
+            CliView.print_result(
+                "WARNING: Skipping memory information for node(s) %s: requires "
+                "server %s or later."
+                % (skipped, constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION)
+            )
+
+        node_names = {n: name for n, name in node_names.items() if supported(n)}
+        node_ids = {n: nid for n, nid in node_ids.items() if supported(n)}
+
+        if not node_names:
+            return
+
         stats = util.derive_memory_stats(stats)
         common = CliView._common(cluster)
 
         headline = {}
-        for node in set(list(stats.keys()) + list(ns_agg.keys())):
+        for node in node_names:
             node_stats = stats.get(node, {})
             if not isinstance(node_stats, dict):
                 continue
