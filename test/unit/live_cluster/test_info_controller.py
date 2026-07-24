@@ -64,6 +64,9 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
                     "index_used_bytes": "1024",
                     "sindex_used_bytes": "2048",
                     "set_index_used_bytes": "0",
+                    "index_shmem_alloc_bytes": "4096",
+                    "storage-engine": "memory",
+                    "data_used_bytes": "9000",
                 },
                 "bar": {
                     "index_used_bytes": "512",
@@ -92,6 +95,8 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns_agg["1.1.1.1"]["index_used_bytes"], "1536")
         self.assertEqual(ns_agg["1.1.1.1"]["sindex_used_bytes"], "2304")
         self.assertEqual(ns_agg["1.1.1.1"]["set_index_used_bytes"], "128")
+        self.assertEqual(ns_agg["1.1.1.1"]["shmem_alloc_bytes"], "4096")
+        self.assertEqual(ns_agg["1.1.1.1"]["data_in_memory_used_bytes"], "9000")
 
     async def test_do_memory_with_node_filter(self):
         stats = {"1.2.3.4": {}}

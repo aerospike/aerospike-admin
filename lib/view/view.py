@@ -170,24 +170,79 @@ class CliView(object):
 
     @staticmethod
     @reserved_modifiers
-    def info_memory(stats, configs, ns_agg, cluster, timestamp="", with_=None, **ignore):
+    def info_memory(
+        stats,
+        configs,
+        ns_agg,
+        cluster,
+        verbose=False,
+        timestamp="",
+        with_=None,
+        **ignore,
+    ):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         title_suffix = CliView._get_timestamp_suffix(timestamp)
-        title = "Memory Information" + title_suffix
-        merged_stats = {}
+        stats = util.derive_memory_stats(stats)
+        common = CliView._common(cluster)
+
+        headline = {}
         for node in set(list(stats.keys()) + list(ns_agg.keys())):
-            merged_stats[node] = {**stats.get(node, {}), **ns_agg.get(node, {})}
+            node_stats = stats.get(node, {})
+            if not isinstance(node_stats, dict):
+                continue
+            agg = ns_agg.get(node, {})
+
+            total_avail = util._int_or_zero(
+                node_stats.get("cgroup_memory_limit_bytes")
+            ) or util._int_or_zero(node_stats.get("host_total_mem_bytes"))
+            allocated = util._int_or_zero(
+                agg.get("shmem_alloc_bytes")
+            ) + util._int_or_zero(node_stats.get("heap_allocated_bytes"))
+
+            row = {}
+            if total_avail > 0:
+                row["total_avail_bytes"] = str(total_avail)
+            if allocated > 0:
+                row["allocated_bytes"] = str(allocated)
+                if total_avail > 0:
+                    row["alloc_pct"] = str(allocated * 100 / total_avail)
+            headline[node] = row
+
+        CliView.print_result(
+            sheet.render(
+                templates.info_memory_headline_sheet,
+                "Memory Information" + title_suffix,
+                dict(node_names=node_names, node_ids=node_ids, stats=headline),
+                common=common,
+            )
+        )
+
+        if not verbose:
+            return
+
         sources = dict(
             node_names=node_names,
             node_ids=node_ids,
-            stats=merged_stats,
+            stats=stats,
+            ns_agg=ns_agg,
             configs=configs,
         )
-        common = dict(principal=cluster.get_expected_principal())
-
         CliView.print_result(
-            sheet.render(templates.info_memory_sheet, title, sources, common=common)
+            sheet.render(
+                templates.info_memory_sheet,
+                "Memory Breakdown" + title_suffix,
+                sources,
+                common=common,
+            )
+        )
+        CliView.print_result(
+            sheet.render(
+                templates.info_memory_index_sheet,
+                "Index/Data Memory" + title_suffix,
+                sources,
+                common=common,
+            )
         )
 
     @staticmethod

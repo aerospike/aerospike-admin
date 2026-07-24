@@ -97,11 +97,30 @@ class InfoController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays memory information for each node",
-        usage=f"[{ModifierUsageHelp.WITH}]",
-        modifiers=(with_modifier_help,),
+        "Displays node memory: Available (cgroup limit if capped, else host",
+        "total) vs Allocated (reserved shmem index+sindex arenas plus in-memory",
+        "data, plus heap). Alloc% approaching 100% signals memory pressure / OOM",
+        "risk. Host total is derived from host_free_mem_pct and is approximate.",
+        "Allocated is reserved and demand-faulted, so resident RSS is lower. Use",
+        "--verbose for the full breakdown (host/cgroup/process and per-backing",
+        "index/data).",
+        short_msg="Displays node memory availability vs allocation",
+        usage=f"[--verbose] [{ModifierUsageHelp.WITH}]",
+        modifiers=(
+            ModifierHelp(
+                "--verbose", "Show the full per-node memory breakdown", default="off"
+            ),
+            with_modifier_help,
+        ),
     )
     async def do_memory(self, line):
+        verbose = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--verbose",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
         stats, configs, ns_stats = await asyncio.gather(
             self.stat_getter.get_service(nodes=self.nodes),
             self.config_getter.get_service(nodes=self.nodes),
@@ -109,7 +128,13 @@ class InfoController(LiveClusterCommandController):
         )
         ns_agg = util.aggregate_ns_memory_stats(ns_stats)
         return util.callable(
-            self.view.info_memory, stats, configs, ns_agg, self.cluster, **self.mods
+            self.view.info_memory,
+            stats,
+            configs,
+            ns_agg,
+            self.cluster,
+            verbose=verbose,
+            **self.mods,
         )
 
     @CommandHelp("Displays summary information for each set")

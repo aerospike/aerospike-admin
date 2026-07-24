@@ -151,6 +151,40 @@ class InfoNamespaceUsageIndexFormattersTests(unittest.TestCase):
                 f"{subgroup} Used%={used_pct} Evict%={evict_pct}",
             )
 
+    def test_physical_alloc_by_backing_rendered(self):
+        node = "127.0.0.1:3000"
+        sources = dict(
+            node_names={node: "node-A"},
+            node_ids={node: "BB9040011AC4202"},
+            ns_stats={
+                node: {
+                    "test": {
+                        "index-type": "shmem",
+                        "index_shmem_alloc_bytes": 1073741824,
+                        "index_shmem_alloc_pct": 100,
+                        "sindex-type": "shmem",
+                        "sindex_shmem_alloc_bytes": 536870912,
+                        "sindex_shmem_alloc_pct": 50,
+                    }
+                }
+            },
+            service_stats={node: {}},
+        )
+        record = json.loads(
+            sheet.render(
+                templates.info_namespace_usage_sheet,
+                "Namespace Usage Information",
+                sources,
+                common=dict(principal="BB9040011AC4202"),
+                style=SheetStyle.json,
+            )
+        )["groups"][0]["records"][0]
+
+        self.assertEqual(record["Primary Index"]["Alloc"]["raw"], 1073741824)
+        self.assertEqual(record["Primary Index"]["Alloc%"]["raw"], 100)
+        self.assertEqual(record["Secondary Index"]["Alloc"]["raw"], 536870912)
+        self.assertEqual(record["Secondary Index"]["Alloc%"]["raw"], 50)
+
 
 class ShowPmapSheetTest(unittest.TestCase):
     """Regression tests for TOOLS-3772: cluster keys shaped like an
