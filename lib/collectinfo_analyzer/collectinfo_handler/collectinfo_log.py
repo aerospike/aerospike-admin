@@ -17,6 +17,7 @@ from typing import Any
 
 from lib.utils import common, util
 from lib.utils.constants import (
+    COLLECTINFO_LOCALLY_DERIVED_META_KEYS,
     NodeSelection,
     NodeSelectionType,
     PRINCIPAL_SCOPED_TYPES,
@@ -24,6 +25,74 @@ from lib.utils.constants import (
 from lib.utils.lookup_dict import LookupDict
 
 from .collectinfo_parser import collectinfo_parser
+
+
+def _as_stat_has_aerospike_data(as_stat) -> bool:
+    """Whether an as_stat section holds any server-returned data.
+
+    Mirrors the collection-side check in collectinfo_controller. node_names and ip
+    are derived locally from the node object without an info call, so counting them
+    would make a fully-failed node read as having data (TOOLS-3596).
+    """
+    if not as_stat:
+        return False
+
+    try:
+        for key, section in as_stat.items():
+            if key == "meta_data":
+                if any(
+                    util.has_content(v)
+                    for k, v in section.items()
+                    if k not in COLLECTINFO_LOCALLY_DERIVED_META_KEYS
+                ):
+                    return True
+            elif util.has_content(section):
+                return True
+    except Exception:
+        return False
+
+    return False
+
+
+def _endpoint_keys(value) -> list[str]:
+    """Normalize a meta_data services/endpoints value into ip:port keys.
+
+    Newer bundles store a flat list of [ip, port, tls_name] triples; older ones
+    stored a ';' separated string.
+    """
+    keys: list[str] = []
+
+    if not value:
+        return keys
+
+    if isinstance(value, str):
+        return [entry.strip() for entry in value.split(";") if entry.strip()]
+
+    try:
+        entries = list(value)
+    except Exception:
+        return keys
+
+    for entry in entries:
+        if isinstance(entry, str):
+            if entry.strip():
+                keys.append(entry.strip())
+            continue
+
+        try:
+            addr, port = entry[0], entry[1]
+        except Exception:
+            continue
+
+        if not addr:
+            continue
+
+        if ":" in str(addr):
+            keys.append("[%s]:%s" % (addr, port))
+        else:
+            keys.append("%s:%s" % (addr, port))
+
+    return keys
 
 
 class _CollectinfoNode(object):
@@ -401,6 +470,49 @@ class _CollectinfoSnapshot:
             pass
 
         return data
+
+    def has_sys_data(self, node_key: str) -> bool:
+        """Whether any system statistics were captured for this node.
+
+        Reads the raw sys_stat blob rather than get_sys_data, which is
+        stanza-scoped and so cannot distinguish "no sysinfo at all" from "this one
+        stanza is absent".
+        """
+        try:
+            return util.has_content(self.cinfo_data[node_key]["sys_stat"])
+        except Exception:
+            return False
+
+    def nodes_without_as_stat(self) -> list[str]:
+        empty_nodes = []
+
+        for node_key, node_data in (self.cinfo_data or {}).items():
+            if not node_key:
+                continue
+
+            as_stat = (node_data or {}).get("as_stat") or {}
+
+            if not _as_stat_has_aerospike_data(as_stat):
+                empty_nodes.append(node_key)
+
+        return sorted(empty_nodes)
+
+    def get_advertised_peers(self) -> dict[str, list[str]]:
+        return self._get_endpoint_keys("services")
+
+    def get_own_endpoints(self) -> dict[str, list[str]]:
+        return self._get_endpoint_keys("endpoints")
+
+    def _get_endpoint_keys(self, stanza: str) -> dict[str, list[str]]:
+        result = {}
+
+        for node_key, value in self.get_data(type="meta_data", stanza=stanza).items():
+            keys = _endpoint_keys(value)
+
+            if keys:
+                result[node_key] = keys
+
+        return result
 
     def get_node(self, node_key):
         if node_key in self.nodes:

@@ -81,6 +81,66 @@ COLLECTINFO_SEPERATOR = "\n====ASCOLLECTINFO====\n"
 COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress..."
 COLLECTINFO_LOCALLY_DERIVED_META_KEYS = frozenset(("node_names", "ip"))
 
+COLLECTINFO_META_FILENAME = "collectinfo_meta.json"
+COLLECTINFO_META_FORMAT_VERSION = 1
+COLLECTINFO_ASCINFO_SCHEMA = "1.0"
+COLLECTINFO_GENERATED_BY = "asadm collectinfo"
+
+COLLECTINFO_MAX_RETRIES = 1
+
+
+class CollectinfoErrorClass:
+    TIMEOUT = "timeout"
+    UNREACHABLE = "unreachable"
+    AUTH = "auth"
+    CORRUPT = "corrupt"
+    OTHER = "other"
+
+
+COLLECTINFO_ERROR_CLASSES = frozenset(
+    (
+        CollectinfoErrorClass.TIMEOUT,
+        CollectinfoErrorClass.UNREACHABLE,
+        CollectinfoErrorClass.AUTH,
+        CollectinfoErrorClass.CORRUPT,
+        CollectinfoErrorClass.OTHER,
+    )
+)
+
+
+class CollectinfoSection:
+    STATISTICS = "statistics"
+    CONFIG = "config"
+    METADATA = "metadata"
+    HISTOGRAM = "histogram"
+    LATENCY = "latency"
+    ACL = "acl"
+    USER_AGENTS = "user_agents"
+    MASKING = "masking"
+    SYSINFO = "sysinfo"
+
+
+COLLECTINFO_SECTIONS = frozenset(
+    (
+        CollectinfoSection.STATISTICS,
+        CollectinfoSection.CONFIG,
+        CollectinfoSection.METADATA,
+        CollectinfoSection.HISTOGRAM,
+        CollectinfoSection.LATENCY,
+        CollectinfoSection.ACL,
+        CollectinfoSection.USER_AGENTS,
+        CollectinfoSection.MASKING,
+        CollectinfoSection.SYSINFO,
+    )
+)
+
+
+class SysinfoSource:
+    LOCAL = "local"
+    SSH = "ssh"
+    NONE = "none"
+
+
 MRT_SET = "<ERO~MRT"
 
 

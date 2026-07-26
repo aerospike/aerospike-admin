@@ -11,15 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import logging
 import ntpath
 import os
+import re
 import shutil
 import tarfile
 import zipfile
 
 from lib.utils import common, log_util, util, constants
 from lib.utils.constants import NodeSelection, NodeSelectionType
+from .collectinfo_diagnostics import (
+    BundleWarning,
+    CollectinfoDiagnostics,
+    emit_to_log,
+    render_banner,
+)
 from .collectinfo_log import CollectinfoLog
 
 logger = logging.getLogger(__name__)
@@ -39,6 +47,10 @@ SS = 2
 COLLECTINFO_DIR = constants.ADMIN_HOME + "collectinfo/"
 COLLECTINFO_INTERNAL_DIR = "collectinfo_analyzer_extracted_files"
 
+ASADM_VERSION_SCAN_FILES = ("ascollectinfo.log", "summary.log")
+ASADM_VERSION_SCAN_BYTES = 65536
+ASADM_VERSION_RE = re.compile(r"asadm version\s+(\S+)")
+
 ######################
 
 
@@ -54,19 +66,24 @@ class CollectinfoLogHandler(object):
     all_cinfo_logs = {}
     selected_cinfo_logs = {}
 
-    def __init__(self, cinfo_path):
+    def __init__(self, cinfo_path, asadm_version=""):
         self.cinfo_path = cinfo_path
+        self.asadm_version = asadm_version
         self.collectinfo_dir = COLLECTINFO_DIR + str(os.getpid())
         self._validate_and_extract_compressed_files(
             cinfo_path, dest_dir=self.collectinfo_dir
         )
         self.cinfo_timestamp = None
+        self.bundle_snapshot_count = 0
+        self._bundle_diagnostics: list[BundleWarning] | None = None
 
         try:
             self._add_cinfo_log_files(cinfo_path)
         except Exception as e:
             self.close()
             raise e
+
+        self.collectinfo_meta = self._load_collectinfo_meta()
 
     def __str__(self):
         status_str = ""
@@ -89,7 +106,103 @@ class CollectinfoLogHandler(object):
             status_str += "\n"
             i = i + 1
 
+        status_str += self.diagnostics_banner()
+
         return status_str
+
+    def _iter_bundle_files(self, suffixes: tuple[str, ...]) -> list[str]:
+        """Every bundle file whose name ends with one of the given suffixes.
+
+        Walks the bundle path and the extraction directory directly rather than
+        going through _get_valid_files, which keeps only .json and .conf files and
+        so cannot see the .log files the version scan needs.
+        """
+        matches = []
+
+        for root in (self.cinfo_path, self.collectinfo_dir):
+            if not root or not os.path.exists(root):
+                continue
+
+            try:
+                files = log_util.get_all_files(root)
+            except Exception:
+                continue
+
+            for file in files:
+                if file.endswith(suffixes) and file not in matches:
+                    matches.append(file)
+
+        return matches
+
+    def _load_collectinfo_meta(self) -> dict:
+        """Read collectinfo_meta.json if the bundle has one.
+
+        Absent for every bundle collected before TOOLS-4135, and absent mid-collection
+        while asadm builds summary/health over a half-written bundle directory, so a
+        missing file is normal and must stay silent.
+        """
+        for file in self._iter_bundle_files((constants.COLLECTINFO_META_FILENAME,)):
+            try:
+                with open(file) as meta_file:
+                    meta = json.load(meta_file)
+
+                if isinstance(meta, dict):
+                    return meta
+            except Exception as e:
+                logger.debug("Could not read %s: %s", file, e)
+
+        return {}
+
+    def _scan_bundle_for_asadm_version(self) -> str:
+        """Best-effort collector version for bundles with no collectinfo_meta.json.
+
+        asadm has always echoed 'asadm version <v>' into ascollectinfo.log and
+        summary.log. Reads a capped prefix because the line is written first.
+        """
+        for file in self._iter_bundle_files(ASADM_VERSION_SCAN_FILES):
+            try:
+                with open(file, errors="ignore") as log_file:
+                    head = log_file.read(ASADM_VERSION_SCAN_BYTES)
+            except Exception as e:
+                logger.debug("Could not scan %s for asadm version: %s", file, e)
+                continue
+
+            match = ASADM_VERSION_RE.search(head)
+
+            if match:
+                return match.group(1)
+
+        return ""
+
+    def get_bundle_diagnostics(self) -> list[BundleWarning]:
+        if self._bundle_diagnostics is not None:
+            return self._bundle_diagnostics
+
+        self._bundle_diagnostics = []
+
+        try:
+            if not self.all_cinfo_logs:
+                return self._bundle_diagnostics
+
+            timestamp = sorted(self.all_cinfo_logs.keys())[-1]
+            diagnostics = CollectinfoDiagnostics(
+                log_handler=self,
+                snapshot=self.all_cinfo_logs[timestamp],
+                timestamp=timestamp,
+                running_version=self.asadm_version,
+                meta=self.collectinfo_meta,
+            )
+            self._bundle_diagnostics = diagnostics.analyze()
+        except Exception as e:
+            logger.debug("Failed to compute bundle diagnostics: %s", e, exc_info=True)
+
+        return self._bundle_diagnostics
+
+    def diagnostics_banner(self) -> str:
+        return render_banner(self.get_bundle_diagnostics())
+
+    def emit_diagnostics_to_log(self, log=None) -> None:
+        emit_to_log(self.get_bundle_diagnostics(), log if log is not None else logger)
 
     def close(self):
         if self.all_cinfo_logs:
@@ -121,7 +234,6 @@ class CollectinfoLogHandler(object):
             temp_principal = service_data[timestamp][node_ip].get("cluster_principal")
 
             if principal and temp_principal and temp_principal != principal:
-                logger.warning("Found multiple cluster principals.")
                 return principal
             elif not principal:
                 principal = temp_principal
@@ -341,6 +453,7 @@ class CollectinfoLogHandler(object):
         cinfo_log = CollectinfoLog(cinfo_path, files)
         self.selected_cinfo_logs = cinfo_log.snapshots
         self.all_cinfo_logs = cinfo_log.snapshots
+        self.bundle_snapshot_count = len(cinfo_log.data or {})
         snapshots_added = len(self.all_cinfo_logs)
         if not snapshots_added:
             raise LogHandlerException("Multiple snapshots available without JSON dump.")
