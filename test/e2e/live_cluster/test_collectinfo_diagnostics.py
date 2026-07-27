@@ -353,7 +353,8 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
 
-        self.assertIn("Collector asadm version is unknown", cp.stderr)
+        self.assertIn("Collected by an unknown asadm version", cp.stderr)
+        self.assertIn("much older asadm", cp.stderr)
         self.assertIn("Network Information", cp.stdout)
 
     def test_analyzer_still_works_when_meta_is_corrupt(self):

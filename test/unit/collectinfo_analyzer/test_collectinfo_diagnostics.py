@@ -66,6 +66,7 @@ def make_log_handler(
     scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1
 ):
     handler = MagicMock()
+    handler.collector_asadm_version.return_value = scanned_version
     handler._scan_bundle_for_asadm_version.return_value = scanned_version
     handler.bundle_snapshot_count = snapshot_count
     handler._iter_bundle_files.side_effect = lambda suffixes: [
@@ -156,12 +157,23 @@ class CollectorVersionTest(unittest.TestCase):
         self.assertEqual(warning.severity, DiagSeverity.INFO)
 
     def test_unknown_version_warns(self):
+        """No version anywhere usually means a much older asadm, so it is a warning
+        rather than a neutral 'unknown'."""
         diag = diagnostics()
 
         warning = find(diag.analyze(), "collector-version-unknown")
 
         self.assertIsNotNone(warning)
         self.assertEqual(warning.severity, DiagSeverity.WARNING)
+        self.assertIn("much older asadm", " ".join(warning.lines))
+
+    def test_version_is_stated_plainly_when_it_matches(self):
+        diag = diagnostics(meta=meta_with(asadm_version="5.0.2"))
+
+        warning = find(diag.analyze(), "collector-version-match")
+
+        self.assertEqual(warning.title, "Collected by asadm 5.0.2")
+        self.assertEqual(warning.lines, [])
 
     def test_development_version_is_not_compared(self):
         diag = diagnostics(
@@ -257,32 +269,82 @@ class DroppedAndMissingNodesTest(unittest.TestCase):
         self.assertIn("cluster_integrity was false", " ".join(warning.lines))
 
 
-class MissingSysinfoTest(unittest.TestCase):
-    def test_no_warning_when_sysinfo_present(self):
+class SysinfoCoverageTest(unittest.TestCase):
+    def _nodes(self, with_sysinfo, without_sysinfo):
+        nodes = {}
+
+        for index in range(with_sysinfo + without_sysinfo):
+            node = copy.deepcopy(HEALTHY_NODE)
+            node["as_stat"]["meta_data"]["node_id"] = "BB%d" % (index,)
+
+            if index >= with_sysinfo:
+                del node["sys_stat"]
+
+            nodes["10.0.0.%d:3000" % (index,)] = node
+
+        return nodes
+
+    def test_silent_when_every_node_has_sysinfo(self):
         warnings = diagnostics(meta=meta_with()).analyze()
 
         self.assertIsNone(find(warnings, "missing-sysinfo"))
+        self.assertIsNone(find(warnings, "partial-sysinfo"))
 
-    def test_all_nodes_missing_sysinfo(self):
-        node = copy.deepcopy(HEALTHY_NODE)
-        del node["sys_stat"]
-
+    def test_no_node_has_sysinfo_is_a_warning(self):
+        """The ticket's case: collected from a host outside the cluster, so nothing
+        host-level was captured at all."""
         warning = find(
-            diagnostics(nodes={"1.1.1.1:3000": node}, meta=meta_with()).analyze(),
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=0, without_sysinfo=3), meta=meta_with()
+            ).analyze(),
             "missing-sysinfo",
         )
 
         self.assertIsNotNone(warning)
-        self.assertIn("--enable-ssh", " ".join(warning.lines))
+        self.assertEqual(warning.severity, DiagSeverity.WARNING)
+        body = " ".join(warning.lines)
+        self.assertIn("any of the 3 nodes", body)
+        self.assertIn("--enable-ssh", body)
+
+    def test_one_node_of_many_is_the_ordinary_local_collect(self):
+        """A plain collect covers exactly the node asadm ran on, so this is
+        information rather than a fault."""
+        warning = find(
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=1, without_sysinfo=26), meta=meta_with()
+            ).analyze(),
+            "partial-sysinfo",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.INFO)
+        self.assertEqual(warning.title, "System information covers 1 of 27 nodes")
+        body = " ".join(warning.lines)
+        self.assertIn("10.0.0.0:3000", body)
+        self.assertIn("The other 26 nodes have no host-level data", body)
+        self.assertIn("--enable-ssh", body)
+
+    def test_partial_coverage_is_not_reported_as_missing(self):
+        warnings = diagnostics(
+            nodes=self._nodes(with_sysinfo=1, without_sysinfo=2), meta=meta_with()
+        ).analyze()
+
+        self.assertIsNone(find(warnings, "missing-sysinfo"))
 
     def test_no_bundle_sysinfo_files(self):
         warning = find(
-            diagnostics(meta=meta_with(), bundle_files=()).analyze(),
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=0, without_sysinfo=1),
+                meta=meta_with(),
+                bundle_files=(),
+            ).analyze(),
             "missing-sysinfo",
         )
 
         self.assertIsNotNone(warning)
-        self.assertIn("not itself an Aerospike node", " ".join(warning.lines))
+        body = " ".join(warning.lines)
+        self.assertIn("no sysinfo.log", body)
+        self.assertIn("only ever collected when asadm runs on a cluster node", body)
 
     def test_aerospike_conf_alone_counts_as_local_collection(self):
         warnings = diagnostics(
@@ -290,6 +352,7 @@ class MissingSysinfoTest(unittest.TestCase):
         ).analyze()
 
         self.assertIsNone(find(warnings, "missing-sysinfo"))
+        self.assertIsNone(find(warnings, "partial-sysinfo"))
 
 
 class NodeCollectionErrorsTest(unittest.TestCase):
@@ -674,6 +737,66 @@ class RenderTest(unittest.TestCase):
         emit_to_log([], log)
 
         log.warning.assert_not_called()
+
+    def test_severity_colors(self):
+        """The color constants are read off the submodule: the package re-exports
+        them by value at import time, so the package-level copies stay empty."""
+        from lib.view.terminal import terminal as terminal_module
+
+        was_enabled = terminal_module.color_enabled
+        terminal_module.enable_color(True)
+        self.addCleanup(terminal_module.enable_color, was_enabled)
+
+        banner = render_banner(
+            [
+                BundleWarning("a", DiagSeverity.INFO, "an info"),
+                BundleWarning("b", DiagSeverity.WARNING, "a warning"),
+                BundleWarning("c", DiagSeverity.ERROR, "an error"),
+            ]
+        )
+
+        self.assertIn("\x1b[%sm%s" % (terminal_module.fgblue, "INFO: an info"), banner)
+        self.assertIn(
+            "\x1b[%sm%s" % (terminal_module.fgyellow, "WARNING: a warning"), banner
+        )
+        self.assertIn("\x1b[%sm%s" % (terminal_module.fgred, "ERROR: an error"), banner)
+
+    def test_banner_omits_the_version_line_the_intro_already_prints(self):
+        warnings = [
+            BundleWarning(
+                category="collector-version-match",
+                severity=DiagSeverity.INFO,
+                title="Collected by asadm 5.0.2",
+            )
+        ]
+
+        self.assertEqual(render_banner(warnings, use_color=False), "")
+
+    def test_banner_keeps_an_actionable_version_warning(self):
+        warnings = [
+            BundleWarning(
+                category="collector-version-older",
+                severity=DiagSeverity.WARNING,
+                title="Collected by asadm 1.0.0, older than this asadm 5.0.2",
+            )
+        ]
+
+        self.assertIn("older than this asadm", render_banner(warnings, use_color=False))
+
+    def test_emit_to_log_keeps_the_version_line(self):
+        """Execute mode has no intro, so the log path must still carry provenance."""
+        warnings = [
+            BundleWarning(
+                category="collector-version-match",
+                severity=DiagSeverity.INFO,
+                title="Collected by asadm 5.0.2",
+            )
+        ]
+        log = MagicMock(spec=logging.Logger)
+
+        emit_to_log(warnings, log)
+
+        log.info.assert_called_once_with("Collected by asadm 5.0.2")
 
 
 class SnapshotHelperTest(unittest.TestCase):

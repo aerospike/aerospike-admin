@@ -748,19 +748,33 @@ class DetectNodeDiscrepanciesTest(unittest.IsolatedAsyncioTestCase):
         local = self._node("L", localhost=True)
         remote = self._node("R")
         failed = self._node("F")
-        ledger = {}
-        _record_node_error(ledger, "F", "sysinfo", ValueError("ssh failed"))
         dump_map = {
-            key: {"as_stat": {"statistics": {"s": 1}}} for key in ("L", "R", "F")
+            "L": {"as_stat": {"statistics": {"s": 1}}, "sys_stat": {"uname": {"n": 1}}},
+            "R": {"as_stat": {"statistics": {"s": 1}}, "sys_stat": {"uname": {"n": 1}}},
+            "F": {"as_stat": {"statistics": {"s": 1}}, "sys_stat": {}},
         }
 
         meta = await controller._detect_node_discrepancies(
-            [local, remote, failed], dump_map, ledger, enable_ssh=True
+            [local, remote, failed], dump_map, {}, enable_ssh=True
         )
 
         self.assertEqual(meta["nodes"]["L"]["sysinfo_source"], "local")
         self.assertEqual(meta["nodes"]["R"]["sysinfo_source"], "ssh")
         self.assertEqual(meta["nodes"]["F"]["sysinfo_source"], "none")
+
+    async def test_sysinfo_source_is_none_for_a_swallowed_ssh_failure(self):
+        """_get_remote_host_system_statistics logs a mid-run SSHError and returns
+        without raising, so no ledger entry exists; the empty sys_stat is the only
+        evidence and meta must not claim 'ssh'."""
+        controller = self._controller()
+        remote = self._node("R")
+        dump_map = {"R": {"as_stat": {"statistics": {"s": 1}}}}
+
+        meta = await controller._detect_node_discrepancies(
+            [remote], dump_map, {}, enable_ssh=True
+        )
+
+        self.assertEqual(meta["nodes"]["R"]["sysinfo_source"], "none")
 
     async def test_sysinfo_source_none_without_ssh(self):
         controller = self._controller()

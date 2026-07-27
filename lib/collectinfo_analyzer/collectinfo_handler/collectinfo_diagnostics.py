@@ -40,6 +40,9 @@ from lib.view.sheet import Field, Projectors, Sheet, render as sheet_render
 logger = logging.getLogger(__name__)
 
 BANNER_TITLE = "Collectinfo Bundle Diagnostics"
+BANNER_REDUNDANT_CATEGORIES = frozenset(
+    ("collector-version-match", "collector-version-unparsed")
+)
 BUNDLE_STALE_DAYS = 7
 CLOCK_SKEW_WARN_MS = 1000
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
@@ -232,40 +235,39 @@ class CollectinfoDiagnostics:
     ###########################################################################
     # Collection integrity and provenance.
 
-    def _collector_version(self) -> tuple[str, str]:
-        """Collector version plus where it came from."""
+    def _collector_version(self) -> str:
         bundle = self.meta.get("bundle") or {}
         meta_version = str(bundle.get("asadm_version") or "").strip()
 
         if meta_version:
-            return meta_version, "collectinfo_meta.json"
-
-        scanned = ""
+            return meta_version
 
         try:
-            scanned = self.log_handler._scan_bundle_for_asadm_version() or ""
+            return (self.log_handler.collector_asadm_version() or "").strip()
         except Exception:
-            scanned = ""
-
-        if scanned:
-            return scanned.strip(), "ascollectinfo.log"
-
-        return "", ""
+            return ""
 
     def _check_collector_version(self) -> BundleWarning | None:
-        collector, source = self._collector_version()
+        """Always state which asadm collected the bundle.
+
+        Old bundles carry no metadata file but every asadm since 2017 echoed
+        'asadm version <v>' into ascollectinfo.log, so the version is recoverable
+        for effectively any bundle. A mismatch with the running asadm gets one
+        extra sentence; the version itself is the point.
+        """
+        collector = self._collector_version()
         running = self.running_version
 
         if not collector:
             return BundleWarning(
                 category="collector-version-unknown",
                 severity=DiagSeverity.WARNING,
-                title="Collector asadm version is unknown",
+                title="Collected by an unknown asadm version",
                 lines=[
-                    "This bundle records no asadm version, so it predates version "
-                    "stamping or was assembled by hand.",
-                    "Sections this asadm expects may simply never have been "
-                    "collected. Treat node counts and absent sections with caution.",
+                    "Neither the bundle metadata nor the collection logs record a "
+                    "version, which usually means a much older asadm. Sections this "
+                    "asadm expects may never have been collected, and nodes that "
+                    "timed out may have been dropped without a trace."
                 ],
             )
 
@@ -273,11 +275,8 @@ class CollectinfoDiagnostics:
             return BundleWarning(
                 category="collector-version-unparsed",
                 severity=DiagSeverity.INFO,
-                title="Collected by asadm %s (from %s)" % (collector, source),
-                lines=[
-                    "Running asadm %s. Versions could not be compared."
-                    % (running or "unknown",),
-                ],
+                title="Collected by asadm %s" % (collector,),
+                lines=[],
             )
 
         collected = version.LooseVersion(collector)
@@ -287,13 +286,12 @@ class CollectinfoDiagnostics:
             return BundleWarning(
                 category="collector-version-older",
                 severity=DiagSeverity.WARNING,
-                title="Bundle was collected by an older asadm (%s < %s)"
+                title="Collected by asadm %s, older than this asadm %s"
                 % (collector, running),
                 lines=[
-                    "Data this asadm knows how to display may never have been "
-                    "collected, and older asadm versions could silently drop nodes "
-                    "that timed out.",
-                    "Re-collect with asadm %s for a complete bundle." % (running,),
+                    "Sections added since %s are absent, and older asadm versions "
+                    "could drop nodes that timed out. Re-collect with asadm %s for a "
+                    "complete bundle." % (collector, running)
                 ],
             )
 
@@ -301,18 +299,18 @@ class CollectinfoDiagnostics:
             return BundleWarning(
                 category="collector-version-newer",
                 severity=DiagSeverity.WARNING,
-                title="Bundle was collected by a newer asadm (%s > %s)"
+                title="Collected by asadm %s, newer than this asadm %s"
                 % (collector, running),
                 lines=[
                     "This asadm may not render every section the bundle contains. "
-                    "Upgrade to asadm %s to analyze it fully." % (collector,),
+                    "Upgrade to asadm %s to analyze it fully." % (collector,)
                 ],
             )
 
         return BundleWarning(
             category="collector-version-match",
             severity=DiagSeverity.INFO,
-            title="Collected by asadm %s (from %s)" % (collector, source),
+            title="Collected by asadm %s" % (collector,),
             lines=[],
         )
 
@@ -505,16 +503,27 @@ class CollectinfoDiagnostics:
         )
 
     def _check_missing_sysinfo(self) -> BundleWarning | None:
+        """Report sysinfo coverage.
+
+        asadm gathers system statistics locally for the node it runs on, and over SSH
+        for the rest only when --enable-ssh is passed. So a bundle covering exactly
+        one node is the ordinary outcome of a plain collect and is reported as
+        information; a bundle covering none means collectinfo ran off-cluster and
+        nothing host-level was captured at all, which is the case worth warning about.
+        """
         node_names = self._node_names()
 
         if not node_names:
             return None
 
+        with_sysinfo = []
         without_sysinfo = []
 
         for node in sorted(node_names):
             try:
-                if not self.snapshot.has_sys_data(node):
+                if self.snapshot.has_sys_data(node):
+                    with_sysinfo.append(node)
+                else:
                     without_sysinfo.append(node)
             except Exception:
                 continue
@@ -524,38 +533,49 @@ class CollectinfoDiagnostics:
         if not without_sysinfo and has_sysinfo_files:
             return None
 
-        lines: list[str] = []
+        if not with_sysinfo:
+            lines = [
+                "No host-level data was captured for any of the %d nodes, so "
+                "`summary`, `info network`, and `health` cannot report on CPU, "
+                "memory, disks, or the OS." % (len(node_names),),
+                "collectinfo gathers system statistics locally for the node it runs "
+                "on and over SSH for every other node, so this bundle was collected "
+                "from a host that is not an Aerospike node, without --enable-ssh.",
+            ]
 
-        if len(without_sysinfo) >= len(node_names):
-            lines.append(
-                "No system statistics were collected for any of the %d nodes. The "
-                "bundle was most likely collected without --enable-ssh, so `info "
-                "network`, `summary`, and `health` cannot report host-level facts."
-                % (len(node_names),)
-            )
-        elif without_sysinfo:
-            lines.append(
-                "No system statistics for %d of %d nodes: %s."
-                % (
-                    len(without_sysinfo),
-                    len(node_names),
-                    _summarize(without_sysinfo),
+            if not has_sysinfo_files:
+                lines.append(
+                    "The bundle also has no sysinfo.log and no aerospike.conf, which "
+                    "are only ever collected when asadm runs on a cluster node."
                 )
+
+            return BundleWarning(
+                category="missing-sysinfo",
+                severity=DiagSeverity.WARNING,
+                title="No system information in this bundle",
+                lines=lines,
             )
+
+        lines = [
+            "Captured for %s. The other %d %s no host-level data: %s."
+            % (
+                _summarize(with_sysinfo),
+                len(without_sysinfo),
+                _plural(len(without_sysinfo), "node has", "nodes have"),
+                _summarize(without_sysinfo),
+            ),
+            "Expected unless collectinfo was run with --enable-ssh, which is what "
+            "lets it collect system statistics from nodes it is not running on.",
+        ]
 
         if not has_sysinfo_files:
-            lines.append(
-                "The bundle has no sysinfo.log and no aerospike.conf, so it was "
-                "collected from a host that is not itself an Aerospike node."
-            )
-
-        if not lines:
-            return None
+            lines.append("The bundle has no sysinfo.log and no aerospike.conf either.")
 
         return BundleWarning(
-            category="missing-sysinfo",
-            severity=DiagSeverity.WARNING,
-            title="System information is missing from this bundle",
+            category="partial-sysinfo",
+            severity=DiagSeverity.INFO,
+            title="System information covers %d of %d nodes"
+            % (len(with_sysinfo), len(node_names)),
             lines=lines,
         )
 
@@ -1080,7 +1100,7 @@ class CollectinfoDiagnostics:
 
 
 _SEVERITY_COLOR = {
-    DiagSeverity.INFO: terminal.fg_clear,
+    DiagSeverity.INFO: terminal.fg_blue,
     DiagSeverity.WARNING: terminal.fg_yellow,
     DiagSeverity.ERROR: terminal.fg_red,
 }
@@ -1090,8 +1110,16 @@ def render_banner(warnings: list[BundleWarning], use_color: bool = True) -> str:
     """Build the interactive-intro banner.
 
     Returns a string rather than printing: the log handler's __str__ is the only
-    caller and it has no view to print through.
+    caller and it has no view to print through. The intro already prints a
+    'Collected by' line, so a version finding with nothing to act on is dropped here
+    instead of repeating it.
     """
+    warnings = [
+        warning
+        for warning in warnings
+        if warning.category not in BANNER_REDUNDANT_CATEGORIES
+    ]
+
     if not warnings:
         return ""
 

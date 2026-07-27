@@ -22,6 +22,7 @@ import zipfile
 
 from lib.utils import common, log_util, util, constants
 from lib.utils.constants import NodeSelection, NodeSelectionType
+from lib.view import terminal
 from .collectinfo_diagnostics import (
     BundleWarning,
     CollectinfoDiagnostics,
@@ -76,6 +77,7 @@ class CollectinfoLogHandler(object):
         self.cinfo_timestamp = None
         self.bundle_snapshot_count = 0
         self._bundle_diagnostics: list[BundleWarning] | None = None
+        self._collector_asadm_version: str | None = None
 
         try:
             self._add_cinfo_log_files(cinfo_path)
@@ -103,6 +105,7 @@ class CollectinfoLogHandler(object):
             status_str += ")"
             status_str += "\n\tFound %s nodes" % (len(nodes))
             status_str += "\n\tOnline:  %s" % (", ".join(nodes))
+            status_str += "\n\tCollected by:  %s" % (self._collected_by_str(),)
             status_str += "\n"
             i = i + 1
 
@@ -173,6 +176,47 @@ class CollectinfoLogHandler(object):
                 return match.group(1)
 
         return ""
+
+    def _collected_by_str(self) -> str:
+        """The 'Collected by' intro line.
+
+        A bundle with no recorded version is itself a finding, not a neutral fact, so
+        it is flagged in place rather than printed as a bland 'unknown'.
+        """
+        collector = self.collector_asadm_version()
+
+        if collector:
+            return "asadm %s" % (collector,)
+
+        return (
+            terminal.fg_yellow()
+            + "unrecorded asadm version - see warnings below"
+            + terminal.fg_clear()
+        )
+
+    def collector_asadm_version(self) -> str:
+        """The asadm that produced this bundle, from the metadata file or the logs.
+
+        Every asadm since 2017 echoes 'asadm version <v>' into ascollectinfo.log, so
+        bundles collected long before the metadata file existed still report a
+        version.
+        """
+        if self._collector_asadm_version is not None:
+            return self._collector_asadm_version
+
+        self._collector_asadm_version = ""
+
+        try:
+            meta_version = str(
+                (self.collectinfo_meta.get("bundle") or {}).get("asadm_version") or ""
+            ).strip()
+            self._collector_asadm_version = (
+                meta_version or self._scan_bundle_for_asadm_version()
+            )
+        except Exception as e:
+            logger.debug("Could not determine collector asadm version: %s", e)
+
+        return self._collector_asadm_version
 
     def get_bundle_diagnostics(self) -> list[BundleWarning]:
         if self._bundle_diagnostics is not None:

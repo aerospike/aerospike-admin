@@ -955,7 +955,7 @@ class CollectinfoController(LiveClusterCommandController):
             nodes_meta[node.key] = {
                 "node_id": node_id,
                 "responded": node.key in responded_set,
-                "sysinfo_source": self._sysinfo_source(node, node_errors, enable_ssh),
+                "sysinfo_source": self._sysinfo_source(node, dump_map, enable_ssh),
                 "errors": _node_error_entries(node_errors, node.key),
             }
 
@@ -1033,17 +1033,22 @@ class CollectinfoController(LiveClusterCommandController):
         return [missing[key] for key in sorted(missing)]
 
     def _sysinfo_source(
-        self, node: Node, node_errors: NodeErrorLedger, enable_ssh: bool
+        self, node: Node, dump_map: dict[str, Any], enable_ssh: bool
     ) -> str:
+        """Where this node's sys_stat actually came from.
+
+        Keyed off the collected data rather than the flags: a mid-collection SSH
+        failure is logged and swallowed by _get_remote_host_system_statistics without
+        raising, so trusting enable_ssh alone would claim 'ssh' for a node whose
+        sys_stat is empty.
+        """
+        if not util.has_content((dump_map.get(node.key) or {}).get("sys_stat")):
+            return constants.SysinfoSource.NONE
+
         if getattr(node, "localhost", False):
             return constants.SysinfoSource.LOCAL
 
-        sysinfo_failed = any(
-            section == constants.CollectinfoSection.SYSINFO
-            for section, error_class in node_errors.get(node.key, {})
-        )
-
-        if enable_ssh and not sysinfo_failed:
+        if enable_ssh:
             return constants.SysinfoSource.SSH
 
         return constants.SysinfoSource.NONE

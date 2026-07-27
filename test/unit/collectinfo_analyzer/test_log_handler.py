@@ -306,6 +306,42 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
         self.assertIn("Collectinfo Bundle Diagnostics", str(handler))
         self.assertIn("Found 1 nodes", str(handler))
 
+    def test_collector_version_sits_with_the_found_and_online_lines(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+
+        intro = str(self._handler())
+
+        self.assertIn("Collected by:  asadm 3.1.0", intro)
+        self.assertLess(intro.index("Found 1 nodes"), intro.index("Collected by:"))
+
+    def test_collector_version_comes_from_the_log_when_meta_is_absent(self):
+        self._write_text("summary.log", "header\nasadm version 4.0.1\n")
+
+        handler = self._handler()
+
+        self.assertEqual(handler.collector_asadm_version(), "4.0.1")
+        self.assertIn("Collected by:  asadm 4.0.1", str(handler))
+
+    def test_meta_version_wins_over_the_log_scan(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+        self._write_text("summary.log", "header\nasadm version 4.0.1\n")
+
+        self.assertEqual(self._handler().collector_asadm_version(), "3.1.0")
+
+    def test_unrecorded_version_is_flagged_in_the_intro(self):
+        """A bundle too old to stamp a version anywhere is a finding, not a blank."""
+        intro = str(self._handler())
+
+        self.assertIn("unrecorded asadm version", intro)
+        self.assertIn("Collected by an unknown asadm version", intro)
+
+    def test_matching_version_is_not_repeated_in_the_banner(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+        handler = self._handler(asadm_version="3.1.0")
+
+        self.assertIn("Collected by:  asadm 3.1.0", str(handler))
+        self.assertNotIn("Collected by asadm 3.1.0", handler.diagnostics_banner())
+
     def test_diagnostics_are_cached(self):
         handler = self._handler()
 
