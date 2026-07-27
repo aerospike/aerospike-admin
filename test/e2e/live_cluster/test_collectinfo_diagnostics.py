@@ -235,7 +235,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         self.assertNotIn("Cluster nodes are missing from this bundle", cp.stderr)
         self.assertNotIn("may be missing cluster nodes", cp.stderr)
-        self.assertNotIn("failed to collect", cp.stderr)
+        self.assertNotIn("Collection failed for some sections", cp.stderr)
         self.assertNotIn("no Aerospike data for any", cp.stderr)
         self.assertNotIn("only partially represented", cp.stderr)
 
@@ -310,7 +310,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
 
-        self.assertIn("failed to collect", cp.stderr)
+        self.assertIn("Collection failed for some sections", cp.stderr)
         self.assertIn(node_key, cp.stderr)
         self.assertIn("latency", cp.stderr)
 

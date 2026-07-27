@@ -97,7 +97,9 @@ def find(warnings, category):
     return None
 
 
-def meta_with(discrepancies=None, nodes=None, asadm_version="5.0.2"):
+def meta_with(
+    discrepancies=None, nodes=None, asadm_version="5.0.2", no_data_nodes=None
+):
     return {
         "meta_format_version": 1,
         "bundle": {"asadm_version": asadm_version, "asadm_build": "abc"},
@@ -108,7 +110,7 @@ def meta_with(discrepancies=None, nodes=None, asadm_version="5.0.2"):
                 "cluster_name": "prod",
                 "expected_nodes": ["1.1.1.1:3000"],
                 "responded_nodes": ["1.1.1.1:3000"],
-                "no_data_nodes": [],
+                "no_data_nodes": no_data_nodes or [],
                 "nodes": nodes or {},
                 "discrepancies": discrepancies
                 or {
@@ -224,6 +226,23 @@ class DroppedAndMissingNodesTest(unittest.TestCase):
         self.assertIsNotNone(warning)
         self.assertIn("no route to host", " ".join(warning.lines))
 
+    def test_detection_error_still_reports_no_data_nodes(self):
+        """no_data_nodes is written before reconciliation runs, so it survives a
+        detection failure and the dropped node does not vanish from diagnostics."""
+        meta = meta_with(
+            discrepancies={"detection_error": "no route to host"},
+            no_data_nodes=["2.2.2.2:3000"],
+        )
+
+        warning = find(
+            diagnostics(meta=meta).analyze(), "node-discrepancy-detection-failed"
+        )
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("2.2.2.2:3000", body)
+        self.assertIn("returned no data", body)
+
     def test_old_bundle_cluster_size_heuristic(self):
         node = copy.deepcopy(HEALTHY_NODE)
         node["as_stat"]["statistics"]["service"]["cluster_size"] = "3"
@@ -256,17 +275,46 @@ class DroppedAndMissingNodesTest(unittest.TestCase):
         self.assertIn("2.2.2.2:3000", body)
         self.assertNotIn("1.1.1.1:3000", body)
 
-    def test_old_bundle_integrity_heuristic(self):
+    def test_broken_integrity_is_reported_once_by_cluster_state(self):
+        """cluster_integrity belongs to the cluster-state finding; reporting it in the
+        missing-node heuristic too would state the same fact twice in one banner."""
         node = copy.deepcopy(HEALTHY_NODE)
         node["as_stat"]["statistics"]["service"]["cluster_integrity"] = "false"
 
-        warning = find(
-            diagnostics(nodes={"1.1.1.1:3000": node}).analyze(),
-            "dropped-or-missing-nodes",
+        warnings = diagnostics(nodes={"1.1.1.1:3000": node}).analyze()
+
+        cluster_state = find(warnings, "cluster-state")
+        self.assertIsNotNone(cluster_state)
+        self.assertIn("cluster_integrity is false", " ".join(cluster_state.lines))
+
+        missing = find(warnings, "dropped-or-missing-nodes")
+        if missing is not None:
+            self.assertNotIn("cluster_integrity", " ".join(missing.lines))
+
+    def test_peer_visibility_is_separate_from_missing_nodes(self):
+        """Down and visibility-error nodes were collected fine; it is the cluster's
+        view of them that is broken, so they are not 'missing from the bundle'."""
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [],
+                "dropped_during_collection": [],
+                "cluster_down_nodes": ["9.9.9.9:3000"],
+                "visibility_error_nodes": ["1.1.1.1:3000"],
+            }
         )
 
-        self.assertIsNotNone(warning)
-        self.assertIn("cluster_integrity was false", " ".join(warning.lines))
+        warnings = diagnostics(meta=meta).analyze()
+
+        self.assertIsNone(find(warnings, "dropped-or-missing-nodes"))
+        visibility = find(warnings, "peer-visibility")
+        self.assertIsNotNone(visibility)
+        body = " ".join(visibility.lines)
+        self.assertIn("9.9.9.9:3000", body)
+        self.assertIn("1.1.1.1:3000", body)
+
+    def test_peer_visibility_needs_meta(self):
+        """Not derivable from a bundle, so old bundles get no claim either way."""
+        self.assertIsNone(find(diagnostics().analyze(), "peer-visibility"))
 
 
 class SysinfoCoverageTest(unittest.TestCase):
@@ -321,7 +369,7 @@ class SysinfoCoverageTest(unittest.TestCase):
         self.assertEqual(warning.title, "System information covers 1 of 27 nodes")
         body = " ".join(warning.lines)
         self.assertIn("10.0.0.0:3000", body)
-        self.assertIn("The other 26 nodes have no host-level data", body)
+        self.assertIn("No host-level data for the other 26 nodes", body)
         self.assertIn("--enable-ssh", body)
 
     def test_partial_coverage_is_not_reported_as_missing(self):
@@ -329,6 +377,33 @@ class SysinfoCoverageTest(unittest.TestCase):
             nodes=self._nodes(with_sysinfo=1, without_sysinfo=2), meta=meta_with()
         ).analyze()
 
+        self.assertIsNone(find(warnings, "missing-sysinfo"))
+
+    def test_full_coverage_with_missing_host_files_is_reported_on_its_own(self):
+        """Every responder has sysinfo, so there is no coverage gap to describe; only
+        the two host files are absent."""
+        warning = find(
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=2, without_sysinfo=0),
+                meta=meta_with(),
+                bundle_files=(),
+            ).analyze(),
+            "missing-sysinfo-files",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.INFO)
+        self.assertNotIn("other 0", " ".join(warning.lines))
+
+    def test_dropped_nodes_are_not_counted_as_sysinfo_gaps(self):
+        """A node that returned nothing is reported as dropped; counting it here too
+        would blame sysinfo for a node that answered no calls at all."""
+        nodes = self._nodes(with_sysinfo=1, without_sysinfo=0)
+        nodes["10.0.0.9:3000"] = {"as_stat": {}}
+
+        warnings = diagnostics(nodes=nodes, meta=meta_with()).analyze()
+
+        self.assertIsNone(find(warnings, "partial-sysinfo"))
         self.assertIsNone(find(warnings, "missing-sysinfo"))
 
     def test_no_bundle_sysinfo_files(self):
@@ -446,8 +521,35 @@ class ZeroAndPartialNodesTest(unittest.TestCase):
 
         self.assertIsNotNone(warning)
         body = " ".join(warning.lines)
-        self.assertIn("Missing statistics: 2.2.2.2:3000", body)
-        self.assertIn("Missing config: 2.2.2.2:3000", body)
+        self.assertIn("No statistics for: 2.2.2.2:3000", body)
+        self.assertIn("No config for: 2.2.2.2:3000", body)
+
+    def test_fully_empty_node_is_not_also_reported_as_partial(self):
+        """An empty node is already reported as dropped or missing; listing it here
+        too would put one node in three findings."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": {"as_stat": {}},
+        }
+
+        warnings = diagnostics(nodes=nodes, meta=meta_with()).analyze()
+
+        self.assertIsNone(find(warnings, "partial-nodes"))
+
+    def test_old_bundle_reports_empty_nodes_as_partial(self):
+        """Without meta there is no dropped record and no heuristic can see an empty
+        node, so this finding is the only place it can surface."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": {"as_stat": {}},
+        }
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "partial-nodes")
+
+        self.assertIsNotNone(warning)
+        self.assertIn(
+            "No Aerospike data at all for: 2.2.2.2:3000", " ".join(warning.lines)
+        )
 
 
 class BundleShapeTest(unittest.TestCase):
@@ -482,7 +584,8 @@ class BundleShapeTest(unittest.TestCase):
         warning = find(diag.analyze(), "stale-bundle")
 
         self.assertIsNotNone(warning)
-        self.assertIn("30 days old", warning.title)
+        self.assertEqual(warning.severity, DiagSeverity.INFO)
+        self.assertIn("collected 30 days ago", warning.title)
 
     def test_fresh_bundle_is_silent(self):
         fresh_ts = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
@@ -553,22 +656,56 @@ class CuratedAnomalyTest(unittest.TestCase):
 
         self.assertIsNotNone(warning)
         body = " ".join(warning.lines)
-        self.assertIn("orphan", body)
-        self.assertIn("distinct cluster keys", body)
-        self.assertIn("distinct cluster principals", body)
-        self.assertIn("disagree on cluster_size", body)
+        self.assertIn("cluster_is_member is false", body)
+        self.assertIn("2 cluster keys", body)
+        self.assertIn("2 principals", body)
+        self.assertIn("2 cluster sizes", body)
+
+    def test_disagreement_allows_for_a_cluster_re_forming_mid_collection(self):
+        """Nodes are queried over several seconds, so differing cluster keys are not
+        proof of a split."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
+        }
+        nodes["2.2.2.2:3000"]["as_stat"]["statistics"]["service"]["cluster_key"] = "K2"
+        nodes["2.2.2.2:3000"]["as_stat"]["meta_data"]["node_id"] = "BB2"
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "cluster-state")
+
+        self.assertIn(
+            "re-formed while the bundle was being collected", " ".join(warning.lines)
+        )
 
     def test_healthy_cluster_state_is_silent(self):
         self.assertIsNone(find(diagnostics().analyze(), "cluster-state"))
 
-    def test_migrations(self):
-        nodes = self._with_ns_stats(migrate_partitions_remaining="42")
+    def test_migrations_report_nodes_not_a_summed_partition_count(self):
+        """migrate_partitions_remaining is per node and counts both directions, so a
+        cross-node total would be a number no command can reproduce."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
+        }
+
+        for node in nodes.values():
+            node["as_stat"]["statistics"]["namespace"] = {
+                "test": {
+                    "service": {"migrate_partitions_remaining": "42"},
+                    "set": {},
+                    "bin": {},
+                    "sindex": {},
+                }
+            }
 
         warning = find(diagnostics(nodes=nodes).analyze(), "migrations")
 
         self.assertIsNotNone(warning)
         self.assertEqual(warning.severity, DiagSeverity.INFO)
-        self.assertIn("42", warning.title)
+        self.assertEqual(warning.title, "Migrations were in progress on 2 nodes")
+        body = " ".join(warning.lines)
+        self.assertIn("test=42", body)
+        self.assertNotIn("84", body)
 
     def test_zero_migrations_is_silent(self):
         nodes = self._with_ns_stats(migrate_partitions_remaining="0")
@@ -595,6 +732,25 @@ class CuratedAnomalyTest(unittest.TestCase):
         self.assertIn("7.2.0.0", body)
         self.assertIn("8.0.0.0", body)
         self.assertIn("editions", body)
+
+    def test_edition_only_mix_is_not_called_a_version_mix(self):
+        """Same build on every node; only the edition differs, so the title must not
+        claim more than one server version."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
+        }
+        nodes["2.2.2.2:3000"]["as_stat"]["meta_data"].update(
+            {"node_id": "BB2", "edition": "Aerospike Community Edition"}
+        )
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "mixed-server-versions")
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(
+            warning.title, "Cluster is running more than one server edition"
+        )
+        self.assertIn("not supported with mixed editions", " ".join(warning.lines))
 
     def test_uniform_build_is_silent(self):
         self.assertIsNone(find(diagnostics().analyze(), "mixed-server-versions"))
@@ -632,7 +788,9 @@ class CuratedAnomalyTest(unittest.TestCase):
         )
 
         self.assertIsNotNone(warning)
-        self.assertIn("health -v", " ".join(warning.lines))
+        body = " ".join(warning.lines)
+        self.assertIn("show statistics", body)
+        self.assertNotIn("health -v", body)
 
     def test_dead_and_unavailable_partitions(self):
         nodes = self._with_ns_stats(dead_partitions="4", unavailable_partitions="2")
@@ -664,6 +822,35 @@ class CuratedAnomalyTest(unittest.TestCase):
         nodes = self._with_service_stats(cluster_clock_skew_ms="12")
 
         self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
+
+    def test_clock_skew_threshold_shown_for_strong_consistency(self):
+        nodes = self._with_service_stats(
+            cluster_clock_skew_ms="4000", cluster_clock_skew_stop_writes_sec="20"
+        )
+        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
+            "test": {"service": {"strong-consistency": "true"}}
+        }
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        self.assertIn(
+            "Strong-consistency namespaces stop taking writes at 20000 ms",
+            " ".join(warning.lines),
+        )
+
+    def test_clock_skew_threshold_omitted_without_strong_consistency(self):
+        """cluster_clock_skew_stop_writes_sec only governs strong-consistency
+        namespaces; stating it for an AP cluster would claim a stop-writes point
+        that does not apply."""
+        nodes = self._with_service_stats(
+            cluster_clock_skew_ms="4000", cluster_clock_skew_stop_writes_sec="20"
+        )
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        self.assertNotIn("stop taking writes", " ".join(warning.lines))
 
 
 class CheckIsolationTest(unittest.TestCase):
