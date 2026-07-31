@@ -18,8 +18,10 @@ else
 VERSION ?= $(shell tr -d '[:space:]' < $(PKG_DIR)/../VERSION)
 endif
 RPM_VERSION := $(subst -,_,$(VERSION))
-# rpm Release / deb revision: the "-1" after the version in package names.
+# rpm Release / deb revision. The deb revision embeds the distro per Debian
+# convention (e.g. 5.0.3-1debian12), like the rpm dist tag.
 ITERATION ?= 1
+DEB_ITERATION = $(ITERATION)$(BUILD_DISTRO)
 # pkgbuild --version rejects hyphens and underscores; collapse both to dots
 # so SemVer pre-release tags (e.g. 5.0.0-rc1 -> 5.0.0.rc1) are accepted, and
 # defensively normalize any underscore-form inputs (env overrides) too.
@@ -51,7 +53,7 @@ deb: prep
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
 		--version $(VERSION) \
-		--iteration $(ITERATION) \
+		--iteration $(DEB_ITERATION) \
 		--maintainer $(MAINTAINER) \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
@@ -59,7 +61,7 @@ deb: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--package $(TARGET_DIR)/$(NAME)_$(VERSION)-$(ITERATION)_$(BUILD_DISTRO)_$(ARCH).deb
+		--package $(TARGET_DIR)/$(NAME)_$(VERSION)-$(DEB_ITERATION)_$(ARCH).deb
 
 .PHONY: rpm
 rpm: prep

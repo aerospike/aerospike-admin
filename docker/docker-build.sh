@@ -377,8 +377,8 @@ function generate_bake() {
 #   LOCAL_PKGS_COPIED           (paths to clean up on EXIT)
 # ---------------------------------------------------------------------------
 function resolve_packages() {
-  local pkg_amd64="aerospike-asadm_${VERSION}-1_ubuntu24.04_x86_64.deb"
-  local pkg_arm64="aerospike-asadm_${VERSION}-1_ubuntu24.04_aarch64.deb"
+  local pkg_amd64="aerospike-asadm_${VERSION}-1ubuntu24.04_x86_64.deb"
+  local pkg_arm64="aerospike-asadm_${VERSION}-1ubuntu24.04_aarch64.deb"
   local pool="${DEB_BASE_URL}/pool/${UBUNTU_CODENAME}/aerospike-asadm"
 
   ASADM_AMD64_URL="${pool}/${pkg_amd64}"

@@ -437,7 +437,7 @@ jobs:
           case "${{ matrix.distro }}" in
             ubuntu*|debian*)
               export DEBIAN_FRONTEND=noninteractive
-              pkg=$(find ./packages -name "*_${{ matrix.distro }}_*${arch}*.deb" | head -1)
+              pkg=$(find ./packages -name "*${{ matrix.distro }}_*${arch}*.deb" | head -1)
               [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
               apt-get install -y "${pkg}"
               echo "ASTOOLS_REINSTALL=dpkg -i ${pkg}" >> "$GITHUB_ENV"
