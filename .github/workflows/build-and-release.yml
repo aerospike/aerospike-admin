@@ -279,6 +279,8 @@ jobs:
 
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        env:
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           make one-dir
           ls -al build/bin/asadm || true
