@@ -17,15 +17,22 @@ VERSION ?= $(shell git describe --tags --always --abbrev=9)
 else
 VERSION ?= $(shell tr -d '[:space:]' < $(PKG_DIR)/../VERSION)
 endif
-RPM_VERSION := $(subst -,_,$(VERSION))
+# Package names never carry the "rcN" pre-release tag: rcN becomes the package
+# iteration, so 5.0.3-rc2 packages as version 5.0.3 iteration 2. VERSION itself
+# is untouched — it is what asadm --version reports.
+PKG_RELEASE_SH = $(PKG_DIR)/../.github/bin/pkg_release.sh
+PKG_VERSION := $(shell $(PKG_RELEASE_SH) '$(VERSION)' version)
+ITERATION ?= $(shell $(PKG_RELEASE_SH) '$(VERSION)' iteration)
+# For names with no iteration field of their own (.tar, macOS .pkg).
+RELEASE = $(PKG_VERSION)-$(ITERATION)
+RPM_VERSION := $(subst -,_,$(PKG_VERSION))
 # rpm Release / deb revision. The deb revision embeds the distro per Debian
 # convention (e.g. 5.0.3-1debian12), like the rpm dist tag.
-ITERATION ?= 1
 DEB_ITERATION = $(ITERATION)$(BUILD_DISTRO)
 # pkgbuild --version rejects hyphens and underscores; collapse both to dots
-# so SemVer pre-release tags (e.g. 5.0.0-rc1 -> 5.0.0.rc1) are accepted, and
+# (5.0.3-1 -> 5.0.3.1, 5.0.3-master.abc-1 -> 5.0.3.master.abc.1), and
 # defensively normalize any underscore-form inputs (env overrides) too.
-MAC_VERSION := $(subst _,.,$(subst -,.,$(VERSION)))
+MAC_VERSION = $(subst _,.,$(subst -,.,$(RELEASE)))
 MAC_ROOT = $(BUILD_DIR)/mac-root
 DMG_STAGING = $(BUILD_DIR)/dmg-staging
 PKG_ID = com.aerospike.asadm
@@ -52,7 +59,7 @@ deb: prep
 		--output-type deb \
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
-		--version $(VERSION) \
+		--version $(PKG_VERSION) \
 		--iteration $(DEB_ITERATION) \
 		--maintainer $(MAINTAINER) \
 		--description $(DESCRIPTION) \
@@ -61,7 +68,7 @@ deb: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--package $(TARGET_DIR)/$(NAME)_$(VERSION)-$(DEB_ITERATION)_$(ARCH).deb
+		--package $(TARGET_DIR)/$(NAME)_$(PKG_VERSION)-$(DEB_ITERATION)_$(ARCH).deb
 
 .PHONY: rpm
 rpm: prep
@@ -93,13 +100,14 @@ tar: prep
 		--output-type tar \
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
-		--version $(VERSION) \
+		--version $(PKG_VERSION) \
+		--iteration $(ITERATION) \
 		--maintainer $(MAINTAINER) \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/$(NAME)-$(BUILD_DISTRO)-$(VERSION)-$(ARCH).tar
+		--package $(TARGET_DIR)/$(NAME)-$(BUILD_DISTRO)-$(RELEASE)-$(ARCH).tar
 
 .PHONY: prep
 prep:
