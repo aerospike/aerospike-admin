@@ -724,6 +724,31 @@ jobs:
             -v "${VERSION}" \
             -r artifact.aerospike.io/database-docker-dev-local
 
+      # Without build-info the images are invisible to the release bundle, so
+      # `jf rbp` would promote the packages to TEST and leave the images in
+      # dev-local forever.
+      - name: Publish docker build-info
+        env:
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
+          IMAGE: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
+          BUILD_NAME: aerospike-asadm-docker
+        run: |
+          set -euo pipefail
+          for tag in "${VERSION}" "${VERSION}-amd64" "${VERSION}-arm64"; do
+            digest=$(docker buildx imagetools inspect "${IMAGE}:${tag}" --format '{{json .Manifest}}' | jq -r '.digest')
+            [[ -n "${digest}" && "${digest}" != "null" ]] \
+              || { echo "::error::no digest for ${IMAGE}:${tag}" >&2; exit 1; }
+            # build-docker-create takes exactly one image ref per invocation.
+            printf '%s:%s@%s\n' "${IMAGE}" "${tag}" "${digest}" > image.txt
+            cat image.txt
+            jf rt build-docker-create database-docker-dev-local \
+              --image-file image.txt \
+              --build-name "${BUILD_NAME}" \
+              --build-number "${VERSION}" \
+              --project database
+          done
+          jf rt build-publish "${BUILD_NAME}" "${VERSION}" --project database
+
   # Release bundles are JFrog's promotion unit; produced on every publish
   # regardless of branch or skip_tagging.
   create-release-bundle:
@@ -739,7 +764,7 @@ jobs:
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.6.0
     with:
       jf-project: "database"
-      jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }}"
+      jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }},aerospike-asadm-docker:${{ needs.get-version.outputs.VERSION }}"
       jf-bundle-name: "aerospike-asadm"
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
