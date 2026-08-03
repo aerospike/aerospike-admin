@@ -262,6 +262,7 @@ class BaseController(object):
     view = view.CliView()
     health_checker = HealthChecker()
     asadm_version: str | None
+    asadm_build: str | None = None
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")

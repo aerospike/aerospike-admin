@@ -18,10 +18,16 @@ import logging
 from os import path
 import pprint
 import shutil
+import socket
 import time
 import traceback
 from typing import Any, Callable
 from lib.live_cluster.client.node import Node
+from lib.live_cluster.client.types import (
+    ASInfoError,
+    ASInfoNotAuthenticatedError,
+    ASProtocolConnectionError,
+)
 from lib.live_cluster.logfile_downloader import LogFileDownloader
 from lib.live_cluster import ssh
 from lib.utils.types import NodeDict
@@ -83,6 +89,113 @@ def _as_stat_has_aerospike_data(as_stat):
             return True
 
     return False
+
+
+NodeErrorEntry = dict[str, Any]
+NodeErrorLedger = dict[str, dict[tuple[str, str], NodeErrorEntry]]
+
+_ERROR_CLASS_SEVERITY = (
+    constants.CollectinfoErrorClass.UNREACHABLE,
+    constants.CollectinfoErrorClass.AUTH,
+    constants.CollectinfoErrorClass.TIMEOUT,
+    constants.CollectinfoErrorClass.CORRUPT,
+    constants.CollectinfoErrorClass.OTHER,
+)
+
+_ERROR_CLASS_REASON = {
+    constants.CollectinfoErrorClass.UNREACHABLE: "unreachable",
+    constants.CollectinfoErrorClass.AUTH: "authentication failed",
+    constants.CollectinfoErrorClass.TIMEOUT: "timed out",
+    constants.CollectinfoErrorClass.CORRUPT: "returned an unusable response",
+    constants.CollectinfoErrorClass.OTHER: "failed",
+}
+
+
+def _classify_exception(exc: Exception) -> str:
+    """Map a per-node info-call exception to a stable error_class string.
+
+    asyncio.TimeoutError subclasses OSError on 3.11+, and
+    ASInfoNotAuthenticatedError subclasses ASInfoError, so the order of these
+    checks is load bearing. Classification is done here rather than read off
+    async_return_exceptions because that decorator has no 'corrupt' branch.
+    """
+    if isinstance(exc, asyncio.TimeoutError):
+        return constants.CollectinfoErrorClass.TIMEOUT
+
+    if isinstance(exc, (ASInfoNotAuthenticatedError, ASProtocolConnectionError)):
+        return constants.CollectinfoErrorClass.AUTH
+
+    if isinstance(exc, OSError):
+        return constants.CollectinfoErrorClass.UNREACHABLE
+
+    if isinstance(exc, ASInfoError):
+        return constants.CollectinfoErrorClass.CORRUPT
+
+    return constants.CollectinfoErrorClass.OTHER
+
+
+def _record_node_error(
+    ledger: NodeErrorLedger | None,
+    node_key: str | None,
+    section: str | None,
+    exc: Exception,
+) -> None:
+    """Record a per-node section failure, de-duped per (node, section, error_class)."""
+    if ledger is None or not node_key or not section:
+        return
+
+    error_class = _classify_exception(exc)
+    entry_key = (section, error_class)
+    node_entry = ledger.setdefault(node_key, {})
+
+    if entry_key in node_entry:
+        return
+
+    node_entry[entry_key] = {
+        "section": section,
+        "error_class": error_class,
+        "message": str(exc) or type(exc).__name__,
+        "recovered_on_retry": False,
+    }
+
+
+def _mark_error_recovered(ledger: NodeErrorLedger, node_key: str, section: str) -> None:
+    entry = ledger.get(node_key, {}).get(
+        (section, constants.CollectinfoErrorClass.TIMEOUT)
+    )
+
+    if entry is not None:
+        entry["recovered_on_retry"] = True
+
+
+def _node_error_entries(ledger: NodeErrorLedger, node_key: str) -> list[NodeErrorEntry]:
+    return [copy.deepcopy(entry) for entry in ledger.get(node_key, {}).values()]
+
+
+def _worst_error_reason(ledger: NodeErrorLedger, node_key: str) -> str:
+    classes = {entry_key[1] for entry_key in ledger.get(node_key, {}) if entry_key[1]}
+
+    for error_class in _ERROR_CLASS_SEVERITY:
+        if error_class in classes:
+            return _ERROR_CLASS_REASON[error_class]
+
+    return "returned no data"
+
+
+def _timed_out_nodes(ledger: NodeErrorLedger) -> dict[str, set[str]]:
+    """Map node key -> sections that failed with a timeout, for the retry pass."""
+    timed_out: dict[str, set[str]] = {}
+
+    for node_key, entries in ledger.items():
+        sections = {
+            section
+            for section, error_class in entries
+            if error_class == constants.CollectinfoErrorClass.TIMEOUT
+        }
+        if sections:
+            timed_out[node_key] = sections
+
+    return timed_out
 
 
 @CommandHelp(
@@ -247,10 +360,16 @@ class CollectinfoController(LiveClusterCommandController):
                 stat[ns]["service"] = data
                 ns_map[ns] = stat[ns]
 
-    def _remove_exception_from_section_output(self, data):
+    def _remove_exception_from_section_output(
+        self,
+        data,
+        section_label: str | None = None,
+        ledger: NodeErrorLedger | None = None,
+    ):
         for section in data:
             for node in data[section]:
                 if isinstance(data[section][node], Exception):
+                    _record_node_error(ledger, node, section_label, data[section][node])
                     data[section][node] = {}
 
     async def _get_as_cluster_name(self) -> str:
@@ -270,18 +389,23 @@ class CollectinfoController(LiveClusterCommandController):
 
         return cluster_name
 
-    async def _get_as_data_json(self):
+    async def _get_as_data_json(self, nodes=None, ledger=None):
         as_map = {}
+        nodes = self.nodes if nodes is None else nodes
         stat_getter = GetStatisticsController(self.cluster)
         config_getter = GetConfigController(self.cluster)
 
         stats, config = await asyncio.gather(
-            stat_getter.get_all(nodes=self.nodes),
-            config_getter.get_all(nodes=self.nodes),
+            stat_getter.get_all(nodes=nodes),
+            config_getter.get_all(nodes=nodes),
         )
 
-        self._remove_exception_from_section_output(stats)
-        self._remove_exception_from_section_output(config)
+        self._remove_exception_from_section_output(
+            stats, constants.CollectinfoSection.STATISTICS, ledger
+        )
+        self._remove_exception_from_section_output(
+            config, constants.CollectinfoSection.CONFIG, ledger
+        )
 
         # flip key to get node ids in upper level and sections inside them.
         # {'namespace': {'ip1': {'test': {}}, 'ip2': {'test': {}}}} -->
@@ -311,15 +435,29 @@ class CollectinfoController(LiveClusterCommandController):
 
         return new_as_map
 
-    def _check_for_exception_and_set(self, data, section_name, nodeid, result_map):
+    def _check_for_exception_and_set(
+        self,
+        data,
+        section_name,
+        nodeid,
+        result_map,
+        ledger: NodeErrorLedger | None = None,
+    ):
         if nodeid in data:
             if not isinstance(data[nodeid], Exception):
                 result_map[nodeid][section_name] = data[nodeid]
             else:
+                _record_node_error(
+                    ledger,
+                    nodeid,
+                    constants.CollectinfoSection.METADATA,
+                    data[nodeid],
+                )
                 result_map[nodeid][section_name] = ""
 
-    async def _get_as_metadata(self):
+    async def _get_as_metadata(self, nodes=None, ledger=None):
         metamap = {}
+        nodes = self.nodes if nodes is None else nodes
         (
             builds,
             editions,
@@ -334,46 +472,61 @@ class CollectinfoController(LiveClusterCommandController):
             feature_keys,
             release_info,
         ) = await asyncio.gather(
-            self.cluster.info_build(nodes=self.nodes),
-            self.cluster.info_version(nodes=self.nodes),
-            self.cluster.info_node(nodes=self.nodes),
-            self.cluster.info_ip_port(nodes=self.nodes),
-            self.cluster.info_service_list(nodes=self.nodes),
-            self.cluster.info_peers_flat_list(nodes=self.nodes),
-            self.cluster.info_udf_list(nodes=self.nodes),
-            self.cluster.info_health_outliers(nodes=self.nodes),
-            self.cluster.info_best_practices(nodes=self.nodes),
-            GetJobsController(self.cluster).get_all(flip=True, nodes=self.nodes),
-            self.cluster.info_feature_key(nodes=self.nodes),
-            self.cluster.info_release(nodes=self.nodes),
+            self.cluster.info_build(nodes=nodes),
+            self.cluster.info_version(nodes=nodes),
+            self.cluster.info_node(nodes=nodes),
+            self.cluster.info_ip_port(nodes=nodes),
+            self.cluster.info_service_list(nodes=nodes),
+            self.cluster.info_peers_flat_list(nodes=nodes),
+            self.cluster.info_udf_list(nodes=nodes),
+            self.cluster.info_health_outliers(nodes=nodes),
+            self.cluster.info_best_practices(nodes=nodes),
+            GetJobsController(self.cluster).get_all(flip=True, nodes=nodes),
+            self.cluster.info_feature_key(nodes=nodes),
+            self.cluster.info_release(nodes=nodes),
         )
         node_names = self.cluster.get_node_names()
 
         for nodeid in builds:
             metamap[nodeid] = {}
-            self._check_for_exception_and_set(builds, "asd_build", nodeid, metamap)
-            self._check_for_exception_and_set(editions, "edition", nodeid, metamap)
-            self._check_for_exception_and_set(node_ids, "node_id", nodeid, metamap)
-            self._check_for_exception_and_set(ips, "ip", nodeid, metamap)
-            self._check_for_exception_and_set(endpoints, "endpoints", nodeid, metamap)
-            self._check_for_exception_and_set(services, "services", nodeid, metamap)
-            self._check_for_exception_and_set(udf_data, "udf", nodeid, metamap)
             self._check_for_exception_and_set(
-                health_outliers, "health", nodeid, metamap
+                builds, "asd_build", nodeid, metamap, ledger
             )
             self._check_for_exception_and_set(
-                best_practices, "best_practices", nodeid, metamap
+                editions, "edition", nodeid, metamap, ledger
             )
-            self._check_for_exception_and_set(node_names, "node_names", nodeid, metamap)
-            self._check_for_exception_and_set(jobs, "jobs", nodeid, metamap)
             self._check_for_exception_and_set(
-                feature_keys, "feature-key", nodeid, metamap
+                node_ids, "node_id", nodeid, metamap, ledger
             )
-            self._check_for_exception_and_set(release_info, "release", nodeid, metamap)
+            self._check_for_exception_and_set(ips, "ip", nodeid, metamap, ledger)
+            self._check_for_exception_and_set(
+                endpoints, "endpoints", nodeid, metamap, ledger
+            )
+            self._check_for_exception_and_set(
+                services, "services", nodeid, metamap, ledger
+            )
+            self._check_for_exception_and_set(udf_data, "udf", nodeid, metamap, ledger)
+            self._check_for_exception_and_set(
+                health_outliers, "health", nodeid, metamap, ledger
+            )
+            self._check_for_exception_and_set(
+                best_practices, "best_practices", nodeid, metamap, ledger
+            )
+            self._check_for_exception_and_set(
+                node_names, "node_names", nodeid, metamap, ledger
+            )
+            self._check_for_exception_and_set(jobs, "jobs", nodeid, metamap, ledger)
+            self._check_for_exception_and_set(
+                feature_keys, "feature-key", nodeid, metamap, ledger
+            )
+            self._check_for_exception_and_set(
+                release_info, "release", nodeid, metamap, ledger
+            )
         return metamap
 
-    async def _get_as_histograms(self):
+    async def _get_as_histograms(self, nodes=None, ledger=None):
         histogram_map = {}
+        nodes = self.nodes if nodes is None else nodes
         hist_list = [
             ("ttl", "ttl", False),
             ("objsz", "objsz", False),
@@ -385,7 +538,7 @@ class CollectinfoController(LiveClusterCommandController):
                     hist[0],
                     logarithmic=hist[2],
                     raw_output=True,
-                    nodes=self.nodes,
+                    nodes=nodes,
                 )
                 for hist in hist_list
             ]
@@ -396,17 +549,27 @@ class CollectinfoController(LiveClusterCommandController):
                 if node not in histogram_map:
                     histogram_map[node] = {}
 
-                if not hist_dump[node] or isinstance(hist_dump[node], Exception):
+                if isinstance(hist_dump[node], Exception):
+                    _record_node_error(
+                        ledger,
+                        node,
+                        constants.CollectinfoSection.HISTOGRAM,
+                        hist_dump[node],
+                    )
+                    continue
+
+                if not hist_dump[node]:
                     continue
 
                 histogram_map[node][hist[1]] = hist_dump[node]
 
         return histogram_map
 
-    async def _get_as_latency(self):
+    async def _get_as_latency(self, nodes=None, ledger=None):
+        nodes = self.nodes if nodes is None else nodes
         latency_getter = GetLatenciesController(self.cluster)
         latencies_data = await latency_getter.get_all(
-            self.nodes, buckets=17, exponent_increment=1, verbose=1
+            nodes, buckets=17, exponent_increment=1, verbose=1
         )
         latency_map = {}
 
@@ -414,7 +577,16 @@ class CollectinfoController(LiveClusterCommandController):
             if node not in latency_map:
                 latency_map[node] = {}
 
-            if not latencies_data[node] or isinstance(latencies_data[node], Exception):
+            if isinstance(latencies_data[node], Exception):
+                _record_node_error(
+                    ledger,
+                    node,
+                    constants.CollectinfoSection.LATENCY,
+                    latencies_data[node],
+                )
+                continue
+
+            if not latencies_data[node]:
                 continue
 
             latency_map[node] = latencies_data[node]
@@ -425,40 +597,65 @@ class CollectinfoController(LiveClusterCommandController):
         getter = GetPmapController(self.cluster)
         return await getter.get_pmap(nodes=self.nodes)
 
-    async def _get_as_access_control_list(self) -> NodeDict[dict[str, dict[str, Any]]]:
+    async def _get_as_access_control_list(
+        self, ledger=None
+    ) -> NodeDict[dict[str, dict[str, Any]]]:
         users_getter = GetAclController(self.cluster)
         users_map = await users_getter.get_all()
-        self._remove_exception_from_section_output(users_map)
+        self._remove_exception_from_section_output(
+            users_map, constants.CollectinfoSection.ACL, ledger
+        )
         users_map = util.flip_keys(users_map)
         return users_map
 
-    async def _get_as_user_agents(self) -> NodeDict[list[dict[str, str]]]:
+    async def _get_as_user_agents(
+        self, nodes=None, ledger=None
+    ) -> NodeDict[list[dict[str, str]]]:
         """Collect user agents data from all nodes"""
+        nodes = self.nodes if nodes is None else nodes
         user_agents_getter = GetUserAgentsController(self.cluster)
-        user_agents_data = await user_agents_getter.get_user_agents(nodes=self.nodes)
+        user_agents_data = await user_agents_getter.get_user_agents(nodes=nodes)
         user_agents_map = {}
 
         for node in user_agents_data:
             if node not in user_agents_map:
                 user_agents_map[node] = []
 
-            if not user_agents_data[node] or isinstance(
-                user_agents_data[node], Exception
-            ):
+            if isinstance(user_agents_data[node], Exception):
+                _record_node_error(
+                    ledger,
+                    node,
+                    constants.CollectinfoSection.USER_AGENTS,
+                    user_agents_data[node],
+                )
+                continue
+
+            if not user_agents_data[node]:
                 continue
 
             user_agents_map[node] = user_agents_data[node]
 
         return user_agents_map
 
-    async def _get_as_masking_rules(self) -> NodeDict[list[dict[str, str]]]:
+    async def _get_as_masking_rules(
+        self, ledger=None
+    ) -> NodeDict[list[dict[str, str]]]:
         """Collect masking rules data from principal node"""
         masking_getter = GetMaskingRulesController(self.cluster)
         masking_data = await masking_getter.get_masking_rules(nodes="principal")
         masking_map = {}
 
         for node in masking_data:
-            if not masking_data[node] or isinstance(masking_data[node], Exception):
+            if isinstance(masking_data[node], Exception):
+                _record_node_error(
+                    ledger,
+                    node,
+                    constants.CollectinfoSection.MASKING,
+                    masking_data[node],
+                )
+                continue
+
+            if not masking_data[node]:
                 continue
 
             masking_map[node] = masking_data[node]
@@ -479,7 +676,10 @@ class CollectinfoController(LiveClusterCommandController):
         # The set of nodes we are about to query (alive + selected). Captured before the
         # collection bursts: a node that fails every call or dies mid-run must still be
         # accounted for in the dump and the no-data warning (TOOLS-3596).
-        expected_node_keys = {node.key for node in self.cluster.get_nodes(self.nodes)}
+        queried_nodes = self.cluster.get_nodes(self.nodes)
+        expected_node_keys = {node.key for node in queried_nodes}
+
+        node_errors: NodeErrorLedger = {}
 
         # Split operations into batches to reduce socket contention and timeouts
         # Batch 1: Core data collection (most resource intensive)
@@ -490,8 +690,8 @@ class CollectinfoController(LiveClusterCommandController):
             sys_map,
         ) = await asyncio.gather(
             self._get_as_cluster_name(),
-            self._get_as_data_json(),
-            self._get_as_metadata(),
+            self._get_as_data_json(ledger=node_errors),
+            self._get_as_metadata(ledger=node_errors),
             self.cluster.info_system_statistics(
                 enable_ssh=enable_ssh,
                 ssh_user=ssh_user,
@@ -508,8 +708,8 @@ class CollectinfoController(LiveClusterCommandController):
             histogram_map,
             latency_map,
         ) = await asyncio.gather(
-            self._get_as_histograms(),
-            self._get_as_latency(),
+            self._get_as_histograms(ledger=node_errors),
+            self._get_as_latency(ledger=node_errors),
         )
 
         # Batch 3: Security and auxiliary data (lighter operations)
@@ -518,15 +718,27 @@ class CollectinfoController(LiveClusterCommandController):
             user_agents_map,
             masking_map,
         ) = await asyncio.gather(
-            self._get_as_access_control_list(),
-            self._get_as_user_agents(),
-            self._get_as_masking_rules(),
+            self._get_as_access_control_list(ledger=node_errors),
+            self._get_as_user_agents(ledger=node_errors),
+            self._get_as_masking_rules(ledger=node_errors),
         )
 
-        for val in sys_map.values():
+        for node_key, val in sys_map.items():
             # TODO: remove this when we no longer return all exceptions by default
             if isinstance(val, Exception):
+                _record_node_error(
+                    node_errors, node_key, constants.CollectinfoSection.SYSINFO, val
+                )
                 raise val
+
+        await self._retry_timed_out_nodes(
+            node_errors,
+            as_map=as_map,
+            meta_map=meta_map,
+            histogram_map=histogram_map,
+            latency_map=latency_map,
+            user_agents_map=user_agents_map,
+        )
 
         pmap_map = None
 
@@ -546,9 +758,300 @@ class CollectinfoController(LiveClusterCommandController):
             masking_map=masking_map,
         )
 
+        snapshot_meta: dict[str, Any] = {"cluster_name": cluster_name}
+        snapshot_meta.update(
+            await self._detect_node_discrepancies(
+                queried_nodes, dump_map, node_errors, enable_ssh
+            )
+        )
+
         snp_map = {}
         snp_map[cluster_name] = dump_map
-        return snp_map
+        return snp_map, snapshot_meta
+
+    async def _retry_timed_out_nodes(
+        self,
+        ledger: NodeErrorLedger,
+        as_map,
+        meta_map,
+        histogram_map,
+        latency_map,
+        user_agents_map,
+    ) -> None:
+        """Re-query only the nodes/sections that timed out, once.
+
+        A transient timeout during a high-fanout burst used to silently drop a node's
+        section from the bundle. Retry is deliberately bounded
+        (COLLECTINFO_MAX_RETRIES) and timeout-only: an unreachable or unauthenticated
+        node will not recover and re-querying it just doubles collection time. acl and
+        masking are excluded because their getters are not node-scoped.
+        """
+        if not constants.COLLECTINFO_MAX_RETRIES:
+            return
+
+        timed_out = _timed_out_nodes(ledger)
+
+        if not timed_out:
+            return
+
+        def nodes_for(*sections: str) -> list[str]:
+            return sorted(
+                node_key
+                for node_key, failed in timed_out.items()
+                if failed.intersection(sections)
+            )
+
+        as_nodes = nodes_for(
+            constants.CollectinfoSection.STATISTICS,
+            constants.CollectinfoSection.CONFIG,
+        )
+        meta_nodes = nodes_for(constants.CollectinfoSection.METADATA)
+        histogram_nodes = nodes_for(constants.CollectinfoSection.HISTOGRAM)
+        latency_nodes = nodes_for(constants.CollectinfoSection.LATENCY)
+        user_agent_nodes = nodes_for(constants.CollectinfoSection.USER_AGENTS)
+
+        retries: list[dict[str, Any]] = []
+
+        if as_nodes:
+            retries.append(
+                {
+                    "kind": "as",
+                    "nodes": as_nodes,
+                    "coro": self._get_as_data_json(nodes=as_nodes),
+                }
+            )
+        if meta_nodes:
+            retries.append(
+                {
+                    "kind": "meta",
+                    "nodes": meta_nodes,
+                    "coro": self._get_as_metadata(nodes=meta_nodes),
+                }
+            )
+        if histogram_nodes:
+            retries.append(
+                {
+                    "kind": "histogram",
+                    "nodes": histogram_nodes,
+                    "coro": self._get_as_histograms(nodes=histogram_nodes),
+                }
+            )
+        if latency_nodes:
+            retries.append(
+                {
+                    "kind": "latency",
+                    "nodes": latency_nodes,
+                    "coro": self._get_as_latency(nodes=latency_nodes),
+                }
+            )
+        if user_agent_nodes:
+            retries.append(
+                {
+                    "kind": "user_agents",
+                    "nodes": user_agent_nodes,
+                    "coro": self._get_as_user_agents(nodes=user_agent_nodes),
+                }
+            )
+
+        if not retries:
+            return
+
+        logger.info(
+            "Retrying %d node(s) whose collectinfo sections timed out.",
+            len(timed_out),
+        )
+
+        section_targets = {
+            "meta": (constants.CollectinfoSection.METADATA, meta_map),
+            "histogram": (constants.CollectinfoSection.HISTOGRAM, histogram_map),
+            "latency": (constants.CollectinfoSection.LATENCY, latency_map),
+            "user_agents": (
+                constants.CollectinfoSection.USER_AGENTS,
+                user_agents_map,
+            ),
+        }
+
+        retry_coros = [retry["coro"] for retry in retries]
+        results = await asyncio.gather(*retry_coros, return_exceptions=True)
+
+        for retry, result in zip(retries, results):
+            kind = retry["kind"]
+            nodes = retry["nodes"]
+
+            if isinstance(result, BaseException):
+                logger.debug(
+                    "Retry of %s for %s failed: %s", kind, ", ".join(nodes), result
+                )
+                continue
+
+            if kind == "as":
+                self._merge_retried_as_map(ledger, nodes, result, as_map)
+                continue
+
+            section, target = section_targets[kind]
+
+            for node_key in nodes:
+                value = result.get(node_key)
+
+                if not util.has_content(value):
+                    continue
+
+                target[node_key] = value
+                _mark_error_recovered(ledger, node_key, section)
+
+    def _merge_retried_as_map(
+        self, ledger: NodeErrorLedger, nodes: list[str], retried, as_map
+    ) -> None:
+        sections = (
+            constants.CollectinfoSection.STATISTICS,
+            constants.CollectinfoSection.CONFIG,
+        )
+
+        for node_key in nodes:
+            node_data = retried.get(node_key) or {}
+
+            for section in sections:
+                value = node_data.get(section)
+
+                if not util.has_content(value):
+                    continue
+
+                as_map.setdefault(node_key, {})[section] = value
+                _mark_error_recovered(ledger, node_key, section)
+
+    async def _detect_node_discrepancies(
+        self,
+        queried_nodes: list[Node],
+        dump_map: dict[str, Any],
+        node_errors: NodeErrorLedger,
+        enable_ssh: bool,
+    ) -> dict[str, Any]:
+        """Reconcile what was expected against what landed in the snapshot.
+
+        Runs while the cluster is still connected, which is the only time the live
+        peers/visibility/down-node views are available. Diagnostics must never break
+        the bundle they describe, so a failure here degrades to a detection_error
+        entry instead of propagating into the collection abort path.
+        """
+        expected_node_keys = sorted({node.key for node in queried_nodes})
+        responded_nodes: list[str] = []
+        no_data_nodes: list[str] = []
+        nodes_meta: dict[str, Any] = {}
+
+        for node_key in expected_node_keys:
+            as_stat = (dump_map.get(node_key) or {}).get("as_stat", {})
+
+            if _as_stat_has_aerospike_data(as_stat):
+                responded_nodes.append(node_key)
+            else:
+                no_data_nodes.append(node_key)
+
+        responded_set = set(responded_nodes)
+
+        for node in queried_nodes:
+            as_stat = (dump_map.get(node.key) or {}).get("as_stat", {})
+            node_id = (as_stat.get("meta_data") or {}).get("node_id") or node.node_id
+
+            nodes_meta[node.key] = {
+                "node_id": node_id,
+                "responded": node.key in responded_set,
+                "sysinfo_source": self._sysinfo_source(node, dump_map, enable_ssh),
+                "errors": _node_error_entries(node_errors, node.key),
+            }
+
+        snapshot_meta: dict[str, Any] = {
+            "expected_nodes": expected_node_keys,
+            "responded_nodes": responded_nodes,
+            "no_data_nodes": no_data_nodes,
+            "nodes": nodes_meta,
+        }
+
+        try:
+            cluster_down_nodes = await self.cluster.get_down_nodes()
+            visibility_error_nodes = self.cluster.get_visibility_error_nodes()
+
+            snapshot_meta["discrepancies"] = {
+                "missing_from_collection": self._detect_missing_from_collection(
+                    queried_nodes, dump_map, set(expected_node_keys)
+                ),
+                "dropped_during_collection": [
+                    {
+                        "node_key": node_key,
+                        "reason": _worst_error_reason(node_errors, node_key),
+                    }
+                    for node_key in no_data_nodes
+                ],
+                "cluster_down_nodes": sorted(cluster_down_nodes or []),
+                "visibility_error_nodes": sorted(visibility_error_nodes or []),
+            }
+        except Exception as e:
+            logger.warning("Failed to detect collectinfo node discrepancies: %s", e)
+            logger.debug(traceback.format_exc())
+            snapshot_meta["discrepancies"] = {"detection_error": str(e)}
+
+        return snapshot_meta
+
+    def _detect_missing_from_collection(
+        self,
+        queried_nodes: list[Node],
+        dump_map: dict[str, Any],
+        expected_node_keys: set[str],
+    ) -> list[dict[str, str]]:
+        """Peers advertised by collected nodes that were never collected themselves.
+
+        Peer keys are canonicalized through cluster.aliases first. Without that hop a
+        multi-homed cluster (seeded via localhost or FQDN while peers advertise
+        internal IPs) reports every peer as missing, and that false claim gets baked
+        permanently into the bundle.
+        """
+        aliases = getattr(self.cluster, "aliases", None) or {}
+        missing: dict[str, dict[str, str]] = {}
+
+        for node in queried_nodes:
+            as_stat = (dump_map.get(node.key) or {}).get("as_stat", {})
+            peers = (as_stat.get("meta_data") or {}).get("services")
+
+            if not peers or isinstance(peers, str):
+                continue
+
+            for peer in peers:
+                try:
+                    peer_key = Node.create_key(peer[0], peer[1])
+                except Exception:
+                    continue
+
+                peer_key = aliases.get(peer_key, peer_key)
+
+                if peer_key in expected_node_keys or peer_key in missing:
+                    continue
+
+                missing[peer_key] = {
+                    "node_key": peer_key,
+                    "reason": "seen in peers of %s but not collected" % node.key,
+                }
+
+        return [missing[key] for key in sorted(missing)]
+
+    def _sysinfo_source(
+        self, node: Node, dump_map: dict[str, Any], enable_ssh: bool
+    ) -> str:
+        """Where this node's sys_stat actually came from.
+
+        Keyed off the collected data rather than the flags: a mid-collection SSH
+        failure is logged and swallowed by _get_remote_host_system_statistics without
+        raising, so trusting enable_ssh alone would claim 'ssh' for a node whose
+        sys_stat is empty.
+        """
+        if not util.has_content((dump_map.get(node.key) or {}).get("sys_stat")):
+            return constants.SysinfoSource.NONE
+
+        if getattr(node, "localhost", False):
+            return constants.SysinfoSource.LOCAL
+
+        if enable_ssh:
+            return constants.SysinfoSource.SSH
+
+        return constants.SysinfoSource.NONE
 
     def _build_dump_map(
         self,
@@ -655,8 +1158,14 @@ class CollectinfoController(LiveClusterCommandController):
         ssh_port,
         snp_count,
         wait_time,
+        requested_timeout=None,
+        output_prefix="",
+        asconfig_file="",
+        ignore_errors=False,
     ):
         snpshots = {}
+        snapshot_metas = []
+        start_ts = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
 
         for i in range(snp_count):
             snp_timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
@@ -664,20 +1173,128 @@ class CollectinfoController(LiveClusterCommandController):
                 "Data collection for Snapshot: " + str(i + 1) + " in progress..."
             )
 
-            snpshots[snp_timestamp] = await self._get_collectinfo_data_json(
-                enable_ssh,
-                ssh_user,
-                ssh_pwd,
-                ssh_key,
-                ssh_key_pwd,
-                ssh_port,
+            snpshots[snp_timestamp], snapshot_meta = (
+                await self._get_collectinfo_data_json(
+                    enable_ssh,
+                    ssh_user,
+                    ssh_pwd,
+                    ssh_key,
+                    ssh_key_pwd,
+                    ssh_port,
+                )
             )
+            snapshot_meta["timestamp"] = snp_timestamp
+            snapshot_metas.append(snapshot_meta)
 
             logger.info("Data collection for Snapshot " + str(i + 1) + " finished.")
 
             await asyncio.sleep(wait_time)
 
         self._dump_in_json_file(as_logfile_prefix + "ascinfo.json", snpshots)
+
+        self._dump_collectinfo_meta(
+            as_logfile_prefix,
+            snapshot_metas,
+            start_ts=start_ts,
+            snp_count=snp_count,
+            wait_time=wait_time,
+            enable_ssh=enable_ssh,
+            requested_timeout=requested_timeout,
+            output_prefix=output_prefix,
+            asconfig_file=asconfig_file,
+            ignore_errors=ignore_errors,
+        )
+
+    def _dump_collectinfo_meta(
+        self,
+        as_logfile_prefix,
+        snapshot_metas,
+        start_ts,
+        snp_count,
+        wait_time,
+        enable_ssh,
+        requested_timeout,
+        output_prefix,
+        asconfig_file,
+        ignore_errors,
+    ) -> None:
+        """Write the provenance/diagnostics sidecar.
+
+        Guarded end-to-end: a bug in the metadata must never abort a collection or
+        trip the --ignore-errors path. ascinfo.json is already written by this point
+        and is deliberately outside this guard.
+        """
+        try:
+            meta = self._build_collectinfo_meta(
+                snapshot_metas,
+                start_ts=start_ts,
+                snp_count=snp_count,
+                wait_time=wait_time,
+                enable_ssh=enable_ssh,
+                requested_timeout=requested_timeout,
+                output_prefix=output_prefix,
+                asconfig_file=asconfig_file,
+                ignore_errors=ignore_errors,
+            )
+            self._dump_in_json_file(
+                as_logfile_prefix + constants.COLLECTINFO_META_FILENAME, meta
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to write %s: %s", constants.COLLECTINFO_META_FILENAME, e
+            )
+            logger.debug(traceback.format_exc())
+
+    def _build_collectinfo_meta(
+        self,
+        snapshot_metas,
+        start_ts,
+        snp_count,
+        wait_time,
+        enable_ssh,
+        requested_timeout,
+        output_prefix,
+        asconfig_file,
+        ignore_errors,
+    ) -> dict[str, Any]:
+        seeds = [
+            {"addr": seed[0], "port": seed[1], "tls_name": seed[2]}
+            for seed in sorted(
+                self.cluster.get_seed_nodes(), key=lambda s: (str(s[0]), str(s[1]))
+            )
+        ]
+
+        try:
+            host = socket.gethostname()
+        except Exception:
+            host = ""
+
+        return {
+            "meta_format_version": constants.COLLECTINFO_META_FORMAT_VERSION,
+            "bundle": {
+                "ascinfo_schema": constants.COLLECTINFO_ASCINFO_SCHEMA,
+                "asadm_version": str(self.asadm_version),
+                "asadm_build": str(self.asadm_build or ""),
+                "generated_by": constants.COLLECTINFO_GENERATED_BY,
+            },
+            "collection": {
+                "host": host,
+                "start_ts_utc": start_ts,
+                "end_ts_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+                "snapshot_count": snp_count,
+                "flags": {
+                    "enable_ssh": bool(enable_ssh),
+                    "effective_node_timeout_sec": self.cluster._timeout,
+                    "requested_node_timeout_sec": requested_timeout,
+                    "sleep_between_snapshots_sec": wait_time,
+                    "output_prefix": output_prefix,
+                    "asconfig_file": asconfig_file,
+                    "ignore_errors": bool(ignore_errors),
+                },
+                "seeds": seeds,
+            },
+            "snapshots": snapshot_metas,
+        }
 
     def _dump_collectinfo_file(self, filename: str, dump: str):
         logger.info("Dumping collectinfo %s.", filename)
@@ -1056,6 +1673,10 @@ class CollectinfoController(LiveClusterCommandController):
                     ssh_port,
                     snp_count,
                     wait_time,
+                    requested_timeout=original_timeout,
+                    output_prefix=output_prefix,
+                    asconfig_file=config_path,
+                    ignore_errors=ignore_errors,
                 )
             except (ssh.SSHError, FileNotFoundError) as e:
                 logger.error(ShellException(e))
@@ -1074,6 +1695,7 @@ class CollectinfoController(LiveClusterCommandController):
             self.collectinfo_root_controller = CollectinfoRootController(
                 asadm_version=self.asadm_version,
                 clinfo_path=cf_path_info.cf_dir,
+                asadm_build=self.asadm_build or "",
             )
 
             coroutines = [

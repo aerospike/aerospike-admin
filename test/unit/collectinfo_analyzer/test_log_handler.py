@@ -17,7 +17,7 @@ import shutil
 import tempfile
 import unittest
 
-from mock import patch
+from mock import MagicMock, patch
 
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
@@ -166,3 +166,210 @@ class NodeIdMappingTest(unittest.TestCase):
         result = CollectinfoLogHandler.get_ip_to_node_id_mapping(self._handler(), "ts")
 
         self.assertEqual(result, {"1.1.1.1:3000": "A1"})
+
+
+TS = "2026-07-20 10:00:00 UTC"
+FILE_PREFIX = "20260720_100000_"
+
+CINFO_DATA = {
+    TS: {
+        "prod": {
+            "1.1.1.1:3000": {
+                "as_stat": {
+                    "statistics": {
+                        "service": {
+                            "cluster_size": "1",
+                            "cluster_integrity": "true",
+                            "cluster_is_member": "true",
+                        },
+                        "namespace": {},
+                    },
+                    "config": {"service": {"proto-fd-max": "15000"}, "namespace": {}},
+                    "meta_data": {
+                        "node_id": "BB1",
+                        "asd_build": "8.0.0.0",
+                        "edition": "Aerospike Enterprise Edition",
+                        "ip": "1.1.1.1:3000",
+                        "node_names": "host1",
+                    },
+                },
+                "sys_stat": {"uname": {"nodename": "host1"}},
+            }
+        }
+    }
+}
+
+META_DATA = {
+    "meta_format_version": 1,
+    "bundle": {"asadm_version": "3.1.0", "asadm_build": "abc123"},
+    "collection": {"host": "collector", "flags": {"enable_ssh": False}},
+    "snapshots": [
+        {
+            "timestamp": TS,
+            "cluster_name": "prod",
+            "expected_nodes": ["1.1.1.1:3000", "2.2.2.2:3000"],
+            "responded_nodes": ["1.1.1.1:3000"],
+            "no_data_nodes": ["2.2.2.2:3000"],
+            "nodes": {},
+            "discrepancies": {
+                "missing_from_collection": [],
+                "dropped_during_collection": [
+                    {"node_key": "2.2.2.2:3000", "reason": "timed out"}
+                ],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            },
+        }
+    ],
+}
+
+
+class BundleDiagnosticsWiringTest(unittest.TestCase):
+    """TOOLS-4135: bundle provenance/diagnostics wiring on the log handler."""
+
+    def setUp(self):
+        self.bundle_dir = tempfile.mkdtemp()
+        self._write_json("ascinfo.json", CINFO_DATA)
+
+    def tearDown(self):
+        shutil.rmtree(self.bundle_dir, ignore_errors=True)
+
+    def _write_json(self, suffix, data):
+        import json
+
+        with open(os.path.join(self.bundle_dir, FILE_PREFIX + suffix), "w") as f:
+            json.dump(data, f)
+
+    def _write_text(self, suffix, text):
+        with open(os.path.join(self.bundle_dir, FILE_PREFIX + suffix), "w") as f:
+            f.write(text)
+
+    def _handler(self, asadm_version="5.0.2"):
+        handler = CollectinfoLogHandler(self.bundle_dir, asadm_version=asadm_version)
+        self.addCleanup(handler.close)
+        return handler
+
+    def test_meta_is_loaded(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+
+        handler = self._handler()
+
+        self.assertEqual(handler.collectinfo_meta["bundle"]["asadm_version"], "3.1.0")
+
+    def test_missing_meta_is_tolerated_silently(self):
+        """Mid-collection the analyzer runs over a bundle with no meta and no logs
+        yet; that must not warn or raise."""
+        with self.assertNoLogs(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler", level="WARNING"
+        ):
+            handler = self._handler()
+
+        self.assertEqual(handler.collectinfo_meta, {})
+        self.assertEqual(handler._scan_bundle_for_asadm_version(), "")
+
+    def test_malformed_meta_is_tolerated(self):
+        self._write_text("collectinfo_meta.json", "{not json")
+
+        handler = self._handler()
+
+        self.assertEqual(handler.collectinfo_meta, {})
+
+    def test_version_scan_reads_ascollectinfo_log(self):
+        self._write_text(
+            "ascollectinfo.log", "2026-07-20 10:00:00 UTC\nasadm version 2.9.0\n"
+        )
+
+        handler = self._handler()
+
+        self.assertEqual(handler._scan_bundle_for_asadm_version(), "2.9.0")
+
+    def test_version_scan_reads_summary_log(self):
+        self._write_text("summary.log", "header\nasadm version 4.0.1\n")
+
+        handler = self._handler()
+
+        self.assertEqual(handler._scan_bundle_for_asadm_version(), "4.0.1")
+
+    def test_meta_version_drives_the_banner(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+
+        banner = self._handler().diagnostics_banner()
+
+        self.assertIn("3.1.0", banner)
+        self.assertIn("2.2.2.2:3000", banner)
+
+    def test_banner_is_appended_to_str(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+
+        handler = self._handler()
+
+        self.assertIn("Collectinfo Bundle Diagnostics", str(handler))
+        self.assertIn("Found 1 nodes", str(handler))
+
+    def test_collector_version_sits_with_the_found_and_online_lines(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+
+        intro = str(self._handler())
+
+        self.assertIn("Collected by:  asadm 3.1.0", intro)
+        self.assertLess(intro.index("Found 1 nodes"), intro.index("Collected by:"))
+
+    def test_collector_version_comes_from_the_log_when_meta_is_absent(self):
+        self._write_text("summary.log", "header\nasadm version 4.0.1\n")
+
+        handler = self._handler()
+
+        self.assertEqual(handler.collector_asadm_version(), "4.0.1")
+        self.assertIn("Collected by:  asadm 4.0.1", str(handler))
+
+    def test_meta_version_wins_over_the_log_scan(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+        self._write_text("summary.log", "header\nasadm version 4.0.1\n")
+
+        self.assertEqual(self._handler().collector_asadm_version(), "3.1.0")
+
+    def test_unrecorded_version_is_flagged_in_the_intro(self):
+        """A bundle too old to stamp a version anywhere is a finding, not a blank."""
+        intro = str(self._handler())
+
+        self.assertIn("unrecorded asadm version", intro)
+        self.assertIn("Collected by an unknown asadm version", intro)
+
+    def test_matching_version_is_not_repeated_in_the_banner(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+        handler = self._handler(asadm_version="3.1.0")
+
+        self.assertIn("Collected by:  asadm 3.1.0", str(handler))
+        self.assertNotIn("Collected by asadm 3.1.0", handler.diagnostics_banner())
+
+    def test_diagnostics_are_cached(self):
+        handler = self._handler()
+
+        first = handler.get_bundle_diagnostics()
+        second = handler.get_bundle_diagnostics()
+
+        self.assertIs(first, second)
+
+    def test_emit_diagnostics_to_log_uses_warning_level(self):
+        self._write_json("collectinfo_meta.json", META_DATA)
+        handler = self._handler()
+        log = MagicMock()
+
+        handler.emit_diagnostics_to_log(log)
+
+        self.assertTrue(log.warning.called)
+
+    def test_iter_bundle_files_finds_log_files(self):
+        self._write_text("sysinfo.log", "sysinfo")
+        handler = self._handler()
+
+        found = handler._iter_bundle_files(("sysinfo.log",))
+
+        self.assertEqual(
+            [os.path.basename(f) for f in found], ["20260720_100000_sysinfo.log"]
+        )
+
+    def test_bundle_snapshot_count(self):
+        handler = self._handler()
+
+        self.assertEqual(handler.bundle_snapshot_count, 1)
