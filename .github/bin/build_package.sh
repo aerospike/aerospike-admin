@@ -31,6 +31,54 @@ function assert_dynamic_deps() {
 	return $fail
 }
 
+# Assert the aerospike-tools relations actually reached the package metadata.
+# Building only proves fpm accepted the flag; these fields are what make the
+# bundle overlap installable, and their absence produces no output anywhere.
+# The negative checks matter as much as the positive ones: a Conflicts on the deb
+# would make plain `dpkg -i` hard-fail, and fpm's --replaces maps to rpm
+# Obsoletes, which would erase the whole bundle instead of taking over files.
+function assert_pkg_relations() {
+	local pkg
+	case "$ENV_DISTRO" in
+		ubuntu*|debian*)
+			pkg=$(find "$GIT_DIR/pkg/target" -name '*.deb' -print -quit)
+			if [ -z "$pkg" ]; then
+				echo "assert_pkg_relations: no .deb found under pkg/target" >&2
+				return 1
+			fi
+			if ! dpkg-deb -f "$pkg" Replaces | grep -qx 'aerospike-tools'; then
+				echo "deb is missing 'Replaces: aerospike-tools'" >&2
+				return 1
+			fi
+			if [ -n "$(dpkg-deb -f "$pkg" Conflicts)" ]; then
+				echo "deb must not declare Conflicts: $(dpkg-deb -f "$pkg" Conflicts)" >&2
+				return 1
+			fi
+			;;
+		el*|amzn*)
+			pkg=$(find "$GIT_DIR/pkg/target" -name '*.rpm' -print -quit)
+			if [ -z "$pkg" ]; then
+				echo "assert_pkg_relations: no .rpm found under pkg/target" >&2
+				return 1
+			fi
+			if ! rpm -qp --qf '%{CONFLICTS}\n' "$pkg" | grep -qx 'aerospike-tools'; then
+				echo "rpm is missing 'Conflicts: aerospike-tools'" >&2
+				return 1
+			fi
+			if rpm -qp --qf '%{OBSOLETES}\n' "$pkg" | grep -qx 'aerospike-tools'; then
+				echo "rpm must not Obsolete aerospike-tools (that erases the bundle)" >&2
+				return 1
+			fi
+			;;
+		*)
+			echo "assert_pkg_relations: no relations declared for $ENV_DISTRO (tar); skipping"
+			return 0
+			;;
+	esac
+	echo "assert_pkg_relations: aerospike-tools relations present and correct"
+	return 0
+}
+
 function build_packages() {
 	if [ "${ENV_DISTRO:-}" = "" ]; then
 		echo "ENV_DISTRO is not set" >&2
@@ -77,4 +125,5 @@ function build_packages() {
 		make tar
 	fi
 
+	assert_pkg_relations
 }

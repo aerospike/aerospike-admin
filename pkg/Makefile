@@ -51,10 +51,17 @@ ARCH = $(shell uname -m)
 .PHONY: all
 all: deb rpm tar
 
-# The aerospike-tools bundle ships these same /opt/aerospike/bin paths. deb
-# Replaces (without Conflicts) lets dpkg hand file ownership to this package;
-# rpm has no equivalent, so Conflicts turns an opaque file-conflict error into
-# an actionable one.
+# The aerospike-tools bundle ships the same /opt/aerospike/bin/asadm paths this
+# package does (see prep, below). deb Replaces without Conflicts lets dpkg hand
+# file ownership to this package while both stay installed; Conflicts would make
+# a plain `dpkg -i` hard-fail instead of resolving.
+#
+# The takeover is NOT sticky. Replaces is evaluated on every unpack, and the
+# bundle declares the mirror Replaces, so a later `apt upgrade` of the bundle
+# takes the paths back. Because the bundle's payload is a superset of this
+# package's file list, that unpack also trips dpkg's disappearance rule and
+# leaves aerospike-asadm not-installed. Recovery is `apt install aerospike-asadm`.
+# Only the metapackage conversion (see the rpm target) makes ownership durable.
 .PHONY: deb
 deb: prep
 	fpm --force \
@@ -75,6 +82,20 @@ deb: prep
 		--replaces "aerospike-tools" \
 		--package $(TARGET_DIR)/$(NAME)_$(PKG_VERSION)-$(DEB_ITERATION)_$(ARCH).deb
 
+# rpm has no Replaces equivalent for a partial file takeover (fpm's --replaces
+# maps to Obsoletes, which erases the other package wholesale), so Conflicts is
+# the best available outcome: a named conflict at depsolve time instead of an
+# opaque file collision at transaction-test time. The bundle must still be
+# removed by hand (dnf remove aerospike-tools) before this package will
+# install — a known gap, not an oversight.
+#
+# Unversioned on purpose: the bundle ships these paths at every version, and a
+# version bound would let rpm attempt the transaction for bundles above it and
+# fail on the raw file conflict instead. But REMOVE this --conflicts before
+# aerospike-tools becomes a metapackage that Requires this package — an
+# unversioned Conflicts makes such a metapackage unsatisfiable. That conversion
+# is tracked against the aerospike-tools bundle; see the Known gap section of
+# the PR that introduced this flag.
 .PHONY: rpm
 rpm: prep
 	fpm --force \
