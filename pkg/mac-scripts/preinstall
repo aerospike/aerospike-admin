@@ -1,0 +1,9 @@
+#!/bin/sh
+# asadm ships as a PyInstaller directory tree. The macOS installer merges a
+# payload over what is already there and never deletes, so a tree left by
+# another package (the aerospike-tools bundle, or an older asadm) keeps its
+# orphan libraries alongside the new ones and asadm can fail to start. Clear
+# the tree first. $3 = target volume ("/" for standard installs).
+vol="${3:-/}"
+rm -rf "$vol/usr/local/aerospike/bin/asadm"
+exit 0
