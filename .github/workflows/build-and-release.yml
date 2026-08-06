@@ -359,7 +359,10 @@ jobs:
       id-token: write
     with:
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
-      artifact-glob: "**/*.pkg"
+      # The signer's matches_glob() is a bash `case` match, not a real globstar
+      # matcher, so "**/*.pkg" requires a literal "/" and never matches our flat
+      # artifact tree -- every pkg gets skipped and the job still exits 0.
+      artifact-glob: "*.pkg"
       signing-identity: "Developer ID Application: Aerospike, Inc. (22224RFU67)"
       installer-identity: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
       gh-workflows-ref: "v3.6.0"
@@ -514,6 +517,20 @@ jobs:
           name: signed-artifacts-${{ needs.get-version.outputs.VERSION }}
           path: ./packages
 
+      - name: Verify .pkg is signed and notarized
+        run: |
+          set -euo pipefail
+          pkg=$(find ./packages -name "*-${{ matrix.os }}-${{ runner.arch }}.pkg" | head -1)
+          [[ -n "${pkg}" ]] || { echo "ERROR: no .pkg found for ${{ matrix.os }}-${{ runner.arch }}" >&2; exit 1; }
+          echo "==> pkgutil --check-signature ${pkg}"
+          pkgutil --check-signature "${pkg}" || {
+            echo "ERROR: ${pkg} is not signed -- check the notarize-mac-artifacts job" >&2; exit 1; }
+          pkgutil --check-signature "${pkg}" | grep -q "Developer ID Installer: Aerospike, Inc." || {
+            echo "ERROR: ${pkg} is not signed by the Aerospike Developer ID Installer identity" >&2; exit 1; }
+          echo "==> xcrun stapler validate ${pkg}"
+          xcrun stapler validate "${pkg}" || {
+            echo "ERROR: ${pkg} has no stapled notarization ticket -- check the notarize-mac-artifacts job" >&2; exit 1; }
+
       - name: Install .pkg locally
         run: |
           set -euo pipefail
@@ -522,6 +539,26 @@ jobs:
           sudo installer -pkg "${pkg}" -target /
           echo "ASTOOLS_REINSTALL=sudo installer -pkg ${pkg} -target /" >> "$GITHUB_ENV"
           echo "ASTOOLS_SAMPLE=/usr/local/aerospike/doc/asadm/astools.conf.sample" >> "$GITHUB_ENV"
+
+      - name: Verify installed files are root-owned
+        run: |
+          set -euo pipefail
+          # The shared signer rebuilds the .pkg Payload with an unprivileged
+          # `tar -xf | cpio -o` whenever it codesigns an embedded binary, which
+          # records the runner's uid instead of root and leaves the Bom stale.
+          # On a customer Mac that uid is the primary admin account, so
+          # root-installed binaries would land user-writable.
+          # Assert the tree exists first, so a changed install location can't
+          # make this check pass vacuously.
+          [[ -d /usr/local/aerospike/bin/asadm ]] || {
+            echo "ERROR: /usr/local/aerospike/bin/asadm missing after install -- did the pkg install location change?" >&2; exit 1; }
+          bad=$(find /usr/local/aerospike ! -user root -exec ls -ldn {} + 2>/dev/null | head -20 || true)
+          if [[ -n "${bad}" ]]; then
+            echo "ERROR: installed files are not root-owned (see notarize-mac-artifacts payload rebuild)" >&2
+            echo "${bad}" >&2
+            exit 1
+          fi
+          echo "==> all files under /usr/local/aerospike are root-owned"
 
       - name: Install bats
         run: brew install bats-core
