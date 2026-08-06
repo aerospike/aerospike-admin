@@ -635,6 +635,23 @@ jobs:
           done
           echo "==> all entrypoints execute under hardened runtime"
 
+          # Every embedded Mach-O must carry a signature. The outer pkg being
+          # signed says nothing about its contents, and the mac staging step
+          # strips foreign signatures (Apple-signed binaries bundled by
+          # PyInstaller) so the shared signer will re-sign them -- if signing
+          # ever silently skipped them again, an unsigned binary would ship and
+          # be killed outright on arm64.
+          unsigned=$(while IFS= read -r b; do
+              file "${b}" | grep -q "Mach-O" || continue
+              codesign -dv "${b}" >/dev/null 2>&1 || echo "${b}"
+            done < <(find /usr/local/aerospike -type f -perm +111))
+          if [[ -n "${unsigned}" ]]; then
+            echo "ERROR: unsigned Mach-O binary(ies) in the installed tree -- check the notarize-mac-artifacts job" >&2
+            printf '%s\n' "${unsigned}" | head -20 >&2
+            exit 1
+          fi
+          echo "==> every embedded Mach-O is signed"
+
       - name: Install bats
         run: brew install bats-core
 
