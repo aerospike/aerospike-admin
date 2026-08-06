@@ -101,6 +101,49 @@ jobs:
           asadm -e "info" 2>&1 | grep "Not able to connect"
           asinfo || true
           asinfo 2>&1 | grep "Not able to connect"
+      # Builds the .pkg so pkgbuild --scripts (and therefore pkg/mac-scripts) is
+      # exercised on every PR into master -- the pull_request trigger above filters
+      # on that base branch, so PRs into bugfix-* are NOT covered; widen the filter
+      # if that matters. The release workflow is workflow_dispatch only, so without
+      # this the installer scripts are first run during a release. Runs after
+      # "Sanity Test tools" on purpose: `make install` has already put a tree at the
+      # payload's destination, so the first install exercises the preinstall against
+      # an existing tree. No signing or notarization needed to produce a locally
+      # installable .pkg.
+      #
+      # Skipped on the workflow_call path: the aerospike-tools bundle calls this
+      # workflow for asadm.tar and does not consume this .pkg, so building and
+      # system-installing it there only couples the bundle's artifact build to this
+      # repo's packaging metadata.
+      #
+      # VERSION goes through env rather than a ${{ }} splice into the script: `${{ }}`
+      # is substituted before a shell exists, and a git tag may legally contain
+      # shell metacharacters.
+      - name: Build and install .pkg (exercises pkg/mac-scripts)
+        if: inputs.submodule == ''
+        working-directory: ${{ steps.working-dir.outputs.value }}
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          make -C pkg osx-pkg VERSION="${TAG}"
+          pkg=$(find pkg/target -name '*.pkg' -print -quit)
+          [ -n "${pkg}" ] || { echo "::error::no .pkg produced under pkg/target/"; exit 1; }
+          sudo installer -pkg "${pkg}" -target /
+          asadm --version
+          asinfo --version
+          # The preinstall exists because the macOS installer never prunes
+          # obsolete payload files. Plant an orphan, reinstall, and confirm it is
+          # gone -- otherwise a preinstall that silently no-ops would pass.
+          tree=/usr/local/aerospike/bin/asadm
+          sudo touch "${tree}/liborphan-test.so"
+          sudo installer -pkg "${pkg}" -target /
+          if [ -e "${tree}/liborphan-test.so" ]; then
+            echo "::error::preinstall did not clear ${tree}"
+            exit 1
+          fi
+          asadm --version
+          asinfo --version
       - name: Create .tar
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
