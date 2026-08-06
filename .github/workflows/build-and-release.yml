@@ -359,9 +359,11 @@ jobs:
       id-token: write
     with:
       gh-unsigned-artifacts: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}
-      # The signer's matches_glob() is a bash `case` match, not a real globstar
-      # matcher, so "**/*.pkg" requires a literal "/" and never matches our flat
-      # artifact tree -- every pkg gets skipped and the job still exits 0.
+      # As observed in shared-workflows v3.7.0: matches_glob() is a bash `case`
+      # match, not a real globstar matcher, so "**/*.pkg" requires a literal "/"
+      # and never matches our flat artifact tree -- every pkg gets skipped and
+      # the job still exits 0. Do not "fix" this back to "**/*.pkg" unless the
+      # pinned signer above implements real globstar matching.
       artifact-glob: "*.pkg"
       signing-identity: "Developer ID Application: Aerospike, Inc. (22224RFU67)"
       installer-identity: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
@@ -518,47 +520,120 @@ jobs:
           path: ./packages
 
       - name: Verify .pkg is signed and notarized
+        env:
+          # Must match `installer-identity` on the notarize-mac-artifacts job.
+          # A reusable-workflow `with:` cannot read `env`, so this is the one
+          # place the literal is repeated -- keep the two in sync.
+          INSTALLER_IDENTITY: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
         run: |
           set -euo pipefail
-          pkg=$(find ./packages -name "*-${{ matrix.os }}-${{ runner.arch }}.pkg" | head -1)
-          [[ -n "${pkg}" ]] || { echo "ERROR: no .pkg found for ${{ matrix.os }}-${{ runner.arch }}" >&2; exit 1; }
-          echo "==> pkgutil --check-signature ${pkg}"
-          pkgutil --check-signature "${pkg}" || {
-            echo "ERROR: ${pkg} is not signed -- check the notarize-mac-artifacts job" >&2; exit 1; }
-          pkgutil --check-signature "${pkg}" | grep -q "Developer ID Installer: Aerospike, Inc." || {
-            echo "ERROR: ${pkg} is not signed by the Aerospike Developer ID Installer identity" >&2; exit 1; }
-          echo "==> xcrun stapler validate ${pkg}"
+          # Resolve the pkg ONCE and export it. The install step below consumes
+          # ${VERIFIED_PKG}, so it cannot install a different file than the one
+          # verified here, and an ambiguous match fails instead of silently
+          # picking find's first result.
+          pat="*-${{ matrix.os }}-${{ runner.arch }}.pkg"
+          n=$(find ./packages -type f -name "${pat}" | wc -l | tr -d ' ')
+          [[ "${n}" -eq 1 ]] || {
+            echo "ERROR: expected exactly 1 .pkg matching ${pat}, found ${n}" >&2
+            find ./packages -type f -name "${pat}" >&2
+            exit 1; }
+          pkg=$(find ./packages -type f -name "${pat}")
+          echo "VERIFIED_PKG=${pkg}" >> "$GITHUB_ENV"
+
+          # Capture once. An unsigned pkg exits non-zero here; a pkg signed by
+          # the WRONG identity exits 0 and is caught by the assertion below.
+          sig=$(pkgutil --check-signature "${pkg}") || {
+            echo "ERROR: ${pkg} is not signed -- check the notarize-mac-artifacts job" >&2
+            printf '%s\n' "${sig}" >&2
+            exit 1; }
+          printf '%s\n' "${sig}"
+
+          # Assert the FULL configured identity, Team ID included, at the leaf
+          # ("1. ") position. Org names are not unique across Apple teams; the
+          # Team ID is. -F so "(", ")" and "." are literal, not regex.
+          printf '%s\n' "${sig}" | grep -qF "1. ${INSTALLER_IDENTITY}" || {
+            echo "ERROR: ${pkg} leaf signer is not ${INSTALLER_IDENTITY}" >&2
+            printf '%s\n' "${sig}" >&2
+            exit 1; }
+
+          # Neither pkgutil's exit code nor stapler evaluates trust: pkgutil
+          # reports an untrusted or expired chain on its Status: line, and
+          # stapler only checks that a ticket is present and matches. spctl runs
+          # the assessment a customer's Mac actually applies.
+          spctl --assess --type install -vv "${pkg}" || {
+            echo "ERROR: ${pkg} is rejected by Gatekeeper -- check the notarize-mac-artifacts job" >&2
+            exit 1; }
           xcrun stapler validate "${pkg}" || {
-            echo "ERROR: ${pkg} has no stapled notarization ticket -- check the notarize-mac-artifacts job" >&2; exit 1; }
+            echo "ERROR: ${pkg} has no stapled notarization ticket -- check the notarize-mac-artifacts job" >&2
+            exit 1; }
 
       - name: Install .pkg locally
         run: |
           set -euo pipefail
-          pkg=$(find ./packages -name "*-${{ matrix.os }}-${{ runner.arch }}.pkg" | head -1)
-          [[ -n "${pkg}" ]] || { echo "ERROR: no .pkg found for ${{ matrix.os }}-${{ runner.arch }}" >&2; exit 1; }
-          sudo installer -pkg "${pkg}" -target /
-          echo "ASTOOLS_REINSTALL=sudo installer -pkg ${pkg} -target /" >> "$GITHUB_ENV"
+          # ${VERIFIED_PKG} is exported by the verify step above, so we can
+          # only install the exact file that was verified.
+          sudo installer -pkg "${VERIFIED_PKG}" -target /
+          echo "ASTOOLS_REINSTALL=sudo installer -pkg ${VERIFIED_PKG} -target /" >> "$GITHUB_ENV"
           echo "ASTOOLS_SAMPLE=/usr/local/aerospike/doc/asadm/astools.conf.sample" >> "$GITHUB_ENV"
 
-      - name: Verify installed files are root-owned
+      - name: Verify installed files are root-owned and entrypoints execute
         run: |
           set -euo pipefail
-          # The shared signer rebuilds the .pkg Payload with an unprivileged
-          # `tar -xf | cpio -o` whenever it codesigns an embedded binary, which
-          # records the runner's uid instead of root and leaves the Bom stale.
-          # On a customer Mac that uid is the primary admin account, so
-          # root-installed binaries would land user-writable.
-          # Assert the tree exists first, so a changed install location can't
-          # make this check pass vacuously.
-          [[ -d /usr/local/aerospike/bin/asadm ]] || {
-            echo "ERROR: /usr/local/aerospike/bin/asadm missing after install -- did the pkg install location change?" >&2; exit 1; }
-          bad=$(find /usr/local/aerospike ! -user root -exec ls -ldn {} + 2>/dev/null | head -20 || true)
+          # Assert the payload actually landed. A bare directory test would pass
+          # on an empty tree, which is the vacuous pass this guard prevents.
+          for rel in asadm/asadm asadm/asinfo; do
+            [[ -e "/usr/local/aerospike/bin/${rel}" ]] || {
+              echo "ERROR: /usr/local/aerospike/bin/${rel} missing after install -- did the pkg install location change?" >&2
+              exit 1; }
+          done
+
+          # Prove the scan is non-vacuous before trusting an empty result.
+          scanned=$(find /usr/local/aerospike -type f | wc -l | tr -d ' ')
+          [[ "${scanned}" -ge 1 ]] || {
+            echo "ERROR: ownership scan examined 0 files under /usr/local/aerospike" >&2
+            exit 1; }
+          echo "==> scanning ${scanned} installed file(s)"
+
+          # As observed in shared-workflows v3.7.0: when the signer codesigns an
+          # embedded binary it rebuilds the pkg Payload with an unprivileged
+          # `tar -xf | cpio -o` and re-flattens without regenerating Bom, so the
+          # payload records the build runner's uid rather than root. Mode bits are
+          # tested too -- the hazard is a writable file, not merely a non-root one.
+          # The pkg installs TWO roots (/usr/local/aerospike and the
+          # /usr/local/bin symlinks), so both are scanned; /usr/local/bin is
+          # filtered by -lname because Homebrew owns unrelated entries there.
+          # No 2>/dev/null and no `|| true`: a find that cannot walk the tree must
+          # fail the step, not read as success.
+          bad=$(
+            { find /usr/local/aerospike \( ! -user root -o -perm -0002 -o -perm -0020 \) -print
+              find /usr/local/bin -maxdepth 1 -lname '*aerospike/bin/*' ! -user root -print
+            }
+          ) || {
+            echo "ERROR: ownership scan failed -- see stderr above" >&2
+            exit 1; }
           if [[ -n "${bad}" ]]; then
-            echo "ERROR: installed files are not root-owned (see notarize-mac-artifacts payload rebuild)" >&2
-            echo "${bad}" >&2
+            echo "ERROR: $(printf '%s\n' "${bad}" | wc -l | tr -d ' ') installed path(s) not root-owned or group/world-writable" >&2
+            printf '%s\n' "${bad}" | head -20 | while IFS= read -r p; do ls -ldn "${p}" >&2; done
             exit 1
           fi
-          echo "==> all files under /usr/local/aerospike are root-owned"
+          echo "==> installed files are root-owned and not group/world-writable"
+
+          # The shared signer applies hardened runtime (`codesign --options
+          # runtime`) with NO --entitlements, and exposes no input for them. This
+          # repo's legacy mac path signed with disable-library-validation (and
+          # allow-unsigned-executable-memory for asadm's PyInstaller tree). A
+          # binary that needs those dies at exec under library validation, so
+          # assert execution here, where the message names signing -- rather than
+          # later in the bats suite, where it reads as a test failure.
+          for rel in asadm/asadm asadm/asinfo; do
+            b="/usr/local/aerospike/bin/${rel}"
+            [[ -x "${b}" ]] || continue
+            "${b}" --version >/dev/null 2>&1 || "${b}" --help >/dev/null 2>&1 || {
+              echo "ERROR: ${b} installed but will not execute -- likely hardened runtime without entitlements (see notarize-mac-artifacts)" >&2
+              codesign -d --entitlements - "${b}" >&2 || true
+              exit 1; }
+          done
+          echo "==> all entrypoints execute under hardened runtime"
 
       - name: Install bats
         run: brew install bats-core
