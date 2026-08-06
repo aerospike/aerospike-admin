@@ -102,17 +102,31 @@ jobs:
           asinfo || true
           asinfo 2>&1 | grep "Not able to connect"
       # Builds the .pkg so pkgbuild --scripts (and therefore pkg/mac-scripts) is
-      # exercised on every PR. The release workflow is workflow_dispatch only, so
-      # without this the installer scripts are first run during a release. Runs
-      # after "Sanity Test tools" on purpose: `make install` has already put a
-      # tree at the payload's destination, so the first install exercises the
-      # preinstall against an existing tree. No signing or notarization needed to
-      # produce a locally installable .pkg.
+      # exercised on every PR into master -- the pull_request trigger above filters
+      # on that base branch, so PRs into bugfix-* are NOT covered; widen the filter
+      # if that matters. The release workflow is workflow_dispatch only, so without
+      # this the installer scripts are first run during a release. Runs after
+      # "Sanity Test tools" on purpose: `make install` has already put a tree at the
+      # payload's destination, so the first install exercises the preinstall against
+      # an existing tree. No signing or notarization needed to produce a locally
+      # installable .pkg.
+      #
+      # Skipped on the workflow_call path: the aerospike-tools bundle calls this
+      # workflow for asadm.tar and does not consume this .pkg, so building and
+      # system-installing it there only couples the bundle's artifact build to this
+      # repo's packaging metadata.
+      #
+      # VERSION goes through env rather than a ${{ }} splice into the script: `${{ }}`
+      # is substituted before a shell exists, and a git tag may legally contain
+      # shell metacharacters.
       - name: Build and install .pkg (exercises pkg/mac-scripts)
+        if: inputs.submodule == ''
         working-directory: ${{ steps.working-dir.outputs.value }}
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          make -C pkg osx-pkg VERSION="${{ steps.tag.outputs.tag }}"
+          make -C pkg osx-pkg VERSION="${TAG}"
           pkg=$(find pkg/target -name '*.pkg' -print -quit)
           [ -n "${pkg}" ] || { echo "::error::no .pkg produced under pkg/target/"; exit 1; }
           sudo installer -pkg "${pkg}" -target /

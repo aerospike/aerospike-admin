@@ -62,6 +62,17 @@ all: deb rpm tar
 # package's file list, that unpack also trips dpkg's disappearance rule and
 # leaves aerospike-asadm not-installed. Recovery is `apt install aerospike-asadm`.
 # Only the metapackage conversion (see the rpm target) makes ownership durable.
+#
+# The REMOVAL direction is the sharper edge, and it is silent. Once the takeover
+# has happened the overlapping paths are listed only by this package, so
+# `apt remove aerospike-asadm` DELETES the bundle's asadm/asinfo while
+# aerospike-tools is still installed -- and because dpkg verifies against a
+# manifest that no longer claims those paths, `dpkg -l` still reports the bundle
+# `ii` and `dpkg -V` exits 0 with no output. Nothing warns, and recovery is
+# `apt install --reinstall aerospike-tools`. Verified with real .debs on
+# ubuntu:noble. This is inherent to Replaces-without-Breaks (Breaks would force
+# the bundle off the system, defeating coexistence), so it is a documented
+# consequence rather than something a flag change can fix.
 .PHONY: deb
 deb: prep
 	fpm --force \
@@ -89,13 +100,25 @@ deb: prep
 # removed by hand (dnf remove aerospike-tools) before this package will
 # install — a known gap, not an oversight.
 #
+# The full cost, because "best available outcome" undersells it: a package-level
+# Conflicts is a dependency problem, not a file conflict, so `rpm -i
+# --replacefiles` and `--force` no longer bypass it -- only `--nodeps`, which
+# disables every real dependency check as collateral. `--replacefiles` DID
+# previously produce a working coexisting pair, so this flag makes coexistence
+# unreachable on rpm rather than merely noisier, and any host already in that
+# state can no longer `dnf upgrade aerospike-asadm`. Note that pkg/postinst.sh
+# documents coexistence as a design goal: after this flag, that is a deb-only
+# property.
+#
 # Unversioned on purpose: the bundle ships these paths at every version, and a
 # version bound would let rpm attempt the transaction for bundles above it and
 # fail on the raw file conflict instead. But REMOVE this --conflicts before
 # aerospike-tools becomes a metapackage that Requires this package — an
-# unversioned Conflicts makes such a metapackage unsatisfiable. That conversion
-# is tracked against the aerospike-tools bundle; see the Known gap section of
-# the PR that introduced this flag.
+# unversioned Conflicts makes such a metapackage unsatisfiable, so the flag must
+# be gone from a released aerospike-asadm BEFORE the metapackage ships. The
+# reasoning above is self-contained; for the wider write-up see
+# aerospike/aerospike-admin#532, and the conversion itself is tracked against the
+# aerospike-tools bundle (citrusleaf/aerospike-tools#439).
 .PHONY: rpm
 rpm: prep
 	fpm --force \

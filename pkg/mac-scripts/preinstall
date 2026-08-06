@@ -4,16 +4,26 @@
 # install — including a plain version-to-version upgrade. deb and rpm prune them
 # automatically (Debian Policy 6.6: files in the old version but not in the new
 # are removed), so only macOS accumulates cruft from an older asadm or from the
-# aerospike-tools bundle. Clear the tree first so the onedir does not grow
-# without bound. $3 = target volume ("/" for standard installs).
+# aerospike-tools bundle. Clear the tree first: a merged tree both grows without
+# bound and can change behaviour (see below). $3 = target volume ("/" for
+# standard installs).
 vol="${3:-/}"
 tree="$vol/usr/local/aerospike/bin/asadm"
 # rm -rf is silent for a missing path (that is what -f is for), so a non-zero
 # status here is a real failure: an immutable flag, an ACL, a read-only volume.
-# Warn rather than abort. Stale files in the tree are inert — the loader and the
-# PyInstaller bootloader resolve by recorded name, never by scanning the
-# directory — so a merged tree still runs, and failing the install would be the
-# worse outcome. The warning lands in /var/log/install.log.
+# Warn rather than abort, because aborting leaves the user with no working asadm,
+# which is worse than a merged tree.
+#
+# But a merged tree is NOT harmless. Code resolution is by recorded name (ELF
+# DT_NEEDED, Mach-O install names, the bootloader's CArchive TOC, FrozenImporter
+# ahead of PathFinder), so an orphaned library cannot hijack startup -- however
+# asadm also reads bundled *data* by scanning the directory:
+# lib/live_cluster/client/config_handler.py enumerates the schemas directory with
+# os.listdir and picks the closest version at or below the server build. That
+# directory ships as a real on-disk tree (see `datas` in pyinstaller-build.spec),
+# so an obsolete schema JSON left behind by an older asadm can be selected in
+# preference to the current one. Treat this warning as a real defect, not
+# cosmetic. It lands in /var/log/install.log.
 if ! rm -rf "$tree"; then
     echo "preinstall: could not clear $tree; installing over the existing tree" >&2
 fi
