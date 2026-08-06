@@ -199,36 +199,46 @@ function _bundle_overlap_check() {
 
 			rpm -i "$stub_pkg" >/dev/null || { echo "assert_bundle_overlap: stub bundle would not install" >&2; return 1; }
 
-			# Promise: an ACTIONABLE NAMED conflict at depsolve time, not an opaque
-			# file collision at transaction-test time. Checking only "it failed and
-			# mentioned aerospike-tools" does NOT test that -- BOTH outcomes fail and
-			# BOTH name the package. Verified on ubi9 and ubi10 (dnf 4.20):
+			# Promise: an ACTIONABLE NAMED package conflict, not an opaque file
+			# collision. Checking only "it failed and mentioned aerospike-tools" does
+			# NOT test that -- every outcome below fails and every one names the
+			# package, so the wording is the only discriminator. Verified on ubi10:
 			#
-			#   with --conflicts:    Problem: package aerospike-asadm ... conflicts
-			#                        with aerospike-tools provided by ...
-			#   without --conflicts: Transaction test error: file /opt/... conflicts
-			#                        with file from package aerospike-tools-...
+			#   --conflicts:  error: Failed dependencies:
+			#                   aerospike-tools conflicts with aerospike-asadm-...
+			#   no relation:  file /opt/... from install of aerospike-asadm-...
+			#                   conflicts with file from package aerospike-tools-...
+			#   --replaces:   error: Failed dependencies:
+			#                   aerospike-tools is obsoleted by aerospike-asadm-...
 			#
-			# So the discriminator is the ABSENCE of the file-collision shape. That is
-			# the status quo this flag exists to replace; seeing it means the depsolve
-			# conflict never fired.
+			# Uses rpm directly rather than dnf: dnf is a Python program, and by this
+			# point in the build install_deps has put an asdf-managed Python ahead of
+			# the system one on PATH, so `dnf` dies with "ModuleNotFoundError: No
+			# module named 'dnf'". rpm is a compiled binary and unaffected. Testing at
+			# the rpm layer still proves the Conflicts is enforced and names the
+			# package, which is the substance of the promise.
 			rc=0
-			out=$(dnf install -y "$real_pkg" 2>&1) || rc=$?
+			out=$(rpm -i "$real_pkg" 2>&1) || rc=$?
 			if [ "$rc" -eq 0 ]; then
-				echo "assert_bundle_overlap: dnf install SUCCEEDED over the bundle -- Conflicts did not take effect" >&2
+				echo "assert_bundle_overlap: rpm install SUCCEEDED over the bundle -- Conflicts did not take effect" >&2
 				return 1
 			fi
-			if ! printf '%s\n' "$out" | grep -qi 'aerospike-tools'; then
-				echo "assert_bundle_overlap: dnf failed but never named aerospike-tools; the conflict is not actionable" >&2
+			if printf '%s\n' "$out" | grep -qi 'conflicts with file from'; then
+				echo "assert_bundle_overlap: rpm died on a raw FILE collision, not a named package conflict -- Conflicts: aerospike-tools did not take effect" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
-			if printf '%s\n' "$out" | grep -qiE 'transaction test error|conflicts with file from'; then
-				echo "assert_bundle_overlap: dnf died on a raw FILE conflict, not a named package conflict -- Conflicts: aerospike-tools did not reach depsolve" >&2
+			if printf '%s\n' "$out" | grep -qi 'obsoleted by'; then
+				echo "assert_bundle_overlap: rpm reports aerospike-tools as OBSOLETED, not conflicting -- that erases the bundle instead of refusing" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
-			echo "assert_bundle_overlap: rpm reports a named aerospike-tools conflict instead of a file collision"
+			if ! printf '%s\n' "$out" | grep -qi 'aerospike-tools conflicts with'; then
+				echo "assert_bundle_overlap: rpm failed but not with a named aerospike-tools conflict; not actionable" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
+			echo "assert_bundle_overlap: rpm refuses with a named aerospike-tools conflict instead of a file collision"
 			;;
 		tar)
 			echo "assert_bundle_overlap: no relations declared for the tar target; skipping"
