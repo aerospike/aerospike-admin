@@ -133,6 +133,7 @@ prep-mac:
 	ln -sf ../aerospike/bin/asadm/asinfo $(MAC_ROOT)/usr/local/bin/asinfo
 	install -d $(MAC_ROOT)$(MAC_DOC_DIR)
 	install -pm 644 $(PKG_DIR)/astools.conf.sample $(MAC_ROOT)$(MAC_DOC_DIR)/astools.conf.sample
+	$(PKG_DIR)/strip-foreign-signatures.sh $(MAC_ROOT)
 
 .PHONY: osx-pkg
 osx-pkg: prep-mac
