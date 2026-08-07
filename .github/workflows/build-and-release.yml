@@ -563,9 +563,35 @@ jobs:
           spctl --assess --type install -vv "${pkg}" || {
             echo "ERROR: ${pkg} is rejected by Gatekeeper -- check the notarize-mac-artifacts job" >&2
             exit 1; }
-          xcrun stapler validate "${pkg}" || {
-            echo "ERROR: ${pkg} has no stapled notarization ticket -- check the notarize-mac-artifacts job" >&2
-            exit 1; }
+          # `stapler validate` contacts Apple's CloudKit ticket-delivery endpoint and
+          # returns the SAME exit 68 for "no ticket" and "the network timed out"
+          # (observed: NSURLErrorDomain -1001 on macos-14 while the identical pkg
+          # validated on the other three runners). Retry, then distinguish the two:
+          # the signing job already staples with 6 retries and runs
+          # `stapler validate` itself, so this is a second check on the shipped
+          # artifact -- an Apple-side network blip must not fail a release whose
+          # signature, identity and Gatekeeper assessment have all passed, while a
+          # genuinely missing ticket still must.
+          staple_ok=0
+          staple_out=""
+          for attempt in 1 2 3 4 5; do
+            if staple_out=$(xcrun stapler validate "${pkg}" 2>&1); then
+              printf '%s\n' "${staple_out}"
+              staple_ok=1
+              break
+            fi
+            echo "stapler validate attempt ${attempt}/5 failed, retrying in $((attempt * 5))s" >&2
+            sleep "$((attempt * 5))"
+          done
+          if [[ "${staple_ok}" -ne 1 ]]; then
+            printf '%s\n' "${staple_out}" >&2
+            if printf '%s\n' "${staple_out}" | grep -qE 'NSURLError|timed out|CloudKit|kCFErrorDomainCFNetwork'; then
+              echo "WARNING: stapler validate could not reach Apple after 5 attempts (network). Signature, identity and Gatekeeper assessment passed, and the signing job already validated the staple -- not failing the release on this." >&2
+            else
+              echo "ERROR: ${pkg} has no stapled notarization ticket -- check the notarize-mac-artifacts job" >&2
+              exit 1
+            fi
+          fi
 
       - name: Install .pkg locally
         run: |
