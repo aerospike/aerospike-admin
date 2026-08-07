@@ -420,6 +420,137 @@ def flip_keys(orig_data):
     return new_data
 
 
+def _int_or_zero(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
+
+def _float_or_zero(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+_NS_MEMORY_USED_KEYS = ("index_used_bytes", "sindex_used_bytes", "set_index_used_bytes")
+_NS_MEMORY_ALLOC_KEYS = {
+    "shmem_alloc_bytes": ("index_shmem_alloc_bytes", "sindex_shmem_alloc_bytes"),
+    "pmem_alloc_bytes": ("index_pmem_alloc_bytes", "sindex_pmem_alloc_bytes"),
+    "flash_alloc_bytes": ("index_flash_alloc_bytes", "sindex_flash_alloc_bytes"),
+}
+
+
+def aggregate_ns_memory_stats(ns_stats):
+    """
+    Aggregate namespace-level memory stats into per-node totals.
+
+    Only keys the server actually reported for a node are emitted, so columns
+    collapse on server versions that predate a stat rather than showing a
+    misleading zero.
+
+    Args:
+        ns_stats: {node: {namespace: {stat_name: value}}}
+
+    shmem_alloc_bytes folds in the reserved in-memory data (data_total_bytes for
+    storage-engine=memory) alongside the index/sindex arenas, since data reserves
+    its full shmem footprint upfront at startup. All alloc values are reserved
+    shmem (demand-faulted); process RSS is the resident subset and lags them.
+
+    Returns:
+        {node: {stat_name: str}}. Possible keys: index_used_bytes,
+        sindex_used_bytes, set_index_used_bytes, shmem_alloc_bytes,
+        pmem_alloc_bytes, flash_alloc_bytes, data_in_memory_used_bytes.
+    """
+    result = {}
+
+    for node, namespaces in ns_stats.items():
+        if isinstance(namespaces, Exception):
+            continue
+
+        totals = {}
+
+        for ns_data in namespaces.values():
+            if isinstance(ns_data, Exception):
+                continue
+
+            for key in _NS_MEMORY_USED_KEYS:
+                if key in ns_data:
+                    totals[key] = totals.get(key, 0) + _int_or_zero(ns_data[key])
+
+            for out_key, src_keys in _NS_MEMORY_ALLOC_KEYS.items():
+                for src_key in src_keys:
+                    if src_key in ns_data:
+                        totals[out_key] = totals.get(out_key, 0) + _int_or_zero(
+                            ns_data[src_key]
+                        )
+
+            if ns_data.get("storage-engine") == "memory":
+                if "data_total_bytes" in ns_data:
+                    totals["shmem_alloc_bytes"] = totals.get(
+                        "shmem_alloc_bytes", 0
+                    ) + _int_or_zero(ns_data["data_total_bytes"])
+
+                if "data_used_bytes" in ns_data:
+                    totals["data_in_memory_used_bytes"] = totals.get(
+                        "data_in_memory_used_bytes", 0
+                    ) + _int_or_zero(ns_data["data_used_bytes"])
+
+        result[node] = {key: str(value) for key, value in totals.items()}
+
+    return result
+
+
+def derive_memory_stats(stats):
+    """
+    Add derived memory keys to per-node service stats (mutates and returns).
+
+    Converts kbyte stats to bytes so byte converters render the right
+    magnitude, and computes values the server does not emit directly (host
+    total RAM, cgroup used pct). A derived key is only added when its inputs
+    are present and valid, so absent columns collapse on older servers.
+    """
+    kb_to_bytes = {
+        "system_free_mem_kbytes": "system_free_mem_bytes",
+        "host_free_mem_kbytes": "host_free_mem_bytes",
+        "heap_allocated_kbytes": "heap_allocated_bytes",
+        "heap_active_kbytes": "heap_active_bytes",
+        "heap_mapped_kbytes": "heap_mapped_bytes",
+        "system_thp_mem_kbytes": "system_thp_mem_bytes",
+    }
+
+    for node_stats in stats.values():
+        if not isinstance(node_stats, dict):
+            continue
+
+        for src, dst in kb_to_bytes.items():
+            if src in node_stats:
+                node_stats[dst] = str(_int_or_zero(node_stats[src]) * 1024)
+
+        if "host_free_mem_kbytes" in node_stats and "host_free_mem_pct" in node_stats:
+            host_free_pct = _float_or_zero(node_stats["host_free_mem_pct"])
+            if host_free_pct > 0:
+                host_free_kbytes = _int_or_zero(node_stats["host_free_mem_kbytes"])
+                node_stats["host_total_mem_bytes"] = str(
+                    int(host_free_kbytes * 1024 * 100 / host_free_pct)
+                )
+
+        if (
+            "cgroup_memory_limit_bytes" in node_stats
+            and "cgroup_memory_used_bytes" in node_stats
+        ):
+            limit = _int_or_zero(node_stats["cgroup_memory_limit_bytes"])
+            if limit > 0:
+                used = _int_or_zero(node_stats["cgroup_memory_used_bytes"])
+                node_stats["cgroup_memory_used_pct"] = str(used * 100 / limit)
+
+    return stats
+
+
 def first_key_to_upper(data):
     if not data or not isinstance(data, dict):
         return data

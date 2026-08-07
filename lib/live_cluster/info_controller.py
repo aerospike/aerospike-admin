@@ -96,6 +96,49 @@ class InfoController(LiveClusterCommandController):
             **self.mods,
         )
 
+    @CommandHelp(
+        "Displays node memory: Available (cgroup limit if capped, else host",
+        "total) vs Allocated (reserved shmem index+sindex arenas plus in-memory",
+        "data, plus heap). Alloc% approaching 100% signals memory pressure / OOM",
+        "risk. Host total is derived from host_free_mem_pct and is approximate.",
+        "Allocated is reserved and demand-faulted, so resident RSS is lower. Use",
+        "--verbose for the full breakdown (host/cgroup/process and per-backing",
+        "index/data).",
+        short_msg="Displays node memory availability vs allocation",
+        usage=f"[--verbose] [{ModifierUsageHelp.WITH}]",
+        modifiers=(
+            ModifierHelp(
+                "--verbose", "Show the full per-node memory breakdown", default="off"
+            ),
+            with_modifier_help,
+        ),
+    )
+    async def do_memory(self, line):
+        verbose = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--verbose",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+        stats, configs, ns_stats, builds = await asyncio.gather(
+            self.stat_getter.get_service(nodes=self.nodes),
+            self.config_getter.get_service(nodes=self.nodes),
+            self.stat_getter.get_namespace(nodes=self.nodes),
+            self.cluster.info_build(nodes=self.nodes),
+        )
+        ns_agg = util.aggregate_ns_memory_stats(ns_stats)
+        return util.callable(
+            self.view.info_memory,
+            stats,
+            configs,
+            ns_agg,
+            self.cluster,
+            builds=builds,
+            verbose=verbose,
+            **self.mods,
+        )
+
     @CommandHelp("Displays summary information for each set")
     async def do_set(self, line):
         stats = await self.cluster.info_all_set_statistics(nodes=self.nodes)

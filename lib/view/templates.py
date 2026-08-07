@@ -380,6 +380,27 @@ info_namespace_usage_sheet = Sheet(
                     ),
                 ),
                 Field(
+                    "Alloc",
+                    Projectors.Number(
+                        "ns_stats",
+                        "index_shmem_alloc_bytes",  # Added in 8.1.3, one variant per backing
+                        "index_pmem_alloc_bytes",
+                        "index_flash_alloc_bytes",
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Alloc%",
+                    Projectors.Float(
+                        "ns_stats",
+                        "index_shmem_alloc_pct",
+                        "index_pmem_alloc_pct",
+                        "index_flash_alloc_pct",
+                    ),
+                    converter=Converters.pct,
+                ),
+                Field(
                     "Evict%",
                     Projectors.Number(
                         "ns_stats",
@@ -466,6 +487,27 @@ info_namespace_usage_sheet = Sheet(
                             and edata.record["Secondary Index"]["Evict%"] != 0
                         ),
                     ),
+                ),
+                Field(
+                    "Alloc",
+                    Projectors.Number(
+                        "ns_stats",
+                        "sindex_shmem_alloc_bytes",  # Added in 8.1.3, one variant per backing
+                        "sindex_pmem_alloc_bytes",
+                        "sindex_flash_alloc_bytes",
+                    ),
+                    converter=Converters.byte,
+                    aggregator=Aggregators.sum(),
+                ),
+                Field(
+                    "Alloc%",
+                    Projectors.Float(
+                        "ns_stats",
+                        "sindex_shmem_alloc_pct",
+                        "sindex_pmem_alloc_pct",
+                        "sindex_flash_alloc_pct",
+                    ),
+                    converter=Converters.pct,
                 ),
                 Field(
                     "Evict%",
@@ -2992,5 +3034,193 @@ info_transactions_provisionals_sheet = Sheet(
     from_source=("node_ids", "node_names", "ns_stats"),
     for_each="ns_stats",
     group_by=("Namespace"),
+    order_by=FieldSorter("Node"),
+)
+
+info_memory_sheet = Sheet(
+    (
+        node_field,
+        hidden_node_id_field,
+        Field(
+            "CGroup Tracking",
+            Projectors.String("configs", "cgroup-mem-tracking"),
+        ),
+        Field(
+            "Host Total*",
+            Projectors.Number("stats", "host_total_mem_bytes"),
+            converter=Converters.byte,
+        ),
+        Subgroup(
+            "Available",
+            (
+                Field(
+                    "System",
+                    Projectors.Number("stats", "system_free_mem_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Sys%",
+                    Projectors.Percent("stats", "system_free_mem_pct"),
+                    converter=Converters.pct,
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value < 10),
+                        Formatters.yellow_alert(lambda edata: 10 <= edata.value < 20),
+                    ),
+                ),
+                Field(
+                    "Host",
+                    Projectors.Number("stats", "host_free_mem_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Host%",
+                    Projectors.Percent("stats", "host_free_mem_pct"),
+                    converter=Converters.pct,
+                ),
+            ),
+        ),
+        Subgroup(
+            "Process Memory",
+            (
+                Field(
+                    "RSS",
+                    Projectors.Number("stats", "process_rss_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Alloc",
+                    Projectors.Number("stats", "heap_allocated_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Active",
+                    Projectors.Number("stats", "heap_active_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Mapped",
+                    Projectors.Number("stats", "heap_mapped_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Eff%",
+                    Projectors.Percent("stats", "heap_efficiency_pct"),
+                    converter=Converters.pct,
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value < 50),
+                        Formatters.yellow_alert(lambda edata: 50 <= edata.value < 60),
+                    ),
+                ),
+            ),
+        ),
+        Subgroup(
+            "CGroup",
+            (
+                Field(
+                    "Used",
+                    Projectors.Number("stats", "cgroup_memory_used_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Limit",
+                    Projectors.Number("stats", "cgroup_memory_limit_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Used%",
+                    Projectors.Float("stats", "cgroup_memory_used_pct"),
+                    converter=Converters.pct,
+                    formatters=(
+                        Formatters.red_alert(lambda edata: edata.value >= 90),
+                        Formatters.yellow_alert(lambda edata: 80 <= edata.value < 90),
+                    ),
+                ),
+            ),
+        ),
+        Field(
+            "THP",
+            Projectors.Number("stats", "system_thp_mem_bytes"),
+            converter=Converters.byte,
+            formatters=(Formatters.yellow_alert(lambda edata: edata.value > 0),),
+        ),
+    ),
+    from_source=("node_names", "node_ids", "stats", "configs"),
+    order_by=FieldSorter("Node"),
+)
+
+info_memory_index_sheet = Sheet(
+    (
+        node_field,
+        hidden_node_id_field,
+        Subgroup(
+            "Index/Data Memory",
+            (
+                Field(
+                    "Shmem Alloc",
+                    Projectors.Number("ns_agg", "shmem_alloc_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Pmem Alloc",
+                    Projectors.Number("ns_agg", "pmem_alloc_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Flash Alloc",
+                    Projectors.Number("ns_agg", "flash_alloc_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "PI Used",
+                    Projectors.Number("ns_agg", "index_used_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "SI Used",
+                    Projectors.Number("ns_agg", "sindex_used_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Set Idx Used",
+                    Projectors.Number("ns_agg", "set_index_used_bytes"),
+                    converter=Converters.byte,
+                ),
+                Field(
+                    "Data Memory",
+                    Projectors.Number("ns_agg", "data_in_memory_used_bytes"),
+                    converter=Converters.byte,
+                ),
+            ),
+        ),
+    ),
+    from_source=("node_names", "node_ids", "ns_agg"),
+    order_by=FieldSorter("Node"),
+)
+
+info_memory_headline_sheet = Sheet(
+    (
+        node_field,
+        hidden_node_id_field,
+        Field(
+            "Available",
+            Projectors.Number("stats", "total_avail_bytes"),
+            converter=Converters.byte,
+        ),
+        Field(
+            "Allocated",
+            Projectors.Number("stats", "allocated_bytes"),
+            converter=Converters.byte,
+        ),
+        Field(
+            "Alloc%",
+            Projectors.Float("stats", "alloc_pct"),
+            converter=Converters.pct,
+            formatters=(
+                Formatters.red_alert(lambda edata: edata.value >= 90),
+                Formatters.yellow_alert(lambda edata: 75 <= edata.value < 90),
+            ),
+        ),
+    ),
+    from_source=("node_names", "node_ids", "stats"),
     order_by=FieldSorter("Node"),
 )

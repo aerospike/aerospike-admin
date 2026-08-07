@@ -2740,6 +2740,181 @@ class CliViewInfoReleaseTest(unittest.TestCase):
         cluster_mock.get_node_ids.assert_called_once_with(["node1"])
 
 
+class InfoMemoryViewTest(unittest.TestCase):
+    def setUp(self):
+        self.cluster_mock = patch(
+            "lib.live_cluster.live_cluster_root_controller.Cluster"
+        ).start()
+        self.render_mock = patch("lib.view.sheet.render").start()
+        self.print_result_mock = patch("lib.view.view.CliView.print_result").start()
+        self.addCleanup(patch.stopall)
+
+    def test_info_memory_default_shows_headline(self):
+        stats = {
+            "1.1.1.1": {
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "50",
+                "heap_allocated_kbytes": "500000",
+            }
+        }
+        configs = {"1.1.1.1": {"cgroup-mem-tracking": "false"}}
+        ns_agg = {"1.1.1.1": {"shmem_alloc_bytes": "2048000"}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+        principal = "test-principal"
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = principal
+        self.cluster_mock.get_self_node.return_value = "self-node"
+
+        CliView.info_memory(
+            stats,
+            configs,
+            ns_agg,
+            self.cluster_mock,
+            builds={"1.1.1.1": "8.1.3"},
+            timestamp="test-stamp",
+        )
+
+        self.render_mock.assert_called_once()
+        args, kwargs = self.render_mock.call_args
+        template, title, sources = args
+
+        self.assertEqual(template, templates.info_memory_headline_sheet)
+        self.assertEqual(title, "Memory Information (test-stamp)")
+        self.assertEqual(kwargs.get("common")["principal"], principal)
+
+        total_avail = int(8000000 * 1024 * 100 / 50)
+        allocated = 2048000 + 500000 * 1024
+        row = sources["stats"]["1.1.1.1"]
+        self.assertEqual(row["total_avail_bytes"], str(total_avail))
+        self.assertEqual(row["allocated_bytes"], str(allocated))
+        self.assertEqual(row["alloc_pct"], str(allocated * 100 / total_avail))
+
+    def test_info_memory_headline_prefers_cgroup_limit(self):
+        stats = {
+            "1.1.1.1": {
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "50",
+                "heap_allocated_kbytes": "0",
+                "cgroup_memory_limit_bytes": "10000",
+            }
+        }
+        ns_agg = {"1.1.1.1": {"shmem_alloc_bytes": "2500"}}
+        self.cluster_mock.get_node_names.return_value = {"1.1.1.1": "node1"}
+        self.cluster_mock.get_node_ids.return_value = {"1.1.1.1": "NODE1"}
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.get_self_node.return_value = "self-node"
+
+        CliView.info_memory(
+            stats, {}, ns_agg, self.cluster_mock, builds={"1.1.1.1": "8.1.3"}
+        )
+
+        row = self.render_mock.call_args[0][2]["stats"]["1.1.1.1"]
+        self.assertEqual(row["total_avail_bytes"], "10000")
+        self.assertEqual(row["allocated_bytes"], "2500")
+        self.assertEqual(row["alloc_pct"], "25.0")
+
+    def test_info_memory_verbose_shows_breakdown(self):
+        stats = {
+            "1.1.1.1": {
+                "system_free_mem_kbytes": "1200000",
+                "system_free_mem_pct": "8",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "52",
+                "heap_allocated_kbytes": "500000",
+                "cgroup_memory_used_bytes": "5000",
+                "cgroup_memory_limit_bytes": "10000",
+            }
+        }
+        configs = {"1.1.1.1": {"cgroup-mem-tracking": "true"}}
+        ns_agg = {"1.1.1.1": {"shmem_alloc_bytes": "2048000"}}
+        self.cluster_mock.get_node_names.return_value = {"1.1.1.1": "node1"}
+        self.cluster_mock.get_node_ids.return_value = {"1.1.1.1": "NODE1"}
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.get_self_node.return_value = "self-node"
+
+        CliView.info_memory(
+            stats,
+            configs,
+            ns_agg,
+            self.cluster_mock,
+            builds={"1.1.1.1": "8.1.3"},
+            verbose=True,
+            timestamp="test-stamp",
+        )
+
+        self.assertEqual(self.render_mock.call_count, 3)
+        calls = self.render_mock.call_args_list
+        self.assertEqual(calls[0][0][0], templates.info_memory_headline_sheet)
+        self.assertEqual(calls[1][0][0], templates.info_memory_sheet)
+        self.assertEqual(calls[1][0][1], "Memory Breakdown (test-stamp)")
+        self.assertEqual(calls[2][0][0], templates.info_memory_index_sheet)
+        self.assertEqual(calls[2][0][1], "Index/Data Memory (test-stamp)")
+
+        breakdown = calls[1][0][2]
+        self.assertEqual(breakdown["ns_agg"], ns_agg)
+        derived = breakdown["stats"]["1.1.1.1"]
+        self.assertEqual(derived["system_free_mem_bytes"], str(1200000 * 1024))
+        self.assertEqual(derived["cgroup_memory_used_pct"], "50.0")
+
+    def test_info_memory_with_node_filter(self):
+        stats = {"1.1.1.1": {}}
+        configs = {"1.1.1.1": {}}
+        ns_agg = {"1.1.1.1": {}}
+        node_names = {"1.1.1.1": "node1"}
+        node_ids = {"1.1.1.1": "NODE1"}
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.get_self_node.return_value = "self-node"
+
+        CliView.info_memory(
+            stats,
+            configs,
+            ns_agg,
+            self.cluster_mock,
+            builds={"1.1.1.1": "8.1.3"},
+            with_=["1.1.1.1"],
+        )
+
+        self.cluster_mock.get_node_names.assert_called_once_with(["1.1.1.1"])
+        self.cluster_mock.get_node_ids.assert_called_once_with(["1.1.1.1"])
+
+    def test_info_memory_skips_unsupported_nodes(self):
+        stats = {
+            "1.1.1.1": {"host_free_mem_kbytes": "8000000", "host_free_mem_pct": "50"},
+            "2.2.2.2": {"host_free_mem_kbytes": "8000000", "host_free_mem_pct": "50"},
+        }
+        ns_agg = {"1.1.1.1": {"shmem_alloc_bytes": "2048000"}}
+        node_names = {"1.1.1.1": "node1", "2.2.2.2": "node2"}
+        node_ids = {"1.1.1.1": "NODE1", "2.2.2.2": "NODE2"}
+
+        self.cluster_mock.get_node_names.return_value = node_names
+        self.cluster_mock.get_node_ids.return_value = node_ids
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.get_self_node.return_value = "self-node"
+
+        CliView.info_memory(
+            stats,
+            {},
+            ns_agg,
+            self.cluster_mock,
+            builds={"1.1.1.1": "8.1.3", "2.2.2.2": "8.1.2"},
+        )
+
+        warning = self.print_result_mock.call_args_list[0][0][0]
+        self.assertIn("node2", warning)
+        self.assertNotIn("node1", warning)
+
+        sources = self.render_mock.call_args[0][2]
+        self.assertIn("1.1.1.1", sources["node_names"])
+        self.assertNotIn("2.2.2.2", sources["node_names"])
+        self.assertNotIn("2.2.2.2", sources["node_ids"])
+
+
 class CliViewCollectinfoCompatTest(unittest.TestCase):
     """Verify CliView._common works with _CollectinfoSnapshot, not just Cluster."""
 

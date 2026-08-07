@@ -160,6 +160,29 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(exp_heading in actual_heading)
 
     @pytest.mark.skip()
+    async def test_memory(self):
+        """
+        This test asserts <b> info memory </b> output heading and the columns
+        that are always present regardless of server version or backing type.
+        TODO: test for values as well
+        """
+        exp_heading = "Memory Information"
+        always_present = ["Node", "System", "Sys%"]
+
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = await test_util.capture_separate_and_parse_output(
+            self.rc, ["info", "memory"]
+        )
+        self.assertTrue(exp_heading in actual_heading)
+        for column in always_present:
+            self.assertIn(column, actual_header)
+
+    @pytest.mark.skip()
     async def test_namespace_object(self):
         """
         This test will assert <b> info namespace Object </b> output for heading, headerline1, headerline2

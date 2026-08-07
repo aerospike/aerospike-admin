@@ -90,6 +90,47 @@ class InfoController(CollectinfoCommandController):
             stats[key_tuple] = stats[key]
             del stats[key]
 
+    @CommandHelp(
+        "Displays node memory: Available (cgroup limit if capped, else host",
+        "total) vs Allocated (reserved shmem index+sindex arenas plus in-memory",
+        "data, plus heap). Alloc% approaching 100% signals memory pressure / OOM",
+        "risk. Host total is derived from host_free_mem_pct and is approximate.",
+        "Allocated is reserved and demand-faulted, so resident RSS is lower. Use",
+        "--verbose for the full breakdown (host/cgroup/process and per-backing",
+        "index/data).",
+        short_msg="Displays node memory availability vs allocation",
+        modifiers=(
+            ModifierHelp(
+                "--verbose", "Show the full per-node memory breakdown", default="off"
+            ),
+        ),
+    )
+    def do_memory(self, line):
+        verbose = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--verbose",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+        service_stats = self.stats_getter.get_service()
+        service_configs = self.config_getter.get_service()
+        ns_stats = self.stats_getter.get_namespace()
+
+        for timestamp in sorted(service_stats.keys()):
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+            ns_agg = util.aggregate_ns_memory_stats(ns_stats.get(timestamp, {}))
+            self.view.info_memory(
+                service_stats[timestamp],
+                service_configs.get(timestamp, {}),
+                ns_agg,
+                cluster=cinfo_log,
+                builds=cinfo_log.get_asd_build(),
+                timestamp=timestamp,
+                verbose=verbose,
+                **self.mods,
+            )
+
     @CommandHelp("Displays summary information for each set")
     def do_set(self, line):
         set_stats = self.stats_getter.get_sets()
