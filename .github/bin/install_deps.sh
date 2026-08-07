@@ -148,7 +148,13 @@ _install_python_via_asdf_and_fpm() {
       unset PYTHON_CONFIGURE_OPTS
     fi
     # Fail on HTTP errors (-f); checksum pins bootstrap.pypa.io content (bump when updating intentionally).
-    local get_pip_expected_sha="${GET_PIP_SHA256:-25b5c39ade96bab5eabe6404ce83cab6da2deb5fe3c07d9881f43803edb6f9c8}"
+    # bootstrap.pypa.io/get-pip.py is a ROLLING url -- PyPA replaces it in place on
+    # every pip release, so this pin goes stale on their schedule, not ours, and the
+    # build breaks with only "computed checksum did NOT match". Current value is the
+    # file bundling pip 26.2.1 (verified: genuine PyPA header, self-contained base85
+    # zip, no runtime network calls). See the PR for why pinning a rolling url is the
+    # real problem here.
+    local get_pip_expected_sha="${GET_PIP_SHA256:-fb24e693bab954209a063d90953621412ccad4a500905a726286e038f508ddf6}"
     curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
     echo "${get_pip_expected_sha}  /tmp/get-pip.py" | sha256sum -c - >/dev/null
     "$HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python" /tmp/get-pip.py --no-warn-script-location
