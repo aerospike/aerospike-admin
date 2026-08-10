@@ -655,12 +655,14 @@ jobs:
           echo "==> installed files are root-owned and not group/world-writable"
 
           # The shared signer applies hardened runtime (`codesign --options
-          # runtime`) with NO --entitlements, and exposes no input for them. This
-          # repo's legacy mac path signed with disable-library-validation (and
-          # allow-unsigned-executable-memory for asadm's PyInstaller tree). A
-          # binary that needs those dies at exec under library validation, so
-          # assert execution here, where the message names signing -- rather than
-          # later in the bats suite, where it reads as a test failure.
+          # runtime`) with NO --entitlements, and exposes no input for them.
+          # asadm's PyInstaller tree is the case that needs them: the
+          # aerospike-tools bundle path signs it with disable-library-validation
+          # and allow-unsigned-executable-memory (pkg/asadm-entitlements lives in
+          # that repo, not this one). A binary that needs those dies at exec
+          # under library validation, so assert execution here, where the message
+          # names signing -- rather than later in the bats suite, where it reads
+          # as a test failure.
           for rel in asadm/asadm asadm/asinfo; do
             b="/usr/local/aerospike/bin/${rel}"
             [[ -x "${b}" ]] || continue
