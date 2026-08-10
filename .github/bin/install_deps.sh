@@ -149,14 +149,41 @@ _install_python_via_asdf_and_fpm() {
     fi
     # Fail on HTTP errors (-f); checksum pins bootstrap.pypa.io content (bump when updating intentionally).
     # bootstrap.pypa.io/get-pip.py is a ROLLING url -- PyPA replaces it in place on
-    # every pip release, so this pin goes stale on their schedule, not ours, and the
-    # build breaks with only "computed checksum did NOT match". Current value is the
-    # file bundling pip 26.2.1 (verified: genuine PyPA header, self-contained base85
-    # zip, no runtime network calls). See the PR for why pinning a rolling url is the
-    # real problem here.
+    # every pip release, so this pin goes stale on their schedule, not ours. Expect
+    # to bump it a few times a year; the mismatch branch below explains itself when
+    # you do. Current value is the file bundling pip 26.2.1 (verified: genuine PyPA
+    # header, self-contained base85 zip, no runtime network calls). See the PR for
+    # why pinning a rolling url is the real problem here.
     local get_pip_expected_sha="${GET_PIP_SHA256:-fb24e693bab954209a063d90953621412ccad4a500905a726286e038f508ddf6}"
     curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
-    echo "${get_pip_expected_sha}  /tmp/get-pip.py" | sha256sum -c - >/dev/null
+    # Compare explicitly rather than with `sha256sum -c`, whose only failure output
+    # is "WARNING: 1 computed checksum did NOT match" -- it names neither the file,
+    # the two hashes, nor where the pin lives, so the failure reads as an opaque
+    # exit 1 to whoever is on call. Print the diagnosis and the remedy instead.
+    local get_pip_actual_sha
+    get_pip_actual_sha=$(sha256sum /tmp/get-pip.py | cut -d' ' -f1)
+    if [[ "$get_pip_actual_sha" != "$get_pip_expected_sha" ]]; then
+      cat >&2 <<EOF
+ERROR: get-pip.py checksum mismatch -- https://bootstrap.pypa.io/get-pip.py has
+       changed upstream since this pin was last updated.
+  expected: ${get_pip_expected_sha}
+  actual:   ${get_pip_actual_sha}
+  file:     /tmp/get-pip.py (left in place for inspection)
+  pin:      .github/bin/install_deps.sh, get_pip_expected_sha (this function)
+
+That URL is ROLLING: PyPA replaces the file in place on every pip release, so the
+pin goes stale on their release schedule, not ours. A mismatch is far more often a
+routine pip release than a tampered download -- but it is the only signal we have,
+so confirm which it is before updating the pin.
+
+To fix: check https://pypi.org/project/pip/#history for a release around now, and
+confirm /tmp/get-pip.py is a genuine PyPA get-pip.py (PyPA header, self-contained
+base85 zip, no runtime network calls). Once verified, update get_pip_expected_sha
+above to the actual hash. GET_PIP_SHA256 overrides it for a single run -- use that
+only to test a hash you have already verified, never to wave a build through.
+EOF
+      return 1
+    fi
     "$HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python" /tmp/get-pip.py --no-warn-script-location
     rm -f /tmp/get-pip.py
   fi
