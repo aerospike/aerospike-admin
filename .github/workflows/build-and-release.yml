@@ -532,12 +532,22 @@ jobs:
           # verified here, and an ambiguous match fails instead of silently
           # picking find's first result.
           pat="*-${{ matrix.os }}-${{ runner.arch }}.pkg"
-          n=$(find ./packages -type f -name "${pat}" | wc -l | tr -d ' ')
+          # One find, reused for the count, the error message and the result --
+          # three separate walks could disagree with each other. (mapfile would
+          # be the idiomatic reader, but the macOS runners ship bash 3.2, which
+          # has no mapfile builtin.) A find that fails outright fails this
+          # assignment under `set -e`.
+          matches=$(find ./packages -type f -name "${pat}")
+          if [[ -n "${matches}" ]]; then
+            n=$(printf '%s\n' "${matches}" | wc -l | tr -d ' ')
+          else
+            n=0
+          fi
           [[ "${n}" -eq 1 ]] || {
             echo "ERROR: expected exactly 1 .pkg matching ${pat}, found ${n}" >&2
-            find ./packages -type f -name "${pat}" >&2
+            printf '%s\n' "${matches}" >&2
             exit 1; }
-          pkg=$(find ./packages -type f -name "${pat}")
+          pkg="${matches}"
           echo "VERIFIED_PKG=${pkg}" >> "$GITHUB_ENV"
 
           # Capture once. An unsigned pkg exits non-zero here; a pkg signed by
@@ -667,10 +677,24 @@ jobs:
           # PyInstaller) so the shared signer will re-sign them -- if signing
           # ever silently skipped them again, an unsigned binary would ship and
           # be killed outright on arm64.
+          # `-perm +111` is any-exec-bit, and on macOS it is the ONLY spelling:
+          # /usr/bin/find here is BSD find, whose `-perm` grammar is
+          # `[-|+]mode`. GNU find's `/mode` is a hard error ("illegal mode
+          # string"), so do not "modernize" this -- this step only ever runs on
+          # macOS runners.
+          #
+          # Resolved into a variable rather than read from a process
+          # substitution: there, a find that errors out feeds an empty loop and
+          # "every embedded Mach-O is signed" prints for a scan that never ran.
+          # The emptiness check below makes that failure loud instead.
+          execs=$(find /usr/local/aerospike -type f -perm +111)
+          [[ -n "${execs}" ]] || {
+            echo "ERROR: found 0 executable files under /usr/local/aerospike -- the Mach-O signature scan would pass vacuously" >&2
+            exit 1; }
           unsigned=$(while IFS= read -r b; do
               file "${b}" | grep -q "Mach-O" || continue
               codesign -dv "${b}" >/dev/null 2>&1 || echo "${b}"
-            done < <(find /usr/local/aerospike -type f -perm +111))
+            done <<< "${execs}")
           if [[ -n "${unsigned}" ]]; then
             echo "ERROR: unsigned Mach-O binary(ies) in the installed tree -- check the notarize-mac-artifacts job" >&2
             printf '%s\n' "${unsigned}" | head -20 >&2

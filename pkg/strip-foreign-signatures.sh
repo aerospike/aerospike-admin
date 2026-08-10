@@ -27,7 +27,17 @@ set -euo pipefail
 
 root="${1:?usage: strip-foreign-signatures.sh <staged-root>}"
 
+# `-perm +111` is any-exec-bit, and on macOS it is the ONLY spelling: this script
+# runs on macOS runners, where /usr/bin/find is BSD find and `-perm` takes
+# `[-|+]mode`. GNU find's `/mode` is a hard error ("illegal mode string"), so do
+# not "modernize" this.
+#
+# Resolved into a variable rather than read from a process substitution -- there,
+# a find that errors out feeds an empty loop, silently strips nothing, and leaves
+# the failure to surface much later as a signing-job hard error.
 echo "Stripping foreign code signatures under ${root}:"
+execs=$(find "$root" -type f -perm +111)
+[[ -n "$execs" ]] || { echo "ERROR: no executable files under $root" >&2; exit 1; }
 found=0
 while IFS= read -r bin; do
     file "$bin" | grep -q "Mach-O" || continue
@@ -37,5 +47,5 @@ while IFS= read -r bin; do
     echo "  ${bin#"$root"/} (was: $auth)"
     codesign --remove-signature "$bin"
     found=$((found + 1))
-done < <(find "$root" -type f -perm +111)
+done <<< "$execs"
 echo "Stripped ${found} foreign-signed binary(ies)."
