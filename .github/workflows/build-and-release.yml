@@ -307,21 +307,34 @@ jobs:
       - name: Create .pkg
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
-          RELEASE: ${{ needs.get-version.outputs.RELEASE }}
         run: |
+          set -euo pipefail
           make -C pkg osx-pkg VERSION="${VERSION}"
-          # Must match MAC_VERSION in pkg/Makefile: pkgbuild rejects '-' and '_',
-          # so the release string is emitted with '.' separators.
-          MAC_VERSION="${RELEASE//-/.}"
-          ARCH=$(uname -m)
-          mv "pkg/target/aerospike-asadm-${MAC_VERSION}-${ARCH}.pkg" \
-             "aerospike-asadm-${RELEASE}-${{ matrix.os }}-${{ runner.arch }}.pkg"
+          # pkg/Makefile emits the shipping name directly -- see the MAC_PKG
+          # comment there for the convention
+          # (aerospike-asadm-<release>-macos<major>-<arch>.pkg). Do NOT rebuild
+          # the name here: a second copy of the convention is a second place to
+          # get it wrong. Move whatever the build produced, asserting there is
+          # exactly one so a stale target/ never ships silently.
+          pkgs=$(find pkg/target -maxdepth 1 -type f -name '*.pkg')
+          if [[ -n "${pkgs}" ]]; then
+            n=$(printf '%s\n' "${pkgs}" | wc -l | tr -d ' ')
+          else
+            n=0
+          fi
+          [[ "${n}" -eq 1 ]] || {
+            echo "ERROR: expected exactly 1 .pkg under pkg/target, found ${n}" >&2
+            printf '%s\n' "${pkgs}" >&2
+            exit 1; }
+          mv "${pkgs}" .
+          echo "PKG_NAME=$(basename "${pkgs}")" >> "$GITHUB_ENV"
+          echo "==> built $(basename "${pkgs}")"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}
-          path: aerospike-asadm-${{ needs.get-version.outputs.RELEASE }}-${{ matrix.os }}-${{ runner.arch }}.pkg
+          path: ${{ env.PKG_NAME }}
           if-no-files-found: error
           retention-days: 1
 
@@ -531,7 +544,13 @@ jobs:
           # ${VERIFIED_PKG}, so it cannot install a different file than the one
           # verified here, and an ambiguous match fails instead of silently
           # picking find's first result.
-          pat="*-${{ matrix.os }}-${{ runner.arch }}.pkg"
+          # Select this runner's pkg by the platform fields of the shipping
+          # name (see MAC_PKG in pkg/Makefile): macos<major>-<arch>. Derived
+          # from the runner itself via the same script the build used, so a
+          # renamed GitHub runner label cannot silently match zero files -- and
+          # this asserts the artifact really is built for the macOS/arch it
+          # claims, which a runner-label match never did.
+          pat="*-$(.github/bin/os_version.sh)-$(uname -m).pkg"
           # One find, reused for the count, the error message and the result --
           # three separate walks could disagree with each other. (mapfile would
           # be the idiomatic reader, but the macOS runners ship bash 3.2, which
@@ -735,9 +754,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deploy-artifacts
+          # Publish exactly the formats we build. No '*.dmg': macOS ships a bare
+          # .pkg (see MAC_PKG in pkg/Makefile), and the notarize job only globs
+          # '*.pkg' -- a dmg matched here but not there would publish unsigned.
           find signed-artifacts/ -type f \( \
             -name '*.deb' -o -name '*.rpm' -o -name '*.tgz' -o \
-            -name '*.tar' -o -name '*.dmg' -o -name '*.pkg' -o \
+            -name '*.tar' -o -name '*.pkg' -o \
             -name '*.exe' -o -name '*.asc' -o -name '*.sha256' \
           \) -exec cp -t deploy-artifacts/ {} +
           count=$(find deploy-artifacts/ -maxdepth 1 -type f | wc -l)

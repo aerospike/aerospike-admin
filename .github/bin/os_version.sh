@@ -8,20 +8,37 @@
 # the License at http://www.apache.org/licenses/LICENSE-2.0
 # ------------------------------------------------------------------------------
 #
-# Emit a short distro identifier used by pkg/Makefile (e.g. "el9", "ubuntu24").
-# Pass -long for the verbose form ("rhel9", "ubuntu24").
+# Emit a short OS identifier used by pkg/Makefile (e.g. "el9", "ubuntu24",
+# "macos15"). Pass -long for the verbose form ("rhel9", "ubuntu24", "macos15").
 #
-# Reads /etc/os-release. Every distro in the CI matrix and every supported
-# local-dev distro has this file; the legacy /etc/issue fallback was removed
-# along with the tools-packaging-common submodule.
+# On Linux this reads /etc/os-release. Every distro in the CI matrix and every
+# supported local-dev distro has this file; the legacy /etc/issue fallback was
+# removed along with the tools-packaging-common submodule.
+#
+# On macOS it emits "macos<major>" from the product version (26.0 -> macos26).
+# This is the single source of truth for the platform field of the .pkg file
+# name -- CI must call this script rather than re-deriving the token from
+# a runner label, so the name a release publishes is the name a local
+# `make -C pkg osx-pkg` produces.
 
 set -euo pipefail
 
 OPT_LONG=0
 [[ "${1:-}" = "-long" ]] && OPT_LONG=1
 
-if [[ "$(uname -s)" != "Linux" ]]; then
-    echo "error: $(uname -s) is not supported." >&2
+kernel="$(uname -s)"
+
+if [[ "$kernel" = "Darwin" ]]; then
+    # The pkg is built against the host SDK, so the host's macOS major version
+    # is the oldest macOS the artifact is supported on -- exactly what a
+    # consumer (Homebrew cask, download page) needs to select on.
+    mac_version="$(sw_vers -productVersion)"
+    echo "macos${mac_version%%.*}"
+    exit 0
+fi
+
+if [[ "$kernel" != "Linux" ]]; then
+    echo "error: ${kernel} is not supported." >&2
     exit 1
 fi
 

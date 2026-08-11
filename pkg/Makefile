@@ -31,13 +31,41 @@ RPM_VERSION := $(subst -,_,$(PKG_VERSION))
 DEB_ITERATION = $(ITERATION)$(BUILD_DISTRO)
 # pkgbuild --version rejects hyphens and underscores; collapse both to dots
 # (5.0.3-1 -> 5.0.3.1, 5.0.3-master.abc-1 -> 5.0.3.master.abc.1), and
-# defensively normalize any underscore-form inputs (env overrides) too.
+# defensively normalize any underscore-form inputs (env overrides) too. This is
+# the CFBundleShortVersionString-style version *inside* the pkg only; the file
+# name below keeps the canonical hyphenated RELEASE.
 MAC_VERSION = $(subst _,.,$(subst -,.,$(RELEASE)))
 MAC_ROOT = $(BUILD_DIR)/mac-root
-DMG_STAGING = $(BUILD_DIR)/dmg-staging
 PKG_ID = com.aerospike.asadm
-MAC_PKG = $(TARGET_DIR)/$(NAME)-$(MAC_VERSION)-$(ARCH).pkg
-MAC_DMG = $(TARGET_DIR)/$(NAME)-$(MAC_VERSION)-$(ARCH).dmg
+# macOS artifact file name:
+#
+#     <name>-<version>-<iteration>-macos<major>-<arch>.pkg
+#     e.g. aerospike-asadm-5.0.3-1-macos15-arm64.pkg
+#
+# The bare .pkg is the shipping artifact -- there is deliberately no .dmg. asadm
+# is a CLI installed under /usr/local, so a disk image has nothing to drag and
+# would be a second container needing its own signature, notarization and
+# staple. Homebrew consumes the .pkg directly (url + `pkg` stanza), and
+# `sudo installer -pkg ... -target /` needs no hdiutil attach.
+#
+# Every field is lower case and '-' separated so the name is machine-parsable
+# and directly interpolatable by a Homebrew cask:
+#
+#     arch arm: "arm64", intel: "x86_64"
+#     url ".../aerospike-asadm-#{version}-macos15-#{arch}.pkg"
+#
+#   * <arch> is `uname -m` (arm64 / x86_64) -- the same tokens Homebrew's
+#     `Hardware::CPU.arch` and the cask `arch` stanza use. Never runner.arch
+#     (ARM64 / X64): those are upper case and "X64" is not a macOS arch.
+#   * macos<major> is the build host's macOS major version, i.e. the oldest
+#     macOS the artifact supports. It is what makes the names unique when one
+#     version ships several pkgs -- we build one per (macOS major, arch) pair,
+#     and without it the three arm64 builds of a release would collide.
+#   * RELEASE (version + iteration) rather than MAC_VERSION, so an rc respin of
+#     the same version is a distinct file (5.0.3-2 vs 5.0.3-3) and the name
+#     matches the deb/rpm/tar naming.
+MAC_PLATFORM = $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
+MAC_PKG = $(TARGET_DIR)/$(NAME)-$(RELEASE)-$(MAC_PLATFORM)-$(ARCH).pkg
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = aerospike-$(PACKAGE_NAME)
 MAINTAINER = "Aerospike"
@@ -124,6 +152,7 @@ prep:
 # Staging for macOS installer: matches root makefile Darwin INSTALL_ROOT and symlinks.
 .PHONY: prep-mac
 prep-mac:
+	@test -n "$(MAC_PLATFORM)" || { echo "ERROR: empty macOS platform token -- .github/bin/os_version.sh failed; refusing to build an unnamed pkg" >&2; exit 1; }
 	install -d $(TARGET_DIR)
 	rm -rf $(MAC_ROOT)
 	install -d $(MAC_ROOT)/usr/local/aerospike/bin/asadm
@@ -145,17 +174,9 @@ osx-pkg: prep-mac
 		--scripts $(PKG_DIR)/mac-scripts \
 		$(MAC_PKG)
 
-.PHONY: osx-dmg
-osx-dmg: osx-pkg
-	rm -rf $(DMG_STAGING)
-	install -d $(DMG_STAGING)
-	cp -a $(MAC_PKG) $(DMG_STAGING)/
-	hdiutil create -volname "Aerospike asadm $(MAC_VERSION)" -srcfolder $(DMG_STAGING) -ov -format UDZO $(MAC_DMG)
-
 .PHONY: clean
 clean:
 	rm -rf $(TARGET_DIR)
 	rm -rf $(BUILD_DIR)/opt
 	rm -rf $(BUILD_DIR)/var
 	rm -rf $(MAC_ROOT)
-	rm -rf $(DMG_STAGING)
