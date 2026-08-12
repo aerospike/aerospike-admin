@@ -329,11 +329,18 @@ jobs:
           mv "${pkgs}" .
           echo "PKG_NAME=$(basename "${pkgs}")" >> "$GITHUB_ENV"
           echo "==> built $(basename "${pkgs}")"
+          # Platform suffix for the upload-artifact container below, in the same
+          # macos<major>-<arch> terms as the pkg it carries. Unique per matrix
+          # leg (macos14-arm64, macos15-arm64, macos26-arm64, macos15-x86_64),
+          # which is all the container name has to guarantee.
+          echo "PKG_PLATFORM=$(.github/bin/os_version.sh)-$(uname -m)" >> "$GITHUB_ENV"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ matrix.os }}-${{ runner.arch }}
+          # Consumers match on the "unsigned-artifacts-<VERSION>" prefix and
+          # merge-multiple, so this suffix only has to stay unique per leg.
+          name: unsigned-artifacts-${{ needs.get-version.outputs.VERSION }}-${{ env.PKG_PLATFORM }}
           path: ${{ env.PKG_NAME }}
           if-no-files-found: error
           retention-days: 1
