@@ -109,6 +109,7 @@ jobs:
       contents: read
     outputs:
       VERSION: ${{ steps.compute.outputs.version }}
+      BUILD_VERSION: ${{ steps.compute.outputs.build_version }}
       PKG_VERSION: ${{ steps.release.outputs.PKG_VERSION }}
       ITERATION: ${{ steps.release.outputs.ITERATION }}
       RELEASE: ${{ steps.release.outputs.RELEASE }}
@@ -131,22 +132,41 @@ jobs:
           # On master without skip_tagging this is a real release: use BASE as-is.
           # Otherwise (any branch, or master+skip_tagging) build a SemVer pre-release
           # identifier so it never collides with the bare BASE version.
+          # Two different things, deliberately not the same string:
+          #
+          #   VERSION        the release identity -- git tag, release bundle,
+          #                  JFrog build number. Carries everything that
+          #                  identifies the build, including rcN and the branch.
+          #   BUILD_VERSION  what artifacts are NAMED from. Feeds pkg/Makefile
+          #                  and docker-build.sh, which split it into the
+          #                  package version and iteration via pkg_release.sh.
+          #
+          # On master without skip_tagging this is a real release and the two
+          # coincide. Otherwise this is a dev build and they diverge.
           if [[ "${GITHUB_REF}" == "refs/heads/master" && "${SKIP_TAGGING}" != "true" ]]; then
             VERSION="${BASE}"
+            BUILD_VERSION="${BASE}"
           else
             BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
             # 9-char SHA matches `git describe --abbrev=9` elsewhere in the repo.
             SHORT_SHA="${GITHUB_SHA::9}"
-            # Always hyphen-join the branch qualifier, regardless of whether BASE
-            # already carries a pre-release suffix. This keeps the branch-append
-            # rule uniform and matches the sibling tools' naming:
-            #   9.2.7      + main   -> 9.2.7-main.<sha>
-            #   5.0.1-rc2  + master -> 5.0.1-rc2-master.<sha>   (was ...rc2.master...)
-            # Both are valid SemVer 2.0 pre-release identifiers.
-            VERSION="${BASE}-${BRANCH_SLUG}.${SHORT_SHA}"
+            VERSION="${BASE}-${BRANCH_SLUG}-${SHORT_SHA}"
+            # The sha alone makes a dev build unique, so package names carry it
+            # and nothing else: no branch slug (it is in VERSION, so the git tag
+            # and release bundle still identify the branch) and no rcN, whose
+            # only job -- ordering respins of one version -- the sha already
+            # does. That leaves the iteration at 1 for every dev build.
+            #
+            #   BASE 4.5.8-rc1 on branch b at abc123def
+            #     VERSION        4.5.8-rc1-b-abc123def
+            #     BUILD_VERSION  4.5.8-abc123def   -> version 4.5.8-abc123def
+            #                                        iteration 1
+            BUILD_VERSION="$(.github/bin/pkg_release.sh "${BASE}" version)-${SHORT_SHA}"
           fi
-          echo "VERSION: ${VERSION}"
+          echo "VERSION:       ${VERSION}"
+          echo "BUILD_VERSION: ${BUILD_VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
 
       # Package file names and image tags never carry the "rcN" pre-release
       # tag; rcN becomes the package iteration instead (rpm Release / deb
@@ -156,10 +176,10 @@ jobs:
       - name: Derive package version and iteration
         id: release
         env:
-          VERSION: ${{ steps.compute.outputs.version }}
+          BUILD_VERSION: ${{ steps.compute.outputs.build_version }}
         run: |
           set -euo pipefail
-          .github/bin/pkg_release.sh "${VERSION}" all | tee -a "$GITHUB_OUTPUT"
+          .github/bin/pkg_release.sh "${BUILD_VERSION}" all | tee -a "$GITHUB_OUTPUT"
 
   build-artifacts:
     needs: get-version
@@ -233,7 +253,7 @@ jobs:
         env:
           ENV_DISTRO: ${{ matrix.distro }}
           BUILD_DISTRO: ${{ matrix.distro }}
-          PKG_VERSION: ${{ needs.get-version.outputs.VERSION }}
+          PKG_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
         run: |
           set -euo pipefail
           export PATH="$PATH:/opt/golang/go/bin"
@@ -299,14 +319,14 @@ jobs:
       - name: Build asadm
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
+          VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
         run: |
           make one-dir
           ls -al build/bin/asadm || true
 
       - name: Create .pkg
         env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
+          VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
         run: |
           set -euo pipefail
           make -C pkg osx-pkg VERSION="${VERSION}"
@@ -333,7 +353,11 @@ jobs:
           # macos<major>-<arch> terms as the pkg it carries. Unique per matrix
           # leg (macos14-arm64, macos15-arm64, macos26-arm64, macos15-x86_64),
           # which is all the container name has to guarantee.
-          echo "PKG_PLATFORM=$(.github/bin/os_version.sh)-$(uname -m)" >> "$GITHUB_ENV"
+          # Assigned on its own line: a failing command substitution inside an
+          # argument does not trip `set -e`, which would name the artifact
+          # container "...--$(uname -m)" and let the leg pass.
+          plat=$(.github/bin/os_version.sh)
+          echo "PKG_PLATFORM=${plat}-$(uname -m)" >> "$GITHUB_ENV"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -557,7 +581,11 @@ jobs:
           # renamed GitHub runner label cannot silently match zero files -- and
           # this asserts the artifact really is built for the macOS/arch it
           # claims, which a runner-label match never did.
-          pat="*-$(.github/bin/os_version.sh)-$(uname -m).pkg"
+          # Assigned on its own line so `set -e` surfaces an os_version.sh
+          # failure here, rather than as a mystifying "0 files matched
+          # *--<arch>.pkg" below.
+          plat=$(.github/bin/os_version.sh)
+          pat="*-${plat}-$(uname -m).pkg"
           # One find, reused for the count, the error message and the result --
           # three separate walks could disagree with each other. (mapfile would
           # be the idiomatic reader, but the macOS runners ship bash 3.2, which
@@ -855,6 +883,7 @@ jobs:
       - name: Build (native) and smoke test
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
+          BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
           RELEASE: ${{ needs.get-version.outputs.RELEASE }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
@@ -862,7 +891,7 @@ jobs:
           # docker-build.sh folds any "rcN" in VERSION into the iteration, so
           # the image tags carry RELEASE (e.g. 5.0.3-2), never "rc2".
           docker/docker-build.sh -t \
-            -v "${VERSION}" \
+            -v "${BUILD_VERSION}" \
             -a ${{ matrix.arch }} \
             -u ../deploy-artifacts
 
@@ -902,10 +931,11 @@ jobs:
         if: inputs.release == true
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
+          BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
         run: |
           set -euo pipefail
           docker/docker-build.sh -p \
-            -v "${VERSION}" \
+            -v "${BUILD_VERSION}" \
             -a ${{ matrix.arch }} \
             -r artifact.aerospike.io/database-docker-dev-local \
             -u ../deploy-artifacts
@@ -951,10 +981,11 @@ jobs:
       - name: Stitch per-arch tags into multi-arch manifest
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
+          BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
         run: |
           set -euo pipefail
           docker/docker-build.sh -M \
-            -v "${VERSION}" \
+            -v "${BUILD_VERSION}" \
             -r artifact.aerospike.io/database-docker-dev-local
 
       # Without build-info the images are invisible to the release bundle, so
