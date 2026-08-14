@@ -64,6 +64,17 @@ on:
         description: "Skip the git tag even on master (treat as feature-style build). Release bundle is still produced when release=true. No effect on non-master branches, which never tag."
         type: boolean
         default: false
+      rc:
+        description: "Release-candidate number. Leave empty to use the next one after the highest existing <VERSION>-rcN tag -- that is the normal path, and it cannot reuse or skip a number. Set it only to deliberately override."
+        type: string
+        default: ""
+
+# Two runs on the same ref would derive the same rc number and race each other
+# to the same artifact paths (deb/rpm pools are flat: last write wins). Serialise
+# instead of cancelling -- a half-published run must finish, not be interrupted.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   validate-inputs:
@@ -72,7 +83,8 @@ jobs:
     permissions:
       contents: read
     outputs:
-      VERSION: ${{ steps.read.outputs.VERSION }}
+      BASE_VERSION: ${{ steps.read.outputs.BASE_VERSION }}
+      RC: ${{ steps.read.outputs.RC }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -81,26 +93,74 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Read and validate VERSION
         id: read
+        env:
+          RC_INPUT: ${{ inputs.rc }}
         run: |
           set -euo pipefail
           if [[ ! -f VERSION ]]; then
             echo "::error::VERSION file is missing at repo root." >&2
             exit 1
           fi
-          VERSION=$(tr -d '[:space:]' < VERSION)
-          if [[ -z "$VERSION" ]]; then
+          BASE_VERSION=$(tr -d '[:space:]' < VERSION)
+          if [[ -z "$BASE_VERSION" ]]; then
             echo "::error::VERSION file is empty." >&2
             exit 1
           fi
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-            echo "::error::VERSION '$VERSION' is not valid semver (expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-suffix)." >&2
+          # The file is the PRODUCT version and nothing else -- no "-rcN", no
+          # other pre-release suffix. The release-candidate number comes from
+          # the tags below, so carrying it here too would give one build two
+          # sources of truth that can disagree.
+          if ! [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VERSION '$BASE_VERSION' must be MAJOR.MINOR.PATCH with no suffix. The rc number is derived from the <VERSION>-rcN tags, not written here." >&2
             exit 1
           fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "VERSION: $VERSION"
+
+          # Derive the release-candidate number: one past the highest existing
+          # <VERSION>-rcN tag. The tags are the ledger, so the number cannot be
+          # reused, skipped, or walked backwards, and nobody has to remember
+          # which one is next.
+          last=$(git tag --list "${BASE_VERSION}-rc*" \
+                 | sed -n "s/^${BASE_VERSION}-rc\([0-9]\{1,\}\)$/\1/p" \
+                 | sort -n | tail -1)
+          if [[ -n "${RC_INPUT}" ]]; then
+            # Explicit override: still has to be a number, and still cannot land
+            # on a tag that already exists (checked below).
+            if ! [[ "${RC_INPUT}" =~ ^[0-9]+$ ]] || [[ "${RC_INPUT}" -lt 1 ]]; then
+              echo "::error::rc input '${RC_INPUT}' must be a positive integer." >&2
+              exit 1
+            fi
+            RC="${RC_INPUT}"
+            echo "::warning::rc overridden to ${RC} (derived would have been $(( ${last:-0} + 1 )))."
+          else
+            RC=$(( ${last:-0} + 1 ))
+          fi
+
+          # Reject a collision here, before anything is built. The same check
+          # exists in the tagging job, but that runs after the packages and the
+          # release bundle are published -- by then a reused number has already
+          # overwritten the previous rc's files in the flat deb/rpm pools.
+          if git rev-parse -q --verify "refs/tags/${BASE_VERSION}-rc${RC}" >/dev/null; then
+            echo "::error::Tag '${BASE_VERSION}-rc${RC}' already exists. A respin is a new build attempt: leave the rc input empty to take the next number." >&2
+            exit 1
+          fi
+
+          echo "BASE_VERSION=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "RC=$RC" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Version"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| product version (VERSION file) | \`${BASE_VERSION}\` |"
+            echo "| release candidate | \`rc${RC}\`${last:+ (previous: \`rc${last}\`)} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "BASE_VERSION: $BASE_VERSION  RC: $RC"
 
   get-version:
     needs: validate-inputs
@@ -125,7 +185,8 @@ jobs:
       - name: Compute VERSION (SemVer-aware for branch builds)
         id: compute
         env:
-          BASE: ${{ needs.validate-inputs.outputs.VERSION }}
+          BASE: ${{ needs.validate-inputs.outputs.BASE_VERSION }}
+          RC: ${{ needs.validate-inputs.outputs.RC }}
           SKIP_TAGGING: ${{ inputs.skip_tagging }}
         run: |
           set -euo pipefail
@@ -144,8 +205,12 @@ jobs:
           # On master without skip_tagging this is a real release and the two
           # coincide. Otherwise this is a dev build and they diverge.
           if [[ "${GITHUB_REF}" == "refs/heads/master" && "${SKIP_TAGGING}" != "true" ]]; then
-            VERSION="${BASE}"
-            BUILD_VERSION="${BASE}"
+            # BASE is the product version; RC is the build attempt, derived from
+            # the tags in validate-inputs. pkg_release.sh folds the rcN back out
+            # into the package iteration, so this is the only place they are
+            # joined.
+            VERSION="${BASE}-rc${RC}"
+            BUILD_VERSION="${BASE}-rc${RC}"
           else
             BRANCH_SLUG=$(printf '%s' "${GITHUB_REF_NAME}" | sed 's/[^A-Za-z0-9-]/-/g')
             # 9-char SHA matches `git describe --abbrev=9` elsewhere in the repo.
@@ -161,7 +226,10 @@ jobs:
             #     VERSION        4.5.8-rc1-b-abc123def
             #     BUILD_VERSION  4.5.8-abc123def   -> version 4.5.8-abc123def
             #                                        iteration 1
-            BUILD_VERSION="$(.github/bin/pkg_release.sh "${BASE}" version)-${SHORT_SHA}"
+            # No rc number: a dev build is pinned by its sha, and burning an
+            # rc on it would advance the release counter for a build that never
+            # ships. BASE is already the bare product version.
+            BUILD_VERSION="${BASE}-${SHORT_SHA}"
           fi
           echo "VERSION:       ${VERSION}"
           echo "BUILD_VERSION: ${BUILD_VERSION}"
@@ -1048,6 +1116,7 @@ jobs:
     if: inputs.release == true && github.ref == 'refs/heads/master' && inputs.skip_tagging != true
     needs:
       - validate-inputs
+      - get-version
       - upload-artifacts-to-jfrog
       - docker-manifest
       - create-release-bundle
@@ -1069,12 +1138,12 @@ jobs:
 
       - name: Create and push tag
         env:
-          VERSION: ${{ needs.validate-inputs.outputs.VERSION }}
+          VERSION: ${{ needs.get-version.outputs.VERSION }}
         run: |
           set -euo pipefail
           git fetch --tags --force
           if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
-            echo "::error::Tag '${VERSION}' already exists. Bump VERSION first." >&2
+            echo "::error::Tag '${VERSION}' already exists -- it was created between validate-inputs and here. Re-run: the rc number is derived, so the next run takes the next one." >&2
             exit 1
           fi
           git config user.name  "github-actions[bot]"
