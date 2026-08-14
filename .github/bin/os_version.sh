@@ -33,6 +33,15 @@ if [[ "$kernel" = "Darwin" ]]; then
     # is the oldest macOS the artifact is supported on -- exactly what a
     # consumer (Homebrew cask, download page) needs to select on.
     mac_version="$(sw_vers -productVersion)"
+    # This script has no `set -e`, so an sw_vers that fails or prints nothing
+    # would otherwise emit the bare token "macos" -- non-empty, so
+    # pkg/Makefile's prep-mac guard would wave it through and the release would
+    # ship aerospike-asadm-<version>-macos-<arch>.pkg.
+    if [ -z "$mac_version" ]
+    then
+        echo "error: sw_vers -productVersion returned nothing." >&2
+        exit 1
+    fi
     echo "macos${mac_version%%.*}"
     exit 0
 fi

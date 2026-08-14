@@ -24,7 +24,7 @@ PKG_RELEASE_SH = $(PKG_DIR)/../.github/bin/pkg_release.sh
 PKG_VERSION := $(shell $(PKG_RELEASE_SH) '$(VERSION)' version)
 ITERATION ?= $(shell $(PKG_RELEASE_SH) '$(VERSION)' iteration)
 # For names with no iteration field of their own (.tar, macOS .pkg).
-RELEASE = $(PKG_VERSION)-$(ITERATION)
+RELEASE := $(PKG_VERSION)-$(ITERATION)
 RPM_VERSION := $(subst -,_,$(PKG_VERSION))
 # rpm Release / deb revision. The deb revision embeds the distro per Debian
 # convention (e.g. 5.0.3-1debian12), like the rpm dist tag.
@@ -64,7 +64,9 @@ PKG_ID = com.aerospike.asadm
 #   * RELEASE (version + iteration) rather than MAC_VERSION, so an rc respin of
 #     the same version is a distinct file (5.0.3-2 vs 5.0.3-3) and the name
 #     matches the deb/rpm/tar naming.
-MAC_PLATFORM = $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
+# Captured once (`:=`), so prep-mac's guard below checks the very token that
+# lands in the file name, and os_version.sh is not re-run per expansion.
+MAC_PLATFORM := $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 MAC_PKG = $(TARGET_DIR)/$(NAME)-$(RELEASE)-$(MAC_PLATFORM)-$(ARCH).pkg
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = aerospike-$(PACKAGE_NAME)
