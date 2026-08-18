@@ -260,7 +260,12 @@ if args.version:
 
     print("Aerospike Information Tool")
     print("Version " + version)
-    print("Build " + build)
+
+    # Only when there is one, matching asadm. A bare version (a GA build) has
+    # no build field, and printing "Build " with nothing after it is both a
+    # wart and indistinguishable -- to a grep -- from a real build line.
+    if build:
+        print("Build " + build)
 
     sys.exit(0)
 

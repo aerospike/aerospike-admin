@@ -33,10 +33,11 @@ if [[ "$kernel" = "Darwin" ]]; then
     # supports: nothing pins MACOSX_DEPLOYMENT_TARGET. It is what keeps one
     # release's per-runner artifacts distinct.
     mac_version="$(sw_vers -productVersion)"
-    # This script has no `set -e`, so an sw_vers that fails or prints nothing
-    # would otherwise emit the bare token "macos" -- non-empty, so
-    # pkg/Makefile's prep-mac guard would wave it through and the release would
-    # ship aerospike-asadm-<version>-macos-<arch>.pkg.
+    # `set -e` above already catches an sw_vers that exits non-zero. This
+    # guard is for the case it cannot see: exiting 0 having printed nothing,
+    # which would emit the bare token "macos" -- non-empty, so pkg/Makefile's
+    # prep-mac guard would wave it through and the release would ship
+    # aerospike-asadm-<version>-macos-<arch>.pkg.
     if [ -z "$mac_version" ]
     then
         echo "error: sw_vers -productVersion returned nothing." >&2

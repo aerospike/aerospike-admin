@@ -11,6 +11,15 @@ expected_version() {
 	if [ -f "$version_file" ]; then
 		file_version="$(tr -d '[:space:]' <"$version_file")"
 	fi
+	# Set-but-empty is a broken wiring, not a request for the default: it is
+	# what a workflow output that never got produced looks like. Falling back
+	# to the VERSION file there would quietly test the binary against the
+	# checkout instead of against the build, which is the one thing
+	# EXPECTED_VERSION exists to prevent.
+	if [ -n "${EXPECTED_VERSION+set}" ] && [ -z "$EXPECTED_VERSION" ]; then
+		echo "EXPECTED_VERSION is set but empty -- the step that supplies it produced nothing" >&2
+		return 1
+	fi
 	expected="${EXPECTED_VERSION:-$file_version}"
 	if [ -z "$expected" ]; then
 		echo "no VERSION file at $version_file and no EXPECTED_VERSION set" >&2
