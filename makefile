@@ -37,17 +37,9 @@ VERSION_DEFAULT := $(shell git describe --tags --always --abbrev=9)
 else
 VERSION_DEFAULT := $(shell tr -d '[:space:]' < $(SOURCE_ROOT)/VERSION)
 endif
+# Embedded whole: asadm/asinfo split it, so 5.0.3-rc3 reports
+# "Version 5.0.3 / Build rc3".
 VERSION ?= $(VERSION_DEFAULT)
-# What asadm/asinfo print. "rcN" is a build detail: it lives in the package
-# iteration, not in the product version. A passing rc is promoted to GA with no
-# rebuild, so the binary that ships as GA must not call itself a release
-# candidate -- it is the same file either way.
-TOOL_VERSION := $(shell $(SOURCE_ROOT)/.github/bin/pkg_release.sh '$(VERSION)' version)
-# An unresolvable script path would leave this empty and embed a blank version,
-# which no test asserts on -- fail the build instead.
-ifeq ($(strip $(TOOL_VERSION)),)
-$(error could not derive TOOL_VERSION from VERSION='$(VERSION)' -- .github/bin/pkg_release.sh not found or failed)
-endif
 
 define make_build
 	mkdir -p $(BUILD_ROOT)tmp
@@ -59,13 +51,13 @@ define make_build
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
-	sed -i "" "s/[$$][$$]__version__[$$][$$]/$(TOOL_VERSION)/g" $(BUILD_ROOT)tmp/asadm.py || true ,
-	sed -i'' "s/[$$][$$]__version__[$$][$$]/$(TOOL_VERSION)/g" $(BUILD_ROOT)tmp/asadm.py || true
+	sed -i "" "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asadm.py || true ,
+	sed -i'' "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asadm.py || true
 	)
 
 	$(if $(filter $(OS),Darwin),
-	sed -i "" "s/[$$][$$]__version__[$$][$$]/$(TOOL_VERSION)/g" $(BUILD_ROOT)tmp/asinfo.py || true ,
-	sed -i'' "s/[$$][$$]__version__[$$][$$]/$(TOOL_VERSION)/g" $(BUILD_ROOT)tmp/asinfo.py || true
+	sed -i "" "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asinfo.py || true ,
+	sed -i'' "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asinfo.py || true
 	)
 
 endef
