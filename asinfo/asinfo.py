@@ -253,10 +253,19 @@ if args.help:
     sys.exit(0)
 
 if args.version:
-    sVersion = __version__.split("-")
+    # Same split as asadm.py's get_version(), including its unstamped-source
+    # fallback: an unbuilt checkout still holds the sed placeholder, and
+    # printing that verbatim is worse than saying "development". The literal
+    # matches lib/utils/constants.DEFAULT_ASADM_VERSION -- not imported,
+    # because asinfo.py is stdlib-only and lib/ is only on the path in the
+    # built layout, which is the one case this branch does not cover.
+    if __version__.startswith("$$"):
+        version, build = "development", ""
+    else:
+        sVersion = __version__.split("-")
 
-    version = sVersion[0]
-    build = sVersion[-1] if len(sVersion) > 1 else ""
+        version = sVersion[0]
+        build = sVersion[-1] if len(sVersion) > 1 else ""
 
     print("Aerospike Information Tool")
     print("Version " + version)

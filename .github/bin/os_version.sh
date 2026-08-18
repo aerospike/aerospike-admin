@@ -16,9 +16,11 @@
 # removed along with the tools-packaging-common submodule.
 #
 # On macOS it emits "macos<major>" from the product version (26.0 -> macos26).
-# This is the single source of truth for the platform field of the .pkg file
-# name -- CI must call this script rather than re-deriving the token from
-# a runner label, so the name a release publishes is the name a local
+# This is the single source of truth for the "macos<major>" FIELD of the .pkg
+# file name; the "<arch>" field beside it is `uname -m`, appended by the caller
+# (pkg/Makefile's MAC_PKG, and the two workflow steps that name and select the
+# artifact). CI must call this script rather than re-deriving the token from a
+# runner label, so the name a release publishes is the name a local
 # `make -C pkg osx-pkg` produces.
 
 set -euo pipefail
@@ -38,8 +40,7 @@ if [[ "$kernel" = "Darwin" ]]; then
     # which would emit the bare token "macos" -- non-empty, so pkg/Makefile's
     # prep-mac guard would wave it through and the release would ship
     # aerospike-asadm-<version>-macos-<arch>.pkg.
-    if [ -z "$mac_version" ]
-    then
+    if [[ -z "$mac_version" ]]; then
         echo "error: sw_vers -productVersion returned nothing." >&2
         exit 1
     fi

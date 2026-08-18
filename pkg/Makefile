@@ -48,11 +48,24 @@ PKG_ID = com.aerospike.asadm
 # staple. Homebrew consumes the .pkg directly (url + `pkg` stanza), and
 # `sudo installer -pkg ... -target /` needs no hdiutil attach.
 #
-# Every field is lower case and '-' separated so the name is machine-parsable
-# and directly interpolatable by a Homebrew cask:
+# Every field is lower case and '-' separated, so a Homebrew cask can address
+# the name:
 #
 #     arch arm: "arm64", intel: "x86_64"
 #     url ".../aerospike-asadm-#{version}-macos15-#{arch}.pkg"
+#
+# with two caveats the example cannot express on its own:
+#
+#   * #{version} must be the full <version>-<iteration> release string
+#     (5.0.3-3), not the bare product version -- the iteration is one of the
+#     name's fields, and it is what distinguishes two builds of one release.
+#   * macos<major> has to be pinned to whichever build the cask ships. It
+#     records the runner the artifact was built on (see below), so it cannot be
+#     derived from the installing machine's OS, and one release publishes a pkg
+#     per (macOS major, arch) pair.
+#
+# Release names are positionally parsable on '-'; a dev build's <version> itself
+# carries a hyphen (5.0.3-abc123def), so match those with a glob instead.
 #
 #   * <arch> is `uname -m` (arm64 / x86_64) -- the same tokens a cask's `arch`
 #     stanza emits. Never runner.arch (ARM64 / X64): those are upper case and
