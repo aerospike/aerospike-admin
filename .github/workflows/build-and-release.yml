@@ -105,6 +105,7 @@ jobs:
       - name: Read and validate VERSION
         id: read
         env:
+          RELEASE: ${{ inputs.release }}
           SKIP_TAGGING: ${{ inputs.skip_tagging }}
         run: |
           set -euo pipefail
@@ -126,7 +127,15 @@ jobs:
           # this too, but only after the packages and the release bundle are
           # published -- by then the previous build's files in the flat deb/rpm
           # pools have already been overwritten.
-          if [[ "${GITHUB_REF}" == "refs/heads/master" && "${SKIP_TAGGING}" != "true" ]] \
+          # The condition is create-tag's, verbatim: only a run that will tag AND
+          # publish can collide. A release=false dry run publishes nothing and
+          # tags nothing, so it must stay runnable on master against an already
+          # tagged VERSION -- and since VERSION is only bumped after a release,
+          # "tag exists and VERSION still points at it" is the steady state for
+          # most of the cycle. `== "true"` rather than `!= "false"` so an omitted
+          # input lands on the permissive side, matching create-tag's `== true`.
+          if [[ "${RELEASE}" == "true" && "${GITHUB_REF}" == "refs/heads/master" \
+                && "${SKIP_TAGGING}" != "true" ]] \
              && git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
             echo "::error::Tag '${VERSION}' already exists. Bump VERSION (Bump Version workflow) to the next -rcN before releasing again." >&2
             exit 1
