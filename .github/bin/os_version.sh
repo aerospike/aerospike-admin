@@ -29,9 +29,9 @@ OPT_LONG=0
 kernel="$(uname -s)"
 
 if [[ "$kernel" = "Darwin" ]]; then
-    # The pkg is built against the host SDK, so the host's macOS major version
-    # is the oldest macOS the artifact is supported on -- exactly what a
-    # consumer (Homebrew cask, download page) needs to select on.
+    # Records the macOS generation the artifact was built on, not a minimum it
+    # supports: nothing pins MACOSX_DEPLOYMENT_TARGET. It is what keeps one
+    # release's per-runner artifacts distinct.
     mac_version="$(sw_vers -productVersion)"
     # This script has no `set -e`, so an sw_vers that fails or prints nothing
     # would otherwise emit the bare token "macos" -- non-empty, so

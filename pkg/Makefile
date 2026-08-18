@@ -54,13 +54,14 @@ PKG_ID = com.aerospike.asadm
 #     arch arm: "arm64", intel: "x86_64"
 #     url ".../aerospike-asadm-#{version}-macos15-#{arch}.pkg"
 #
-#   * <arch> is `uname -m` (arm64 / x86_64) -- the same tokens Homebrew's
-#     `Hardware::CPU.arch` and the cask `arch` stanza use. Never runner.arch
-#     (ARM64 / X64): those are upper case and "X64" is not a macOS arch.
-#   * macos<major> is the build host's macOS major version, i.e. the oldest
-#     macOS the artifact supports. It is what makes the names unique when one
-#     version ships several pkgs -- we build one per (macOS major, arch) pair,
-#     and without it the three arm64 builds of a release would collide.
+#   * <arch> is `uname -m` (arm64 / x86_64) -- the same tokens a cask's `arch`
+#     stanza emits. Never runner.arch (ARM64 / X64): those are upper case and
+#     "X64" is not a macOS arch.
+#   * macos<major> is the macOS generation the artifact was built on, not a
+#     minimum it supports (nothing pins MACOSX_DEPLOYMENT_TARGET). It is what
+#     makes the names unique when one version ships several pkgs -- we build
+#     one per (macOS major, arch) pair, and without it the three arm64 builds
+#     of a release would collide.
 #   * RELEASE (version + iteration) rather than MAC_VERSION, so an rc respin of
 #     the same version is a distinct file (5.0.3-2 vs 5.0.3-3) and the name
 #     matches the deb/rpm/tar naming.
