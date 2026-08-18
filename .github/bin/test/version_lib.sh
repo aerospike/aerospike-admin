@@ -25,10 +25,27 @@ expected_version() {
 		echo "no VERSION file at $version_file and no EXPECTED_VERSION set" >&2
 		return 1
 	fi
-	if [ -n "${EXPECTED_VERSION:-}" ] && [ -n "$file_version" ] &&
-		[ "${EXPECTED_VERSION%%-*}" != "${file_version%%-*}" ]; then
-		echo "EXPECTED_VERSION '$EXPECTED_VERSION' and VERSION file '$file_version' disagree" >&2
-		return 1
+	if [ -n "${EXPECTED_VERSION:-}" ] && [ -n "$file_version" ]; then
+		# Compare the whole identifier, not just MAJOR.MINOR.PATCH: the rcN is
+		# what becomes the package iteration, so a core-only check cannot tell
+		# rc9 from rc1 -- and rcN is the only field distinguishing two
+		# artifacts of one release. The one legitimate divergence is a dev
+		# build, where BUILD_VERSION swaps the file's rcN for the commit sha.
+		case "$EXPECTED_VERSION" in
+		"$file_version") ;;
+		"${file_version%%-*}"-rc*)
+			# Same core but a different rcN -- exactly the mismatch this check
+			# exists to catch, so it must not fall into the dev-build
+			# exemption below.
+			echo "EXPECTED_VERSION '$EXPECTED_VERSION' and VERSION file '$file_version' disagree" >&2
+			return 1
+			;;
+		"${file_version%%-*}"-*) ;;
+		*)
+			echo "EXPECTED_VERSION '$EXPECTED_VERSION' and VERSION file '$file_version' disagree" >&2
+			return 1
+			;;
+		esac
 	fi
 	printf '%s\n' "$expected"
 }
@@ -41,7 +58,7 @@ expected_version() {
 #   5.0.3-abc123def  Version 5.0.3 / Build abc123def
 #   5.0.3            Version 5.0.3
 expected_version_lines() {
-	local expected="$1" core
+	local expected="$1" core build
 	core="${expected%%-*}"
 	if ! printf '%s' "$core" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
 		echo "cannot parse a MAJOR.MINOR.PATCH core out of '$expected'" >&2
@@ -49,7 +66,15 @@ expected_version_lines() {
 	fi
 	printf 'Version %s\n' "$core"
 	if [ "$expected" != "$core" ]; then
-		printf 'Build %s\n' "${expected##*-}"
+		# Emitting the literal "Build " here would blame the binary for a
+		# malformed expectation: asadm/asinfo print no Build line for an empty
+		# trailing field, so the two could never agree.
+		build="${expected##*-}"
+		if [ -z "$build" ]; then
+			echo "malformed version '$expected' (empty trailing field)" >&2
+			return 1
+		fi
+		printf 'Build %s\n' "$build"
 	fi
 }
 
