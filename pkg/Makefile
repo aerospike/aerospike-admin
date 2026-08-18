@@ -155,6 +155,7 @@ prep:
 # Staging for macOS installer: matches root makefile Darwin INSTALL_ROOT and symlinks.
 .PHONY: prep-mac
 prep-mac:
+	@test -n "$(PKG_VERSION)" && test -n "$(ITERATION)" || { echo "ERROR: empty version/iteration -- .github/bin/pkg_release.sh failed for VERSION='$(VERSION)'; refusing to build an unnamed pkg" >&2; exit 1; }
 	@test -n "$(MAC_PLATFORM)" || { echo "ERROR: empty macOS platform token -- .github/bin/os_version.sh failed; refusing to build an unnamed pkg" >&2; exit 1; }
 	install -d $(TARGET_DIR)
 	rm -rf $(MAC_ROOT)

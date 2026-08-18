@@ -40,6 +40,14 @@ endif
 # Embedded whole: asadm/asinfo split it, so 5.0.3-rc3 reports
 # "Version 5.0.3 / Build rc3".
 VERSION ?= $(VERSION_DEFAULT)
+# `?=` only skips a variable that is UNDEFINED; an env var exported as the empty
+# string is defined, so it would stamp "" and -- because each sed below ends in
+# `|| true` -- do it silently. The shell `$${VERSION:-...}` this replaced treated
+# empty as unset, and an unresolved needs.<job>.outputs.<name> arrives as exactly
+# that. Keep the fallback.
+ifeq ($(strip $(VERSION)),)
+VERSION := $(VERSION_DEFAULT)
+endif
 
 define make_build
 	mkdir -p $(BUILD_ROOT)tmp
