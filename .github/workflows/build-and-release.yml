@@ -118,8 +118,14 @@ jobs:
             echo "::error::VERSION file is empty." >&2
             exit 1
           fi
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-            echo "::error::VERSION '$VERSION' is not valid semver (expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-suffix, e.g. 5.0.3-rc4)." >&2
+          # rcN folds into the package iteration by number, so rc01 and rc1 would
+          # name one package from two tags; artifact names are all lowercase.
+          if [[ "$VERSION" =~ -[Rr][Cc] ]] && ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc[1-9][0-9]{0,3}$ ]]; then
+            echo "::error::VERSION '$VERSION': the release candidate identifier must be lowercase rc1..rc9999 with no leading zero (e.g. 5.0.3-rc1)." >&2
+            exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+)?$ ]]; then
+            echo "::error::VERSION '$VERSION' is not valid semver (expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-suffix, lowercase, e.g. 5.0.3-rc4)." >&2
             exit 1
           fi
 
