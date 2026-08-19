@@ -16,12 +16,9 @@
 # removed along with the tools-packaging-common submodule.
 #
 # On macOS it emits "macos<major>" from the product version (26.0 -> macos26).
-# This is the single source of truth for the "macos<major>" FIELD of the .pkg
-# file name; the "<arch>" field beside it is `uname -m`, appended by the caller
-# (pkg/Makefile's MAC_PKG, and the two workflow steps that name and select the
-# artifact). CI must call this script rather than re-deriving the token from a
-# runner label, so the name a release publishes is the name a local
-# `make -C pkg osx-pkg` produces.
+# No longer part of any artifact name -- .pkg files are named per arch, not per
+# macOS generation (see MAC_PKG in pkg/Makefile). Kept for callers that want the
+# build host's generation.
 
 set -euo pipefail
 

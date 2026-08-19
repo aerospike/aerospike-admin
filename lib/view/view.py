@@ -70,11 +70,12 @@ class CliView(object):
         if type(out) is not str:
             out = str(out)
         if CliView.pager == CliView.LESS:
+            less_cmd = "less -RSX"
+
             if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-                # We are running in a bundled app
-                less_cmd = path.join(sys._MEIPASS, "less") + " -RSX"  # type: ignore MEIPASS is set by pyinstaller.
-            else:
-                less_cmd = "less -RSX"
+                bundled_less = path.join(sys._MEIPASS, "less")  # type: ignore MEIPASS is set by pyinstaller.
+                if path.isfile(bundled_less):
+                    less_cmd = bundled_less + " -RSX"
 
             pipepager(out, less_cmd)
         elif CliView.pager == CliView.SCROLL:

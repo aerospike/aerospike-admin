@@ -293,6 +293,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-15-intel, macos-14, macos-15, macos-26]
+        include:
+          # One publisher per arch (the oldest runner): every leg of an arch now
+          # builds the same file name, so a second uploader would collide. Oldest
+          # matters here because asadm vendors binaries off the runner (see the
+          # spec's /usr/bin/less), which carry the runner's own floor.
+          - os: macos-14
+            publish: true
+          - os: macos-15-intel
+            publish: true
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -352,7 +361,7 @@ jobs:
           make -C pkg osx-pkg VERSION="${VERSION}"
           # pkg/Makefile emits the shipping name directly -- see the MAC_PKG
           # comment there for the convention
-          # (aerospike-asadm-<release>-macos<major>-<arch>.pkg). Do NOT rebuild
+          # (aerospike-asadm-<release>-macos-<arch>.pkg). Do NOT rebuild
           # the name here: a second copy of the convention is a second place to
           # get it wrong. Move whatever the build produced, asserting there is
           # exactly one so a stale target/ never ships silently.
@@ -369,17 +378,15 @@ jobs:
           mv "${pkgs}" .
           echo "PKG_NAME=$(basename "${pkgs}")" >> "$GITHUB_ENV"
           echo "==> built $(basename "${pkgs}")"
-          # Platform suffix for the upload-artifact container below, in the same
-          # macos<major>-<arch> terms as the pkg it carries. Unique per matrix
-          # leg (macos14-arm64, macos15-arm64, macos26-arm64, macos15-x86_64),
-          # which is all the container name has to guarantee.
-          # Assigned on its own line: a failing command substitution inside an
-          # argument does not trip `set -e`, which would name the artifact
-          # container "...--$(uname -m)" and let the leg pass.
-          plat=$(.github/bin/os_version.sh)
-          echo "PKG_PLATFORM=${plat}-$(uname -m)" >> "$GITHUB_ENV"
+          # Only the two publisher legs upload and they differ by arch, so the
+          # arch alone is unique. Assigned on its own line: a failing command
+          # substitution inside an argument does not trip `set -e`.
+          arch=$(uname -m)
+          [[ -n "${arch}" ]] || { echo "::error::uname -m returned nothing" >&2; exit 1; }
+          echo "PKG_PLATFORM=${arch}" >> "$GITHUB_ENV"
 
       - name: Upload build artifacts
+        if: matrix.publish
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           # Consumers match on the "unsigned-artifacts-<VERSION>" prefix and
@@ -596,15 +603,12 @@ jobs:
           # ${VERIFIED_PKG}, so it cannot install a different file than the one
           # verified here, and an ambiguous match fails instead of silently
           # picking find's first result.
-          # Select this runner's pkg by the platform fields of the shipping
-          # name (see MAC_PKG in pkg/Makefile): macos<major>-<arch>. Derived
-          # from the runner itself via the same script the build used, so a
-          # renamed GitHub runner label cannot silently match zero files -- and
-          # this asserts the artifact really is built for the macOS/arch it
-          # claims, which a runner-label match never did.
-          # Assigned on its own line so `set -e` sees a failure here.
-          plat=$(.github/bin/os_version.sh)
-          pat="*-${plat}-$(uname -m).pkg"
+          # Select by arch alone: one pkg per arch serves every macOS generation,
+          # so all four legs install the same two files. That is the
+          # cross-generation coverage the per-generation naming could not give.
+          arch=$(uname -m)
+          [[ -n "${arch}" ]] || { echo "ERROR: uname -m returned nothing" >&2; exit 1; }
+          pat="*-macos-${arch}.pkg"
           # One find, reused for the count, the error message and the result --
           # three separate walks could disagree with each other. (mapfile would
           # be the idiomatic reader, but the macOS runners ship bash 3.2, which

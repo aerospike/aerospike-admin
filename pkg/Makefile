@@ -41,19 +41,20 @@ PKG_ID = com.aerospike.asadm
 # interpolate it (<arch> is `uname -m`, the token a cask's `arch` stanza emits;
 # #{version} is the full <version>-<iteration> release string):
 #
-#     aerospike-asadm-<version>-<iteration>-macos<major>-<arch>.pkg
+#     aerospike-asadm-<version>-<iteration>-macos-<arch>.pkg
 #
-# macos<major> is the generation the artifact was BUILT on, not a minimum it
-# supports; it keeps one release's per-runner artifacts distinct, so a cask has
-# to pin the build it ships. A dev build's <version> carries a hyphen of its
-# own (5.0.3-abc123def), so match those with a glob rather than positionally.
-# The bare .pkg is the shipping artifact; there is deliberately no .dmg (a CLI
-# under /usr/local has nothing to drag, and a disk image would be a second
-# container to sign, notarize and staple).
-# Captured once (`:=`), so prep-mac's guard below checks the very token that
-# lands in the file name, and os_version.sh is not re-run per expansion.
-MAC_PLATFORM := $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
-MAC_PKG = $(TARGET_DIR)/$(NAME)-$(RELEASE)-$(MAC_PLATFORM)-$(ARCH).pkg
+# A dev build's <version> carries a hyphen of its own (5.0.3-abc123def), so match
+# those with a glob rather than positionally. The bare .pkg is the shipping
+# artifact; there is deliberately no .dmg (a CLI under /usr/local has nothing to
+# drag, and a disk image would be a second container to sign, notarize and
+# staple).
+#
+# One pkg per architecture, not per macOS generation: macOS is forward
+# compatible, so the oldest-runner build serves every supported release.
+MAC_PKG = $(TARGET_DIR)/$(NAME)-$(RELEASE)-macos-$(ARCH).pkg
+# Support floor, asserted by check_min_os.sh over the whole PyInstaller bundle,
+# so anything vendored off the build runner has to honour it too.
+MACOS_MIN_VERSION = 14.0
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = aerospike-$(PACKAGE_NAME)
 MAINTAINER = "Aerospike"
@@ -141,7 +142,8 @@ prep:
 .PHONY: prep-mac
 prep-mac:
 	@test -n "$(PKG_VERSION)" && test -n "$(ITERATION)" || { echo "ERROR: empty version/iteration -- .github/bin/pkg_release.sh failed for VERSION='$(VERSION)'; refusing to build an unnamed pkg" >&2; exit 1; }
-	@test -n "$(MAC_PLATFORM)" || { echo "ERROR: empty macOS platform token -- .github/bin/os_version.sh failed; refusing to build an unnamed pkg" >&2; exit 1; }
+	@echo '$(ARCH)' | grep -qE '^(arm64|x86_64)$$' \
+		|| { echo "ERROR: architecture token is '$(ARCH)', not arm64 or x86_64 -- uname -m failed; refusing to build a misnamed pkg" >&2; exit 1; }
 	install -d $(TARGET_DIR)
 	rm -rf $(MAC_ROOT)
 	install -d $(MAC_ROOT)/usr/local/aerospike/bin/asadm
@@ -155,6 +157,7 @@ prep-mac:
 
 .PHONY: osx-pkg
 osx-pkg: prep-mac
+	$(PKG_DIR)/../.github/bin/check_min_os.sh $(MACOS_MIN_VERSION) $(MAC_ROOT)
 	pkgbuild \
 		--root $(MAC_ROOT) \
 		--identifier $(PKG_ID) \
