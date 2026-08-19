@@ -22,22 +22,38 @@ endif
 # is untouched — it is what asadm --version reports.
 PKG_RELEASE_SH = $(PKG_DIR)/../.github/bin/pkg_release.sh
 PKG_VERSION := $(shell $(PKG_RELEASE_SH) '$(VERSION)' version)
-ITERATION ?= $(shell $(PKG_RELEASE_SH) '$(VERSION)' iteration)
+ITERATION := $(or $(ITERATION),$(shell $(PKG_RELEASE_SH) '$(VERSION)' iteration))
 # For names with no iteration field of their own (.tar, macOS .pkg).
-RELEASE = $(PKG_VERSION)-$(ITERATION)
+RELEASE := $(PKG_VERSION)-$(ITERATION)
 RPM_VERSION := $(subst -,_,$(PKG_VERSION))
 # rpm Release / deb revision. The deb revision embeds the distro per Debian
 # convention (e.g. 5.0.3-1debian12), like the rpm dist tag.
-DEB_ITERATION = $(ITERATION)$(BUILD_DISTRO)
+DEB_ITERATION := $(ITERATION)$(BUILD_DISTRO)
 # pkgbuild --version rejects hyphens and underscores; collapse both to dots
 # (5.0.3-1 -> 5.0.3.1, 5.0.3-master.abc-1 -> 5.0.3.master.abc.1), and
-# defensively normalize any underscore-form inputs (env overrides) too.
-MAC_VERSION = $(subst _,.,$(subst -,.,$(RELEASE)))
+# defensively normalize any underscore-form inputs (env overrides) too. This is
+# the CFBundleShortVersionString-style version *inside* the pkg only; the file
+# name below keeps the canonical hyphenated RELEASE.
+MAC_VERSION := $(subst _,.,$(subst -,.,$(RELEASE)))
 MAC_ROOT = $(BUILD_DIR)/mac-root
-DMG_STAGING = $(BUILD_DIR)/dmg-staging
 PKG_ID = com.aerospike.asadm
-MAC_PKG = $(TARGET_DIR)/$(NAME)-$(MAC_VERSION)-$(ARCH).pkg
-MAC_DMG = $(TARGET_DIR)/$(NAME)-$(MAC_VERSION)-$(ARCH).dmg
+# macOS artifact file name, lower case and '-' separated so a Homebrew cask can
+# interpolate it (<arch> is `uname -m`, the token a cask's `arch` stanza emits;
+# #{version} is the full <version>-<iteration> release string):
+#
+#     aerospike-asadm-<version>-<iteration>-macos<major>-<arch>.pkg
+#
+# macos<major> is the generation the artifact was BUILT on, not a minimum it
+# supports; it keeps one release's per-runner artifacts distinct, so a cask has
+# to pin the build it ships. A dev build's <version> carries a hyphen of its
+# own (5.0.3-abc123def), so match those with a glob rather than positionally.
+# The bare .pkg is the shipping artifact; there is deliberately no .dmg (a CLI
+# under /usr/local has nothing to drag, and a disk image would be a second
+# container to sign, notarize and staple).
+# Captured once (`:=`), so prep-mac's guard below checks the very token that
+# lands in the file name, and os_version.sh is not re-run per expansion.
+MAC_PLATFORM := $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
+MAC_PKG = $(TARGET_DIR)/$(NAME)-$(RELEASE)-$(MAC_PLATFORM)-$(ARCH).pkg
 BUILD_DISTRO ?= $(shell $(PKG_DIR)/../.github/bin/os_version.sh)
 NAME = aerospike-$(PACKAGE_NAME)
 MAINTAINER = "Aerospike"
@@ -107,7 +123,7 @@ tar: prep
 		--license $(LICENSE) \
 		--url $(URL) \
 		--vendor $(VENDOR) \
-		--package $(TARGET_DIR)/$(NAME)-$(BUILD_DISTRO)-$(RELEASE)-$(ARCH).tar
+		--package $(TARGET_DIR)/$(NAME)-$(RELEASE)-$(BUILD_DISTRO)-$(ARCH).tar
 
 .PHONY: prep
 prep:
@@ -124,6 +140,8 @@ prep:
 # Staging for macOS installer: matches root makefile Darwin INSTALL_ROOT and symlinks.
 .PHONY: prep-mac
 prep-mac:
+	@test -n "$(PKG_VERSION)" && test -n "$(ITERATION)" || { echo "ERROR: empty version/iteration -- .github/bin/pkg_release.sh failed for VERSION='$(VERSION)'; refusing to build an unnamed pkg" >&2; exit 1; }
+	@test -n "$(MAC_PLATFORM)" || { echo "ERROR: empty macOS platform token -- .github/bin/os_version.sh failed; refusing to build an unnamed pkg" >&2; exit 1; }
 	install -d $(TARGET_DIR)
 	rm -rf $(MAC_ROOT)
 	install -d $(MAC_ROOT)/usr/local/aerospike/bin/asadm
@@ -145,17 +163,9 @@ osx-pkg: prep-mac
 		--scripts $(PKG_DIR)/mac-scripts \
 		$(MAC_PKG)
 
-.PHONY: osx-dmg
-osx-dmg: osx-pkg
-	rm -rf $(DMG_STAGING)
-	install -d $(DMG_STAGING)
-	cp -a $(MAC_PKG) $(DMG_STAGING)/
-	hdiutil create -volname "Aerospike asadm $(MAC_VERSION)" -srcfolder $(DMG_STAGING) -ov -format UDZO $(MAC_DMG)
-
 .PHONY: clean
 clean:
 	rm -rf $(TARGET_DIR)
 	rm -rf $(BUILD_DIR)/opt
 	rm -rf $(BUILD_DIR)/var
 	rm -rf $(MAC_ROOT)
-	rm -rf $(DMG_STAGING)

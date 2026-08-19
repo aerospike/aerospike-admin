@@ -31,8 +31,14 @@ jobs:
       - name: Validate version format
         run: |
           set -euo pipefail
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-            echo "::error::Version must be MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-suffix (e.g. 5.0.0, 5.0.0-rc1). Got '$VERSION'." >&2
+          # rcN folds into the package iteration by number, so rc01 and rc1 would
+          # name one package from two tags; artifact names are all lowercase.
+          if [[ "$VERSION" =~ -[Rr][Cc] ]] && ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc[1-9][0-9]{0,3}$ ]]; then
+            echo "::error::Version '$VERSION': the release candidate identifier must be lowercase rc1..rc9999 with no leading zero (e.g. 5.0.3-rc1)." >&2
+            exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+)?$ ]]; then
+            echo "::error::Version must be MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-suffix, lowercase (e.g. 5.0.0, 5.0.0-rc1). Got '$VERSION'." >&2
             exit 1
           fi
 
