@@ -22,62 +22,34 @@ endif
 # is untouched — it is what asadm --version reports.
 PKG_RELEASE_SH = $(PKG_DIR)/../.github/bin/pkg_release.sh
 PKG_VERSION := $(shell $(PKG_RELEASE_SH) '$(VERSION)' version)
-ITERATION ?= $(shell $(PKG_RELEASE_SH) '$(VERSION)' iteration)
+ITERATION := $(or $(ITERATION),$(shell $(PKG_RELEASE_SH) '$(VERSION)' iteration))
 # For names with no iteration field of their own (.tar, macOS .pkg).
 RELEASE := $(PKG_VERSION)-$(ITERATION)
 RPM_VERSION := $(subst -,_,$(PKG_VERSION))
 # rpm Release / deb revision. The deb revision embeds the distro per Debian
 # convention (e.g. 5.0.3-1debian12), like the rpm dist tag.
-DEB_ITERATION = $(ITERATION)$(BUILD_DISTRO)
+DEB_ITERATION := $(ITERATION)$(BUILD_DISTRO)
 # pkgbuild --version rejects hyphens and underscores; collapse both to dots
 # (5.0.3-1 -> 5.0.3.1, 5.0.3-master.abc-1 -> 5.0.3.master.abc.1), and
 # defensively normalize any underscore-form inputs (env overrides) too. This is
 # the CFBundleShortVersionString-style version *inside* the pkg only; the file
 # name below keeps the canonical hyphenated RELEASE.
-MAC_VERSION = $(subst _,.,$(subst -,.,$(RELEASE)))
+MAC_VERSION := $(subst _,.,$(subst -,.,$(RELEASE)))
 MAC_ROOT = $(BUILD_DIR)/mac-root
 PKG_ID = com.aerospike.asadm
-# macOS artifact file name:
+# macOS artifact file name, lower case and '-' separated so a Homebrew cask can
+# interpolate it (<arch> is `uname -m`, the token a cask's `arch` stanza emits;
+# #{version} is the full <version>-<iteration> release string):
 #
-#     <name>-<version>-<iteration>-macos<major>-<arch>.pkg
-#     e.g. aerospike-asadm-5.0.3-1-macos15-arm64.pkg
+#     aerospike-asadm-<version>-<iteration>-macos<major>-<arch>.pkg
 #
-# The bare .pkg is the shipping artifact -- there is deliberately no .dmg. asadm
-# is a CLI installed under /usr/local, so a disk image has nothing to drag and
-# would be a second container needing its own signature, notarization and
-# staple. Homebrew consumes the .pkg directly (url + `pkg` stanza), and
-# `sudo installer -pkg ... -target /` needs no hdiutil attach.
-#
-# Every field is lower case and '-' separated, so a Homebrew cask can address
-# the name:
-#
-#     arch arm: "arm64", intel: "x86_64"
-#     url ".../aerospike-asadm-#{version}-macos15-#{arch}.pkg"
-#
-# with two caveats the example cannot express on its own:
-#
-#   * #{version} must be the full <version>-<iteration> release string
-#     (5.0.3-3), not the bare product version -- the iteration is one of the
-#     name's fields, and it is what distinguishes two builds of one release.
-#   * macos<major> has to be pinned to whichever build the cask ships. It
-#     records the runner the artifact was built on (see below), so it cannot be
-#     derived from the installing machine's OS, and one release publishes a pkg
-#     per (macOS major, arch) pair.
-#
-# Release names are positionally parsable on '-'; a dev build's <version> itself
-# carries a hyphen (5.0.3-abc123def), so match those with a glob instead.
-#
-#   * <arch> is `uname -m` (arm64 / x86_64) -- the same tokens a cask's `arch`
-#     stanza emits. Never runner.arch (ARM64 / X64): those are upper case and
-#     "X64" is not a macOS arch.
-#   * macos<major> is the macOS generation the artifact was built on, not a
-#     minimum it supports (nothing pins MACOSX_DEPLOYMENT_TARGET). It is what
-#     makes the names unique when one version ships several pkgs -- we build
-#     one per (macOS major, arch) pair, and without it the three arm64 builds
-#     of a release would collide.
-#   * RELEASE (version + iteration) rather than MAC_VERSION, so an rc respin of
-#     the same version is a distinct file (5.0.3-2 vs 5.0.3-3) and the name
-#     matches the deb/rpm/tar naming.
+# macos<major> is the generation the artifact was BUILT on, not a minimum it
+# supports; it keeps one release's per-runner artifacts distinct, so a cask has
+# to pin the build it ships. A dev build's <version> carries a hyphen of its
+# own (5.0.3-abc123def), so match those with a glob rather than positionally.
+# The bare .pkg is the shipping artifact; there is deliberately no .dmg (a CLI
+# under /usr/local has nothing to drag, and a disk image would be a second
+# container to sign, notarize and staple).
 # Captured once (`:=`), so prep-mac's guard below checks the very token that
 # lands in the file name, and os_version.sh is not re-run per expansion.
 MAC_PLATFORM := $(shell $(PKG_DIR)/../.github/bin/os_version.sh)

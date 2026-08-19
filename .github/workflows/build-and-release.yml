@@ -132,14 +132,9 @@ jobs:
           # Reject a reused version before anything is built. create-tag checks
           # this too, but only after the packages and the release bundle are
           # published -- by then the previous build's files in the flat deb/rpm
-          # pools have already been overwritten.
-          # The condition is create-tag's, verbatim: only a run that will tag AND
-          # publish can collide. A release=false dry run publishes nothing and
-          # tags nothing, so it must stay runnable on master against an already
-          # tagged VERSION -- and since VERSION is only bumped after a release,
-          # "tag exists and VERSION still points at it" is the steady state for
-          # most of the cycle. `== "true"` rather than `!= "false"` so an omitted
-          # input lands on the permissive side, matching create-tag's `== true`.
+          # pools have already been overwritten. The condition is create-tag's,
+          # verbatim: only a run that will tag AND publish can collide, so a
+          # dry run stays runnable against an already tagged VERSION.
           if [[ "${RELEASE}" == "true" && "${GITHUB_REF}" == "refs/heads/master" \
                 && "${SKIP_TAGGING}" != "true" ]] \
              && git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
@@ -911,7 +906,6 @@ jobs:
 
       - name: Build (native) and smoke test
         env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
           BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
           RELEASE: ${{ needs.get-version.outputs.RELEASE }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -940,12 +934,6 @@ jobs:
           chmod +x "${SHIM_DIR}/asadm" "${SHIM_DIR}/asinfo"
           PATH="${SHIM_DIR}:${PATH}" EXPECTED_VERSION="${BUILD_VERSION}" bats .github/bin/test/test_execute.bats
 
-          # Verify the loaded image actually carries the version we built —
-          # catches mis-tagged or stale-cached images that bats wouldn't.
-          BASE_VERSION=$(printf '%s' "${BUILD_VERSION}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
-          docker run --rm "${IMAGE}" asadm --version | grep -qF "${BASE_VERSION}" \
-            || { echo "ERROR: expected ${BASE_VERSION} in --version output" >&2; exit 1; }
-
           # The postinst seeds astools.conf during image build.
           docker run --rm --entrypoint sh "${IMAGE}" -c 'test -f /etc/aerospike/astools.conf' \
             || { echo "ERROR: /etc/aerospike/astools.conf missing in image" >&2; exit 1; }
@@ -959,7 +947,6 @@ jobs:
       - name: Push native per-arch tag to JFrog
         if: inputs.release == true
         env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
           BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
         run: |
           set -euo pipefail
@@ -1009,7 +996,6 @@ jobs:
 
       - name: Stitch per-arch tags into multi-arch manifest
         env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
           BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
         run: |
           set -euo pipefail

@@ -3,12 +3,6 @@
 # are built from. They run against strings, not an installed binary, so they need
 # no package and no bats: `bash .github/bin/test/version_lib_test.sh`.
 #
-# The smoke tests themselves only run in build-and-release.yml, which is
-# workflow_dispatch-only, and mac-artifact.yml never invokes `make -C pkg
-# osx-pkg`. Without this file a regression in the assertions -- one that lets a
-# mis-stamped binary through -- would first be observed during a release. These
-# cases are the ones that regression would break.
-#
 # Mirrors the helper asconfig and asbench ship; keep the shared cases in step.
 set -uo pipefail
 

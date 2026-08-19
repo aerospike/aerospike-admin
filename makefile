@@ -46,7 +46,7 @@ VERSION ?= $(VERSION_DEFAULT)
 # empty as unset, and an unresolved needs.<job>.outputs.<name> arrives as exactly
 # that. Keep the fallback.
 ifeq ($(strip $(VERSION)),)
-VERSION := $(VERSION_DEFAULT)
+override VERSION := $(VERSION_DEFAULT)
 endif
 
 define make_build
