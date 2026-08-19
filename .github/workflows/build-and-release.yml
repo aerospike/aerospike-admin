@@ -158,8 +158,6 @@ jobs:
     outputs:
       VERSION: ${{ steps.compute.outputs.version }}
       BUILD_VERSION: ${{ steps.compute.outputs.build_version }}
-      PKG_VERSION: ${{ steps.release.outputs.PKG_VERSION }}
-      ITERATION: ${{ steps.release.outputs.ITERATION }}
       RELEASE: ${{ steps.release.outputs.RELEASE }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -919,8 +917,8 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           set -euo pipefail
-          # docker-build.sh folds any "rcN" in VERSION into the iteration, so
-          # the image tags carry RELEASE (e.g. 5.0.3-2), never "rc2".
+          # docker-build.sh folds the rcN in BUILD_VERSION into the iteration,
+          # so image tags carry <version>-<iteration>, never "rc2".
           docker/docker-build.sh -t \
             -v "${BUILD_VERSION}" \
             -a ${{ matrix.arch }} \
