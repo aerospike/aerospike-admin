@@ -31,14 +31,13 @@ function assert_dynamic_deps() {
 	return $fail
 }
 
-# Print one relation name per line for a deb control field. Debian comma-joins a
-# relation list onto one logical line and may append a version bound, so an
-# exact-line match against the raw field only works for the degenerate
-# single-entry-no-bound case: `Replaces: zzz-other, aerospike-tools` and
-# `Replaces: aerospike-tools (<< 12.0)` both fail it, reporting a field that is
-# in fact present.
 function deb_relations() {
-	dpkg-deb -f "$1" "$2" | tr ',' '\n' | sed 's/^[[:space:]]*//' | awk '{print $1}'
+	dpkg-deb -f "$1" "$2" | tr ',' '\n' \
+		| sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:space:]][[:space:]]*/ /g'
+}
+
+function tools_split_version() {
+	sed -n 's/^TOOLS_SPLIT_VERSION[[:space:]]*=[[:space:]]*//p' "$GIT_DIR/pkg/Makefile" | head -1
 }
 
 # Print one relation name per line for an rpm array tag. %{TAG} outside a [...]
@@ -69,7 +68,12 @@ function rpm_relations() {
 # default branch that returned 0 while reporting a tar. A gate whose default is
 # success is not a gate.
 function assert_pkg_relations() {
-	local fmt="${1:-}" pkg
+	local fmt="${1:-}" pkg split
+	split=$(tools_split_version)
+	if [ -z "$split" ]; then
+		echo "assert_pkg_relations: TOOLS_SPLIT_VERSION not found in pkg/Makefile" >&2
+		return 1
+	fi
 	case "$fmt" in
 		deb)
 			pkg=$(find "$GIT_DIR/pkg/target" -name '*.deb' -print -quit)
@@ -77,12 +81,21 @@ function assert_pkg_relations() {
 				echo "assert_pkg_relations: no .deb found under pkg/target" >&2
 				return 1
 			fi
-			if ! deb_relations "$pkg" Replaces | grep -qx 'aerospike-tools'; then
-				echo "deb is missing 'Replaces: aerospike-tools'" >&2
+			if ! deb_relations "$pkg" Replaces | grep -qxF "aerospike-tools (<< $split)"; then
+				echo "deb is missing 'Replaces: aerospike-tools (<< $split)'" >&2
 				return 1
 			fi
-			if deb_relations "$pkg" Conflicts | grep -qx 'aerospike-tools'; then
-				echo "deb must not Conflict with aerospike-tools (breaks the Replaces takeover)" >&2
+			if ! deb_relations "$pkg" Breaks | grep -qxF "aerospike-tools (<< $split)"; then
+				echo "deb is missing 'Breaks: aerospike-tools (<< $split)'" >&2
+				return 1
+			fi
+			if deb_relations "$pkg" Replaces | grep -qx 'aerospike-tools' \
+				|| deb_relations "$pkg" Breaks | grep -qx 'aerospike-tools'; then
+				echo "deb carries an UNVERSIONED aerospike-tools relation; it must be bounded (<< $split) or it hits the metapackage too" >&2
+				return 1
+			fi
+			if deb_relations "$pkg" Conflicts | grep -q 'aerospike-tools'; then
+				echo "deb must not Conflict with aerospike-tools (Breaks+Replaces is the split handoff)" >&2
 				return 1
 			fi
 			;;
@@ -92,8 +105,13 @@ function assert_pkg_relations() {
 				echo "assert_pkg_relations: no .rpm found under pkg/target" >&2
 				return 1
 			fi
-			if ! rpm_relations "$pkg" CONFLICTS | grep -qx 'aerospike-tools'; then
-				echo "rpm is missing 'Conflicts: aerospike-tools'" >&2
+			if ! rpm -qp --conflicts "$pkg" | sed 's/[[:space:]][[:space:]]*/ /g' \
+				| grep -qxF "aerospike-tools < $split"; then
+				echo "rpm is missing 'Conflicts: aerospike-tools < $split'" >&2
+				return 1
+			fi
+			if rpm -qp --conflicts "$pkg" | grep -qx 'aerospike-tools'; then
+				echo "rpm carries an UNVERSIONED Conflicts: aerospike-tools; it must be bounded (< $split) or the metapackage becomes unsatisfiable" >&2
 				return 1
 			fi
 			if rpm_relations "$pkg" OBSOLETES | grep -qx 'aerospike-tools'; then
@@ -110,7 +128,7 @@ function assert_pkg_relations() {
 			return 1
 			;;
 	esac
-	echo "assert_pkg_relations: aerospike-tools relations present and correct ($fmt)"
+	echo "assert_pkg_relations: versioned aerospike-tools split relations present and correct ($fmt)"
 	return 0
 }
 
@@ -157,7 +175,9 @@ function _bundle_overlap_cleanup() {
 }
 
 function _bundle_overlap_check() {
-	local fmt="$1" stub_root stub_pkg real_pkg rc out
+	local fmt="$1" stub_root old_pkg meta_pkg real_pkg rc out split
+	split=$(tools_split_version)
+	[ -n "$split" ] || { echo "assert_bundle_overlap: TOOLS_SPLIT_VERSION not found in pkg/Makefile" >&2; return 1; }
 	stub_root=$(mktemp -d)
 	mkdir -p "$stub_root/root/opt/aerospike/bin/asadm"
 	echo "stub bundle payload" > "$stub_root/root/opt/aerospike/bin/asadm/asadm"
@@ -165,52 +185,60 @@ function _bundle_overlap_check() {
 	case "$fmt" in
 		deb)
 			real_pkg=$(find "$GIT_DIR/pkg/target" -name '*.deb' -print -quit)
-			( cd "$stub_root" && fpm --force -s dir -t deb -n aerospike-tools -v 99.0.0 \
-				-C "$stub_root/root" --package "$stub_root/stub.deb" . >/dev/null )
-			stub_pkg="$stub_root/stub.deb"
+			( cd "$stub_root" && fpm --force -s dir -t deb -n aerospike-tools -v 12.0.0 \
+				-C "$stub_root/root" --package "$stub_root/old.deb" . >/dev/null )
+			( cd "$stub_root" && fpm --force -s empty -t deb -n aerospike-tools -v "$split" \
+				--package "$stub_root/meta.deb" >/dev/null )
+			old_pkg="$stub_root/old.deb"
+			meta_pkg="$stub_root/meta.deb"
 
-			dpkg -i "$stub_pkg" >/dev/null || { echo "assert_bundle_overlap: stub bundle would not install" >&2; return 1; }
+			dpkg -i "$old_pkg" >/dev/null || { echo "assert_bundle_overlap: stub old bundle would not install" >&2; return 1; }
 
-			# Promise: this install SUCCEEDS where it used to fail.
-			if ! out=$(dpkg -i "$real_pkg" 2>&1); then
-				echo "assert_bundle_overlap: installing over the bundle FAILED -- Replaces did not resolve the overlap" >&2
+			rc=0
+			out=$(dpkg -i "$real_pkg" 2>&1) || rc=$?
+			if [ "$rc" -eq 0 ]; then
+				echo "assert_bundle_overlap: dpkg -i SUCCEEDED over the old bundle -- Breaks (<< $split) did not take effect" >&2
+				return 1
+			fi
+			if printf '%s\n' "$out" | grep -qi 'trying to overwrite'; then
+				echo "assert_bundle_overlap: dpkg died on a raw file overwrite, not a named break -- the versioned relations did not take effect" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
-			# Promise: ownership actually transferred (exit 0 with the bundle still
-			# owning the path would silently defeat the fix).
+			if ! printf '%s\n' "$out" | grep -qi 'breaks aerospike-tools'; then
+				echo "assert_bundle_overlap: dpkg failed but not with a named break on aerospike-tools; not actionable" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
+
+			if ! out=$(dpkg -i "$meta_pkg" "$real_pkg" 2>&1); then
+				echo "assert_bundle_overlap: one-shot migration (metapackage + this package in a single dpkg run) FAILED" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
 			if ! dpkg -S /opt/aerospike/bin/asadm/asadm 2>/dev/null | grep -q 'aerospike-asadm'; then
-				echo "assert_bundle_overlap: /opt/aerospike/bin/asadm/asadm is not owned by aerospike-asadm after install" >&2
+				echo "assert_bundle_overlap: /opt/aerospike/bin/asadm/asadm is not owned by aerospike-asadm after migration" >&2
 				dpkg -S /opt/aerospike/bin/asadm/asadm >&2 || true
 				return 1
 			fi
-			# Promise: the bundle stays installed rather than being erased.
-			if ! dpkg-query -W -f='${Status}' aerospike-tools 2>/dev/null | grep -q 'install ok installed'; then
-				echo "assert_bundle_overlap: aerospike-tools is no longer installed -- the takeover erased it" >&2
+			if ! dpkg-query -W -f='${Status} ${Version}' aerospike-tools 2>/dev/null | grep -q "install ok installed $split"; then
+				echo "assert_bundle_overlap: aerospike-tools is not installed at the metapackage version $split after migration" >&2
+				dpkg-query -W aerospike-tools >&2 || true
 				return 1
 			fi
-			echo "assert_bundle_overlap: deb installs over the bundle and takes ownership of the overlapping path"
+			echo "assert_bundle_overlap: deb refuses the old bundle with a named break and migrates cleanly through the $split metapackage"
 			;;
 		rpm)
 			real_pkg=$(find "$GIT_DIR/pkg/target" -name '*.rpm' -print -quit)
-			( cd "$stub_root" && fpm --force -s dir -t rpm -n aerospike-tools -v 99.0.0 \
-				-C "$stub_root/root" --package "$stub_root/stub.rpm" . >/dev/null )
-			stub_pkg="$stub_root/stub.rpm"
+			( cd "$stub_root" && fpm --force -s dir -t rpm -n aerospike-tools -v 12.0.0 \
+				-C "$stub_root/root" --package "$stub_root/old.rpm" . >/dev/null )
+			( cd "$stub_root" && fpm --force -s empty -t rpm -n aerospike-tools -v "$split" \
+				--package "$stub_root/meta.rpm" >/dev/null )
+			old_pkg="$stub_root/old.rpm"
+			meta_pkg="$stub_root/meta.rpm"
 
-			rpm -i "$stub_pkg" >/dev/null || { echo "assert_bundle_overlap: stub bundle would not install" >&2; return 1; }
+			rpm -i "$old_pkg" >/dev/null || { echo "assert_bundle_overlap: stub old bundle would not install" >&2; return 1; }
 
-			# Promise: an ACTIONABLE NAMED package conflict, not an opaque file
-			# collision. Checking only "it failed and mentioned aerospike-tools" does
-			# NOT test that -- every outcome below fails and every one names the
-			# package, so the wording is the only discriminator. Verified on ubi10:
-			#
-			#   --conflicts:  error: Failed dependencies:
-			#                   aerospike-tools conflicts with aerospike-asadm-...
-			#   no relation:  file /opt/... from install of aerospike-asadm-...
-			#                   conflicts with file from package aerospike-tools-...
-			#   --replaces:   error: Failed dependencies:
-			#                   aerospike-tools is obsoleted by aerospike-asadm-...
-			#
 			# Uses rpm directly rather than dnf: dnf is a Python program, and by this
 			# point in the build install_deps has put an asdf-managed Python ahead of
 			# the system one on PATH, so `dnf` dies with "ModuleNotFoundError: No
@@ -220,11 +248,11 @@ function _bundle_overlap_check() {
 			rc=0
 			out=$(rpm -i "$real_pkg" 2>&1) || rc=$?
 			if [ "$rc" -eq 0 ]; then
-				echo "assert_bundle_overlap: rpm install SUCCEEDED over the bundle -- Conflicts did not take effect" >&2
+				echo "assert_bundle_overlap: rpm install SUCCEEDED over the old bundle -- Conflicts (< $split) did not take effect" >&2
 				return 1
 			fi
 			if printf '%s\n' "$out" | grep -qi 'conflicts with file from'; then
-				echo "assert_bundle_overlap: rpm died on a raw FILE collision, not a named package conflict -- Conflicts: aerospike-tools did not take effect" >&2
+				echo "assert_bundle_overlap: rpm died on a raw FILE collision, not a named package conflict -- Conflicts did not take effect" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
@@ -233,12 +261,28 @@ function _bundle_overlap_check() {
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
-			if ! printf '%s\n' "$out" | grep -qi 'aerospike-tools conflicts with'; then
+			if ! printf '%s\n' "$out" | grep -qi 'conflicts with'; then
 				echo "assert_bundle_overlap: rpm failed but not with a named aerospike-tools conflict; not actionable" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
-			echo "assert_bundle_overlap: rpm refuses with a named aerospike-tools conflict instead of a file collision"
+
+			if ! out=$(rpm -U "$meta_pkg" "$real_pkg" 2>&1); then
+				echo "assert_bundle_overlap: one-shot migration (metapackage + this package in a single rpm transaction) FAILED" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
+			if ! rpm -qf /opt/aerospike/bin/asadm/asadm 2>/dev/null | grep -q 'aerospike-asadm'; then
+				echo "assert_bundle_overlap: /opt/aerospike/bin/asadm/asadm is not owned by aerospike-asadm after migration" >&2
+				rpm -qf /opt/aerospike/bin/asadm/asadm >&2 || true
+				return 1
+			fi
+			if ! rpm -q --qf '%{VERSION}\n' aerospike-tools 2>/dev/null | grep -qxF "$split"; then
+				echo "assert_bundle_overlap: aerospike-tools is not installed at the metapackage version $split after migration" >&2
+				rpm -q aerospike-tools >&2 || true
+				return 1
+			fi
+			echo "assert_bundle_overlap: rpm refuses the old bundle with a named conflict and migrates cleanly through the $split metapackage"
 			;;
 		tar)
 			echo "assert_bundle_overlap: no relations declared for the tar target; skipping"

@@ -51,28 +51,25 @@ ARCH = $(shell uname -m)
 .PHONY: all
 all: deb rpm tar
 
-# The aerospike-tools bundle ships the same /opt/aerospike/bin/asadm paths this
-# package does (see prep, below). deb Replaces without Conflicts lets dpkg hand
-# file ownership to this package while both stay installed; Conflicts would make
-# a plain `dpkg -i` hard-fail instead of resolving.
+# aerospike-tools older than TOOLS_SPLIT_VERSION is the monolithic bundle that
+# ships these same /opt/aerospike/bin/asadm paths. From TOOLS_SPLIT_VERSION on
+# it is a transitional metapackage that ships no binaries and Depends on this
+# package instead, on its way to being retired entirely. The versioned
+# relations below are the standard package-split handoff (Debian Policy 7.6.1:
+# files moving between packages get versioned Breaks + Replaces).
 #
-# The takeover is NOT sticky. Replaces is evaluated on every unpack, and the
-# bundle declares the mirror Replaces, so a later `apt upgrade` of the bundle
-# takes the paths back. Because the bundle's payload is a superset of this
-# package's file list, that unpack also trips dpkg's disappearance rule and
-# leaves aerospike-asadm not-installed. Recovery is `apt install aerospike-asadm`.
-# Only the metapackage conversion (see the rpm target) makes ownership durable.
-#
-# The REMOVAL direction is the sharper edge, and it is silent. Once the takeover
-# has happened the overlapping paths are listed only by this package, so
-# `apt remove aerospike-asadm` DELETES the bundle's asadm/asinfo while
-# aerospike-tools is still installed -- and because dpkg verifies against a
-# manifest that no longer claims those paths, `dpkg -l` still reports the bundle
-# `ii` and `dpkg -V` exits 0 with no output. Nothing warns, and recovery is
-# `apt install --reinstall aerospike-tools`. Verified with real .debs on
-# ubuntu:noble. This is inherent to Replaces-without-Breaks (Breaks would force
-# the bundle off the system, defeating coexistence), so it is a documented
-# consequence rather than something a flag change can fix.
+# Keep this value in step with the metapackage cutover in
+# citrusleaf/aerospike-tools and with the other standalone tool repos.
+TOOLS_SPLIT_VERSION = 13.0.3
+
+# deb: Breaks forces the old file-shipping bundle to be upgraded to the
+# metapackage (or removed) in the same transaction, and Replaces lets dpkg hand
+# the overlapping paths over during that transaction. Both are bounded to
+# (<< TOOLS_SPLIT_VERSION): the metapackage and anything newer ship none of
+# these files, so they coexist freely and no ownership ping-pong is possible.
+# A bare `dpkg -i` over an old bundle refuses with a named break naming
+# aerospike-tools; `apt install` resolves it. fpm has no --deb-breaks flag, so
+# Breaks goes in via --deb-field.
 .PHONY: deb
 deb: prep
 	fpm --force \
@@ -90,35 +87,18 @@ deb: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--replaces "aerospike-tools" \
+		--replaces "aerospike-tools (<< $(TOOLS_SPLIT_VERSION))" \
+		--deb-field "Breaks: aerospike-tools (<< $(TOOLS_SPLIT_VERSION))" \
 		--package $(TARGET_DIR)/$(NAME)_$(PKG_VERSION)-$(DEB_ITERATION)_$(ARCH).deb
 
 # rpm has no Replaces equivalent for a partial file takeover (fpm's --replaces
-# maps to Obsoletes, which erases the other package wholesale), so Conflicts is
-# the best available outcome: a named conflict at depsolve time instead of an
-# opaque file collision at transaction-test time. The bundle must still be
-# removed by hand (dnf remove aerospike-tools) before this package will
-# install — a known gap, not an oversight.
-#
-# The full cost, because "best available outcome" undersells it: a package-level
-# Conflicts is a dependency problem, not a file conflict, so `rpm -i
-# --replacefiles` and `--force` no longer bypass it -- only `--nodeps`, which
-# disables every real dependency check as collateral. `--replacefiles` DID
-# previously produce a working coexisting pair, so this flag makes coexistence
-# unreachable on rpm rather than merely noisier, and any host already in that
-# state can no longer `dnf upgrade aerospike-asadm`. Note that pkg/postinst.sh
-# documents coexistence as a design goal: after this flag, that is a deb-only
-# property.
-#
-# Unversioned on purpose: the bundle ships these paths at every version, and a
-# version bound would let rpm attempt the transaction for bundles above it and
-# fail on the raw file conflict instead. But REMOVE this --conflicts before
-# aerospike-tools becomes a metapackage that Requires this package — an
-# unversioned Conflicts makes such a metapackage unsatisfiable, so the flag must
-# be gone from a released aerospike-asadm BEFORE the metapackage ships. The
-# reasoning above is self-contained; for the wider write-up see
-# aerospike/aerospike-admin#532, and the conversion itself is tracked against the
-# aerospike-tools bundle (citrusleaf/aerospike-tools#439).
+# maps to Obsoletes, which erases the other package wholesale), so the split is
+# expressed as a versioned Conflicts against the file-shipping bundles: a named
+# conflict at depsolve time instead of an opaque file collision at
+# transaction-test time. Upgrading the old bundle to the metapackage and
+# installing this package in one dnf transaction resolves it; the bound means
+# the metapackage (>= TOOLS_SPLIT_VERSION) is never conflicted, so this flag
+# never needs to be revisited.
 .PHONY: rpm
 rpm: prep
 	fpm --force \
@@ -139,7 +119,7 @@ rpm: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--conflicts "aerospike-tools" \
+		--conflicts "aerospike-tools < $(TOOLS_SPLIT_VERSION)" \
 		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION)-$(ITERATION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar
