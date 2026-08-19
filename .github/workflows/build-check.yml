@@ -5,9 +5,11 @@
 # distros × 2 arches + signing + notarization — too heavy for every commit.
 #
 # This workflow exercises both fpm code paths (deb on Ubuntu, rpm on EL) on
-# amd64 so a regression in either format surfaces early. macOS pkg builds
-# are deferred to the release workflow (macOS runners are ~10x more
-# expensive and pkg/Makefile changes are infrequent).
+# amd64 so a regression in either format surfaces early. macOS pkg builds are
+# not here: mac-artifact.yml builds and installs the .pkg (exercising
+# pkg/mac-scripts) on PRs into master. Note that gives macOS narrower coverage
+# than the branches: ["**"] below — a PR into bugfix-* gets the deb/rpm checks
+# but no macOS packaging check.
 #
 # tests.yml verifies the binary build via `make`. This adds coverage for
 # the *packaging* step (install_deps → make → fpm).

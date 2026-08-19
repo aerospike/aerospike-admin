@@ -486,11 +486,15 @@ jobs:
           "/tmp/bats-core-${BATS_VERSION}/install.sh" /usr/local
           bats --version
 
-      - name: Verify installation
-        run: bats .github/bin/test/test_execute.bats
-
+      # astools.conf lifecycle runs FIRST because it reinstalls the package
+      # several times. Verifying execution afterwards means the pipeline's last
+      # word on "does asadm start" comes from after the install-over-install
+      # cycle, not before it.
       - name: Verify astools.conf lifecycle
         run: bats .github/bin/test/test_astools_conf.bats
+
+      - name: Verify installation
+        run: bats .github/bin/test/test_execute.bats
 
   test-install-mac-and-execute:
     name: Test install & execute (${{ matrix.os }})
@@ -707,11 +711,15 @@ jobs:
       - name: Install bats
         run: brew install bats-core
 
-      - name: Verify installation
-        run: bats .github/bin/test/test_execute.bats
-
+      # astools.conf lifecycle runs FIRST because it reinstalls the package
+      # several times. Verifying execution afterwards means the pipeline's last
+      # word on "does asadm start" comes from after the install-over-install
+      # cycle, not before it.
       - name: Verify astools.conf lifecycle
         run: bats .github/bin/test/test_astools_conf.bats
+
+      - name: Verify installation
+        run: bats .github/bin/test/test_execute.bats
 
   organize-signed-artifacts:
     name: Organize signed artifacts for deploy
