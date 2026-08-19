@@ -51,25 +51,25 @@ ARCH = $(shell uname -m)
 .PHONY: all
 all: deb rpm tar
 
-# aerospike-tools older than TOOLS_SPLIT_VERSION is the monolithic bundle that
-# ships these same /opt/aerospike/bin/asadm paths. From TOOLS_SPLIT_VERSION on
-# it is a transitional metapackage that ships no binaries and Depends on this
-# package instead, on its way to being retired entirely. The versioned
-# relations below are the standard package-split handoff (Debian Policy 7.6.1:
-# files moving between packages get versioned Breaks + Replaces).
+# The aerospike-tools bundle ships these same /opt/aerospike/bin/asadm paths,
+# so the two packages cannot coexist while it does. Two conflicts express
+# that without predicting the bundle's future:
 #
-# Keep this value in step with the metapackage cutover in
-# citrusleaf/aerospike-tools and with the other standalone tool repos.
-TOOLS_SPLIT_VERSION = 13.0.3
-
-# deb: Breaks forces the old file-shipping bundle to be upgraded to the
-# metapackage (or removed) in the same transaction, and Replaces lets dpkg hand
-# the overlapping paths over during that transaction. Both are bounded to
-# (<< TOOLS_SPLIT_VERSION): the metapackage and anything newer ship none of
-# these files, so they coexist freely and no ownership ping-pong is possible.
-# A bare `dpkg -i` over an old bundle refuses with a named break naming
-# aerospike-tools; `apt install` resolves it. fpm has no --deb-breaks flag, so
-# Breaks goes in via --deb-field.
+#   aerospike-tools (<< TOOLS_PRE_TOKEN_BOUND)  every bundle released BEFORE
+#     the bundle started declaring the virtual token below. A frozen fact
+#     about the past; never needs raising.
+#   aerospike-tools-binaries                    a virtual package Provided by
+#     every file-shipping bundle from TOOLS_PRE_TOKEN_BOUND on (see
+#     citrusleaf/aerospike-tools pkg/Makefile.bundle). It travels with the
+#     payload at any version, so no future version commitment exists here.
+#     If the bundle ever stops shipping binaries it drops the token and
+#     coexistence starts working with no change on this side.
+#
+# Installing either side over the other refuses with a named, actionable
+# conflict instead of a raw file collision. Keep both values in step with
+# citrusleaf/aerospike-tools and the other standalone tool repos.
+TOOLS_PRE_TOKEN_BOUND = 13.0.3
+TOOLS_BUNDLE_TOKEN = aerospike-tools-binaries
 .PHONY: deb
 deb: prep
 	fpm --force \
@@ -87,18 +87,14 @@ deb: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--replaces "aerospike-tools (<< $(TOOLS_SPLIT_VERSION))" \
-		--deb-field "Breaks: aerospike-tools (<< $(TOOLS_SPLIT_VERSION))" \
+		--conflicts "aerospike-tools (<< $(TOOLS_PRE_TOKEN_BOUND))" \
+		--conflicts "$(TOOLS_BUNDLE_TOKEN)" \
 		--package $(TARGET_DIR)/$(NAME)_$(PKG_VERSION)-$(DEB_ITERATION)_$(ARCH).deb
 
-# rpm has no Replaces equivalent for a partial file takeover (fpm's --replaces
-# maps to Obsoletes, which erases the other package wholesale), so the split is
-# expressed as a versioned Conflicts against the file-shipping bundles: a named
-# conflict at depsolve time instead of an opaque file collision at
-# transaction-test time. Upgrading the old bundle to the metapackage and
-# installing this package in one dnf transaction resolves it; the bound means
-# the metapackage (>= TOOLS_SPLIT_VERSION) is never conflicted, so this flag
-# never needs to be revisited.
+# rpm side of the same two conflicts (fpm's --replaces maps to Obsoletes,
+# which would erase the bundle wholesale, so Conflicts is the only correct
+# relation here). dnf names the conflict and the resolution instead of dying
+# on an opaque file collision at transaction-test time.
 .PHONY: rpm
 rpm: prep
 	fpm --force \
@@ -119,7 +115,8 @@ rpm: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--conflicts "aerospike-tools < $(TOOLS_SPLIT_VERSION)" \
+		--conflicts "aerospike-tools < $(TOOLS_PRE_TOKEN_BOUND)" \
+		--conflicts "$(TOOLS_BUNDLE_TOKEN)" \
 		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION)-$(ITERATION).$(BUILD_DISTRO).$(ARCH).rpm
 
 .PHONY: tar

@@ -36,8 +36,12 @@ function deb_relations() {
 		| sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:space:]][[:space:]]*/ /g'
 }
 
-function tools_split_version() {
-	sed -n 's/^TOOLS_SPLIT_VERSION[[:space:]]*=[[:space:]]*//p' "$GIT_DIR/pkg/Makefile" | head -1
+function tools_pre_token_bound() {
+	sed -n 's/^TOOLS_PRE_TOKEN_BOUND[[:space:]]*=[[:space:]]*//p' "$GIT_DIR/pkg/Makefile" | head -1
+}
+
+function tools_bundle_token() {
+	sed -n 's/^TOOLS_BUNDLE_TOKEN[[:space:]]*=[[:space:]]*//p' "$GIT_DIR/pkg/Makefile" | head -1
 }
 
 # Print one relation name per line for an rpm array tag. %{TAG} outside a [...]
@@ -68,10 +72,11 @@ function rpm_relations() {
 # default branch that returned 0 while reporting a tar. A gate whose default is
 # success is not a gate.
 function assert_pkg_relations() {
-	local fmt="${1:-}" pkg split
-	split=$(tools_split_version)
-	if [ -z "$split" ]; then
-		echo "assert_pkg_relations: TOOLS_SPLIT_VERSION not found in pkg/Makefile" >&2
+	local fmt="${1:-}" pkg bound token
+	bound=$(tools_pre_token_bound)
+	token=$(tools_bundle_token)
+	if [ -z "$bound" ] || [ -z "$token" ]; then
+		echo "assert_pkg_relations: TOOLS_PRE_TOKEN_BOUND / TOOLS_BUNDLE_TOKEN not found in pkg/Makefile" >&2
 		return 1
 	fi
 	case "$fmt" in
@@ -81,21 +86,21 @@ function assert_pkg_relations() {
 				echo "assert_pkg_relations: no .deb found under pkg/target" >&2
 				return 1
 			fi
-			if ! deb_relations "$pkg" Replaces | grep -qxF "aerospike-tools (<< $split)"; then
-				echo "deb is missing 'Replaces: aerospike-tools (<< $split)'" >&2
+			if ! deb_relations "$pkg" Conflicts | grep -qxF "aerospike-tools (<< $bound)"; then
+				echo "deb is missing 'Conflicts: aerospike-tools (<< $bound)' (pre-token bundles would hit a raw file collision)" >&2
 				return 1
 			fi
-			if ! deb_relations "$pkg" Breaks | grep -qxF "aerospike-tools (<< $split)"; then
-				echo "deb is missing 'Breaks: aerospike-tools (<< $split)'" >&2
+			if ! deb_relations "$pkg" Conflicts | grep -qxF "$token"; then
+				echo "deb is missing 'Conflicts: $token' (file-shipping bundles from $bound on would hit a raw file collision)" >&2
 				return 1
 			fi
-			if deb_relations "$pkg" Replaces | grep -qx 'aerospike-tools' \
-				|| deb_relations "$pkg" Breaks | grep -qx 'aerospike-tools'; then
-				echo "deb carries an UNVERSIONED aerospike-tools relation; it must be bounded (<< $split) or it hits the metapackage too" >&2
+			if deb_relations "$pkg" Conflicts | grep -qx 'aerospike-tools'; then
+				echo "deb carries an UNVERSIONED Conflicts: aerospike-tools; that would also hit a future no-binaries bundle" >&2
 				return 1
 			fi
-			if deb_relations "$pkg" Conflicts | grep -q 'aerospike-tools'; then
-				echo "deb must not Conflict with aerospike-tools (Breaks+Replaces is the split handoff)" >&2
+			if deb_relations "$pkg" Replaces | grep -q 'aerospike-tools' \
+				|| deb_relations "$pkg" Breaks | grep -q 'aerospike-tools'; then
+				echo "deb must not Replace/Break aerospike-tools; the conflict pair is the whole design" >&2
 				return 1
 			fi
 			;;
@@ -106,12 +111,16 @@ function assert_pkg_relations() {
 				return 1
 			fi
 			if ! rpm -qp --conflicts "$pkg" | sed 's/[[:space:]][[:space:]]*/ /g' \
-				| grep -qxF "aerospike-tools < $split"; then
-				echo "rpm is missing 'Conflicts: aerospike-tools < $split'" >&2
+				| grep -qxF "aerospike-tools < $bound"; then
+				echo "rpm is missing 'Conflicts: aerospike-tools < $bound'" >&2
+				return 1
+			fi
+			if ! rpm -qp --conflicts "$pkg" | grep -qxF "$token"; then
+				echo "rpm is missing 'Conflicts: $token'" >&2
 				return 1
 			fi
 			if rpm -qp --conflicts "$pkg" | grep -qx 'aerospike-tools'; then
-				echo "rpm carries an UNVERSIONED Conflicts: aerospike-tools; it must be bounded (< $split) or the metapackage becomes unsatisfiable" >&2
+				echo "rpm carries an UNVERSIONED Conflicts: aerospike-tools; that would also hit a future no-binaries bundle" >&2
 				return 1
 			fi
 			if rpm_relations "$pkg" OBSOLETES | grep -qx 'aerospike-tools'; then
@@ -128,7 +137,7 @@ function assert_pkg_relations() {
 			return 1
 			;;
 	esac
-	echo "assert_pkg_relations: versioned aerospike-tools split relations present and correct ($fmt)"
+	echo "assert_pkg_relations: aerospike-tools conflict pair present and correct ($fmt)"
 	return 0
 }
 
@@ -175,9 +184,10 @@ function _bundle_overlap_cleanup() {
 }
 
 function _bundle_overlap_check() {
-	local fmt="$1" stub_root old_pkg meta_pkg real_pkg rc out split
-	split=$(tools_split_version)
-	[ -n "$split" ] || { echo "assert_bundle_overlap: TOOLS_SPLIT_VERSION not found in pkg/Makefile" >&2; return 1; }
+	local fmt="$1" stub_root old_pkg tok_pkg shell_pkg real_pkg rc out bound token
+	bound=$(tools_pre_token_bound)
+	token=$(tools_bundle_token)
+	{ [ -n "$bound" ] && [ -n "$token" ]; } || { echo "assert_bundle_overlap: TOOLS_PRE_TOKEN_BOUND / TOOLS_BUNDLE_TOKEN not found in pkg/Makefile" >&2; return 1; }
 	stub_root=$(mktemp -d)
 	mkdir -p "$stub_root/root/opt/aerospike/bin/asadm"
 	echo "stub bundle payload" > "$stub_root/root/opt/aerospike/bin/asadm/asadm"
@@ -187,32 +197,53 @@ function _bundle_overlap_check() {
 			real_pkg=$(find "$GIT_DIR/pkg/target" -name '*.deb' -print -quit)
 			( cd "$stub_root" && fpm --force -s dir -t deb -n aerospike-tools -v 12.0.0 \
 				-C "$stub_root/root" --package "$stub_root/old.deb" . >/dev/null )
-			( cd "$stub_root" && fpm --force -s empty -t deb -n aerospike-tools -v "$split" \
-				--package "$stub_root/meta.deb" >/dev/null )
+			( cd "$stub_root" && fpm --force -s dir -t deb -n aerospike-tools -v "$bound" \
+				--provides "$token" \
+				-C "$stub_root/root" --package "$stub_root/tok.deb" . >/dev/null )
+			( cd "$stub_root" && fpm --force -s empty -t deb -n aerospike-tools -v 99.0.0 \
+				--package "$stub_root/shell.deb" >/dev/null )
 			old_pkg="$stub_root/old.deb"
-			meta_pkg="$stub_root/meta.deb"
+			tok_pkg="$stub_root/tok.deb"
+			shell_pkg="$stub_root/shell.deb"
 
 			dpkg -i "$old_pkg" >/dev/null || { echo "assert_bundle_overlap: stub old bundle would not install" >&2; return 1; }
-
 			rc=0
 			out=$(dpkg -i "$real_pkg" 2>&1) || rc=$?
 			if [ "$rc" -eq 0 ]; then
-				echo "assert_bundle_overlap: dpkg -i SUCCEEDED over the old bundle -- Breaks (<< $split) did not take effect" >&2
+				echo "assert_bundle_overlap: dpkg -i SUCCEEDED over the pre-token bundle -- Conflicts (<< $bound) did not take effect" >&2
 				return 1
 			fi
 			if printf '%s\n' "$out" | grep -qi 'trying to overwrite'; then
-				echo "assert_bundle_overlap: dpkg died on a raw file overwrite, not a named break -- the versioned relations did not take effect" >&2
+				echo "assert_bundle_overlap: dpkg died on a raw file overwrite over the pre-token bundle" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
-			if ! printf '%s\n' "$out" | grep -qi 'breaks aerospike-tools'; then
-				echo "assert_bundle_overlap: dpkg failed but not with a named break on aerospike-tools; not actionable" >&2
+			if ! printf '%s\n' "$out" | grep -qi 'conflicts with'; then
+				echo "assert_bundle_overlap: dpkg failed over the pre-token bundle but not with a named conflict" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
 
-			if ! out=$(dpkg -i "$meta_pkg" "$real_pkg" 2>&1); then
-				echo "assert_bundle_overlap: one-shot migration (metapackage + this package in a single dpkg run) FAILED" >&2
+			dpkg -i "$tok_pkg" >/dev/null || { echo "assert_bundle_overlap: stub token bundle would not install" >&2; return 1; }
+			rc=0
+			out=$(dpkg -i "$real_pkg" 2>&1) || rc=$?
+			if [ "$rc" -eq 0 ]; then
+				echo "assert_bundle_overlap: dpkg -i SUCCEEDED over the token bundle -- Conflicts: $token did not take effect" >&2
+				return 1
+			fi
+			if printf '%s\n' "$out" | grep -qi 'trying to overwrite'; then
+				echo "assert_bundle_overlap: dpkg died on a raw file overwrite over the token bundle" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
+			if ! printf '%s\n' "$out" | grep -qi 'conflicts with'; then
+				echo "assert_bundle_overlap: dpkg failed over the token bundle but not with a named conflict" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
+
+			if ! out=$(dpkg -i "$shell_pkg" "$real_pkg" 2>&1); then
+				echo "assert_bundle_overlap: migration through a no-binaries bundle (single dpkg run) FAILED" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
@@ -221,21 +252,24 @@ function _bundle_overlap_check() {
 				dpkg -S /opt/aerospike/bin/asadm/asadm >&2 || true
 				return 1
 			fi
-			if ! dpkg-query -W -f='${Status} ${Version}' aerospike-tools 2>/dev/null | grep -q "install ok installed $split"; then
-				echo "assert_bundle_overlap: aerospike-tools is not installed at the metapackage version $split after migration" >&2
-				dpkg-query -W aerospike-tools >&2 || true
+			if ! dpkg-query -W -f='${Status}' aerospike-tools 2>/dev/null | grep -q 'install ok installed'; then
+				echo "assert_bundle_overlap: the no-binaries bundle did not stay installed alongside this package" >&2
 				return 1
 			fi
-			echo "assert_bundle_overlap: deb refuses the old bundle with a named break and migrates cleanly through the $split metapackage"
+			echo "assert_bundle_overlap: deb refuses both file-shipping bundle generations with named conflicts and coexists with a no-binaries bundle"
 			;;
 		rpm)
 			real_pkg=$(find "$GIT_DIR/pkg/target" -name '*.rpm' -print -quit)
 			( cd "$stub_root" && fpm --force -s dir -t rpm -n aerospike-tools -v 12.0.0 \
 				-C "$stub_root/root" --package "$stub_root/old.rpm" . >/dev/null )
-			( cd "$stub_root" && fpm --force -s empty -t rpm -n aerospike-tools -v "$split" \
-				--package "$stub_root/meta.rpm" >/dev/null )
+			( cd "$stub_root" && fpm --force -s dir -t rpm -n aerospike-tools -v "$bound" \
+				--provides "$token" \
+				-C "$stub_root/root" --package "$stub_root/tok.rpm" . >/dev/null )
+			( cd "$stub_root" && fpm --force -s empty -t rpm -n aerospike-tools -v 99.0.0 \
+				--package "$stub_root/shell.rpm" >/dev/null )
 			old_pkg="$stub_root/old.rpm"
-			meta_pkg="$stub_root/meta.rpm"
+			tok_pkg="$stub_root/tok.rpm"
+			shell_pkg="$stub_root/shell.rpm"
 
 			rpm -i "$old_pkg" >/dev/null || { echo "assert_bundle_overlap: stub old bundle would not install" >&2; return 1; }
 
@@ -248,11 +282,11 @@ function _bundle_overlap_check() {
 			rc=0
 			out=$(rpm -i "$real_pkg" 2>&1) || rc=$?
 			if [ "$rc" -eq 0 ]; then
-				echo "assert_bundle_overlap: rpm install SUCCEEDED over the old bundle -- Conflicts (< $split) did not take effect" >&2
+				echo "assert_bundle_overlap: rpm install SUCCEEDED over the pre-token bundle -- Conflicts (< $bound) did not take effect" >&2
 				return 1
 			fi
 			if printf '%s\n' "$out" | grep -qi 'conflicts with file from'; then
-				echo "assert_bundle_overlap: rpm died on a raw FILE collision, not a named package conflict -- Conflicts did not take effect" >&2
+				echo "assert_bundle_overlap: rpm died on a raw FILE collision over the pre-token bundle" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
@@ -262,13 +296,32 @@ function _bundle_overlap_check() {
 				return 1
 			fi
 			if ! printf '%s\n' "$out" | grep -qi 'conflicts with'; then
-				echo "assert_bundle_overlap: rpm failed but not with a named aerospike-tools conflict; not actionable" >&2
+				echo "assert_bundle_overlap: rpm failed over the pre-token bundle but not with a named conflict" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
 
-			if ! out=$(rpm -U "$meta_pkg" "$real_pkg" 2>&1); then
-				echo "assert_bundle_overlap: one-shot migration (metapackage + this package in a single rpm transaction) FAILED" >&2
+			rpm -e aerospike-tools >/dev/null 2>&1 || true
+			rpm -i "$tok_pkg" >/dev/null || { echo "assert_bundle_overlap: stub token bundle would not install" >&2; return 1; }
+			rc=0
+			out=$(rpm -i "$real_pkg" 2>&1) || rc=$?
+			if [ "$rc" -eq 0 ]; then
+				echo "assert_bundle_overlap: rpm install SUCCEEDED over the token bundle -- Conflicts: $token did not take effect" >&2
+				return 1
+			fi
+			if printf '%s\n' "$out" | grep -qi 'conflicts with file from'; then
+				echo "assert_bundle_overlap: rpm died on a raw FILE collision over the token bundle" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
+			if ! printf '%s\n' "$out" | grep -qi 'conflicts with'; then
+				echo "assert_bundle_overlap: rpm failed over the token bundle but not with a named conflict" >&2
+				printf '%s\n' "$out" >&2
+				return 1
+			fi
+
+			if ! out=$(rpm -U "$shell_pkg" "$real_pkg" 2>&1); then
+				echo "assert_bundle_overlap: migration through a no-binaries bundle (single rpm transaction) FAILED" >&2
 				printf '%s\n' "$out" >&2
 				return 1
 			fi
@@ -277,12 +330,11 @@ function _bundle_overlap_check() {
 				rpm -qf /opt/aerospike/bin/asadm/asadm >&2 || true
 				return 1
 			fi
-			if ! rpm -q --qf '%{VERSION}\n' aerospike-tools 2>/dev/null | grep -qxF "$split"; then
-				echo "assert_bundle_overlap: aerospike-tools is not installed at the metapackage version $split after migration" >&2
-				rpm -q aerospike-tools >&2 || true
+			if ! rpm -q aerospike-tools >/dev/null 2>&1; then
+				echo "assert_bundle_overlap: the no-binaries bundle did not stay installed alongside this package" >&2
 				return 1
 			fi
-			echo "assert_bundle_overlap: rpm refuses the old bundle with a named conflict and migrates cleanly through the $split metapackage"
+			echo "assert_bundle_overlap: rpm refuses both file-shipping bundle generations with named conflicts and coexists with a no-binaries bundle"
 			;;
 		tar)
 			echo "assert_bundle_overlap: no relations declared for the tar target; skipping"
