@@ -32,6 +32,7 @@ UBUNTU_CODENAME="noble"
 log_info()    { printf '\e[36m[INFO]\e[0m  %s\n' "$*" >&2; }
 log_success() { printf '\e[32m[OK]\e[0m    %s\n' "$*" >&2; }
 log_warn()    { printf '\e[33m[WARN]\e[0m  %s\n' "$*" >&2; }
+log_error()   { printf '\e[31m[ERROR]\e[0m %s\n' "$*" >&2; }
 
 # ---------------------------------------------------------------------------
 # Usage
@@ -420,8 +421,10 @@ function resolve_packages() {
         LOCAL_PKG_AMD64="${pkg_amd64}"
         LOCAL_PKGS_COPIED+=("${SCRIPT_DIR}/${pkg_amd64}")
       else
-        log_warn "  ${pkg_amd64} not found in ${PACKAGES_DIR} — will fall back to URL"
-        ASADM_AMD64_SHA256="PLACEHOLDER"
+        log_error "  ${pkg_amd64} not found under ${PACKAGES_DIR}."
+        log_error "  Available: $(find -L "${real_dir}" -maxdepth 3 -name '*.deb' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+        log_error "  This name comes from pkg_release.sh; fix the derivation rather than falling back to an unverified download."
+        exit 1
       fi
     fi
     if [[ "${need_arm64}" == true ]]; then
@@ -434,8 +437,10 @@ function resolve_packages() {
         LOCAL_PKG_ARM64="${pkg_arm64}"
         LOCAL_PKGS_COPIED+=("${SCRIPT_DIR}/${pkg_arm64}")
       else
-        log_warn "  ${pkg_arm64} not found in ${PACKAGES_DIR} — will fall back to URL"
-        ASADM_ARM64_SHA256="PLACEHOLDER"
+        log_error "  ${pkg_arm64} not found under ${PACKAGES_DIR}."
+        log_error "  Available: $(find -L "${real_dir}" -maxdepth 3 -name '*.deb' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+        log_error "  This name comes from pkg_release.sh; fix the derivation rather than falling back to an unverified download."
+        exit 1
       fi
     fi
   elif [[ "${COMPUTE_SHA}" == true ]]; then
@@ -503,7 +508,12 @@ function main() {
     -p) mode="push" ; shift ;;
     -M | --manifest) mode="manifest" ; shift ;;
     -v | --version)       VERSION="$2"             ; shift 2 ;;
-    -i | --iteration)     ITERATION="$2"           ; shift 2 ;;
+    -i | --iteration)
+      if [[ ! "${2:-}" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "--iteration must be a positive integer with no leading zero, got '${2:-}'"
+        exit 1
+      fi
+      ITERATION="$2"; shift 2 ;;
     -r | --registry)      REGISTRY_PREFIXES+=("$2") ; shift 2 ;;
     -a | --arch)          arch_filters+=("$2")     ; shift 2 ;;
     -u | --packages-url)  pkg_url="$2"             ; shift 2 ;;
@@ -514,25 +524,25 @@ function main() {
     -n | --no-cache)      no_cache=true            ; shift ;;
     -N | --dry-run)       dry_run=true             ; shift ;;
     -h | --help)      usage ; exit 0 ;;
-    *) log_warn "Unknown option: $1" ; usage ; exit 1 ;;
+    *) log_error "Unknown option: $1" ; usage ; exit 1 ;;
     esac
   done
 
   if [[ -z "${mode}" ]]; then
-    log_warn "A mode (-t, -p, or -M) is required."
+    log_error "A mode (-t, -p, or -M) is required."
     usage
     exit 1
   fi
 
   if [[ -z "${VERSION}" ]]; then
-    log_warn "--version is required."
+    log_error "--version is required."
     usage
     exit 1
   fi
 
   local pkg_release_sh="${SCRIPT_DIR}/../.github/bin/pkg_release.sh"
   if [[ ! -x "${pkg_release_sh}" ]]; then
-    log_warn "missing ${pkg_release_sh}"
+    log_error "missing ${pkg_release_sh}"
     exit 1
   fi
   PKG_VERSION=$("${pkg_release_sh}" "${VERSION}" version)
@@ -573,7 +583,7 @@ function main() {
   fi
 
   if [[ ${#ACTIVE_ARCHES[@]} -eq 0 ]]; then
-    log_warn "No valid arches after filtering."
+    log_error "No valid arches after filtering."
     exit 1
   fi
 
