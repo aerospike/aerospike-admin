@@ -603,9 +603,7 @@ jobs:
           # renamed GitHub runner label cannot silently match zero files -- and
           # this asserts the artifact really is built for the macOS/arch it
           # claims, which a runner-label match never did.
-          # Assigned on its own line so `set -e` surfaces an os_version.sh
-          # failure here, rather than as a mystifying "0 files matched
-          # *--<arch>.pkg" below.
+          # Assigned on its own line so `set -e` sees a failure here.
           plat=$(.github/bin/os_version.sh)
           pat="*-${plat}-$(uname -m).pkg"
           # One find, reused for the count, the error message and the result --
