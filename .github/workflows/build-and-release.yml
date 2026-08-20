@@ -336,7 +336,11 @@ jobs:
         with:
           path: |
             build/bin
-          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}
+          # Keyed on the BUILD INPUTS, not just VERSION. Keying on VERSION alone
+          # served a stale bundle for every source change within one rc: a
+          # pyinstaller-build.spec fix landed, the key was unchanged, `make
+          # one-dir` was skipped, and the pre-fix binaries shipped.
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py') }}
 
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
