@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+import io
+import json
 import os
 import shutil
 import tempfile
@@ -19,10 +22,14 @@ import unittest
 
 from mock import MagicMock, patch
 
+from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import (
+    BundleWarning,
+    DiagSeverity,
+)
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
-from lib.utils import log_util
+from lib.utils import log_util, logger
 
 
 class LogUtilTest(unittest.TestCase):
@@ -235,8 +242,6 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
         shutil.rmtree(self.bundle_dir, ignore_errors=True)
 
     def _write_json(self, suffix, data):
-        import json
-
         with open(os.path.join(self.bundle_dir, FILE_PREFIX + suffix), "w") as f:
             json.dump(data, f)
 
@@ -273,6 +278,36 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
         handler = self._handler()
 
         self.assertEqual(handler.collectinfo_meta, {})
+
+    def test_meta_for_a_different_snapshot_is_ignored(self):
+        """A meta describing another bundle would report its dropped nodes, per-node
+        errors, and collector version against this snapshot."""
+        other = copy.deepcopy(META_DATA)
+        other["snapshots"][0]["timestamp"] = "2020-01-01 00:00:00 UTC"
+        self._write_json("collectinfo_meta.json", other)
+
+        handler = self._handler()
+
+        self.assertEqual(handler.collectinfo_meta, {})
+        self.assertNotIn("2.2.2.2:3000", handler.diagnostics_banner())
+
+    def test_the_meta_carrying_the_analyzed_snapshot_wins(self):
+        """Every archive under the path is extracted and every ascinfo.json merged,
+        so more than one meta can be present while one snapshot is analyzed."""
+        other = copy.deepcopy(META_DATA)
+        other["snapshots"][0]["timestamp"] = "2020-01-01 00:00:00 UTC"
+        other["bundle"]["asadm_version"] = "1.0.0"
+
+        with open(
+            os.path.join(self.bundle_dir, "other_collectinfo_meta.json"), "w"
+        ) as f:
+            json.dump(other, f)
+
+        self._write_json("collectinfo_meta.json", META_DATA)
+
+        handler = self._handler()
+
+        self.assertEqual(handler.collectinfo_meta["bundle"]["asadm_version"], "3.1.0")
 
     def test_version_scan_reads_ascollectinfo_log(self):
         self._write_text(
@@ -350,14 +385,35 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
 
         self.assertIs(first, second)
 
-    def test_emit_diagnostics_to_log_uses_warning_level(self):
+    def test_print_diagnostics_banner_writes_the_findings(self):
         self._write_json("collectinfo_meta.json", META_DATA)
         handler = self._handler()
-        log = MagicMock()
+        stream = io.StringIO()
 
-        handler.emit_diagnostics_to_log(log)
+        handler.print_diagnostics_banner(stream)
+        out = stream.getvalue()
 
-        self.assertTrue(log.warning.called)
+        self.assertIn("Collectinfo Bundle Diagnostics", out)
+        self.assertIn("2.2.2.2:3000", out)
+
+    def test_print_diagnostics_banner_does_not_set_the_exit_code(self):
+        """Diagnostics describe the collected cluster, not the command the user ran,
+        so an ERROR-severity finding must not fail `asadm -cf ... -e ...`."""
+        self._write_json("collectinfo_meta.json", META_DATA)
+        handler = self._handler()
+        handler._bundle_diagnostics = [
+            BundleWarning(
+                category="partition-availability",
+                severity=DiagSeverity.ERROR,
+                title="Partitions were dead or unavailable at collection time",
+            )
+        ]
+        logger.set_exit_code(0)
+        self.addCleanup(logger.set_exit_code, 0)
+
+        handler.print_diagnostics_banner(io.StringIO())
+
+        self.assertEqual(logger.get_exit_code(), 0)
 
     def test_iter_bundle_files_finds_log_files(self):
         self._write_text("sysinfo.log", "sysinfo")

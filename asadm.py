@@ -170,7 +170,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 if not execute_only_mode:
                     self.intro = str(self.ctrl.log_handler)
                 else:
-                    self.ctrl.log_handler.emit_diagnostics_to_log(logger)
+                    self.ctrl.log_handler.print_diagnostics_banner()
 
             else:
                 if user is not None:

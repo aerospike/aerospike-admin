@@ -24,8 +24,13 @@ from lib.live_cluster.client.types import (
     ASInfoNotAuthenticatedError,
     ASInfoResponseError,
     ASProtocolConnectionError,
+    ASProtocolError,
     ASResponse,
 )
+from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import (
+    CollectinfoDiagnostics,
+)
+from lib.live_cluster.client.node import Node
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
     COLLECTINFO_NODE_TIMEOUT,
@@ -288,6 +293,31 @@ class GetCollectinfoDataJsonTest(unittest.IsolatedAsyncioTestCase):
         # Expected-node set is derived from the queried selection, not all cluster nodes.
         self.controller.cluster.get_nodes.assert_called_once_with("all")
 
+    async def test_a_sysinfo_failure_is_recorded_and_the_bundle_still_written(self):
+        """One unreachable host used to abort the whole collection. The failure is
+        recorded and that node's sys_stat left empty instead."""
+        self.controller.cluster.info_system_statistics = AsyncMock(
+            return_value={"A": {"sys": 1}, "B": OSError("ssh refused")}
+        )
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as cm:
+            result, snapshot_meta = await self.controller._get_collectinfo_data_json(
+                enable_ssh=True
+            )
+
+        dump_map = result["testcluster"]
+        self.assertEqual(dump_map["B"]["sys_stat"], {})
+        self.assertEqual(dump_map["A"]["sys_stat"], {"sys": 1})
+        self.assertEqual(
+            snapshot_meta["nodes"]["B"]["errors"][0]["section"],
+            constants.CollectinfoSection.SYSINFO,
+        )
+        self.assertEqual(
+            snapshot_meta["nodes"]["B"]["errors"][0]["error_class"],
+            constants.CollectinfoErrorClass.UNREACHABLE,
+        )
+        self.assertTrue(any("system statistics" in msg for msg in cm.output), cm.output)
+
 
 class NoDataWarningProductionShapeTest(unittest.IsolatedAsyncioTestCase):
     """TOOLS-3596: a reachable node whose every info call fails must still trigger the
@@ -534,6 +564,240 @@ class ClassifyExceptionTest(unittest.TestCase):
             _classify_exception(ValueError("nope")),
             constants.CollectinfoErrorClass.OTHER,
         )
+
+    def test_security_disabled_acl_is_unsupported(self):
+        """A security-disabled cluster rejects every ACL call. Nothing was lost, so
+        it must not be reported as a collection failure on every node."""
+        for response in (
+            ASResponse.SECURITY_NOT_ENABLED,
+            ASResponse.SECURITY_NOT_SUPPORTED,
+        ):
+            self.assertEqual(
+                _classify_exception(
+                    ASProtocolError(response, "Failed to query users"),
+                    constants.CollectinfoSection.ACL,
+                ),
+                constants.CollectinfoErrorClass.UNSUPPORTED,
+                response,
+            )
+
+    def test_optional_sections_missing_from_the_server_are_unsupported(self):
+        """user-agents and masking-show are recent; older servers answer with an
+        error response, which is not a corrupt response."""
+        for section in (
+            constants.CollectinfoSection.USER_AGENTS,
+            constants.CollectinfoSection.MASKING,
+        ):
+            self.assertEqual(
+                _classify_exception(
+                    ASInfoResponseError("Failed to get user agents", "unknown command"),
+                    section,
+                ),
+                constants.CollectinfoErrorClass.UNSUPPORTED,
+                section,
+            )
+
+    def test_required_sections_still_report_a_bad_response(self):
+        self.assertEqual(
+            _classify_exception(
+                ASInfoResponseError("m", "bad response"),
+                constants.CollectinfoSection.STATISTICS,
+            ),
+            constants.CollectinfoErrorClass.CORRUPT,
+        )
+
+    def test_a_timeout_on_an_optional_section_is_still_a_timeout(self):
+        self.assertEqual(
+            _classify_exception(
+                asyncio.TimeoutError("late"), constants.CollectinfoSection.USER_AGENTS
+            ),
+            constants.CollectinfoErrorClass.TIMEOUT,
+        )
+
+    def test_auth_failure_is_not_mistaken_for_an_absent_section(self):
+        """Both auth types subclass a type the unsupported check looks for
+        (ASInfoNotAuthenticatedError under ASInfoResponseError,
+        ASProtocolConnectionError under ASProtocolError), so an expired session on
+        an optional section must not be swallowed as a missing section."""
+        self.assertEqual(
+            _classify_exception(
+                ASProtocolConnectionError(ASResponse.SECURITY_NOT_ENABLED, "m"),
+                constants.CollectinfoSection.ACL,
+            ),
+            constants.CollectinfoErrorClass.AUTH,
+        )
+
+        for section in (
+            constants.CollectinfoSection.USER_AGENTS,
+            constants.CollectinfoSection.MASKING,
+        ):
+            self.assertEqual(
+                _classify_exception(
+                    ASInfoNotAuthenticatedError("m", "security error"), section
+                ),
+                constants.CollectinfoErrorClass.AUTH,
+                section,
+            )
+
+
+class OlderServerMetadataTest(unittest.IsolatedAsyncioTestCase):
+    """A healthy cluster running a supported older server must collect cleanly.
+
+    Three of the twelve metadata sub-calls depend on the server's version or
+    edition: `release` needs 8.1.1, `best-practices` needs 5.7, and `feature-key`
+    is Enterprise-only from 7.1. All three are called ungated, so a healthy 8.0
+    cluster fails them on every node. Recording that under the shared `metadata`
+    label made the analyzer report a broken collection for the whole cluster.
+    """
+
+    async def _real_release_exception(self, build):
+        """The exception asadm's own version gate produces, not a hand-written one."""
+
+        class _NodeStub:
+            ip = "1.1.1.1"
+            port = 3000
+
+            async def info_build(self):
+                return build
+
+        return await Node.info_release(_NodeStub())
+
+    async def test_release_version_gate_is_recorded_as_unsupported(self):
+        exception = await self._real_release_exception("8.0.0.5")
+
+        self.assertIsInstance(exception, ASInfoError)
+        self.assertNotIsInstance(exception, ASInfoResponseError)
+
+        controller = CollectinfoController()
+        controller.nodes = "all"
+        cluster = MagicMock()
+        cluster.get_node_names.return_value = {"A": "A-name"}
+        cluster.info_build = AsyncMock(return_value={"A": "8.0.0.5"})
+        cluster.info_version = AsyncMock(return_value={"A": "Enterprise 8.0.0.5"})
+        cluster.info_node = AsyncMock(return_value={"A": "A1"})
+        cluster.info_ip_port = AsyncMock(return_value={"A": "1.1.1.1:3000"})
+        cluster.info_service_list = AsyncMock(return_value={"A": []})
+        cluster.info_peers_flat_list = AsyncMock(return_value={"A": []})
+        cluster.info_udf_list = AsyncMock(return_value={"A": {}})
+        cluster.info_health_outliers = AsyncMock(return_value={"A": {}})
+        cluster.info_best_practices = AsyncMock(
+            return_value={
+                "A": ASInfoResponseError(
+                    "Failed to get best practices", "ERROR:4:unrecognized command"
+                )
+            }
+        )
+        cluster.info_feature_key = AsyncMock(
+            return_value={
+                "A": ASInfoResponseError(
+                    "Failed to get feature-key", "ERROR:4:enterprise only"
+                )
+            }
+        )
+        cluster.info_release = AsyncMock(return_value={"A": exception})
+        cluster.info_scan_show = AsyncMock(return_value={"A": {}})
+        cluster.info_query_show = AsyncMock(return_value={"A": {}})
+        cluster.info_jobs = AsyncMock(return_value={"A": {}})
+        controller.cluster = cluster
+
+        ledger = {}
+        await controller._get_as_metadata(ledger=ledger)
+
+        self.assertEqual(
+            sorted(ledger["A"]),
+            sorted(
+                [
+                    (
+                        constants.CollectinfoSection.BEST_PRACTICES,
+                        constants.CollectinfoErrorClass.UNSUPPORTED,
+                    ),
+                    (
+                        constants.CollectinfoSection.FEATURE_KEY,
+                        constants.CollectinfoErrorClass.UNSUPPORTED,
+                    ),
+                    (
+                        constants.CollectinfoSection.RELEASE,
+                        constants.CollectinfoErrorClass.UNSUPPORTED,
+                    ),
+                ]
+            ),
+        )
+
+    async def test_a_timeout_on_an_optional_call_stays_under_metadata(self):
+        """The retry pass selects nodes by section name and re-queries all twelve
+        sub-calls, so a transient failure of one of these must keep the metadata
+        label or it would never be retried."""
+        controller = CollectinfoController()
+        result_map = {"A": {}}
+        ledger = {}
+
+        controller._check_for_exception_and_set(
+            {"A": asyncio.TimeoutError("late")},
+            "release",
+            "A",
+            result_map,
+            ledger,
+            optional_section=constants.CollectinfoSection.RELEASE,
+        )
+
+        self.assertEqual(
+            list(ledger["A"]),
+            [
+                (
+                    constants.CollectinfoSection.METADATA,
+                    constants.CollectinfoErrorClass.TIMEOUT,
+                )
+            ],
+        )
+
+    async def test_the_analyzer_stays_quiet_about_those_sections(self):
+        exception = await self._real_release_exception("8.0.0.5")
+        ledger = {}
+        _record_node_error(ledger, "A", constants.CollectinfoSection.RELEASE, exception)
+
+        diagnostics = CollectinfoDiagnostics(
+            log_handler=MagicMock(),
+            snapshot=MagicMock(),
+            timestamp="ts",
+            meta={
+                "snapshots": [
+                    {
+                        "timestamp": "ts",
+                        "nodes": {"A": {"errors": _node_error_entries(ledger, "A")}},
+                    }
+                ]
+            },
+        )
+
+        self.assertIsNone(diagnostics._check_node_collection_errors())
+
+    async def test_a_real_failure_of_those_sections_is_still_reported(self):
+        ledger = {}
+        _record_node_error(
+            ledger,
+            "A",
+            constants.CollectinfoSection.RELEASE,
+            asyncio.TimeoutError("late"),
+        )
+
+        diagnostics = CollectinfoDiagnostics(
+            log_handler=MagicMock(),
+            snapshot=MagicMock(),
+            timestamp="ts",
+            meta={
+                "snapshots": [
+                    {
+                        "timestamp": "ts",
+                        "nodes": {"A": {"errors": _node_error_entries(ledger, "A")}},
+                    }
+                ]
+            },
+        )
+
+        warning = diagnostics._check_node_collection_errors()
+
+        self.assertIsNotNone(warning)
+        self.assertIn("release", warning.table_lines[0])
 
 
 class RecordNodeErrorTest(unittest.TestCase):
@@ -885,6 +1149,130 @@ class RetryTimedOutNodesTest(unittest.IsolatedAsyncioTestCase):
             ]["recovered_on_retry"]
         )
 
+    async def test_retry_keeps_metadata_the_first_pass_collected(self):
+        """A node is retried when any one of its metadata calls timed out, and the
+        retry re-queries all twelve. Overwriting the whole entry would drop the
+        node_id and services the first pass already had (TOOLS-3596)."""
+        ledger = {}
+        _record_node_error(ledger, "B", "metadata", asyncio.TimeoutError("late"))
+        meta_map = {
+            "B": {
+                "node_id": "BB1",
+                "services": [["2.2.2.2", 3000, None]],
+                "asd_build": "",
+            }
+        }
+
+        with patch.object(
+            CollectinfoController,
+            "_get_as_metadata",
+            AsyncMock(
+                return_value={
+                    "B": {"node_id": "", "services": "", "asd_build": "8.0.0.0"}
+                }
+            ),
+        ):
+            await self.controller._retry_timed_out_nodes(
+                ledger,
+                as_map={},
+                meta_map=meta_map,
+                histogram_map={},
+                latency_map={},
+                user_agents_map={},
+            )
+
+        self.assertEqual(meta_map["B"]["node_id"], "BB1")
+        self.assertEqual(meta_map["B"]["services"], [["2.2.2.2", 3000, None]])
+        self.assertEqual(meta_map["B"]["asd_build"], "8.0.0.0")
+
+    async def test_retry_keeps_statistics_subsections_the_first_pass_collected(self):
+        """statistics and config each hold eight independently collected subsections,
+        so a retry that recovers one returns the others empty."""
+        ledger = {}
+        _record_node_error(ledger, "B", "statistics", asyncio.TimeoutError("late"))
+        as_map = {
+            "B": {
+                "statistics": {
+                    "service": {"uptime": "10"},
+                    "namespace": {"test": {"objects": "5"}},
+                },
+                "config": {"service": {"proto-fd-max": "15000"}},
+            }
+        }
+
+        with patch.object(
+            CollectinfoController,
+            "_get_as_data_json",
+            AsyncMock(
+                return_value={
+                    "B": {
+                        "statistics": {"service": {"uptime": "20"}, "namespace": {}},
+                        "config": {},
+                    }
+                }
+            ),
+        ):
+            await self.controller._retry_timed_out_nodes(
+                ledger,
+                as_map=as_map,
+                meta_map={},
+                histogram_map={},
+                latency_map={},
+                user_agents_map={},
+            )
+
+        self.assertEqual(
+            as_map["B"]["statistics"]["namespace"], {"test": {"objects": "5"}}
+        )
+        self.assertEqual(as_map["B"]["statistics"]["service"], {"uptime": "20"})
+        self.assertEqual(as_map["B"]["config"], {"service": {"proto-fd-max": "15000"}})
+
+    async def test_retry_keeps_histograms_the_first_pass_collected(self):
+        ledger = {}
+        _record_node_error(ledger, "B", "histogram", asyncio.TimeoutError("late"))
+        histogram_map = {"B": {"ttl": {"raw": "1"}}}
+
+        with patch.object(
+            CollectinfoController,
+            "_get_as_histograms",
+            AsyncMock(return_value={"B": {"objsz": {"raw": "2"}}}),
+        ):
+            await self.controller._retry_timed_out_nodes(
+                ledger,
+                as_map={},
+                meta_map={},
+                histogram_map=histogram_map,
+                latency_map={},
+                user_agents_map={},
+            )
+
+        self.assertEqual(
+            histogram_map["B"], {"ttl": {"raw": "1"}, "objsz": {"raw": "2"}}
+        )
+
+    async def test_retry_replaces_whole_node_values(self):
+        """latency is a whole-node value, not a dict of independently collected
+        keys, so there is nothing to merge into."""
+        ledger = {}
+        _record_node_error(ledger, "B", "latency", asyncio.TimeoutError("late"))
+        latency_map = {"B": []}
+
+        with patch.object(
+            CollectinfoController,
+            "_get_as_latency",
+            AsyncMock(return_value={"B": [{"read": 1}]}),
+        ):
+            await self.controller._retry_timed_out_nodes(
+                ledger,
+                as_map={},
+                meta_map={},
+                histogram_map={},
+                latency_map=latency_map,
+                user_agents_map={},
+            )
+
+        self.assertEqual(latency_map["B"], [{"read": 1}])
+
     async def test_retry_exception_is_swallowed(self):
         ledger = {}
         _record_node_error(ledger, "B", "metadata", asyncio.TimeoutError("late"))
@@ -934,6 +1322,7 @@ class CollectinfoMetaTest(unittest.IsolatedAsyncioTestCase):
             wait_time=5,
             enable_ssh=True,
             requested_timeout=1,
+            effective_timeout=5,
             output_prefix="pre",
             asconfig_file="/etc/aerospike/aerospike.conf",
             ignore_errors=False,
@@ -952,10 +1341,54 @@ class CollectinfoMetaTest(unittest.IsolatedAsyncioTestCase):
             ["1.1.1.1", "2.2.2.2"],
         )
         self.assertEqual(meta["collection"]["flags"]["enable_ssh"], True)
+        self.assertEqual(meta["collection"]["flags"]["node_selection"], "all")
         self.assertEqual(meta["collection"]["flags"]["effective_node_timeout_sec"], 5)
         self.assertEqual(meta["collection"]["flags"]["requested_node_timeout_sec"], 1)
         self.assertEqual(meta["collection"]["snapshot_count"], 2)
         self.assertEqual(meta["snapshots"], [{"timestamp": "ts"}])
+
+    def test_node_selection_records_a_subset_collection(self):
+        """`collectinfo with <nodes>` is a supported partial collection. Without this
+        the excluded nodes look like nodes asadm failed to reach."""
+        self.controller.nodes = ["2.2.2.2:3000", "1.1.1.1:3000"]
+
+        meta = self.controller._build_collectinfo_meta(
+            [{"timestamp": "ts"}],
+            start_ts="start",
+            snp_count=1,
+            wait_time=0,
+            enable_ssh=False,
+            requested_timeout=1,
+            effective_timeout=5,
+            output_prefix="",
+            asconfig_file="",
+            ignore_errors=False,
+        )
+
+        self.assertEqual(
+            meta["collection"]["flags"]["node_selection"],
+            ["1.1.1.1:3000", "2.2.2.2:3000"],
+        )
+
+    def test_effective_timeout_comes_from_the_caller_not_cluster_state(self):
+        """The value is the raised collectinfo timeout, which the caller knows; it
+        must not depend on when the timeout happens to be restored."""
+        self.controller.cluster._timeout = 99
+
+        meta = self.controller._build_collectinfo_meta(
+            [{"timestamp": "ts"}],
+            start_ts="start",
+            snp_count=1,
+            wait_time=0,
+            enable_ssh=False,
+            requested_timeout=1,
+            effective_timeout=5,
+            output_prefix="",
+            asconfig_file="",
+            ignore_errors=False,
+        )
+
+        self.assertEqual(meta["collection"]["flags"]["effective_node_timeout_sec"], 5)
 
     def test_meta_is_json_serializable(self):
         ledger = {}
@@ -972,6 +1405,7 @@ class CollectinfoMetaTest(unittest.IsolatedAsyncioTestCase):
             wait_time=0,
             enable_ssh=False,
             requested_timeout=1,
+            effective_timeout=5,
             output_prefix="",
             asconfig_file="",
             ignore_errors=False,
@@ -994,6 +1428,7 @@ class CollectinfoMetaTest(unittest.IsolatedAsyncioTestCase):
                     wait_time=0,
                     enable_ssh=False,
                     requested_timeout=1,
+                    effective_timeout=5,
                     output_prefix="",
                     asconfig_file="",
                     ignore_errors=False,

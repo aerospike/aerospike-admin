@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-import logging
+import io
 import time
 import unittest
 from unittest.mock import MagicMock
@@ -22,7 +22,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
     BundleWarning,
     CollectinfoDiagnostics,
     DiagSeverity,
-    emit_to_log,
+    print_banner,
     render_banner,
 )
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_log import (
@@ -187,6 +187,48 @@ class CollectorVersionTest(unittest.TestCase):
         self.assertIsNotNone(warning)
         self.assertEqual(warning.severity, DiagSeverity.INFO)
 
+    def test_a_version_with_a_non_numeric_tail_is_still_compared(self):
+        """LooseVersion raises TypeError ordering '2.a' against '5.0.2', which used
+        to lose the finding entirely. Only the numeric segments are compared."""
+        diag = diagnostics(meta=meta_with(asadm_version="2.a"))
+
+        warning = find(diag.analyze(), "collector-version-older")
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(
+            warning.title, "Collected by asadm 2.a, older than this asadm 5.0.2"
+        )
+
+    def test_a_version_with_no_numbers_at_all_is_stated_plainly(self):
+        diag = diagnostics(meta=meta_with(asadm_version="unknown-build"))
+
+        warning = find(diag.analyze(), "collector-version-unparsed")
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.title, "Collected by asadm unknown-build")
+
+    def test_a_release_candidate_matches_its_release(self):
+        """An RC collects the same sections as its release, and advising an upgrade
+        to a pre-release build is worse than saying nothing."""
+        diag = diagnostics(
+            meta=meta_with(asadm_version="5.0.2-rc1"), running_version="5.0.2"
+        )
+
+        warnings = diag.analyze()
+
+        self.assertIsNone(find(warnings, "collector-version-newer"))
+        self.assertIsNone(find(warnings, "collector-version-older"))
+        warning = find(warnings, "collector-version-match")
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.title, "Collected by asadm 5.0.2-rc1")
+
+    def test_a_newer_release_candidate_is_still_newer(self):
+        diag = diagnostics(
+            meta=meta_with(asadm_version="6.0.0-rc1"), running_version="5.0.2"
+        )
+
+        self.assertIsNotNone(find(diag.analyze(), "collector-version-newer"))
+
 
 class DroppedAndMissingNodesTest(unittest.TestCase):
     def test_meta_discrepancies_are_authoritative(self):
@@ -315,6 +357,104 @@ class DroppedAndMissingNodesTest(unittest.TestCase):
     def test_peer_visibility_needs_meta(self):
         """Not derivable from a bundle, so old bundles get no claim either way."""
         self.assertIsNone(find(diagnostics().analyze(), "peer-visibility"))
+
+    def test_alternate_addresses_of_collected_nodes_are_not_unseen_peers(self):
+        """A multi-homed cluster advertises peers on its heartbeat addresses, which
+        are not the addresses asadm connected to."""
+        node = copy.deepcopy(HEALTHY_NODE)
+        node["as_stat"]["meta_data"]["endpoints"] = [["10.0.0.1", 3000, None]]
+        node["as_stat"]["meta_data"]["services"] = [["10.0.0.1", 3000, None]]
+
+        warning = find(
+            diagnostics(nodes={"1.1.1.1:3000": node}).analyze(),
+            "dropped-or-missing-nodes",
+        )
+
+        self.assertIsNone(warning)
+
+    def test_a_subset_collection_is_not_reported_as_missing_nodes(self):
+        """`collectinfo with <nodes>` leaves the rest of the cluster advertised in the
+        collected nodes' peer lists; that is the user's choice, not a defect."""
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [
+                    {"node_key": "9.9.9.9:3000", "reason": "seen in peers of A"}
+                ],
+                "dropped_during_collection": [],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+        meta["collection"]["flags"]["node_selection"] = ["1.1.1.1:3000"]
+
+        warnings = diagnostics(meta=meta).analyze()
+
+        self.assertIsNone(find(warnings, "dropped-or-missing-nodes"))
+        selection = find(warnings, "partial-node-selection")
+        self.assertIsNotNone(selection)
+        self.assertEqual(selection.severity, DiagSeverity.INFO)
+        self.assertIn("9.9.9.9:3000", " ".join(selection.lines))
+
+    def test_a_subset_collection_still_reports_nodes_that_returned_nothing(self):
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [
+                    {"node_key": "9.9.9.9:3000", "reason": "seen in peers of A"}
+                ],
+                "dropped_during_collection": [
+                    {"node_key": "3.3.3.3:3000", "reason": "timed out"}
+                ],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+        meta["collection"]["flags"]["node_selection"] = ["1.1.1.1:3000", "3.3.3.3:3000"]
+
+        warning = find(diagnostics(meta=meta).analyze(), "dropped-or-missing-nodes")
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("3.3.3.3:3000", body)
+        self.assertNotIn("9.9.9.9:3000", body)
+
+    def test_a_full_collection_reports_no_selection_finding(self):
+        meta = meta_with()
+        meta["collection"]["flags"]["node_selection"] = "all"
+
+        self.assertIsNone(
+            find(diagnostics(meta=meta).analyze(), "partial-node-selection")
+        )
+
+    def test_meta_for_another_snapshot_falls_back_to_heuristics(self):
+        """Two bundles under one path are a supported input. Reporting one bundle's
+        reconciliation against the other's snapshot is the false claim these checks
+        exist to remove."""
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [
+                    {"node_key": "9.9.9.9:3000", "reason": "seen in peers of A"}
+                ],
+                "dropped_during_collection": [
+                    {"node_key": "3.3.3.3:3000", "reason": "timed out"}
+                ],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+        meta["snapshots"][0]["timestamp"] = "2026-01-01 00:00:00 UTC"
+        node = copy.deepcopy(HEALTHY_NODE)
+        node["as_stat"]["statistics"]["service"]["cluster_size"] = "2"
+
+        diag = diagnostics(nodes={"1.1.1.1:3000": node}, meta=meta)
+        warnings = diag.analyze()
+
+        self.assertFalse(diag.has_meta())
+        warning = find(warnings, "dropped-or-missing-nodes")
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("inferred", body)
+        self.assertNotIn("3.3.3.3:3000", body)
+        self.assertNotIn("9.9.9.9:3000", body)
 
 
 class SysinfoCoverageTest(unittest.TestCase):
@@ -484,6 +624,64 @@ class NodeCollectionErrorsTest(unittest.TestCase):
         warnings = diagnostics().analyze()
 
         self.assertIsNone(find(warnings, "node-collection-errors"))
+
+    def test_unsupported_sections_are_not_reported_as_failures(self):
+        """ACL on a security-disabled cluster, and user-agents or masking on an older
+        server, record a section that never existed rather than data that was lost."""
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "acl",
+                            "error_class": "unsupported",
+                            "message": "Security not enabled.",
+                            "recovered_on_retry": False,
+                        },
+                        {
+                            "section": "user_agents",
+                            "error_class": "unsupported",
+                            "message": "unknown command",
+                            "recovered_on_retry": False,
+                        },
+                    ]
+                }
+            }
+        )
+
+        self.assertIsNone(
+            find(diagnostics(meta=meta).analyze(), "node-collection-errors")
+        )
+
+    def test_unsupported_sections_are_not_counted_as_recovered(self):
+        """Filtering them out must not leave them looking like retried errors."""
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "acl",
+                            "error_class": "unsupported",
+                            "message": "Security not enabled.",
+                            "recovered_on_retry": False,
+                        },
+                        {
+                            "section": "latency",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        },
+                    ]
+                }
+            }
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "node-collection-errors")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("latency", warning.table)
+        self.assertNotIn("acl", warning.table)
+        self.assertNotIn("recovered on retry", " ".join(warning.lines))
 
 
 class ZeroAndPartialNodesTest(unittest.TestCase):
@@ -792,6 +990,30 @@ class CuratedAnomalyTest(unittest.TestCase):
         self.assertIn("show statistics", body)
         self.assertNotIn("health -v", body)
 
+    def test_a_node_with_no_outliers_is_not_an_outlier(self):
+        """The server answers health-outliers with an empty string, which
+        Node.info_health_outliers turns into a placeholder entry rather than {}.
+        Reading that as a finding fires on essentially every bundle."""
+        node = copy.deepcopy(HEALTHY_NODE)
+        node["as_stat"]["meta_data"]["health"] = {"outlier0": {}}
+
+        self.assertIsNone(
+            find(diagnostics(nodes={"1.1.1.1:3000": node}).analyze(), "health-outliers")
+        )
+
+    def test_a_populated_outlier_dict_is_still_reported(self):
+        node = copy.deepcopy(HEALTHY_NODE)
+        node["as_stat"]["meta_data"]["health"] = {
+            "outlier0": {"reason": "device_write_q", "confidence": "high"}
+        }
+
+        warning = find(
+            diagnostics(nodes={"1.1.1.1:3000": node}).analyze(), "health-outliers"
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("device_write_q", " ".join(warning.lines))
+
     def test_dead_and_unavailable_partitions(self):
         nodes = self._with_ns_stats(dead_partitions="4", unavailable_partitions="2")
 
@@ -882,6 +1104,172 @@ class CheckIsolationTest(unittest.TestCase):
         )
 
 
+class HealthyProductionBundleTest(unittest.TestCase):
+    """A clean bundle must produce a quiet banner.
+
+    Every other fixture here is hand-written, which is how three false positives
+    shipped: what a real cluster returns does not look like an idealized dict. A
+    healthy node's health-outliers call comes back as {"outlier0": {}}, a
+    security-disabled cluster records an unsupported ACL error on every node, and a
+    plain collect captures system statistics for one node only. Anything that fires
+    against this fixture fires against most real bundles.
+    """
+
+    NODES = ("1.1.1.1:3000", "2.2.2.2:3000", "3.3.3.3:3000")
+
+    def setUp(self):
+        self.timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+
+    def _bundle(self):
+        nodes = {}
+
+        for index, node_key in enumerate(self.NODES):
+            addr = node_key.split(":")[0]
+            nodes[node_key] = {
+                "as_stat": {
+                    "statistics": {
+                        "service": {
+                            "cluster_size": "3",
+                            "cluster_integrity": "true",
+                            "cluster_is_member": "true",
+                            "cluster_key": "8A2C1F0E4B",
+                            "cluster_principal": "BB1",
+                            "failed_best_practices": "false",
+                            "cluster_clock_skew_ms": "0",
+                            "cluster_clock_skew_stop_writes_sec": "20",
+                        },
+                        "namespace": {
+                            "test": {
+                                "service": {
+                                    "stop_writes": "false",
+                                    "clock_skew_stop_writes": "false",
+                                    "dead_partitions": "0",
+                                    "unavailable_partitions": "0",
+                                    "migrate_partitions_remaining": "0",
+                                },
+                                "set": {},
+                                "bin": {},
+                                "sindex": {},
+                            }
+                        },
+                    },
+                    "config": {
+                        "service": {"proto-fd-max": "15000"},
+                        "namespace": {"test": {"service": {"replication-factor": "2"}}},
+                    },
+                    "meta_data": {
+                        "node_id": "BB%d" % (index + 1,),
+                        "asd_build": "8.0.0.0",
+                        "edition": "Aerospike Enterprise Edition build 8.0.0.0",
+                        "ip": node_key,
+                        "node_names": "host%d" % (index + 1,),
+                        "health": {"outlier0": {}},
+                        "best_practices": [],
+                        "endpoints": [[addr, 3000, None]],
+                        "services": [
+                            [peer.split(":")[0], 3000, None]
+                            for peer in self.NODES
+                            if peer != node_key
+                        ],
+                        "udf": {},
+                        "jobs": {},
+                    },
+                }
+            }
+
+        nodes[self.NODES[0]]["sys_stat"] = {"uname": {"nodename": "host1"}}
+
+        meta = {
+            "meta_format_version": 1,
+            "bundle": {"asadm_version": "5.0.2", "asadm_build": "abc123"},
+            "collection": {
+                "flags": {"enable_ssh": False, "node_selection": "all"},
+            },
+            "snapshots": [
+                {
+                    "timestamp": self.timestamp,
+                    "expected_nodes": list(self.NODES),
+                    "responded_nodes": list(self.NODES),
+                    "no_data_nodes": [],
+                    "nodes": {
+                        node_key: {
+                            "node_id": "BB%d" % (index + 1,),
+                            "responded": True,
+                            "sysinfo_source": "local" if index == 0 else "none",
+                            "errors": [
+                                {
+                                    "section": "acl",
+                                    "error_class": "unsupported",
+                                    "message": "Failed to query users : Security not "
+                                    "enabled.",
+                                    "recovered_on_retry": False,
+                                },
+                                {
+                                    "section": "user_agents",
+                                    "error_class": "unsupported",
+                                    "message": "Failed to get user agents : unknown "
+                                    "command.",
+                                    "recovered_on_retry": False,
+                                },
+                            ],
+                        }
+                        for index, node_key in enumerate(self.NODES)
+                    },
+                    "discrepancies": {
+                        "missing_from_collection": [],
+                        "dropped_during_collection": [],
+                        "cluster_down_nodes": [],
+                        "visibility_error_nodes": [],
+                    },
+                }
+            ],
+        }
+
+        return nodes, meta
+
+    def _warnings(self):
+        nodes, meta = self._bundle()
+        return CollectinfoDiagnostics(
+            log_handler=make_log_handler(
+                bundle_files=("sysinfo.log", "aerospike.conf")
+            ),
+            snapshot=make_snapshot(nodes, timestamp=self.timestamp),
+            timestamp=self.timestamp,
+            running_version="5.0.2",
+            meta=meta,
+        ).analyze()
+
+    def test_nothing_is_flagged_as_a_problem(self):
+        flagged = [
+            (warning.category, warning.title)
+            for warning in self._warnings()
+            if warning.severity is not DiagSeverity.INFO
+        ]
+
+        self.assertEqual(flagged, [])
+
+    def test_provenance_and_sysinfo_coverage_are_the_only_findings(self):
+        self.assertEqual(
+            sorted(categories(self._warnings())),
+            ["collector-version-match", "partial-sysinfo"],
+        )
+
+    def test_the_interactive_banner_is_quiet(self):
+        """The intro already states the collector version, and partial sysinfo is the
+        expected outcome of a plain collect, so a clean bundle prints no banner."""
+        self.assertEqual(
+            render_banner(
+                [
+                    warning
+                    for warning in self._warnings()
+                    if warning.category != "partial-sysinfo"
+                ],
+                use_color=False,
+            ),
+            "",
+        )
+
+
 class RenderTest(unittest.TestCase):
     def test_empty_warnings_render_to_empty_string(self):
         self.assertEqual(render_banner([]), "")
@@ -904,26 +1292,30 @@ class RenderTest(unittest.TestCase):
         self.assertIn("a detail", banner)
         self.assertIn("a table", banner)
 
-    def test_emit_to_log_maps_severity_to_level(self):
+    def test_print_banner_writes_every_severity_with_its_label(self):
+        """Execute mode used to route these through the logger, which dropped INFO
+        below its level and set the exit code on ERROR."""
         warnings = [
             BundleWarning("a", DiagSeverity.ERROR, "err", ["detail"]),
             BundleWarning("b", DiagSeverity.WARNING, "warn"),
             BundleWarning("c", DiagSeverity.INFO, "info"),
         ]
-        log = MagicMock(spec=logging.Logger)
+        stream = io.StringIO()
 
-        emit_to_log(warnings, log)
+        print_banner(warnings, stream)
+        out = stream.getvalue()
 
-        log.error.assert_called_once_with("err detail")
-        log.warning.assert_called_once_with("warn")
-        log.info.assert_called_once_with("info")
+        self.assertIn("ERROR: err", out)
+        self.assertIn("detail", out)
+        self.assertIn("WARNING: warn", out)
+        self.assertIn("INFO: info", out)
 
-    def test_emit_to_log_with_no_warnings_is_silent(self):
-        log = MagicMock(spec=logging.Logger)
+    def test_print_banner_with_no_warnings_is_silent(self):
+        stream = io.StringIO()
 
-        emit_to_log([], log)
+        print_banner([], stream)
 
-        log.warning.assert_not_called()
+        self.assertEqual(stream.getvalue(), "")
 
     def test_severity_colors(self):
         """The color constants are read off the submodule: the package re-exports
@@ -970,8 +1362,8 @@ class RenderTest(unittest.TestCase):
 
         self.assertIn("older than this asadm", render_banner(warnings, use_color=False))
 
-    def test_emit_to_log_keeps_the_version_line(self):
-        """Execute mode has no intro, so the log path must still carry provenance."""
+    def test_print_banner_keeps_the_version_line(self):
+        """Execute mode prints no intro, so this path must still carry provenance."""
         warnings = [
             BundleWarning(
                 category="collector-version-match",
@@ -979,11 +1371,11 @@ class RenderTest(unittest.TestCase):
                 title="Collected by asadm 5.0.2",
             )
         ]
-        log = MagicMock(spec=logging.Logger)
+        stream = io.StringIO()
 
-        emit_to_log(warnings, log)
+        print_banner(warnings, stream)
 
-        log.info.assert_called_once_with("Collected by asadm 5.0.2")
+        self.assertIn("Collected by asadm 5.0.2", stream.getvalue())
 
 
 class SnapshotHelperTest(unittest.TestCase):

@@ -28,6 +28,7 @@ diagnosed must still be analyzable.
 import calendar
 import logging
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -76,8 +77,18 @@ node_errors_sheet = Sheet(
 )
 
 
-def _is_comparable_version(value: str) -> bool:
-    return bool(value) and bool(_NUMERIC_VERSION_RE.match(str(value).strip()))
+def _numeric_version(value: str) -> str | None:
+    """The leading numeric segments of a version string, or None if it has none.
+
+    Comparisons use only these so a pre-release orders as its release:
+    LooseVersion makes 2.23.0-rc1 newer than 2.23.0 because the longer component
+    list wins, which would advise upgrading to a release candidate. It also
+    refuses to order mixed int/str components at all, raising TypeError, and an
+    RC collects the same sections as its release either way.
+    """
+    match = _NUMERIC_VERSION_RE.match(str(value or "").strip())
+
+    return match.group(0) if match else None
 
 
 def _to_int(value: Any) -> int | None:
@@ -158,7 +169,13 @@ class CollectinfoDiagnostics:
             return []
 
     def snapshot_meta(self) -> dict[str, Any]:
-        """The meta entry for the snapshot being analyzed, if the bundle has one."""
+        """The meta entry for the snapshot being analyzed, if the bundle has one.
+
+        Only an exact timestamp match counts. A meta describing some other snapshot
+        would report its expected nodes, dropped nodes, and per-node errors against
+        this one, which is the false 'nodes are missing' claim these checks exist to
+        remove. No match means no meta, and the heuristics take over.
+        """
         if self._snapshot_meta is not None:
             return self._snapshot_meta
 
@@ -171,17 +188,18 @@ class CollectinfoDiagnostics:
         for entry in snapshots:
             if isinstance(entry, dict) and entry.get("timestamp") == self.timestamp:
                 self._snapshot_meta = entry
-                return self._snapshot_meta
-
-        last = snapshots[-1]
-
-        if isinstance(last, dict):
-            self._snapshot_meta = last
+                break
 
         return self._snapshot_meta
 
     def has_meta(self) -> bool:
-        return bool(self.meta.get("snapshots")) or bool(self.meta.get("bundle"))
+        """Whether collection-time metadata is available for the analyzed snapshot.
+
+        Keyed off the snapshot entry rather than the file: a meta that describes a
+        different snapshot must not suppress the heuristic checks that would still
+        say something true about this one.
+        """
+        return bool(self.snapshot_meta())
 
     ###########################################################################
 
@@ -198,6 +216,7 @@ class CollectinfoDiagnostics:
             return warnings
 
         for check in (
+            self._check_node_selection,
             self._check_dropped_or_missing_nodes,
             self._check_peer_visibility,
             self._check_missing_sysinfo,
@@ -272,18 +291,26 @@ class CollectinfoDiagnostics:
                 ],
             )
 
-        if not _is_comparable_version(collector) or not _is_comparable_version(running):
-            return BundleWarning(
-                category="collector-version-unparsed",
-                severity=DiagSeverity.INFO,
-                title="Collected by asadm %s" % (collector,),
-                lines=[],
-            )
+        unparsed = BundleWarning(
+            category="collector-version-unparsed",
+            severity=DiagSeverity.INFO,
+            title="Collected by asadm %s" % (collector,),
+            lines=[],
+        )
+        collected_numeric = _numeric_version(collector)
+        analyzing_numeric = _numeric_version(running)
 
-        collected = version.LooseVersion(collector)
-        analyzing = version.LooseVersion(running)
+        if collected_numeric is None or analyzing_numeric is None:
+            return unparsed
 
-        if collected < analyzing:
+        try:
+            collected = version.LooseVersion(collected_numeric)
+            analyzing = version.LooseVersion(analyzing_numeric)
+            is_older, is_newer = collected < analyzing, collected > analyzing
+        except Exception:
+            return unparsed
+
+        if is_older:
             return BundleWarning(
                 category="collector-version-older",
                 severity=DiagSeverity.WARNING,
@@ -296,7 +323,7 @@ class CollectinfoDiagnostics:
                 ],
             )
 
-        if collected > analyzing:
+        if is_newer:
             return BundleWarning(
                 category="collector-version-newer",
                 severity=DiagSeverity.WARNING,
@@ -391,6 +418,9 @@ class CollectinfoDiagnostics:
         expected = snapshot_meta.get("expected_nodes") or []
         responded = snapshot_meta.get("responded_nodes") or []
 
+        if self._collected_node_subset() is not None:
+            missing = []
+
         if not dropped and not missing:
             return None
 
@@ -436,6 +466,62 @@ class CollectinfoDiagnostics:
             category="dropped-or-missing-nodes",
             severity=DiagSeverity.WARNING,
             title="Cluster nodes are missing from this bundle",
+            lines=lines,
+        )
+
+    def _collected_node_subset(self) -> list[str] | None:
+        """The node list the collection was limited to, or None if it collected all.
+
+        Recorded from TOOLS-4135 onward. Older bundles return None, which is the
+        same answer as a full collection: neither can be told apart from the data.
+        """
+        flags = (self.meta.get("collection") or {}).get("flags") or {}
+        selection = flags.get("node_selection")
+
+        if isinstance(selection, (list, tuple)) and selection:
+            return [str(node) for node in selection]
+
+        return None
+
+    def _check_node_selection(self) -> BundleWarning | None:
+        """A deliberately partial collection, stated so it is not read as a fault.
+
+        `collectinfo with <nodes>` collects only the nodes named. Every other
+        cluster node is then advertised in the collected nodes' peer lists and
+        present nowhere else, which is indistinguishable from a node asadm could
+        not reach unless the selection itself is recorded.
+        """
+        subset = self._collected_node_subset()
+
+        if subset is None:
+            return None
+
+        lines = ["Requested: %s." % (_summarize(subset),)]
+        excluded = sorted(
+            entry.get("node_key", "unknown")
+            for entry in (self.snapshot_meta().get("discrepancies") or {}).get(
+                "missing_from_collection"
+            )
+            or []
+        )
+
+        if excluded:
+            lines.append(
+                "%d other cluster %s never contacted, so %s absent from every "
+                "command below: %s."
+                % (
+                    len(excluded),
+                    _plural(len(excluded), "node was", "nodes were"),
+                    _plural(len(excluded), "it is", "they are"),
+                    _summarize(excluded),
+                )
+            )
+
+        return BundleWarning(
+            category="partial-node-selection",
+            severity=DiagSeverity.INFO,
+            title="Collection was limited to %d %s"
+            % (len(subset), _plural(len(subset), "node")),
             lines=lines,
         )
 
@@ -525,7 +611,7 @@ class CollectinfoDiagnostics:
         for keys in advertised.values():
             peer_keys.update(keys)
 
-        unseen = sorted(peer_keys - present)
+        unseen = sorted(peer_keys - self._known_endpoints(present))
 
         if unseen:
             lines.append(
@@ -548,6 +634,28 @@ class CollectinfoDiagnostics:
             title="This bundle may be missing cluster nodes",
             lines=lines,
         )
+
+    def _known_endpoints(self, present: set[str]) -> set[str]:
+        """Every address the collected nodes are reachable at, not just their keys.
+
+        A node's key is the address asadm connected to, while peers advertise
+        whichever address their heartbeat mesh uses. Without folding in each
+        collected node's own endpoints, a multi-homed cluster (seeded via localhost
+        or FQDN while peers advertise internal IPs) reports every peer as missing.
+        The collection-side counterpart does the same hop through cluster.aliases.
+        """
+        known = set(present)
+
+        try:
+            own = self.snapshot.get_own_endpoints() or {}
+        except Exception:
+            return known
+
+        for node_key, endpoints in own.items():
+            if node_key in present:
+                known.update(endpoints)
+
+        return known
 
     def _check_missing_sysinfo(self) -> BundleWarning | None:
         """Report sysinfo coverage.
@@ -663,6 +771,13 @@ class CollectinfoDiagnostics:
             return True
 
     def _check_node_collection_errors(self) -> BundleWarning | None:
+        """Sections that failed to collect, per node.
+
+        Entries classed as unsupported are dropped: they record a section this
+        cluster never had (ACL on a security-disabled cluster, user-agents or
+        masking on an older server) rather than data that was lost. They stay in
+        the meta for debugging, but reporting them would fire on most bundles.
+        """
         nodes_meta = (
             (self.snapshot_meta().get("nodes") or {}) if self.has_meta() else {}
         )
@@ -675,7 +790,12 @@ class CollectinfoDiagnostics:
         recovered = 0
 
         for node_key, node_meta in sorted(nodes_meta.items()):
-            errors = (node_meta or {}).get("errors") or []
+            errors = [
+                error
+                for error in ((node_meta or {}).get("errors") or [])
+                if error.get("error_class")
+                != constants.CollectinfoErrorClass.UNSUPPORTED
+            ]
             unrecovered = [
                 error for error in errors if not error.get("recovered_on_retry")
             ]
@@ -1137,6 +1257,11 @@ class CollectinfoDiagnostics:
 
         Net-new consumption for the analyzer: the data was already in every bundle
         under meta_data.health but no command read it.
+
+        A node with no outliers still carries a placeholder entry: the server
+        returns an empty string, and Node.info_health_outliers turns that into
+        {"outlier0": {}} rather than {}. Only entries that actually hold something
+        count, otherwise every healthy node reads as an outlier.
         """
         outlier_nodes = {}
         reasons = set()
@@ -1147,7 +1272,7 @@ class CollectinfoDiagnostics:
 
             health = node_meta.get("health")
 
-            if not health or isinstance(health, str):
+            if isinstance(health, str) or not util.has_content(health):
                 continue
 
             outlier_nodes[node] = health
@@ -1332,19 +1457,25 @@ _SEVERITY_COLOR = {
 }
 
 
-def render_banner(warnings: list[BundleWarning], use_color: bool = True) -> str:
-    """Build the interactive-intro banner.
+def render_banner(
+    warnings: list[BundleWarning],
+    use_color: bool = True,
+    skip_redundant: bool = True,
+) -> str:
+    """Build the diagnostics banner.
 
     Returns a string rather than printing: the log handler's __str__ is the only
-    caller and it has no view to print through. The intro already prints a
-    'Collected by' line, so a version finding with nothing to act on is dropped here
-    instead of repeating it.
+    interactive caller and it has no view to print through. The interactive intro
+    already prints a 'Collected by' line, so a version finding with nothing to act
+    on is dropped by default. Execute mode has no intro and passes
+    skip_redundant=False to keep provenance.
     """
-    warnings = [
-        warning
-        for warning in warnings
-        if warning.category not in BANNER_REDUNDANT_CATEGORIES
-    ]
+    if skip_redundant:
+        warnings = [
+            warning
+            for warning in warnings
+            if warning.category not in BANNER_REDUNDANT_CATEGORIES
+        ]
 
     if not warnings:
         return ""
@@ -1387,25 +1518,28 @@ def render_banner(warnings: list[BundleWarning], use_color: bool = True) -> str:
     return "\n".join(out) + "\n"
 
 
-def emit_to_log(warnings: list[BundleWarning], log: logging.Logger) -> None:
-    """Re-emit the banner through the logger for --execute mode.
+def print_banner(warnings: list[BundleWarning], stream=None) -> None:
+    """Write the banner to stderr for --execute mode, which prints no intro.
 
-    The log formatter already colors and prefixes by level, so the message text
-    must stay plain.
+    Deliberately not routed through asadm's logger. Diagnostics describe the
+    bundle, not the command the user ran, and BaseLogger.error sets the process
+    exit code, so an unhealthy cluster in the bundle would fail an otherwise
+    successful command. The logger's WARNING level filter would also drop every
+    INFO finding, including the provenance line. stderr keeps stdout parseable for
+    a mode built to be scripted, and is colored only when it is a terminal: the
+    global color state follows stdout, which says nothing about a redirected stderr.
     """
-    if not warnings:
+    stream = sys.stderr if stream is None else stream
+    banner = render_banner(
+        warnings,
+        use_color=bool(getattr(stream, "isatty", bool)()),
+        skip_redundant=False,
+    )
+
+    if not banner:
         return
 
-    for warning in warnings:
-        message = warning.title
-        detail = list(warning.lines) + list(warning.table_lines)
-
-        if detail:
-            message += " " + " ".join(line.strip() for line in detail)
-
-        if warning.severity is DiagSeverity.ERROR:
-            log.error(message)
-        elif warning.severity is DiagSeverity.WARNING:
-            log.warning(message)
-        else:
-            log.info(message)
+    try:
+        print(banner, end="", file=stream)
+    except Exception as e:
+        logger.debug("Could not print the diagnostics banner: %s", e)

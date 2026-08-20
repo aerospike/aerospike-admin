@@ -26,7 +26,10 @@ from lib.live_cluster.client.node import Node
 from lib.live_cluster.client.types import (
     ASInfoError,
     ASInfoNotAuthenticatedError,
+    ASInfoResponseError,
     ASProtocolConnectionError,
+    ASProtocolError,
+    ASResponse,
 )
 from lib.live_cluster.logfile_downloader import LogFileDownloader
 from lib.live_cluster import ssh
@@ -111,14 +114,70 @@ _ERROR_CLASS_REASON = {
 }
 
 
-def _classify_exception(exc: Exception) -> str:
+_OPTIONAL_SECTIONS = frozenset(
+    (
+        constants.CollectinfoSection.USER_AGENTS,
+        constants.CollectinfoSection.MASKING,
+        constants.CollectinfoSection.RELEASE,
+        constants.CollectinfoSection.FEATURE_KEY,
+        constants.CollectinfoSection.BEST_PRACTICES,
+    )
+)
+
+_SECURITY_DISABLED_RESPONSES = frozenset(
+    (
+        ASResponse.SECURITY_NOT_ENABLED,
+        ASResponse.SECURITY_NOT_SUPPORTED,
+    )
+)
+
+
+def _is_unsupported(exc: Exception, section: str | None) -> bool:
+    """Whether the section does not exist on this cluster rather than failing.
+
+    A security-disabled cluster rejects every ACL call, and the sections in
+    _OPTIONAL_SECTIONS depend on the server's version or edition: `release` needs
+    8.1.1, `best-practices` needs 5.7, `feature-key` is Enterprise-only from 7.1,
+    and user-agents and masking-show are recent additions. None of that means data
+    was lost, so none of it should be reported as a collection failure.
+
+    Any ASInfoError counts for those sections rather than only a well-formed error
+    response, because an absent command surfaces in three different shapes: a
+    client-side version gate (plain ASInfoError), an "unrecognized command"
+    response on server 7.1+ (ASInfoResponseError), and an empty response on older
+    servers (ASInfoError again). Distinguishing them by message text would mean
+    tracking server strings; the cost is that a genuinely malformed response for an
+    optional section goes unreported, which beats warning on every bundle.
+
+    Authentication failures are excluded explicitly. Both auth exception types sit
+    under a type this checks for (ASInfoNotAuthenticatedError under
+    ASInfoResponseError, ASProtocolConnectionError under ASProtocolError), and an
+    absent section must never absorb a failure the user has to act on.
+    """
+    if isinstance(exc, (ASInfoNotAuthenticatedError, ASProtocolConnectionError)):
+        return False
+
+    if isinstance(exc, ASProtocolError):
+        return exc.as_response in _SECURITY_DISABLED_RESPONSES
+
+    return section in _OPTIONAL_SECTIONS and isinstance(exc, ASInfoError)
+
+
+def _classify_exception(exc: Exception, section: str | None = None) -> str:
     """Map a per-node info-call exception to a stable error_class string.
 
     asyncio.TimeoutError subclasses OSError on 3.11+, and
     ASInfoNotAuthenticatedError subclasses ASInfoError, so the order of these
     checks is load bearing. Classification is done here rather than read off
     async_return_exceptions because that decorator has no 'corrupt' branch.
+
+    Unsupported comes first: an absent section reaches us as the same
+    ASInfoResponseError an unusable response would, and as an ASProtocolError
+    that would otherwise fall through to 'other'.
     """
+    if _is_unsupported(exc, section):
+        return constants.CollectinfoErrorClass.UNSUPPORTED
+
     if isinstance(exc, asyncio.TimeoutError):
         return constants.CollectinfoErrorClass.TIMEOUT
 
@@ -144,7 +203,7 @@ def _record_node_error(
     if ledger is None or not node_key or not section:
         return
 
-    error_class = _classify_exception(exc)
+    error_class = _classify_exception(exc, section)
     entry_key = (section, error_class)
     node_entry = ledger.setdefault(node_key, {})
 
@@ -173,6 +232,12 @@ def _node_error_entries(ledger: NodeErrorLedger, node_key: str) -> list[NodeErro
 
 
 def _worst_error_reason(ledger: NodeErrorLedger, node_key: str) -> str:
+    """Why a node ended up with no data, from the worst error it recorded.
+
+    _ERROR_CLASS_SEVERITY is ordered worst first and holds no entry for
+    'unsupported': a section this cluster does not have explains nothing about why
+    the node returned nothing, so such a ledger entry falls through to the default.
+    """
     classes = {entry_key[1] for entry_key in ledger.get(node_key, {}) if entry_key[1]}
 
     for error_class in _ERROR_CLASS_SEVERITY:
@@ -180,6 +245,40 @@ def _worst_error_reason(ledger: NodeErrorLedger, node_key: str) -> str:
             return _ERROR_CLASS_REASON[error_class]
 
     return "returned no data"
+
+
+def _merge_retried_value(target: dict, key: str, value) -> bool:
+    """Merge one retried value into target[key], never overwriting with nothing.
+
+    Recurses so a nested section can be filled in independently: a node's
+    statistics hold eight subsections collected by separate info calls, and the
+    retry that recovers one of them returns the others empty. A value the retry
+    did collect still wins, so a peer list the cluster has since shortened is
+    replaced rather than merged element-wise.
+
+    Reports whether target actually changed, which is what marks the original
+    error as recovered: a retry that returns exactly what the first pass already
+    had recovered nothing.
+    """
+    if not util.has_content(value):
+        return False
+
+    existing = target.get(key)
+
+    if isinstance(value, dict) and isinstance(existing, dict):
+        return any(
+            [
+                _merge_retried_value(existing, sub_key, sub_value)
+                for sub_key, sub_value in value.items()
+            ]
+        )
+
+    if key in target and existing == value:
+        return False
+
+    target[key] = value
+
+    return True
 
 
 def _timed_out_nodes(ledger: NodeErrorLedger) -> dict[str, set[str]]:
@@ -442,17 +541,27 @@ class CollectinfoController(LiveClusterCommandController):
         nodeid,
         result_map,
         ledger: NodeErrorLedger | None = None,
+        optional_section: str | None = None,
     ):
+        """Store one metadata sub-call's result, recording a failure in the ledger.
+
+        Failures are recorded under `metadata` so the retry pass, which re-queries
+        every sub-call for a node that timed out, keeps finding them. A sub-call
+        whose command depends on the server's version or edition passes its own
+        section name, which is used only when the failure means the command is
+        absent: that keeps an 8.0 cluster's missing `release` out of the metadata
+        label, while a timeout on the same call still rides the metadata retry.
+        """
         if nodeid in data:
             if not isinstance(data[nodeid], Exception):
                 result_map[nodeid][section_name] = data[nodeid]
             else:
-                _record_node_error(
-                    ledger,
-                    nodeid,
-                    constants.CollectinfoSection.METADATA,
-                    data[nodeid],
-                )
+                section = constants.CollectinfoSection.METADATA
+
+                if optional_section and _is_unsupported(data[nodeid], optional_section):
+                    section = optional_section
+
+                _record_node_error(ledger, nodeid, section, data[nodeid])
                 result_map[nodeid][section_name] = ""
 
     async def _get_as_metadata(self, nodes=None, ledger=None):
@@ -510,17 +619,32 @@ class CollectinfoController(LiveClusterCommandController):
                 health_outliers, "health", nodeid, metamap, ledger
             )
             self._check_for_exception_and_set(
-                best_practices, "best_practices", nodeid, metamap, ledger
+                best_practices,
+                "best_practices",
+                nodeid,
+                metamap,
+                ledger,
+                optional_section=constants.CollectinfoSection.BEST_PRACTICES,
             )
             self._check_for_exception_and_set(
                 node_names, "node_names", nodeid, metamap, ledger
             )
             self._check_for_exception_and_set(jobs, "jobs", nodeid, metamap, ledger)
             self._check_for_exception_and_set(
-                feature_keys, "feature-key", nodeid, metamap, ledger
+                feature_keys,
+                "feature-key",
+                nodeid,
+                metamap,
+                ledger,
+                optional_section=constants.CollectinfoSection.FEATURE_KEY,
             )
             self._check_for_exception_and_set(
-                release_info, "release", nodeid, metamap, ledger
+                release_info,
+                "release",
+                nodeid,
+                metamap,
+                ledger,
+                optional_section=constants.CollectinfoSection.RELEASE,
             )
         return metamap
 
@@ -662,6 +786,39 @@ class CollectinfoController(LiveClusterCommandController):
 
         return masking_map
 
+    def _record_sysinfo_errors(
+        self, sys_map: dict[str, Any], ledger: NodeErrorLedger
+    ) -> None:
+        """Record per-node sysinfo failures and keep the collection going.
+
+        A node whose system statistics failed used to abort the whole run, so one
+        unreachable host cost the entire bundle. The failure is recorded in the
+        meta and that node's sys_stat left empty instead: every other node's data,
+        and the analyzer's account of what is missing, are worth more than nothing
+        at all.
+        """
+        failed = {}
+
+        for node_key, value in sys_map.items():
+            if isinstance(value, Exception):
+                _record_node_error(
+                    ledger, node_key, constants.CollectinfoSection.SYSINFO, value
+                )
+                failed[node_key] = value
+                sys_map[node_key] = {}
+
+        if not failed:
+            return
+
+        logger.warning(
+            "Failed to collect system statistics for %d node(s): %s. The bundle is "
+            "still written; those nodes carry no host-level data.",
+            len(failed),
+            ", ".join(
+                "%s (%s)" % (node_key, exc) for node_key, exc in sorted(failed.items())
+            ),
+        )
+
     async def _get_collectinfo_data_json(
         self,
         enable_ssh: bool,
@@ -723,13 +880,7 @@ class CollectinfoController(LiveClusterCommandController):
             self._get_as_masking_rules(ledger=node_errors),
         )
 
-        for node_key, val in sys_map.items():
-            # TODO: remove this when we no longer return all exceptions by default
-            if isinstance(val, Exception):
-                _record_node_error(
-                    node_errors, node_key, constants.CollectinfoSection.SYSINFO, val
-                )
-                raise val
+        self._record_sysinfo_errors(sys_map, node_errors)
 
         await self._retry_timed_out_nodes(
             node_errors,
@@ -889,19 +1040,38 @@ class CollectinfoController(LiveClusterCommandController):
                 continue
 
             section, target = section_targets[kind]
+            self._merge_retried_section(ledger, nodes, result, section, target)
 
-            for node_key in nodes:
-                value = result.get(node_key)
+    def _merge_retried_section(
+        self,
+        ledger: NodeErrorLedger,
+        nodes: list[str],
+        retried,
+        section: str,
+        target,
+    ) -> None:
+        """Fold a retry's output into what the first pass already collected.
 
-                if not util.has_content(value):
-                    continue
-
-                target[node_key] = value
+        A node is retried when any one of its sections timed out, and the retry
+        re-queries all of them, so its output is not a superset of the first pass's.
+        Assigning it wholesale would drop whatever the retry itself failed on, which
+        for metadata means losing node_id, services, or endpoints that were already
+        collected (TOOLS-3596).
+        """
+        for node_key in nodes:
+            if _merge_retried_value(target, node_key, retried.get(node_key)):
                 _mark_error_recovered(ledger, node_key, section)
 
     def _merge_retried_as_map(
         self, ledger: NodeErrorLedger, nodes: list[str], retried, as_map
     ) -> None:
+        """Fold retried statistics and config into the first pass, per subsection.
+
+        Each of these sections is a dict of independently collected subsections
+        (service, namespace, sets, sindex, xdr, ...), any of which can fail on its
+        own. Replacing the whole section would lose every subsection the retry
+        failed on but the first pass had.
+        """
         sections = (
             constants.CollectinfoSection.STATISTICS,
             constants.CollectinfoSection.CONFIG,
@@ -911,13 +1081,10 @@ class CollectinfoController(LiveClusterCommandController):
             node_data = retried.get(node_key) or {}
 
             for section in sections:
-                value = node_data.get(section)
+                target = as_map.setdefault(node_key, {})
 
-                if not util.has_content(value):
-                    continue
-
-                as_map.setdefault(node_key, {})[section] = value
-                _mark_error_recovered(ledger, node_key, section)
+                if _merge_retried_value(target, section, node_data.get(section)):
+                    _mark_error_recovered(ledger, node_key, section)
 
     async def _detect_node_discrepancies(
         self,
@@ -1159,6 +1326,7 @@ class CollectinfoController(LiveClusterCommandController):
         snp_count,
         wait_time,
         requested_timeout=None,
+        effective_timeout=None,
         output_prefix="",
         asconfig_file="",
         ignore_errors=False,
@@ -1200,6 +1368,7 @@ class CollectinfoController(LiveClusterCommandController):
             wait_time=wait_time,
             enable_ssh=enable_ssh,
             requested_timeout=requested_timeout,
+            effective_timeout=effective_timeout,
             output_prefix=output_prefix,
             asconfig_file=asconfig_file,
             ignore_errors=ignore_errors,
@@ -1214,6 +1383,7 @@ class CollectinfoController(LiveClusterCommandController):
         wait_time,
         enable_ssh,
         requested_timeout,
+        effective_timeout,
         output_prefix,
         asconfig_file,
         ignore_errors,
@@ -1232,6 +1402,7 @@ class CollectinfoController(LiveClusterCommandController):
                 wait_time=wait_time,
                 enable_ssh=enable_ssh,
                 requested_timeout=requested_timeout,
+                effective_timeout=effective_timeout,
                 output_prefix=output_prefix,
                 asconfig_file=asconfig_file,
                 ignore_errors=ignore_errors,
@@ -1245,6 +1416,19 @@ class CollectinfoController(LiveClusterCommandController):
             )
             logger.debug(traceback.format_exc())
 
+    def _node_selection(self) -> str | list[str]:
+        """What the collection was scoped to, as recorded in the bundle.
+
+        `collectinfo with <nodes>` is a supported way to collect part of a cluster.
+        Without recording it, the nodes the user deliberately excluded are
+        indistinguishable from nodes asadm failed to reach: they appear in the
+        collected nodes' peer lists and nowhere else.
+        """
+        if isinstance(self.nodes, (list, tuple, set)):
+            return sorted(str(node) for node in self.nodes)
+
+        return str(self.nodes)
+
     def _build_collectinfo_meta(
         self,
         snapshot_metas,
@@ -1253,6 +1437,7 @@ class CollectinfoController(LiveClusterCommandController):
         wait_time,
         enable_ssh,
         requested_timeout,
+        effective_timeout,
         output_prefix,
         asconfig_file,
         ignore_errors,
@@ -1284,7 +1469,8 @@ class CollectinfoController(LiveClusterCommandController):
                 "snapshot_count": snp_count,
                 "flags": {
                     "enable_ssh": bool(enable_ssh),
-                    "effective_node_timeout_sec": self.cluster._timeout,
+                    "node_selection": self._node_selection(),
+                    "effective_node_timeout_sec": effective_timeout,
                     "requested_node_timeout_sec": requested_timeout,
                     "sleep_between_snapshots_sec": wait_time,
                     "output_prefix": output_prefix,
@@ -1674,6 +1860,7 @@ class CollectinfoController(LiveClusterCommandController):
                     snp_count,
                     wait_time,
                     requested_timeout=original_timeout,
+                    effective_timeout=collectinfo_timeout,
                     output_prefix=output_prefix,
                     asconfig_file=config_path,
                     ignore_errors=ignore_errors,

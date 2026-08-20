@@ -95,17 +95,7 @@ class CollectinfoErrorClass:
     AUTH = "auth"
     CORRUPT = "corrupt"
     OTHER = "other"
-
-
-COLLECTINFO_ERROR_CLASSES = frozenset(
-    (
-        CollectinfoErrorClass.TIMEOUT,
-        CollectinfoErrorClass.UNREACHABLE,
-        CollectinfoErrorClass.AUTH,
-        CollectinfoErrorClass.CORRUPT,
-        CollectinfoErrorClass.OTHER,
-    )
-)
+    UNSUPPORTED = "unsupported"
 
 
 class CollectinfoSection:
@@ -118,21 +108,9 @@ class CollectinfoSection:
     USER_AGENTS = "user_agents"
     MASKING = "masking"
     SYSINFO = "sysinfo"
-
-
-COLLECTINFO_SECTIONS = frozenset(
-    (
-        CollectinfoSection.STATISTICS,
-        CollectinfoSection.CONFIG,
-        CollectinfoSection.METADATA,
-        CollectinfoSection.HISTOGRAM,
-        CollectinfoSection.LATENCY,
-        CollectinfoSection.ACL,
-        CollectinfoSection.USER_AGENTS,
-        CollectinfoSection.MASKING,
-        CollectinfoSection.SYSINFO,
-    )
-)
+    RELEASE = "release"
+    FEATURE_KEY = "feature_key"
+    BEST_PRACTICES = "best_practices"
 
 
 class SysinfoSource:

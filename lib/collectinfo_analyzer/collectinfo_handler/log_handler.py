@@ -26,7 +26,7 @@ from lib.view import terminal
 from .collectinfo_diagnostics import (
     BundleWarning,
     CollectinfoDiagnostics,
-    emit_to_log,
+    print_banner,
     render_banner,
 )
 from .collectinfo_log import CollectinfoLog
@@ -57,6 +57,18 @@ ASADM_VERSION_RE = re.compile(r"asadm version\s+(\S+)")
 
 class LogHandlerException(Exception):
     pass
+
+
+def _describes_snapshot(meta: dict, timestamp: str) -> bool:
+    snapshots = meta.get("snapshots")
+
+    if not timestamp or not isinstance(snapshots, list):
+        return False
+
+    return any(
+        isinstance(entry, dict) and entry.get("timestamp") == timestamp
+        for entry in snapshots
+    )
 
 
 class CollectinfoLogHandler(object):
@@ -137,22 +149,38 @@ class CollectinfoLogHandler(object):
 
         return matches
 
-    def _load_collectinfo_meta(self) -> dict:
-        """Read collectinfo_meta.json if the bundle has one.
+    def _analyzed_timestamp(self) -> str:
+        """The snapshot every command reads: the newest one in the bundle."""
+        if not self.all_cinfo_logs:
+            return ""
 
-        Absent for every bundle collected before TOOLS-4135, and absent mid-collection
-        while asadm builds summary/health over a half-written bundle directory, so a
-        missing file is normal and must stay silent.
+        return sorted(self.all_cinfo_logs.keys())[-1]
+
+    def _load_collectinfo_meta(self) -> dict:
+        """Read the collectinfo_meta.json describing the analyzed snapshot.
+
+        Absent for every bundle collected before TOOLS-4135, and absent whenever a
+        bundle is analyzed from ascinfo.json alone, so a missing file is normal and
+        must stay silent.
+
+        A path holding more than one bundle is a supported input: every archive under
+        it is extracted and every ascinfo.json merged, while only the newest snapshot
+        is analyzed. Taking the first meta found would then report another bundle's
+        node reconciliation and collector version against this snapshot, so only a
+        meta that carries the analyzed timestamp is used.
         """
+        timestamp = self._analyzed_timestamp()
+
         for file in self._iter_bundle_files((constants.COLLECTINFO_META_FILENAME,)):
             try:
                 with open(file) as meta_file:
                     meta = json.load(meta_file)
-
-                if isinstance(meta, dict):
-                    return meta
             except Exception as e:
                 logger.debug("Could not read %s: %s", file, e)
+                continue
+
+            if isinstance(meta, dict) and _describes_snapshot(meta, timestamp):
+                return meta
 
         return {}
 
@@ -228,7 +256,7 @@ class CollectinfoLogHandler(object):
             if not self.all_cinfo_logs:
                 return self._bundle_diagnostics
 
-            timestamp = sorted(self.all_cinfo_logs.keys())[-1]
+            timestamp = self._analyzed_timestamp()
             diagnostics = CollectinfoDiagnostics(
                 log_handler=self,
                 snapshot=self.all_cinfo_logs[timestamp],
@@ -245,8 +273,8 @@ class CollectinfoLogHandler(object):
     def diagnostics_banner(self) -> str:
         return render_banner(self.get_bundle_diagnostics())
 
-    def emit_diagnostics_to_log(self, log=None) -> None:
-        emit_to_log(self.get_bundle_diagnostics(), log if log is not None else logger)
+    def print_diagnostics_banner(self, stream=None) -> None:
+        print_banner(self.get_bundle_diagnostics(), stream)
 
     def close(self):
         if self.all_cinfo_logs:

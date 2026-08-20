@@ -26,6 +26,7 @@ import tarfile
 import tempfile
 import unittest
 
+from lib.utils import constants
 from test.e2e import lib, util
 
 COLLECTINFO_PREFIX = "asadm_diag_test_"
@@ -120,6 +121,27 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         return node_keys
 
+    def _mutated_ascinfo_bundle(self, mutate_node):
+        """A copy of the bundle with every node's namespace statistics rewritten."""
+        target = tempfile.mkdtemp(prefix="asadm_diag_ascinfo_")
+        self.addCleanup(shutil.rmtree, target, ignore_errors=True)
+        bundle_copy = os.path.join(target, os.path.basename(self.bundle_dir))
+        shutil.copytree(self.bundle_dir, bundle_copy)
+
+        ascinfo_path = self._find_file(bundle_copy, "ascinfo.json")
+
+        with open(ascinfo_path) as ascinfo_file:
+            ascinfo = json.load(ascinfo_file)
+
+        for cluster_data in ascinfo[sorted(ascinfo)[-1]].values():
+            for node_data in cluster_data.values():
+                mutate_node(node_data)
+
+        with open(ascinfo_path, "w") as ascinfo_file:
+            json.dump(ascinfo, ascinfo_file)
+
+        return bundle_copy
+
     def _mutated_bundle(self, mutate_meta):
         """A copy of the extracted bundle whose meta has been rewritten."""
         target = tempfile.mkdtemp(prefix="asadm_diag_mutated_")
@@ -193,6 +215,13 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         self.assertIn(self._snapshot_meta()["timestamp"], ascinfo)
 
     def test_per_node_meta_is_complete(self):
+        """A healthy collection records no failures.
+
+        Entries classed as unsupported are allowed: masking-show and user-agents do
+        not exist on every server the analyzer supports, and ACL calls are rejected
+        outright when security is off. Those are absent sections, not lost data, and
+        are kept in the meta for debugging.
+        """
         snapshot = self._snapshot_meta()
 
         self.assertEqual(sorted(snapshot["nodes"]), sorted(snapshot["expected_nodes"]))
@@ -201,7 +230,19 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
             self.assertTrue(node_meta["node_id"], node_key)
             self.assertTrue(node_meta["responded"], node_key)
             self.assertIn(node_meta["sysinfo_source"], ("local", "ssh", "none"))
-            self.assertEqual(node_meta["errors"], [], node_key)
+
+            failures = [
+                error
+                for error in node_meta["errors"]
+                if error["error_class"] != constants.CollectinfoErrorClass.UNSUPPORTED
+            ]
+            self.assertEqual(failures, [], node_key)
+
+    def test_collection_records_the_node_selection(self):
+        self.assertEqual(
+            self.meta["collection"]["flags"]["node_selection"],
+            constants.NodeSelection.ALL,
+        )
 
     def test_healthy_collection_reports_no_discrepancies(self):
         discrepancies = self._snapshot_meta()["discrepancies"]
@@ -238,6 +279,37 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         self.assertNotIn("Collection failed for some sections", cp.stderr)
         self.assertNotIn("no Aerospike data for any", cp.stderr)
         self.assertNotIn("only partially represented", cp.stderr)
+        self.assertNotIn("as a health outlier", cp.stderr)
+
+    def test_execute_mode_states_the_collector_version(self):
+        """The provenance line is the point of the whole check, and execute mode
+        prints no intro to carry it."""
+        cp = util.run_asadm(f"-cf {self.bundle_dir} -e 'info network'")
+
+        self.assertIn("Collected by asadm", cp.stderr)
+
+    def test_an_unhealthy_cluster_does_not_fail_the_command(self):
+        """Diagnostics describe the collected cluster, not the command the user ran:
+        a script must not read a successful analysis as a tool failure."""
+
+        def break_the_namespaces(node_data):
+            namespaces = (
+                node_data.get("as_stat", {}).get("statistics", {}).get("namespace")
+                or {}
+            )
+
+            for ns_data in namespaces.values():
+                ns_data["service"]["stop_writes"] = "true"
+                ns_data["service"]["dead_partitions"] = "7"
+
+        bundle = self._mutated_ascinfo_bundle(break_the_namespaces)
+
+        cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("stop-writes", cp.stderr)
+        self.assertIn("dead", cp.stderr)
+        self.assertIn("Network Information", cp.stdout)
 
     def _comparable_version(self):
         """A development build has no comparable version, so the banner reports the
@@ -245,11 +317,11 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         return self.asadm_version[:1].isdigit()
 
     def _assert_version_reported(self, bundle, collector_version, verdict):
+        cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
+
         if self._comparable_version():
-            cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
             self.assertIn(verdict, cp.stderr)
         else:
-            cp = util.run_asadm(f"-cf {bundle} --debug -e 'info network'")
             self.assertIn("Collected by asadm", cp.stderr)
 
         self.assertIn(collector_version, cp.stderr)
