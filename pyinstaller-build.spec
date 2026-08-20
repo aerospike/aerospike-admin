@@ -34,7 +34,13 @@ options = parser.parse_args()
 #
 
 datas = [('lib/live_cluster/client/schemas/json/aerospike', './lib/live_cluster/client/schemas/json/aerospike')]
-binaries = [('/usr/bin/less','.')]
+binaries = []
+
+# Not on macOS: /usr/bin/less is present on every supported release, and the
+# runner's copy carries that runner's minos, which would set the floor for the
+# whole pkg (see MACOS_MIN_VERSION in pkg/Makefile). CliView falls back to PATH.
+if "darwin" not in platform.system().lower():
+    binaries.append(('/usr/bin/less', '.'))
 hiddenimports = [] # If something fails to import add it here like "pkg_resources.extern"
 
 '''

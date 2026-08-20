@@ -37,6 +37,17 @@ VERSION_DEFAULT := $(shell git describe --tags --always --abbrev=9)
 else
 VERSION_DEFAULT := $(shell tr -d '[:space:]' < $(SOURCE_ROOT)/VERSION)
 endif
+# Embedded whole: asadm/asinfo split it, so 5.0.3-rc3 reports
+# "Version 5.0.3 / Build rc3".
+VERSION ?= $(VERSION_DEFAULT)
+# `?=` only skips a variable that is UNDEFINED; an env var exported as the empty
+# string is defined, so it would stamp "" and -- because each sed below ends in
+# `|| true` -- do it silently. The shell `$${VERSION:-...}` this replaced treated
+# empty as unset, and an unresolved needs.<job>.outputs.<name> arrives as exactly
+# that. Keep the fallback.
+ifeq ($(strip $(VERSION)),)
+override VERSION := $(VERSION_DEFAULT)
+endif
 
 define make_build
 	mkdir -p $(BUILD_ROOT)tmp
@@ -48,13 +59,13 @@ define make_build
 	rsync -aL lib $(BUILD_ROOT)tmp/
 
 	$(if $(filter $(OS),Darwin),
-	sed -i "" "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asadm.py || true ,
-	sed -i'' "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asadm.py || true
+	sed -i "" "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asadm.py || true ,
+	sed -i'' "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asadm.py || true
 	)
 
 	$(if $(filter $(OS),Darwin),
-	sed -i "" "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asinfo.py || true ,
-	sed -i'' "s/[$$][$$]__version__[$$][$$]/$${VERSION:-$(VERSION_DEFAULT)}/g" $(BUILD_ROOT)tmp/asinfo.py || true
+	sed -i "" "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asinfo.py || true ,
+	sed -i'' "s/[$$][$$]__version__[$$][$$]/$(VERSION)/g" $(BUILD_ROOT)tmp/asinfo.py || true
 	)
 
 endef
@@ -96,15 +107,6 @@ osx-pkg: prep
 else
 osx-pkg:
 	$(error osx-pkg is only supported on macOS (Darwin))
-endif
-
-.PHONY: osx-dmg
-ifeq ($(OS),Darwin)
-osx-dmg: prep
-	$(MAKE) -C $(SOURCE_ROOT)/pkg/ $@
-else
-osx-dmg:
-	$(error osx-dmg is only supported on macOS (Darwin))
 endif
 
 .PHONY: prep

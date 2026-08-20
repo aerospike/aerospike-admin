@@ -11,6 +11,12 @@
 #
 # tests.yml verifies the binary build via `make`. This adds coverage for
 # the *packaging* step (install_deps → make → fpm).
+#
+# It also runs the naming/version scripts' own unit tests. Those scripts are
+# otherwise exercised only by build-and-release.yml, which is
+# workflow_dispatch-only, so a regression in version_lib.sh -- which gates
+# whether a mis-stamped binary ships -- would first be observed during a real
+# release. They run against strings, so they need no container and no package.
 
 name: Build check (installer)
 
@@ -29,6 +35,19 @@ defaults:
     shell: bash
 
 jobs:
+  naming-scripts:
+    name: Naming scripts (version_lib)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Test the version assertions
+        run: bash .github/bin/test/version_lib_test.sh
+
   installer-build:
     name: Build .${{ matrix.pkg }} (${{ matrix.distro }}, amd64)
     runs-on: ubuntu-24.04
