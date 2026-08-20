@@ -23,14 +23,17 @@ version_le() {
 	[[ "$1" == "$2" ]] || [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" == "$1" ]]
 }
 
-# LC_BUILD_VERSION on current objects, LC_VERSION_MIN_MACOSX on older ones.
+# Every floor in the file, one per line: LC_BUILD_VERSION on current objects,
+# LC_VERSION_MIN_MACOSX on older ones. A universal binary carries one set of
+# load commands per slice, and `otool -l` prints them in slice order, so
+# stopping at the first would let a later slice's higher floor through.
 read_minos() {
 	otool -l "$1" 2>/dev/null | awk '
-		/LC_BUILD_VERSION/  { in_bv = 1; next }
-		/LC_VERSION_MIN_MAC/ { in_vm = 1; next }
-		in_bv && $1 == "minos"   { print $2; exit }
-		in_vm && $1 == "version" { print $2; exit }
-		/^Load command/ { in_bv = 0; in_vm = 0 }
+		/^Load command/      { bv = 0; vm = 0; next }
+		/LC_BUILD_VERSION/   { bv = 1; next }
+		/LC_VERSION_MIN_MAC/ { vm = 1; next }
+		bv && $1 == "minos"   { print $2; bv = 0 }
+		vm && $1 == "version" { print $2; vm = 0 }
 	'
 }
 
@@ -43,11 +46,17 @@ while IFS= read -r f; do
 	*) continue ;;
 	esac
 	scanned=$((scanned + 1))
-	minos=$(read_minos "$f")
-	# No load command means no floor to violate.
-	[[ -n "$minos" ]] || continue
-	if ! version_le "$minos" "$floor"; then
-		echo "  $minos  $f" >&2
+	# Report the highest offending slice. A file with no load command at all
+	# has no floor to violate.
+	worst=""
+	while IFS= read -r minos; do
+		version_le "$minos" "$floor" && continue
+		if [[ -z "$worst" ]] || ! version_le "$minos" "$worst"; then
+			worst="$minos"
+		fi
+	done < <(read_minos "$f")
+	if [[ -n "$worst" ]]; then
+		echo "  $worst  $f" >&2
 		violations=$((violations + 1))
 	fi
 done < <(find "$@" -type f)

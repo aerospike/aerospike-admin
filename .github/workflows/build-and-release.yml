@@ -295,9 +295,8 @@ jobs:
         os: [macos-15-intel, macos-14, macos-15, macos-26]
         include:
           # One publisher per arch (the oldest runner): every leg of an arch now
-          # builds the same file name, so a second uploader would collide. Oldest
-          # matters here because asadm vendors binaries off the runner (see the
-          # spec's /usr/bin/less), which carry the runner's own floor.
+          # builds the same file name, so a second uploader would collide. The
+          # floor itself is enforced by check_min_os.sh, not by this choice.
           - os: macos-14
             publish: true
           - os: macos-15-intel

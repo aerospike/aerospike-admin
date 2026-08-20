@@ -28,9 +28,8 @@ OPT_LONG=0
 kernel="$(uname -s)"
 
 if [[ "$kernel" = "Darwin" ]]; then
-    # Records the macOS generation the artifact was built on, not a minimum it
-    # supports: nothing pins MACOSX_DEPLOYMENT_TARGET. It is what keeps one
-    # release's per-runner artifacts distinct.
+    # Identifies the build host's generation only. Not part of any artifact
+    # name, and not a minimum the artifact supports -- see MACOS_MIN_VERSION.
     mac_version="$(sw_vers -productVersion)"
     # `set -e` above already catches an sw_vers that exits non-zero. This
     # guard is for the case it cannot see: exiting 0 having printed nothing,
