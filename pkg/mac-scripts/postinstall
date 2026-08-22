@@ -8,4 +8,19 @@ if [ ! -e "$conf" ] && [ ! -L "$conf" ] && [ -f "$sample" ]; then
     /usr/bin/install -d -m 755 "$vol/etc/aerospike" && \
     /usr/bin/install -m 644 "$sample" "$conf"
 fi
+# Re-assert ownership of the installed tree.
+#
+# The shared mac signer (aerospike/shared-workflows sign-mac-artifacts) rebuilds
+# the pkg Payload with an unprivileged `tar -xf | cpio -o` whenever it codesigns
+# an embedded binary, so the payload records the build runner's uid (501:20)
+# instead of root:wheel, and the Bom is left stale. macOS `installer` honours the
+# payload over the Bom -- observed directly: every path under
+# /usr/local/aerospike installed as 501:20. On a customer Mac uid 501 is the
+# primary admin account, so the binaries would land writable by an unrelated
+# local user. postinstall runs as root, so fix it here.
+/usr/sbin/chown -R root:wheel "$vol/usr/local/aerospike"
+for l in asadm asinfo; do
+    [ -L "$vol/usr/local/bin/$l" ] && /usr/sbin/chown -h root:wheel "$vol/usr/local/bin/$l"
+done
+
 exit 0
