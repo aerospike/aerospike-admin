@@ -197,6 +197,7 @@ class CliView(object):
         configs,
         ns_agg,
         cluster,
+        builds=None,
         verbose=False,
         timestamp="",
         with_=None,
@@ -211,7 +212,7 @@ class CliView(object):
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         stats = util.derive_memory_stats(stats)
         headline, untracked_limits, missing_ns_stats = util.derive_memory_headline(
-            stats, configs, ns_agg, nodes=node_names
+            stats, configs, ns_agg, builds=builds, nodes=node_names
         )
 
         CliView._warn_memory_gaps(node_names, untracked_limits, missing_ns_stats)

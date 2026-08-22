@@ -159,6 +159,7 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
             {},
             {},
             cluster=cinfo_log_mock,
+            builds={NODE: "8.1.3"},
             timestamp=ts,
             verbose=False,
         )

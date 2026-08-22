@@ -1171,6 +1171,39 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertEqual(headline["nsfail"]["allocated_heap_bytes"], str(1000 * 1024))
         self.assertIn("allocated_bytes", headline["good"])
 
+    def test_old_build_omits_allocated_total(self):
+        stats = {"old": {"heap_allocated_kbytes": "1000"}}
+        headline, _, _ = util.derive_memory_headline(
+            util.derive_memory_stats(stats),
+            {},
+            {"old": {"index_used_bytes": "500"}},
+            builds={"old": "8.1.2"},
+        )
+        row = headline["old"]
+        self.assertNotIn("allocated_bytes", row)
+        self.assertNotIn("alloc_pct", row)
+        self.assertNotIn("allocated_heap_pct", row)
+        self.assertEqual(row["allocated_heap_bytes"], str(1000 * 1024))
+
+    def test_unreadable_build_omits_allocated_total(self):
+        for build in (None, "", "N/E", Exception("connection refused")):
+            headline, _, _ = util.derive_memory_headline(
+                util.derive_memory_stats({"n1": {"heap_allocated_kbytes": "1000"}}),
+                {},
+                {"n1": {"shmem_alloc_bytes": "500"}},
+                builds={"n1": build},
+            )
+            self.assertNotIn("allocated_bytes", headline["n1"], build)
+
+    def test_supported_build_keeps_allocated_total(self):
+        headline, _, _ = util.derive_memory_headline(
+            util.derive_memory_stats({"n1": {"heap_allocated_kbytes": "1000"}}),
+            {},
+            {"n1": {"shmem_alloc_bytes": "500"}},
+            builds={"n1": "8.1.3"},
+        )
+        self.assertEqual(headline["n1"]["allocated_bytes"], str(1000 * 1024 + 500))
+
     def test_heap_pct_omitted_when_heap_stat_absent(self):
         headline, _, _ = self.headline(
             {"node1": {}}, ns_agg={"node1": {"shmem_alloc_bytes": "500"}}

@@ -115,7 +115,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns_agg["1.1.1.1"]["set_index_used_bytes"], "128")
         self.assertEqual(ns_agg["1.1.1.1"]["shmem_alloc_bytes"], "4096")
         self.assertEqual(ns_agg["1.1.1.1"]["data_in_memory_used_bytes"], "9000")
-        self.assertNotIn("builds", call_args.kwargs)
+        self.assertEqual(call_args.kwargs["builds"], {"1.1.1.1": "8.1.3"})
         self.assertEqual(self.warnings(), [])
 
     async def test_do_memory_with_node_filter(self):

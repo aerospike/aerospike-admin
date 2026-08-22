@@ -610,7 +610,25 @@ def aggregate_ns_memory_stats(ns_stats, editions=None):
     return result
 
 
-def derive_memory_headline(stats, configs, ns_agg, nodes=None):
+def node_reports_memory_alloc_stats(build):
+    """
+    Whether a build reports the 8.1.3 memory allocation statistics.
+
+    An unreadable build counts as not reporting: publishing an allocation total
+    for a node whose arenas are unknown overstates what asadm actually knows.
+    """
+    if not build or isinstance(build, Exception):
+        return False
+
+    try:
+        return version.LooseVersion(str(build)) >= version.LooseVersion(
+            constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION
+        )
+    except Exception:
+        return False
+
+
+def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
     """
     Build the per-node rows behind the 'info memory' headline table.
 
@@ -618,13 +636,15 @@ def derive_memory_headline(stats, configs, ns_agg, nodes=None):
         stats: per-node service stats, already through derive_memory_stats
         configs: per-node service configs
         ns_agg: output of aggregate_ns_memory_stats
+        builds: {node: build}, used to decide which nodes report allocation
+            stats at all. Omit to treat every node as reporting them.
         nodes: restrict to these nodes, defaults to every node in stats
 
     A row only carries a value its inputs support: Capacity is omitted without a
-    usable cgroup limit or host estimate, and the allocation total is omitted
-    when the node's namespace stats never arrived, since heap alone would render
-    as an authoritative total that understates the node by whatever its index
-    arenas hold.
+    usable cgroup limit or host total, and the allocation total is omitted when
+    the node's namespace stats never arrived or its build predates the
+    allocation stats, since heap alone would render as an authoritative total
+    that understates the node by whatever its index arenas hold.
 
     Returns:
         (headline rows, nodes capped by an untracked cgroup, nodes whose
@@ -651,6 +671,10 @@ def derive_memory_headline(stats, configs, ns_agg, nodes=None):
         if not ns_known:
             missing_ns_stats.append(node)
             agg = {}
+
+        alloc_known = builds is None or node_reports_memory_alloc_stats(
+            builds.get(node)
+        )
 
         cgroup_tracked = (
             str(node_configs.get("cgroup-mem-tracking", "")).lower() == "true"
@@ -684,7 +708,7 @@ def derive_memory_headline(stats, configs, ns_agg, nodes=None):
         if heap > 0:
             row["allocated_heap_bytes"] = str(heap)
 
-        if ns_known and allocated > 0:
+        if ns_known and alloc_known and allocated > 0:
             row["allocated_bytes"] = str(allocated)
 
             if heap > 0:

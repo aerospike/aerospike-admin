@@ -3009,6 +3009,22 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertIn("capacity_bytes", headline["2.2.2.2"])
         self.assertNotIn("allocated_bytes", headline["2.2.2.2"])
 
+    def test_info_memory_old_build_omits_allocated_total(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {"1.1.1.1": {"heap_allocated_kbytes": "500000"}},
+            {},
+            {"1.1.1.1": {"index_used_bytes": "1024"}},
+            self.cluster_mock,
+            builds={"1.1.1.1": "8.1.2"},
+        )
+
+        row = self.render_mock.call_args[0][2]["stats"]["1.1.1.1"]
+        self.assertNotIn("allocated_bytes", row)
+        self.assertNotIn("alloc_pct", row)
+        self.assertEqual(row["allocated_heap_bytes"], str(500000 * 1024))
+
     def test_info_memory_renders_nothing_without_nodes(self):
         self.set_nodes()
 

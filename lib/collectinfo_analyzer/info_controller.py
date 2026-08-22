@@ -151,8 +151,9 @@ class InfoController(CollectinfoCommandController):
                 continue
 
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_asd_build()
 
-            if not self._alloc_stats_supported(cinfo_log.get_asd_build()):
+            if not self._alloc_stats_supported(builds):
                 logger.warning(
                     "Allocation figures require server %s or later, so they are "
                     "empty for older nodes.",
@@ -167,6 +168,7 @@ class InfoController(CollectinfoCommandController):
                 service_configs.get(timestamp, {}),
                 ns_agg,
                 cluster=cinfo_log,
+                builds=builds,
                 timestamp=timestamp,
                 verbose=verbose,
                 **self.mods,

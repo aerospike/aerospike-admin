@@ -177,6 +177,7 @@ class InfoController(LiveClusterCommandController):
             configs,
             ns_agg,
             self.cluster,
+            builds=builds,
             verbose=verbose,
             **self.mods,
         )
