@@ -162,12 +162,19 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
     @pytest.mark.skip()
     async def test_memory(self):
         """
-        This test asserts <b> info memory </b> output heading and the columns
-        that are always present regardless of server version or backing type.
+        This test asserts <b> info memory </b> output heading and the headline
+        columns, which are present regardless of server edition or backing type.
         TODO: test for values as well
         """
         exp_heading = "Memory Information"
-        always_present = ["Node", "System", "Sys%"]
+        always_present = [
+            "Node",
+            "Capacity",
+            "Allocated Total",
+            "Allocated Heap",
+            "Alloc%",
+            "Free%",
+        ]
 
         (
             actual_heading,
@@ -181,6 +188,53 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(exp_heading in actual_heading)
         for column in always_present:
             self.assertIn(column, actual_header)
+
+    @pytest.mark.skip()
+    async def test_memory_verbose(self):
+        """
+        This test asserts <b> info memory --verbose </b> renders the breakdown
+        sheets in addition to the headline sheet. Subgroup fields are flattened
+        by the parser to "<subgroup> <field>".
+        TODO: test for values as well
+        """
+        raw_output = await util.capture_stdout(
+            self.rc.execute, ["info", "memory", "--verbose"]
+        )
+        separated = test_util.get_separate_output(raw_output)
+
+        self.assertTrue(separated, "info memory --verbose produced no tables")
+
+        headers_by_heading = {}
+
+        for sheet in separated:
+            heading, _, header, _, _ = test_util.parse_output(sheet)
+            headers_by_heading[heading] = header
+
+        def header_for(heading_substr):
+            for heading, header in headers_by_heading.items():
+                if heading_substr in heading:
+                    return header
+            return None
+
+        host = header_for("Host and CGroup Memory")
+        self.assertIsNotNone(host)
+        for column in ["Node", "Free System", "Free Sys%", "CGroup Tracking"]:
+            self.assertIn(column, host)
+
+        allocation = header_for("Index and Data Memory")
+        self.assertIsNotNone(allocation)
+        for column in ["Node", "Total Alloc", "Total Used"]:
+            self.assertIn(column, allocation)
+
+        process = header_for("Process Heap")
+        self.assertIsNotNone(process)
+        for column in ["Node", "Heap Alloc", "Heap Eff%"]:
+            self.assertIn(column, process)
+
+        process = header_for("Process Heap")
+        self.assertIsNotNone(process)
+        for column in ["Node", "RSS", "Heap Alloc", "Heap Eff%"]:
+            self.assertIn(column, process)
 
     @pytest.mark.skip()
     async def test_namespace_object(self):

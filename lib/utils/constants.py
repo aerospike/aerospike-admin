@@ -61,6 +61,11 @@ METADATA_PRACTICES = "best_practices"
 METADATA_UDF = "udf"
 METADATA_UDF_CONTENT = "udf_content"
 
+EDITION_ENTERPRISE = "Enterprise"
+EDITION_COMMUNITY = "Community"
+EDITION_FEDERAL = "Federal"
+EDITION_UNKNOWN = "N/E"
+
 ADMIN_ROLES = "roles"
 ADMIN_USERS = "users"
 

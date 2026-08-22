@@ -14,7 +14,9 @@
 
 from collections.abc import Iterator
 import datetime
+import functools
 import locale
+import logging
 import math
 from os import path
 import sys
@@ -25,7 +27,7 @@ from typing import Any, TextIO, Tuple
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
 from lib.live_cluster.client import Cluster, ASInfoError
-from lib.utils import file_size, constants, util, version
+from lib.utils import file_size, constants, util
 from lib.utils.common import (
     StopWritesDict,
     SummaryClusterDict,
@@ -38,6 +40,8 @@ from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
 from lib.view.table import Orientation, Table, TitleFormats
 
+logger = logging.getLogger(__name__)
+
 H1_offset = 13
 H2_offset = 15
 H_width = 80
@@ -46,6 +50,7 @@ H_width = 80
 # Helper that adds a '_' to the end of reserved words that are also modifiers.
 # This code improves readability.
 def reserved_modifiers(func):
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if "with" in kwargs:
             kwargs["with_"] = kwargs["with"]
@@ -169,13 +174,28 @@ class CliView(object):
         )
 
     @staticmethod
+    def _warn_memory_gaps(node_names, untracked_limits, missing_ns_stats):
+        if untracked_limits:
+            logger.warning(
+                "%s capped by an untracked cgroup limit; 'info memory' describes "
+                "the host instead. Enable cgroup-mem-tracking.",
+                ", ".join(sorted(node_names.get(n, n) for n in untracked_limits)),
+            )
+
+        if missing_ns_stats:
+            logger.warning(
+                "No namespace statistics for node(s) %s; their allocation total "
+                "is omitted because index arenas are unknown.",
+                ", ".join(sorted(node_names.get(n, n) for n in missing_ns_stats)),
+            )
+
+    @staticmethod
     @reserved_modifiers
     def info_memory(
         stats,
         configs,
         ns_agg,
         cluster,
-        builds=None,
         verbose=False,
         timestamp="",
         with_=None,
@@ -183,68 +203,28 @@ class CliView(object):
     ):
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
-        title_suffix = CliView._get_timestamp_suffix(timestamp)
-
-        builds = builds or {}
-        min_version = version.LooseVersion(
-            constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION
-        )
-
-        def supported(node):
-            build = builds.get(node)
-            if build is None or isinstance(build, Exception):
-                return False
-            try:
-                return version.LooseVersion(str(build)) >= min_version
-            except (ValueError, TypeError):
-                return False
-
-        unsupported = [node for node in node_names if not supported(node)]
-        if unsupported:
-            skipped = ", ".join(sorted(node_names.get(n, n) for n in unsupported))
-            CliView.print_result(
-                "WARNING: Skipping memory information for node(s) %s: requires "
-                "server %s or later."
-                % (skipped, constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION)
-            )
-
-        node_names = {n: name for n, name in node_names.items() if supported(n)}
-        node_ids = {n: nid for n, nid in node_ids.items() if supported(n)}
 
         if not node_names:
             return
 
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
         stats = util.derive_memory_stats(stats)
+        headline, untracked_limits, missing_ns_stats = util.derive_memory_headline(
+            stats, configs, ns_agg, nodes=node_names
+        )
+
+        CliView._warn_memory_gaps(node_names, untracked_limits, missing_ns_stats)
         common = CliView._common(cluster)
-
-        headline = {}
-        for node in node_names:
-            node_stats = stats.get(node, {})
-            if not isinstance(node_stats, dict):
-                continue
-            agg = ns_agg.get(node, {})
-
-            total_avail = util._int_or_zero(
-                node_stats.get("cgroup_memory_limit_bytes")
-            ) or util._int_or_zero(node_stats.get("host_total_mem_bytes"))
-            allocated = util._int_or_zero(
-                agg.get("shmem_alloc_bytes")
-            ) + util._int_or_zero(node_stats.get("heap_allocated_bytes"))
-
-            row = {}
-            if total_avail > 0:
-                row["total_avail_bytes"] = str(total_avail)
-            if allocated > 0:
-                row["allocated_bytes"] = str(allocated)
-                if total_avail > 0:
-                    row["alloc_pct"] = str(allocated * 100 / total_avail)
-            headline[node] = row
+        node_src = dict(node_names=node_names, node_ids=node_ids)
+        stats = {n: v for n, v in stats.items() if n in node_names}
+        configs = {n: v for n, v in configs.items() if n in node_names}
+        ns_agg = {n: v for n, v in ns_agg.items() if n in node_names}
 
         CliView.print_result(
             sheet.render(
                 templates.info_memory_headline_sheet,
                 "Memory Information" + title_suffix,
-                dict(node_names=node_names, node_ids=node_ids, stats=headline),
+                dict(stats=headline, **node_src),
                 common=common,
             )
         )
@@ -252,29 +232,33 @@ class CliView(object):
         if not verbose:
             return
 
-        sources = dict(
-            node_names=node_names,
-            node_ids=node_ids,
-            stats=stats,
-            ns_agg=ns_agg,
-            configs=configs,
-        )
-        CliView.print_result(
-            sheet.render(
+        for node_stats in stats.values():
+            if isinstance(node_stats, dict) and node_stats.get(
+                "host_free_mem_bytes"
+            ) == node_stats.get("system_free_mem_bytes"):
+                node_stats.pop("host_free_mem_bytes", None)
+                node_stats.pop("host_free_mem_pct", None)
+
+        for template, title, sources in (
+            (
                 templates.info_memory_sheet,
-                "Memory Breakdown" + title_suffix,
-                sources,
-                common=common,
-            )
-        )
-        CliView.print_result(
-            sheet.render(
+                "Host and CGroup Memory",
+                dict(stats=stats, configs=configs, **node_src),
+            ),
+            (
                 templates.info_memory_index_sheet,
-                "Index/Data Memory" + title_suffix,
-                sources,
-                common=common,
+                "Index and Data Memory",
+                dict(ns_agg=ns_agg, **node_src),
+            ),
+            (
+                templates.info_memory_process_sheet,
+                "Process Heap",
+                dict(stats=stats, **node_src),
+            ),
+        ):
+            CliView.print_result(
+                sheet.render(template, title + title_suffix, sources, common=common)
             )
-        )
 
     @staticmethod
     @reserved_modifiers

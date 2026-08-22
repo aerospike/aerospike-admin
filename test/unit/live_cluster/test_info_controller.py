@@ -16,6 +16,7 @@ import unittest
 import warnings
 from unittest.mock import AsyncMock, create_autospec, patch
 
+from parameterized import parameterized
 from pytest import PytestUnraisableExceptionWarning
 
 from lib.live_cluster.client.cluster import Cluster
@@ -23,6 +24,7 @@ from lib.live_cluster.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )
+from lib.base_controller import ShellException
 from lib.live_cluster.info_controller import InfoController
 from lib.view.view import CliView
 
@@ -40,8 +42,21 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
             GetConfigController
         )
         self.view_mock = self.controller.view = create_autospec(CliView)
+        self.logger_mock = patch("lib.live_cluster.info_controller.logger").start()
         self.controller.mods = {}
         self.addCleanup(patch.stopall)
+
+    def set_cluster(self, builds, edition="Aerospike Enterprise Edition"):
+        self.cluster_mock.info_build = AsyncMock(return_value=builds)
+        self.cluster_mock.info = AsyncMock(
+            return_value={node: edition for node in builds}
+        )
+        self.cluster_mock.get_node_names.return_value = {
+            node: "node-" + node for node in builds
+        }
+
+    def warnings(self):
+        return [c[0][0] % c[0][1:] for c in self.logger_mock.warning.call_args_list]
 
     async def test_do_memory_calls_getters_and_view(self):
         stats = {
@@ -75,14 +90,12 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
                 },
             }
         }
-        mods = {"with": [], "line": []}
 
-        builds = {"1.1.1.1": "8.1.3"}
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
         self.stat_getter_mock.get_namespace.return_value = ns_stats
-        self.cluster_mock.info_build = AsyncMock(return_value=builds)
-        self.controller.mods = mods
+        self.set_cluster({"1.1.1.1": "8.1.3"})
+        self.controller.mods = {"with": [], "line": []}
 
         await self.controller.execute(["memory"])
 
@@ -90,38 +103,31 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.config_getter_mock.get_service.assert_called_once_with(nodes="all")
         self.stat_getter_mock.get_namespace.assert_called_once_with(nodes="all")
         self.cluster_mock.info_build.assert_called_once_with(nodes="all")
+        self.cluster_mock.info.assert_called_once_with("edition", nodes="all")
 
         call_args = self.view_mock.info_memory.call_args
         self.assertEqual(call_args.args[0], stats)
         self.assertEqual(call_args.args[1], configs)
+        self.assertIs(call_args.args[3], self.cluster_mock)
         ns_agg = call_args.args[2]
         self.assertEqual(ns_agg["1.1.1.1"]["index_used_bytes"], "1536")
         self.assertEqual(ns_agg["1.1.1.1"]["sindex_used_bytes"], "2304")
         self.assertEqual(ns_agg["1.1.1.1"]["set_index_used_bytes"], "128")
         self.assertEqual(ns_agg["1.1.1.1"]["shmem_alloc_bytes"], "4096")
         self.assertEqual(ns_agg["1.1.1.1"]["data_in_memory_used_bytes"], "9000")
-        self.assertEqual(call_args.kwargs["builds"], builds)
+        self.assertNotIn("builds", call_args.kwargs)
+        self.assertEqual(self.warnings(), [])
 
     async def test_do_memory_with_node_filter(self):
         stats = {"1.2.3.4": {}}
         configs = {"1.2.3.4": {"cgroup-mem-tracking": "true"}}
-        ns_stats = {
-            "1.2.3.4": {
-                "test": {
-                    "index_used_bytes": "0",
-                    "sindex_used_bytes": "0",
-                    "set_index_used_bytes": "0",
-                }
-            }
-        }
-        mods = {"with": ["1.2.3.4"], "line": []}
+        ns_stats = {"1.2.3.4": {"test": {"index_used_bytes": "0"}}}
 
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
         self.stat_getter_mock.get_namespace.return_value = ns_stats
-        self.cluster_mock.info_build = AsyncMock(return_value={"1.2.3.4": "8.1.3"})
-        self.controller.mods = mods
-        self.controller.nodes = ["1.2.3.4"]
+        self.set_cluster({"1.2.3.4": "8.1.3"})
+        self.controller.mods = {"with": [], "line": []}
 
         await self.controller.execute(["memory", "with", "1.2.3.4"])
 
@@ -129,3 +135,115 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.config_getter_mock.get_service.assert_called_once_with(nodes=["1.2.3.4"])
         self.stat_getter_mock.get_namespace.assert_called_once_with(nodes=["1.2.3.4"])
         self.cluster_mock.info_build.assert_called_once_with(nodes=["1.2.3.4"])
+
+        call_args = self.view_mock.info_memory.call_args
+        self.assertEqual(call_args.kwargs["with"], ["1.2.3.4"])
+        self.assertIs(call_args.args[3], self.cluster_mock)
+
+    async def _run_memory_line(self, line, builds=None):
+        node = "1.1.1.1"
+        self.stat_getter_mock.get_service.return_value = {node: {}}
+        self.config_getter_mock.get_service.return_value = {node: {}}
+        self.stat_getter_mock.get_namespace.return_value = {node: {}}
+        self.set_cluster(builds if builds is not None else {node: "8.1.3"})
+        self.controller.mods = {"with": [], "for": [], "line": []}
+
+        await self.controller.execute(line)
+
+        return self.view_mock.info_memory.call_args
+
+    async def test_do_memory_verbose_flag_parsed_from_line(self):
+        call_args = await self._run_memory_line(["memory", "--verbose"])
+        self.assertTrue(call_args.kwargs["verbose"])
+
+    async def test_do_memory_verbose_defaults_off(self):
+        call_args = await self._run_memory_line(["memory"])
+        self.assertFalse(call_args.kwargs["verbose"])
+
+    async def _run_memory_with_edition(self, edition):
+        node = "1.1.1.1"
+        ns_stats = {
+            node: {
+                "test": {
+                    "storage-engine": "memory",
+                    "index_shmem_alloc_bytes": "100",
+                    "data_total_bytes": "500",
+                }
+            }
+        }
+
+        self.stat_getter_mock.get_service.return_value = {node: {}}
+        self.config_getter_mock.get_service.return_value = {node: {}}
+        self.stat_getter_mock.get_namespace.return_value = ns_stats
+        self.set_cluster(
+            {node: "8.1.3"}, edition="Aerospike {} Edition".format(edition)
+        )
+        self.controller.mods = {"with": [], "for": [], "line": []}
+
+        await self.controller.execute(["memory"])
+
+        return self.view_mock.info_memory.call_args.args[2][node]
+
+    async def test_do_memory_community_does_not_fold_data_into_shmem(self):
+        ns_agg = await self._run_memory_with_edition("Community")
+
+        self.assertEqual(ns_agg["shmem_alloc_bytes"], "100")
+        self.assertEqual(ns_agg["data_alloc_bytes"], "500")
+
+    async def test_do_memory_enterprise_folds_data_into_shmem(self):
+        ns_agg = await self._run_memory_with_edition("Enterprise")
+
+        self.assertEqual(ns_agg["shmem_alloc_bytes"], "600")
+        self.assertEqual(ns_agg["data_alloc_bytes"], "500")
+
+    async def test_do_memory_unreadable_edition_does_not_fold(self):
+        node = "1.1.1.1"
+        self.stat_getter_mock.get_service.return_value = {node: {}}
+        self.config_getter_mock.get_service.return_value = {node: {}}
+        self.stat_getter_mock.get_namespace.return_value = {
+            node: {
+                "test": {
+                    "storage-engine": "memory",
+                    "index_shmem_alloc_bytes": "100",
+                    "data_total_bytes": "500",
+                }
+            }
+        }
+        self.cluster_mock.info_build = AsyncMock(return_value={node: "8.1.3"})
+        self.cluster_mock.info = AsyncMock(return_value={node: Exception("timeout")})
+        self.cluster_mock.get_node_names.return_value = {node: "node1"}
+        self.controller.mods = {"with": [], "for": [], "line": []}
+
+        await self.controller.execute(["memory"])
+
+        ns_agg = self.view_mock.info_memory.call_args.args[2][node]
+        self.assertEqual(ns_agg["shmem_alloc_bytes"], "100")
+
+    @parameterized.expand(
+        [
+            ("mixed_cluster", {"1.1.1.1": "8.1.3", "2.2.2.2": "8.1.2"}),
+            ("all_old", {"1.1.1.1": "8.1.2"}),
+            ("missing", {"1.1.1.1": None}),
+            ("empty", {"1.1.1.1": ""}),
+            ("exception", {"1.1.1.1": Exception("connection refused")}),
+            ("unparseable", {"1.1.1.1": "not-a-version"}),
+            ("no_nodes", {}),
+        ]
+    )
+    async def test_do_memory_warns_once_when_alloc_stats_unsupported(
+        self, _name, builds
+    ):
+        await self._run_memory_line(["memory"], builds=builds)
+
+        warnings_logged = self.warnings()
+        self.assertEqual(len(warnings_logged), 1)
+        self.assertIn("Allocation figures require server 8.1.3", warnings_logged[0])
+        self.view_mock.info_memory.assert_called_once()
+
+    async def test_do_memory_rejects_for_modifier(self):
+        self.controller.mods = {"with": [], "for": ["test"], "line": []}
+
+        with self.assertRaises(ShellException):
+            await self.controller.execute(["memory", "for", "test"])
+
+        self.view_mock.info_memory.assert_not_called()

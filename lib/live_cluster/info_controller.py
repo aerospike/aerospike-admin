@@ -96,19 +96,35 @@ class InfoController(LiveClusterCommandController):
             **self.mods,
         )
 
+    def _alloc_stats_supported(self, builds):
+        builds = util.filter_exceptions(builds)
+
+        if not builds:
+            return False
+
+        for build in builds.values():
+            try:
+                if version.LooseVersion(str(build)) < version.LooseVersion(
+                    constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION
+                ):
+                    return False
+            except Exception:
+                return False
+
+        return True
+
     @CommandHelp(
-        "Displays node memory: Available (cgroup limit if capped, else host",
-        "total) vs Allocated (reserved shmem index+sindex arenas plus in-memory",
-        "data, plus heap). Alloc% approaching 100% signals memory pressure / OOM",
-        "risk. Host total is derived from host_free_mem_pct and is approximate.",
-        "Allocated is reserved and demand-faulted, so resident RSS is lower. Use",
-        "--verbose for the full breakdown (host/cgroup/process and per-backing",
-        "index/data).",
+        "Displays node memory: Capacity (the cgroup limit when cgroup-mem-tracking",
+        "is enabled, else host total) vs Allocated (shmem index and sindex arenas,",
+        "in-memory data on Enterprise and Federal, plus the process heap).",
+        "Allocation figures require server 8.1.3 or later.",
         short_msg="Displays node memory availability vs allocation",
         usage=f"[--verbose] [{ModifierUsageHelp.WITH}]",
         modifiers=(
             ModifierHelp(
-                "--verbose", "Show the full per-node memory breakdown", default="off"
+                "--verbose, -v",
+                "Show the per-node host, index/data, and heap breakdown",
+                default="off",
             ),
             with_modifier_help,
         ),
@@ -120,21 +136,47 @@ class InfoController(LiveClusterCommandController):
             default=False,
             modifiers=self.modifiers,
             mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-v",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
         )
-        stats, configs, ns_stats, builds = await asyncio.gather(
+
+        if self.mods.get("for"):
+            raise ShellException(
+                "info memory: the 'for' modifier is not supported. Host, cgroup, and "
+                "heap values are per-node and cannot be filtered by namespace."
+            )
+
+        stats, configs, ns_stats, builds, editions = await asyncio.gather(
             self.stat_getter.get_service(nodes=self.nodes),
             self.config_getter.get_service(nodes=self.nodes),
             self.stat_getter.get_namespace(nodes=self.nodes),
             self.cluster.info_build(nodes=self.nodes),
+            self.cluster.info("edition", nodes=self.nodes),
         )
-        ns_agg = util.aggregate_ns_memory_stats(ns_stats)
+
+        if not self._alloc_stats_supported(builds):
+            logger.warning(
+                "Allocation figures require server %s or later, so they are empty "
+                "for older nodes.",
+                constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
+            )
+
+        editions = {
+            node: util.convert_edition_to_shortform(str(edition))
+            for node, edition in editions.items()
+            if edition and not isinstance(edition, Exception)
+        }
+        ns_agg = util.aggregate_ns_memory_stats(ns_stats, editions=editions)
         return util.callable(
             self.view.info_memory,
             stats,
             configs,
             ns_agg,
             self.cluster,
-            builds=builds,
             verbose=verbose,
             **self.mods,
         )

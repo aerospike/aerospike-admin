@@ -93,6 +93,7 @@ class Cmd:
 CMDS = [
     Cmd("info network"),
     Cmd("info memory"),
+    Cmd("info memory --verbose"),
     Cmd("info namespace object"),
     Cmd("info namespace usage"),
     Cmd("info set"),

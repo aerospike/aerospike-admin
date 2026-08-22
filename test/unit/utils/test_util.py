@@ -17,6 +17,8 @@ import warnings
 
 import unittest
 
+from parameterized import parameterized
+
 from lib.utils import util
 
 
@@ -711,6 +713,49 @@ class AggregateNsMemoryStatsTest(unittest.TestCase):
         self.assertEqual(result["node1"]["sindex_used_bytes"], "600")
         self.assertEqual(result["node1"]["set_index_used_bytes"], "200")
 
+    def test_device_backed_index_used_excluded(self):
+        ns_stats = {
+            "node1": {
+                "flash_ns": {
+                    "index-type": "flash",
+                    "index_used_bytes": "40000",
+                    "sindex-type": "shmem",
+                    "sindex_used_bytes": "512",
+                    "set_index_used_bytes": "8",
+                },
+                "pmem_ns": {
+                    "index-type": "pmem",
+                    "index_used_bytes": "90000",
+                    "sindex-type": "pmem",
+                    "sindex_used_bytes": "99999",
+                },
+                "shmem_ns": {
+                    "index_used_bytes": "100",
+                    "sindex_used_bytes": "200",
+                },
+            }
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertEqual(result["node1"]["index_used_bytes"], "100")
+        self.assertEqual(result["node1"]["sindex_used_bytes"], "712")
+        self.assertEqual(result["node1"]["set_index_used_bytes"], "8")
+
+    def test_skips_malformed_namespace_bodies(self):
+        ns_stats = {
+            "strnode": "oops",
+            "listnode": ["a"],
+            "nonenode": None,
+            "node1": {
+                "nullns": None,
+                "strns": "corrupt",
+                "listns": ["x"],
+                "ns1": {"index_used_bytes": "100"},
+            },
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertEqual(list(result.keys()), ["node1"])
+        self.assertEqual(result["node1"]["index_used_bytes"], "100")
+
     def test_skips_exception_nodes(self):
         ns_stats = {
             "node1": Exception("connection error"),
@@ -749,7 +794,7 @@ class AggregateNsMemoryStatsTest(unittest.TestCase):
         self.assertNotIn("set_index_used_bytes", result["node1"])
         self.assertNotIn("shmem_alloc_bytes", result["node1"])
 
-    def test_aggregates_alloc_by_backing(self):
+    def test_aggregates_shmem_alloc_and_ignores_device_backings(self):
         ns_stats = {
             "node1": {
                 "ns1": {
@@ -764,8 +809,21 @@ class AggregateNsMemoryStatsTest(unittest.TestCase):
         }
         result = util.aggregate_ns_memory_stats(ns_stats)
         self.assertEqual(result["node1"]["shmem_alloc_bytes"], "110")
-        self.assertEqual(result["node1"]["pmem_alloc_bytes"], "200")
-        self.assertEqual(result["node1"]["flash_alloc_bytes"], "5")
+        self.assertNotIn("pmem_alloc_bytes", result["node1"])
+        self.assertNotIn("flash_alloc_bytes", result["node1"])
+
+    def test_device_backed_index_arenas_excluded_from_components(self):
+        ns_stats = {
+            "node1": {
+                "ns1": {
+                    "index_flash_alloc_bytes": "900",
+                    "sindex_pmem_alloc_bytes": "800",
+                }
+            }
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        for key in ("pi_alloc_bytes", "si_alloc_bytes", "total_alloc_bytes"):
+            self.assertNotIn(key, result["node1"])
 
     def test_data_in_memory_only_for_memory_storage_engine(self):
         ns_stats = {
@@ -793,9 +851,96 @@ class AggregateNsMemoryStatsTest(unittest.TestCase):
                 },
             }
         }
-        result = util.aggregate_ns_memory_stats(ns_stats)
+        result = util.aggregate_ns_memory_stats(
+            ns_stats, editions={"node1": "Enterprise"}
+        )
         self.assertEqual(result["node1"]["shmem_alloc_bytes"], "800")
         self.assertEqual(result["node1"]["data_in_memory_used_bytes"], "50")
+
+    def _memory_engine_ns_stats(self):
+        return {
+            "node1": {
+                "mem_ns": {
+                    "storage-engine": "memory",
+                    "index_shmem_alloc_bytes": "100",
+                    "data_total_bytes": "500",
+                }
+            }
+        }
+
+    def test_community_data_total_not_folded_into_shmem_alloc(self):
+        result = util.aggregate_ns_memory_stats(
+            self._memory_engine_ns_stats(), editions={"node1": "Community"}
+        )
+        self.assertEqual(result["node1"]["shmem_alloc_bytes"], "100")
+        self.assertEqual(result["node1"]["data_alloc_bytes"], "500")
+
+    def test_enterprise_data_total_folded_into_shmem_alloc(self):
+        for edition in ("Enterprise", "Federal"):
+            result = util.aggregate_ns_memory_stats(
+                self._memory_engine_ns_stats(), editions={"node1": edition}
+            )
+            self.assertEqual(result["node1"]["shmem_alloc_bytes"], "600", edition)
+
+    def test_unknown_edition_does_not_fold_data_total(self):
+        for editions in ({}, {"node1": "N/E"}, {"other": "Community"}):
+            result = util.aggregate_ns_memory_stats(
+                self._memory_engine_ns_stats(), editions=editions
+            )
+            self.assertEqual(result["node1"]["shmem_alloc_bytes"], "100")
+            self.assertEqual(result["node1"]["data_alloc_bytes"], "500")
+
+    def test_community_with_no_index_stats_omits_shmem_alloc(self):
+        ns_stats = {
+            "node1": {"mem_ns": {"storage-engine": "memory", "data_total_bytes": "500"}}
+        }
+        result = util.aggregate_ns_memory_stats(
+            ns_stats, editions={"node1": "Community"}
+        )
+        self.assertNotIn("shmem_alloc_bytes", result["node1"])
+        self.assertEqual(result["node1"]["data_alloc_bytes"], "500")
+
+    def test_component_alloc_sums_across_namespaces(self):
+        ns_stats = {
+            "node1": {
+                "ns1": {
+                    "index_shmem_alloc_bytes": "100",
+                    "sindex_shmem_alloc_bytes": "10",
+                    "set_index_alloc_bytes": "4",
+                },
+                "ns2": {
+                    "index_shmem_alloc_bytes": "200",
+                    "sindex_shmem_alloc_bytes": "20",
+                    "set_index_alloc_bytes": "6",
+                },
+            }
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertEqual(result["node1"]["pi_alloc_bytes"], "300")
+        self.assertEqual(result["node1"]["si_alloc_bytes"], "30")
+        self.assertEqual(result["node1"]["set_alloc_bytes"], "10")
+
+    def test_data_alloc_only_for_memory_storage_engine(self):
+        ns_stats = {
+            "node1": {
+                "mem_ns": {"storage-engine": "memory", "data_total_bytes": "500"},
+                "dev_ns": {"storage-engine": "device", "data_total_bytes": "9999"},
+            }
+        }
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        self.assertEqual(result["node1"]["data_alloc_bytes"], "500")
+
+    def test_component_alloc_keys_omitted_without_sources(self):
+        ns_stats = {"node1": {"ns1": {"index_used_bytes": "100"}}}
+        result = util.aggregate_ns_memory_stats(ns_stats)
+        for key in (
+            "pi_alloc_bytes",
+            "si_alloc_bytes",
+            "set_alloc_bytes",
+            "data_alloc_bytes",
+            "total_alloc_bytes",
+        ):
+            self.assertNotIn(key, result["node1"])
 
     def test_data_in_memory_absent_without_memory_namespace(self):
         ns_stats = {
@@ -829,6 +974,18 @@ class DeriveMemoryStatsTest(unittest.TestCase):
         result = util.derive_memory_stats(stats)
         self.assertNotIn("host_total_mem_bytes", result["node1"])
 
+    def test_host_total_withheld_when_free_pct_too_low_to_estimate(self):
+        for pct in ("1", "2", "4"):
+            stats = {
+                "node1": {"host_free_mem_kbytes": "1000000", "host_free_mem_pct": pct}
+            }
+            result = util.derive_memory_stats(stats)
+            self.assertNotIn("host_total_mem_bytes", result["node1"], pct)
+
+        stats = {"node1": {"host_free_mem_kbytes": "1000000", "host_free_mem_pct": "5"}}
+        result = util.derive_memory_stats(stats)
+        self.assertIn("host_total_mem_bytes", result["node1"])
+
     def test_cgroup_used_pct_derived(self):
         stats = {
             "node1": {
@@ -837,19 +994,226 @@ class DeriveMemoryStatsTest(unittest.TestCase):
             }
         }
         result = util.derive_memory_stats(stats)
-        self.assertEqual(result["node1"]["cgroup_memory_used_pct"], "25.0")
+        self.assertEqual(float(result["node1"]["cgroup_memory_used_pct"]), 25.0)
+        self.assertEqual(result["node1"]["cgroup_memory_limit_effective_bytes"], "200")
 
     def test_cgroup_used_pct_skipped_without_limit(self):
         stats = {"node1": {"cgroup_memory_used_bytes": "50"}}
         result = util.derive_memory_stats(stats)
         self.assertNotIn("cgroup_memory_used_pct", result["node1"])
 
-    def test_garbage_values_tolerated(self):
-        stats = {"node1": {"system_free_mem_kbytes": "notanumber"}}
+    def test_cgroup_no_limit_sentinels_rejected(self):
+        for limit in ("9223372036854771712", "max", "-1", "0"):
+            stats = {
+                "node1": {
+                    "cgroup_memory_limit_bytes": limit,
+                    "cgroup_memory_used_bytes": "50",
+                }
+            }
+            result = util.derive_memory_stats(stats)
+            self.assertNotIn(
+                "cgroup_memory_limit_effective_bytes", result["node1"], limit
+            )
+            self.assertNotIn("cgroup_memory_used_pct", result["node1"], limit)
+
+    def test_cgroup_limit_above_host_total_rejected(self):
+        stats = {
+            "node1": {
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "50",
+                "cgroup_memory_limit_bytes": str(1 << 50),
+            }
+        }
         result = util.derive_memory_stats(stats)
-        self.assertEqual(result["node1"]["system_free_mem_bytes"], "0")
+        self.assertNotIn("cgroup_memory_limit_effective_bytes", result["node1"])
+
+    def test_garbage_values_tolerated(self):
+        for value in ("notanumber", "inf", "-inf", "nan", "1e400", "9E0123456789"):
+            stats = {"node1": {"system_free_mem_kbytes": value}}
+            result = util.derive_memory_stats(stats)
+            self.assertEqual(result["node1"]["system_free_mem_bytes"], "0", value)
+
+    def test_absurd_magnitudes_clamped_to_zero(self):
+        stats = {"node1": {"heap_allocated_kbytes": "1" + "0" * 400}}
+        result = util.derive_memory_stats(stats)
+        self.assertEqual(result["node1"]["heap_allocated_bytes"], "0")
 
     def test_exception_node_skipped(self):
         stats = {"node1": Exception("boom"), "node2": {"heap_mapped_kbytes": "4"}}
         result = util.derive_memory_stats(stats)
         self.assertEqual(result["node2"]["heap_mapped_bytes"], str(4 * 1024))
+
+
+class IntOrZeroTest(unittest.TestCase):
+    @parameterized.expand(
+        [
+            ("int", 5, 5),
+            ("str", "5", 5),
+            ("float_str", "5.9", 5),
+            ("negative", "-5", -5),
+            ("none", None, 0),
+            ("garbage", "notanumber", 0),
+            ("inf", "inf", 0),
+            ("neg_inf", "-inf", 0),
+            ("nan", "nan", 0),
+            ("overflow_exp", "1e400", 0),
+            ("hex_looking", "9E0123456789", 0),
+            ("digit_bomb", "1" + "0" * 400, 0),
+        ]
+    )
+    def test_int_or_zero(self, _name, value, expected):
+        self.assertEqual(util.int_or_zero(value), expected)
+
+    @parameterized.expand(
+        [
+            ("float", "5.5", 5.5),
+            ("none", None, 0.0),
+            ("garbage", "notanumber", 0.0),
+            ("inf", "inf", 0.0),
+            ("overflow_exp", "1e400", 0.0),
+            ("nan", "nan", 0.0),
+        ]
+    )
+    def test_float_or_zero(self, _name, value, expected):
+        self.assertEqual(util.float_or_zero(value), expected)
+
+
+class DeriveMemoryHeadlineTest(unittest.TestCase):
+    def headline(self, stats, configs=None, ns_agg=None, nodes=None):
+        return util.derive_memory_headline(
+            util.derive_memory_stats(stats),
+            configs if configs is not None else {},
+            ns_agg if ns_agg is not None else {},
+            nodes=nodes,
+        )
+
+    def test_capacity_prefers_tracked_cgroup_limit(self):
+        headline, untracked, missing = self.headline(
+            {
+                "node1": {
+                    "host_free_mem_kbytes": "8000000",
+                    "host_free_mem_pct": "50",
+                    "cgroup_memory_limit_bytes": "10000",
+                }
+            },
+            configs={"node1": {"cgroup-mem-tracking": "true"}},
+            ns_agg={"node1": {}},
+        )
+        self.assertEqual(headline["node1"]["capacity_bytes"], "10000")
+        self.assertEqual(untracked, [])
+        self.assertEqual(missing, [])
+
+    def test_untracked_cgroup_limit_falls_back_to_host_and_warns(self):
+        headline, untracked, _ = self.headline(
+            {
+                "node1": {
+                    "host_free_mem_kbytes": "8000000",
+                    "host_free_mem_pct": "50",
+                    "cgroup_memory_limit_bytes": "10000",
+                }
+            },
+            configs={"node1": {"cgroup-mem-tracking": "false"}},
+            ns_agg={"node1": {}},
+        )
+        self.assertEqual(
+            headline["node1"]["capacity_bytes"], str(int(8000000 * 1024 * 100 / 50))
+        )
+        self.assertEqual(untracked, ["node1"])
+
+    def test_no_untracked_warning_when_tracking_config_absent(self):
+        _, untracked, _ = self.headline(
+            {"node1": {"cgroup_memory_limit_bytes": "10000"}},
+            configs={"node1": {}},
+            ns_agg={"node1": {}},
+        )
+        self.assertEqual(untracked, [])
+
+    def test_cgroup_sentinel_does_not_become_capacity(self):
+        headline, _, _ = self.headline(
+            {"node1": {"cgroup_memory_limit_bytes": "9223372036854771712"}},
+            configs={"node1": {"cgroup-mem-tracking": "true"}},
+            ns_agg={"node1": {}},
+        )
+        self.assertNotIn("capacity_bytes", headline["node1"])
+        self.assertNotIn("alloc_pct", headline["node1"])
+
+    def test_allocated_is_shmem_plus_heap(self):
+        headline, _, _ = self.headline(
+            {
+                "node1": {
+                    "host_free_mem_kbytes": "8000000",
+                    "host_free_mem_pct": "50",
+                    "heap_allocated_kbytes": "500000",
+                }
+            },
+            ns_agg={"node1": {"shmem_alloc_bytes": "2048000"}},
+        )
+        heap = 500000 * 1024
+        allocated = heap + 2048000
+        row = headline["node1"]
+        self.assertEqual(row["allocated_bytes"], str(allocated))
+        self.assertEqual(row["allocated_shmem_bytes"], "2048000")
+        self.assertEqual(row["allocated_heap_bytes"], str(heap))
+        self.assertEqual(float(row["allocated_heap_pct"]), heap * 100 / allocated)
+
+    def test_missing_ns_stats_omits_total_and_reports_node(self):
+        headline, _, missing = self.headline(
+            {
+                "good": {"heap_allocated_kbytes": "1000"},
+                "nsfail": {"heap_allocated_kbytes": "1000"},
+            },
+            ns_agg={"good": {"shmem_alloc_bytes": "500"}},
+        )
+        self.assertEqual(missing, ["nsfail"])
+        self.assertNotIn("allocated_bytes", headline["nsfail"])
+        self.assertNotIn("alloc_pct", headline["nsfail"])
+        self.assertNotIn("allocated_heap_pct", headline["nsfail"])
+        self.assertEqual(headline["nsfail"]["allocated_heap_bytes"], str(1000 * 1024))
+        self.assertIn("allocated_bytes", headline["good"])
+
+    def test_heap_pct_omitted_when_heap_stat_absent(self):
+        headline, _, _ = self.headline(
+            {"node1": {}}, ns_agg={"node1": {"shmem_alloc_bytes": "500"}}
+        )
+        self.assertEqual(headline["node1"]["allocated_bytes"], "500")
+        self.assertNotIn("allocated_heap_pct", headline["node1"])
+        self.assertNotIn("allocated_heap_bytes", headline["node1"])
+
+    def test_negative_shmem_clamped(self):
+        headline, _, _ = self.headline(
+            {"node1": {"heap_allocated_kbytes": "1000"}},
+            ns_agg={"node1": {"shmem_alloc_bytes": "-999999999"}},
+        )
+        heap = 1000 * 1024
+        self.assertEqual(headline["node1"]["allocated_bytes"], str(heap))
+        self.assertEqual(float(headline["node1"]["allocated_heap_pct"]), 100.0)
+
+    def test_huge_values_do_not_raise(self):
+        headline, _, _ = self.headline(
+            {
+                "node1": {
+                    "heap_allocated_kbytes": "1" + "0" * 400,
+                    "cgroup_memory_limit_bytes": "1",
+                }
+            },
+            configs={"node1": {"cgroup-mem-tracking": "true"}},
+            ns_agg={"node1": {}},
+        )
+        self.assertNotIn("allocated_bytes", headline["node1"])
+
+    def test_non_dict_inputs_skipped(self):
+        headline, _, _ = self.headline(
+            {"node1": Exception("boom"), "node2": {"heap_allocated_kbytes": "4"}},
+            configs={"node2": "not-a-dict"},
+            ns_agg={"node2": {}},
+        )
+        self.assertNotIn("node1", headline)
+        self.assertIn("node2", headline)
+
+    def test_restricted_to_given_nodes(self):
+        headline, _, _ = self.headline(
+            {"node1": {"heap_allocated_kbytes": "4"}, "node2": {}},
+            ns_agg={"node1": {}, "node2": {}},
+            nodes=["node1"],
+        )
+        self.assertEqual(list(headline.keys()), ["node1"])

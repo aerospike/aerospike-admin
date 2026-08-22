@@ -15,17 +15,19 @@
 import asyncio
 from asyncio.subprocess import Process
 import base64
+from collections import defaultdict
 import copy
 import functools
 import inspect
 import io
+import math
 import re
 import shlex
 import socket
 import subprocess
 import sys
 import logging
-from lib.utils import version
+from lib.utils import constants, version
 from time import time
 from typing import (
     Any,
@@ -420,32 +422,131 @@ def flip_keys(orig_data):
     return new_data
 
 
-def _int_or_zero(value):
+MAX_STAT_BYTES = 1 << 70
+CGROUP_MEMORY_NO_LIMIT_THRESHOLD = 1 << 62
+HOST_TOTAL_MIN_FREE_PCT = 5
+
+
+def int_or_zero(value):
+    """
+    Coerce a raw server value to a bounded int, zero when it is not usable.
+
+    Hex-looking strings such as '9E0123456789' parse as scientific notation and
+    overflow to inf, and CPython accepts integer literals up to its digit limit,
+    so the result is clamped to MAX_STAT_BYTES to keep every downstream division
+    inside a double.
+    """
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
         try:
-            return int(float(value))
-        except (TypeError, ValueError):
+            parsed = float(value)
+        except (TypeError, ValueError, OverflowError):
             return 0
 
+        if math.isinf(parsed) or math.isnan(parsed):
+            return 0
 
-def _float_or_zero(value):
+        parsed = int(parsed)
+
+    if not -MAX_STAT_BYTES <= parsed <= MAX_STAT_BYTES:
+        return 0
+
+    return parsed
+
+
+def float_or_zero(value):
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
         return 0.0
 
+    if math.isinf(parsed) or math.isnan(parsed):
+        return 0.0
 
-_NS_MEMORY_USED_KEYS = ("index_used_bytes", "sindex_used_bytes", "set_index_used_bytes")
+    return parsed
+
+
+def cgroup_limit_or_zero(value, host_total_bytes=0):
+    """
+    Normalize cgroup_memory_limit_bytes to a usable limit, else zero.
+
+    An uncapped cgroup reports either 'max' (v2) or a near-int64 sentinel (v1),
+    and a limit above host RAM cannot cap anything.
+    """
+    limit = int_or_zero(value)
+
+    if not 0 < limit < CGROUP_MEMORY_NO_LIMIT_THRESHOLD:
+        return 0
+
+    if host_total_bytes > 0 and limit > host_total_bytes:
+        return 0
+
+    return limit
+
+
+_DEVICE_BACKINGS = ("pmem", "flash")
+_NS_MEMORY_USED_KEYS = {
+    "index_used_bytes": "index-type",
+    "sindex_used_bytes": "sindex-type",
+    "set_index_used_bytes": None,
+}
 _NS_MEMORY_ALLOC_KEYS = {
     "shmem_alloc_bytes": ("index_shmem_alloc_bytes", "sindex_shmem_alloc_bytes"),
-    "pmem_alloc_bytes": ("index_pmem_alloc_bytes", "sindex_pmem_alloc_bytes"),
-    "flash_alloc_bytes": ("index_flash_alloc_bytes", "sindex_flash_alloc_bytes"),
+    "pi_alloc_bytes": ("index_shmem_alloc_bytes",),
+    "si_alloc_bytes": ("sindex_shmem_alloc_bytes",),
+    "set_alloc_bytes": ("set_index_alloc_bytes",),
 }
+_NS_MEMORY_ALLOC_TOTAL_SOURCES = (
+    "pi_alloc_bytes",
+    "si_alloc_bytes",
+    "set_alloc_bytes",
+    "data_alloc_bytes",
+)
+_NS_MEMORY_USED_TOTAL_SOURCES = tuple(_NS_MEMORY_USED_KEYS) + (
+    "data_in_memory_used_bytes",
+)
 
 
-def aggregate_ns_memory_stats(ns_stats):
+def _accumulate_ns_memory(totals, ns_data, fold_data_into_shmem):
+    """
+    Add one namespace's RAM-backed memory stats into a node's running totals.
+
+    _NS_MEMORY_USED_KEYS maps each used stat to the config key naming its
+    backing, or None when the stat is always RAM backed. index_used_bytes and
+    sindex_used_bytes were consolidated across backings in 7.0, so a flash or
+    pmem arena reports through the same stat and has to be skipped by backing.
+    _NS_MEMORY_ALLOC_KEYS maps each aggregated key to the stats summed into it.
+    """
+    for key, backing_key in _NS_MEMORY_USED_KEYS.items():
+        if key not in ns_data:
+            continue
+
+        if backing_key and ns_data.get(backing_key, "shmem") in _DEVICE_BACKINGS:
+            continue
+
+        totals[key] += int_or_zero(ns_data[key])
+
+    for out_key, src_keys in _NS_MEMORY_ALLOC_KEYS.items():
+        for src_key in src_keys:
+            if src_key in ns_data:
+                totals[out_key] += int_or_zero(ns_data[src_key])
+
+    if ns_data.get("storage-engine") != "memory":
+        return
+
+    if "data_total_bytes" in ns_data:
+        data_total = int_or_zero(ns_data["data_total_bytes"])
+        totals["data_alloc_bytes"] += data_total
+
+        if fold_data_into_shmem:
+            totals["shmem_alloc_bytes"] += data_total
+
+    if "data_used_bytes" in ns_data:
+        totals["data_in_memory_used_bytes"] += int_or_zero(ns_data["data_used_bytes"])
+
+
+def aggregate_ns_memory_stats(ns_stats, editions=None):
     """
     Aggregate namespace-level memory stats into per-node totals.
 
@@ -455,54 +556,149 @@ def aggregate_ns_memory_stats(ns_stats):
 
     Args:
         ns_stats: {node: {namespace: {stat_name: value}}}
+        editions: {node: shortform edition} from convert_edition_to_shortform.
+            Enterprise and Federal reserve storage-engine=memory data in shmem
+            upfront, so data_total_bytes is folded into shmem_alloc_bytes.
+            Community allocates that data from the process heap, where
+            heap_allocated_bytes already counts it, so folding it would double
+            count. An unknown edition does not fold: silently overstating
+            allocation is the failure an operator cannot detect.
 
-    shmem_alloc_bytes folds in the reserved in-memory data (data_total_bytes for
-    storage-engine=memory) alongside the index/sindex arenas, since data reserves
-    its full shmem footprint upfront at startup. All alloc values are reserved
-    shmem (demand-faulted); process RSS is the resident subset and lags them.
+    Only RAM-backed allocations are aggregated, on both the alloc and the used
+    side. index-type and sindex-type pmem and flash arenas live on devices, not
+    in memory, and are reported by 'info namespace' against their own capacity.
+
+    The component keys are not additive with the process heap: set index stages
+    are always heap allocated, and so is memory-engine data on Community.
 
     Returns:
         {node: {stat_name: str}}. Possible keys: index_used_bytes,
-        sindex_used_bytes, set_index_used_bytes, shmem_alloc_bytes,
-        pmem_alloc_bytes, flash_alloc_bytes, data_in_memory_used_bytes.
+        sindex_used_bytes, set_index_used_bytes, data_in_memory_used_bytes,
+        shmem_alloc_bytes, pi_alloc_bytes, si_alloc_bytes, set_alloc_bytes,
+        data_alloc_bytes, total_alloc_bytes, total_used_bytes.
     """
+    editions = editions or {}
     result = {}
 
     for node, namespaces in ns_stats.items():
-        if isinstance(namespaces, Exception):
+        if not isinstance(namespaces, dict):
             continue
 
-        totals = {}
+        fold_data_into_shmem = editions.get(node) in (
+            constants.EDITION_ENTERPRISE,
+            constants.EDITION_FEDERAL,
+        )
+        totals = defaultdict(int)
 
         for ns_data in namespaces.values():
-            if isinstance(ns_data, Exception):
+            if not isinstance(ns_data, dict):
                 continue
 
-            for key in _NS_MEMORY_USED_KEYS:
-                if key in ns_data:
-                    totals[key] = totals.get(key, 0) + _int_or_zero(ns_data[key])
+            _accumulate_ns_memory(totals, ns_data, fold_data_into_shmem)
 
-            for out_key, src_keys in _NS_MEMORY_ALLOC_KEYS.items():
-                for src_key in src_keys:
-                    if src_key in ns_data:
-                        totals[out_key] = totals.get(out_key, 0) + _int_or_zero(
-                            ns_data[src_key]
-                        )
+        for total_key, source_keys in (
+            ("total_alloc_bytes", _NS_MEMORY_ALLOC_TOTAL_SOURCES),
+            ("total_used_bytes", _NS_MEMORY_USED_TOTAL_SOURCES),
+        ):
+            present = [key for key in source_keys if key in totals]
 
-            if ns_data.get("storage-engine") == "memory":
-                if "data_total_bytes" in ns_data:
-                    totals["shmem_alloc_bytes"] = totals.get(
-                        "shmem_alloc_bytes", 0
-                    ) + _int_or_zero(ns_data["data_total_bytes"])
-
-                if "data_used_bytes" in ns_data:
-                    totals["data_in_memory_used_bytes"] = totals.get(
-                        "data_in_memory_used_bytes", 0
-                    ) + _int_or_zero(ns_data["data_used_bytes"])
+            if present:
+                totals[total_key] = sum(totals[key] for key in present)
 
         result[node] = {key: str(value) for key, value in totals.items()}
 
     return result
+
+
+def derive_memory_headline(stats, configs, ns_agg, nodes=None):
+    """
+    Build the per-node rows behind the 'info memory' headline table.
+
+    Args:
+        stats: per-node service stats, already through derive_memory_stats
+        configs: per-node service configs
+        ns_agg: output of aggregate_ns_memory_stats
+        nodes: restrict to these nodes, defaults to every node in stats
+
+    A row only carries a value its inputs support: Capacity is omitted without a
+    usable cgroup limit or host estimate, and the allocation total is omitted
+    when the node's namespace stats never arrived, since heap alone would render
+    as an authoritative total that understates the node by whatever its index
+    arenas hold.
+
+    Returns:
+        (headline rows, nodes capped by an untracked cgroup, nodes whose
+        namespace stats are missing)
+    """
+    headline = {}
+    untracked_limits = []
+    missing_ns_stats = []
+
+    for node in stats if nodes is None else nodes:
+        node_stats = stats.get(node)
+
+        if not isinstance(node_stats, dict):
+            continue
+
+        node_configs = configs.get(node)
+
+        if not isinstance(node_configs, dict):
+            node_configs = {}
+
+        agg = ns_agg.get(node)
+        ns_known = isinstance(agg, dict)
+
+        if not ns_known:
+            missing_ns_stats.append(node)
+            agg = {}
+
+        cgroup_tracked = (
+            str(node_configs.get("cgroup-mem-tracking", "")).lower() == "true"
+        )
+        cgroup_limit = int_or_zero(
+            node_stats.get("cgroup_memory_limit_effective_bytes")
+        )
+        capacity = cgroup_limit if cgroup_tracked else 0
+
+        if capacity <= 0:
+            capacity = int_or_zero(node_stats.get("host_total_mem_bytes"))
+
+        if (
+            cgroup_limit > 0
+            and not cgroup_tracked
+            and "cgroup-mem-tracking" in node_configs
+        ):
+            untracked_limits.append(node)
+
+        shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
+        heap = max(0, int_or_zero(node_stats.get("heap_allocated_bytes")))
+        allocated = shmem + heap
+        row = {}
+
+        if capacity > 0:
+            row["capacity_bytes"] = str(capacity)
+
+        if shmem > 0:
+            row["allocated_shmem_bytes"] = str(shmem)
+
+        if heap > 0:
+            row["allocated_heap_bytes"] = str(heap)
+
+        if ns_known and allocated > 0:
+            row["allocated_bytes"] = str(allocated)
+
+            if heap > 0:
+                row["allocated_heap_pct"] = str(heap * 100 / allocated)
+
+            if capacity > 0:
+                row["alloc_pct"] = str(allocated * 100 / capacity)
+
+        if "system_free_mem_pct" in node_stats:
+            row["free_pct"] = node_stats["system_free_mem_pct"]
+
+        headline[node] = row
+
+    return headline, untracked_limits, missing_ns_stats
 
 
 def derive_memory_stats(stats):
@@ -511,8 +707,15 @@ def derive_memory_stats(stats):
 
     Converts kbyte stats to bytes so byte converters render the right
     magnitude, and computes values the server does not emit directly (host
-    total RAM, cgroup used pct). A derived key is only added when its inputs
-    are present and valid, so absent columns collapse on older servers.
+    total RAM, effective cgroup limit, cgroup used pct). A derived key is only
+    added when its inputs are present and valid, so absent columns collapse on
+    older servers.
+
+    The host total is free bytes over free pct, and the server reports that pct
+    as a whole number, so the estimate carries a relative error of up to 1/pct.
+    Below HOST_TOTAL_MIN_FREE_PCT it is withheld rather than published with an
+    error bar wider than its resolution; system_free_mem_pct is exact and
+    carries the alerting in that regime.
     """
     kb_to_bytes = {
         "system_free_mem_kbytes": "system_free_mem_bytes",
@@ -529,24 +732,27 @@ def derive_memory_stats(stats):
 
         for src, dst in kb_to_bytes.items():
             if src in node_stats:
-                node_stats[dst] = str(_int_or_zero(node_stats[src]) * 1024)
+                node_stats[dst] = str(int_or_zero(node_stats[src]) * 1024)
 
         if "host_free_mem_kbytes" in node_stats and "host_free_mem_pct" in node_stats:
-            host_free_pct = _float_or_zero(node_stats["host_free_mem_pct"])
-            if host_free_pct > 0:
-                host_free_kbytes = _int_or_zero(node_stats["host_free_mem_kbytes"])
+            host_free_pct = float_or_zero(node_stats["host_free_mem_pct"])
+            if host_free_pct >= HOST_TOTAL_MIN_FREE_PCT:
+                host_free_kbytes = int_or_zero(node_stats["host_free_mem_kbytes"])
                 node_stats["host_total_mem_bytes"] = str(
                     int(host_free_kbytes * 1024 * 100 / host_free_pct)
                 )
 
-        if (
-            "cgroup_memory_limit_bytes" in node_stats
-            and "cgroup_memory_used_bytes" in node_stats
-        ):
-            limit = _int_or_zero(node_stats["cgroup_memory_limit_bytes"])
+        if "cgroup_memory_limit_bytes" in node_stats:
+            limit = cgroup_limit_or_zero(
+                node_stats["cgroup_memory_limit_bytes"],
+                int_or_zero(node_stats.get("host_total_mem_bytes")),
+            )
             if limit > 0:
-                used = _int_or_zero(node_stats["cgroup_memory_used_bytes"])
-                node_stats["cgroup_memory_used_pct"] = str(used * 100 / limit)
+                node_stats["cgroup_memory_limit_effective_bytes"] = str(limit)
+
+                if "cgroup_memory_used_bytes" in node_stats:
+                    used = int_or_zero(node_stats["cgroup_memory_used_bytes"])
+                    node_stats["cgroup_memory_used_pct"] = str(used * 100 / limit)
 
     return stats
 
@@ -848,13 +1054,13 @@ def convert_edition_to_shortform(edition: str) -> str:
     edition_lower = edition.lower()
 
     if "enterprise" in edition_lower:
-        return "Enterprise"
+        return constants.EDITION_ENTERPRISE
     elif "community" in edition_lower:
-        return "Community"
+        return constants.EDITION_COMMUNITY
     elif "federal" in edition_lower:
-        return "Federal"
+        return constants.EDITION_FEDERAL
 
-    return "N/E"
+    return constants.EDITION_UNKNOWN
 
 
 def write_to_file(file, data):
