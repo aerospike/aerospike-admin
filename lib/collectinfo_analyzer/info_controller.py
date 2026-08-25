@@ -90,33 +90,18 @@ class InfoController(CollectinfoCommandController):
             stats[key_tuple] = stats[key]
             del stats[key]
 
-    def _alloc_stats_supported(self, builds):
-        builds = util.filter_exceptions(builds)
-
-        if not builds:
-            return False
-
-        for build in builds.values():
-            try:
-                if version.LooseVersion(str(build)) < version.LooseVersion(
-                    constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION
-                ):
-                    return False
-            except Exception:
-                return False
-
-        return True
-
     @CommandHelp(
         "Displays node memory: Capacity (the cgroup limit when cgroup-mem-tracking",
-        "is enabled, else host total) vs Allocated (shmem index and sindex arenas,",
-        "in-memory data on Enterprise and Federal, plus the process heap).",
-        "Allocation figures require server 8.1.3 or later.",
+        "is enabled, else estimated host total) vs Allocated (the shmem index and",
+        "sindex arenas plus the process heap). Memory-engine data is in the arenas",
+        "on Enterprise and Federal, and in the heap on Community. Allocation",
+        f"figures require server {constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION}",
+        "or later.",
         short_msg="Displays node memory availability vs allocation",
-        usage="[--verbose]",
+        usage="[-v]",
         modifiers=(
             ModifierHelp(
-                "--verbose, -v",
+                "-v, --verbose",
                 "Show the per-node host, index/data, and heap breakdown",
                 default="off",
             ),
@@ -146,19 +131,19 @@ class InfoController(CollectinfoCommandController):
         service_configs = self.config_getter.get_service()
         ns_stats = self.stats_getter.get_namespace()
 
+        missing_alloc_stats = set()
+
         for timestamp in sorted(service_stats.keys()):
             if not service_stats[timestamp]:
                 continue
 
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
-
-            if not self._alloc_stats_supported(builds):
-                logger.warning(
-                    "Allocation figures require server %s or later, so they are "
-                    "empty for older nodes.",
-                    constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
-                )
+            node_names = cinfo_log.get_node_names()
+            missing_alloc_stats.update(
+                node_names.get(n, n)
+                for n in util.nodes_missing_memory_alloc_stats(builds)
+            )
 
             ns_agg = util.aggregate_ns_memory_stats(
                 ns_stats.get(timestamp, {}), editions=cinfo_log.get_asd_version()
@@ -172,6 +157,15 @@ class InfoController(CollectinfoCommandController):
                 timestamp=timestamp,
                 verbose=verbose,
                 **self.mods,
+            )
+
+        if missing_alloc_stats:
+            logger.warning(
+                "Allocation figures require server %s or later; node(s) %s report "
+                "an older or unreadable build, so their allocation totals are "
+                "empty.",
+                constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
+                ", ".join(sorted(missing_alloc_stats)),
             )
 
     @CommandHelp("Displays summary information for each set")

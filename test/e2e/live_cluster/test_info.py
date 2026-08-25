@@ -18,6 +18,7 @@ import pytest
 from lib.view.sheet import set_style_json
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
+from lib.utils import constants, version
 from test.e2e import util as test_util, lib
 
 set_style_json()
@@ -159,22 +160,29 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         self.assertListEqual(actual_header, exp_header)
         self.assertTrue(exp_heading in actual_heading)
 
-    @pytest.mark.skip()
+    async def _cluster_reports_alloc_stats(self):
+        builds = await self.rc.cluster.info_build()
+
+        return all(
+            not isinstance(build, Exception)
+            and version.LooseVersion(str(build))
+            >= version.LooseVersion(constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION)
+            for build in builds.values()
+        )
+
     async def test_memory(self):
         """
         This test asserts <b> info memory </b> output heading and the headline
-        columns, which are present regardless of server edition or backing type.
+        columns. Only Node and Free% survive on every server version; the
+        allocation columns need the 8.1.3 arena stats, and Capacity needs a
+        cgroup limit or a host free pct the container actually reports.
         TODO: test for values as well
         """
         exp_heading = "Memory Information"
-        always_present = [
-            "Node",
-            "Capacity",
-            "Allocated Total",
-            "Allocated Heap",
-            "Alloc%",
-            "Free%",
-        ]
+        always_present = ["Node", "Free%"]
+
+        if await self._cluster_reports_alloc_stats():
+            always_present += ["Build", "Allocated Total", "Allocated Heap"]
 
         (
             actual_heading,
@@ -189,7 +197,7 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         for column in always_present:
             self.assertIn(column, actual_header)
 
-    @pytest.mark.skip()
+    @pytest.mark.skip(reason="TOOLS-4134: needs an 8.1.3+ server image in e2e")
     async def test_memory_verbose(self):
         """
         This test asserts <b> info memory --verbose </b> renders the breakdown
@@ -225,11 +233,6 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(allocation)
         for column in ["Node", "Total Alloc", "Total Used"]:
             self.assertIn(column, allocation)
-
-        process = header_for("Process Heap")
-        self.assertIsNotNone(process)
-        for column in ["Node", "Heap Alloc", "Heap Eff%"]:
-            self.assertIn(column, process)
 
         process = header_for("Process Heap")
         self.assertIsNotNone(process)

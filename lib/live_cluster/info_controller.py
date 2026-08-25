@@ -96,33 +96,18 @@ class InfoController(LiveClusterCommandController):
             **self.mods,
         )
 
-    def _alloc_stats_supported(self, builds):
-        builds = util.filter_exceptions(builds)
-
-        if not builds:
-            return False
-
-        for build in builds.values():
-            try:
-                if version.LooseVersion(str(build)) < version.LooseVersion(
-                    constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION
-                ):
-                    return False
-            except Exception:
-                return False
-
-        return True
-
     @CommandHelp(
         "Displays node memory: Capacity (the cgroup limit when cgroup-mem-tracking",
-        "is enabled, else host total) vs Allocated (shmem index and sindex arenas,",
-        "in-memory data on Enterprise and Federal, plus the process heap).",
-        "Allocation figures require server 8.1.3 or later.",
+        "is enabled, else estimated host total) vs Allocated (the shmem index and",
+        "sindex arenas plus the process heap). Memory-engine data is in the arenas",
+        "on Enterprise and Federal, and in the heap on Community. Allocation",
+        f"figures require server {constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION}",
+        "or later.",
         short_msg="Displays node memory availability vs allocation",
-        usage=f"[--verbose] [{ModifierUsageHelp.WITH}]",
+        usage=f"[-v] [{ModifierUsageHelp.WITH}]",
         modifiers=(
             ModifierHelp(
-                "--verbose, -v",
+                "-v, --verbose",
                 "Show the per-node host, index/data, and heap breakdown",
                 default="off",
             ),
@@ -158,11 +143,16 @@ class InfoController(LiveClusterCommandController):
             self.cluster.info("edition", nodes=self.nodes),
         )
 
-        if not self._alloc_stats_supported(builds):
+        missing_alloc_stats = util.nodes_missing_memory_alloc_stats(builds)
+
+        if missing_alloc_stats:
+            node_names = self.cluster.get_node_names(self.mods.get("with"))
             logger.warning(
-                "Allocation figures require server %s or later, so they are empty "
-                "for older nodes.",
+                "Allocation figures require server %s or later; node(s) %s report "
+                "an older or unreadable build, so their allocation totals are "
+                "empty.",
                 constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
+                ", ".join(sorted(node_names.get(n, n) for n in missing_alloc_stats)),
             )
 
         editions = {

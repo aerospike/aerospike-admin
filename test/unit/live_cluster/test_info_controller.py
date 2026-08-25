@@ -221,24 +221,62 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand(
         [
-            ("mixed_cluster", {"1.1.1.1": "8.1.3", "2.2.2.2": "8.1.2"}),
-            ("all_old", {"1.1.1.1": "8.1.2"}),
-            ("missing", {"1.1.1.1": None}),
-            ("empty", {"1.1.1.1": ""}),
-            ("exception", {"1.1.1.1": Exception("connection refused")}),
-            ("unparseable", {"1.1.1.1": "not-a-version"}),
-            ("no_nodes", {}),
+            (
+                "mixed_cluster",
+                {"1.1.1.1": "8.1.3", "2.2.2.2": "8.1.2"},
+                ["node-2.2.2.2"],
+            ),
+            ("all_old", {"1.1.1.1": "8.1.2"}, ["node-1.1.1.1"]),
+            ("missing", {"1.1.1.1": None}, ["node-1.1.1.1"]),
+            ("empty", {"1.1.1.1": ""}, ["node-1.1.1.1"]),
+            (
+                "exception",
+                {"1.1.1.1": Exception("connection refused")},
+                ["node-1.1.1.1"],
+            ),
+            ("unparseable", {"1.1.1.1": "not-a-version"}, ["node-1.1.1.1"]),
         ]
     )
-    async def test_do_memory_warns_once_when_alloc_stats_unsupported(
-        self, _name, builds
+    async def test_do_memory_warns_once_naming_the_unsupported_nodes(
+        self, _name, builds, expected_nodes
     ):
         await self._run_memory_line(["memory"], builds=builds)
 
         warnings_logged = self.warnings()
         self.assertEqual(len(warnings_logged), 1)
         self.assertIn("Allocation figures require server 8.1.3", warnings_logged[0])
+
+        for node_name in expected_nodes:
+            self.assertIn(node_name, warnings_logged[0])
+
+        if _name == "mixed_cluster":
+            self.assertNotIn("node-1.1.1.1", warnings_logged[0])
+
         self.view_mock.info_memory.assert_called_once()
+
+    @parameterized.expand(
+        [
+            ("all_supported", {"1.1.1.1": "8.1.3", "2.2.2.2": "8.2.0"}),
+            ("no_nodes", {}),
+        ]
+    )
+    async def test_do_memory_stays_quiet_when_no_node_is_unsupported(
+        self, _name, builds
+    ):
+        await self._run_memory_line(["memory"], builds=builds)
+
+        self.assertEqual(self.warnings(), [])
+        self.view_mock.info_memory.assert_called_once()
+
+    async def test_do_memory_hands_the_view_unfiltered_builds(self):
+        error = Exception("connection refused")
+        call_args = await self._run_memory_line(
+            ["memory"], builds={"1.1.1.1": "8.1.3", "2.2.2.2": error}
+        )
+
+        self.assertEqual(
+            call_args.kwargs["builds"], {"1.1.1.1": "8.1.3", "2.2.2.2": error}
+        )
 
     async def test_do_memory_rejects_for_modifier(self):
         self.controller.mods = {"with": [], "for": ["test"], "line": []}

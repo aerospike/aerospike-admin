@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import time
 from typing import Any, Callable
 import unittest
@@ -169,6 +170,15 @@ class TableRenderTestCase(unittest.TestCase):
         if "traceback" in cp.stderr:
             self.fail("Traceback found in stderr")
 
+    def check_cmd_stdout_is_json(self, cmd: Cmd, cp: util.CompletedProcess):
+        if not cmd.cmd.startswith("info memory"):
+            return
+
+        try:
+            json.loads(cp.stdout)
+        except ValueError as e:
+            self.fail(f"'{cmd.cmd}' --json stdout is not JSON: {e}\n{cp.stdout}")
+
 
 @parameterized_class(
     [
@@ -210,6 +220,7 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd.cmd}' --json -Uadmin -Padmin"
         o = util.run_asadm(args)
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)
 
     @parameterized.expand(list(set(CMDS).difference(NOT_IN_CI_MODE)))
     def test_collectinfo_cmds_for_errors(self, cmd: Cmd):
@@ -223,6 +234,7 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         print(o.stderr)
 
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)
 
     def test_admin_port_connection_sanity_check(self):
         """Sanity check: Test that admin port connection works"""
@@ -282,6 +294,7 @@ class TableRenderNodeUnreachableTests(TableRenderTestCase):
         args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd.cmd}' --json -Uadmin -Padmin"
         o = util.run_asadm(args)
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)
 
     @parameterized.expand(list(set(CMDS).difference(NOT_IN_CI_MODE)))
     def test_collectinfo_cmds_for_errors(self, cmd: Cmd):
@@ -295,3 +308,4 @@ class TableRenderNodeUnreachableTests(TableRenderTestCase):
         print(o.stderr)
 
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)

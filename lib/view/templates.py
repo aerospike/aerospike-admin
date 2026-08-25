@@ -270,6 +270,44 @@ def create_usage_weighted_avg(type: str):
     return usage_weighted_avg
 
 
+def create_alloc_weighted_avg(type: str):
+    """
+    Aggregate Alloc% as sum(alloc) / sum(capacity), capacity recovered per row
+    as alloc * 100 / pct.
+
+    The server reports the ratio, not the budget behind it, so the capacity has
+    to be reconstructed before the percentages can be combined. Weighting by
+    Alloc alone would bias the result by the numerator, and leaving the
+    aggregate empty next to a summed Alloc ships a half-aggregated row.
+    """
+
+    def alloc_weighted_avg(edatas: list[EntryData]):
+        alloc_total = 0.0
+        capacity_total = 0.0
+        itr = 0
+
+        for edata in edatas:
+            pct = edata.value
+            alloc = edata.record[type]["Alloc"]
+
+            if not pct or alloc is None:
+                continue
+
+            alloc_total += alloc
+            capacity_total += alloc * 100 / pct
+            itr += 1
+
+        if itr == 0:
+            return None
+
+        if not capacity_total:
+            return 0.0
+
+        return alloc_total * 100 / capacity_total
+
+    return alloc_weighted_avg
+
+
 info_namespace_usage_sheet = Sheet(
     (
         namespace_field,
@@ -399,6 +437,10 @@ info_namespace_usage_sheet = Sheet(
                         "index_flash_alloc_pct",
                     ),
                     converter=Converters.pct,
+                    aggregator=ComplexAggregator(
+                        create_alloc_weighted_avg("Primary Index"),
+                        converter=Converters.pct,
+                    ),
                 ),
                 Field(
                     "Evict%",
@@ -508,6 +550,10 @@ info_namespace_usage_sheet = Sheet(
                         "sindex_flash_alloc_pct",
                     ),
                     converter=Converters.pct,
+                    aggregator=ComplexAggregator(
+                        create_alloc_weighted_avg("Secondary Index"),
+                        converter=Converters.pct,
+                    ),
                 ),
                 Field(
                     "Evict%",
@@ -3037,15 +3083,35 @@ info_transactions_provisionals_sheet = Sheet(
     order_by=FieldSorter("Node"),
 )
 
+
+def breaches_stop_writes_sys_memory(edata):
+    """
+    Whether this node's Free% is at or past the point writes stop.
+
+    nsup.c eval_stop_writes compares one node-wide 100 - free pct against each
+    namespace's stop-writes-sys-memory-pct, so the lowest configured namespace
+    sets the node's floor and Free% breaches it below 100 - Stop%.
+
+    No Stop% means the server did not report the threshold, so there is no line
+    to alert against and the cell is left uncoloured rather than judged against
+    an assumed default.
+    """
+    stop_pct = edata.record.get("Stop%")
+
+    if not stop_pct:
+        return False
+
+    return edata.value < 100 - stop_pct
+
+
+sys_memory_free_pct_formatters = (
+    Formatters.red_alert(breaches_stop_writes_sys_memory),
+)
+
 info_memory_sheet = Sheet(
     (
         node_field,
         hidden_node_id_field,
-        Field(
-            "Host Total",
-            Projectors.Number("stats", "host_total_mem_bytes"),
-            converter=Converters.byte,
-        ),
         Subgroup(
             "Free",
             (
@@ -3058,10 +3124,7 @@ info_memory_sheet = Sheet(
                     "Sys%",
                     Projectors.Percent("stats", "system_free_mem_pct"),
                     converter=Converters.pct,
-                    formatters=(
-                        Formatters.red_alert(lambda edata: edata.value < 10),
-                        Formatters.yellow_alert(lambda edata: 10 <= edata.value < 20),
-                    ),
+                    formatters=sys_memory_free_pct_formatters,
                 ),
                 Field(
                     "Host",
@@ -3074,6 +3137,11 @@ info_memory_sheet = Sheet(
                     converter=Converters.pct,
                 ),
             ),
+        ),
+        Field(
+            "Stop%",
+            Projectors.Number("ns_agg", "stop_writes_sys_memory_pct"),
+            converter=Converters.pct,
         ),
         Subgroup(
             "CGroup",
@@ -3106,7 +3174,7 @@ info_memory_sheet = Sheet(
             formatters=(Formatters.yellow_alert(lambda edata: edata.value > 0),),
         ),
     ),
-    from_source=("node_names", "node_ids", "stats", "configs"),
+    from_source=("node_names", "node_ids", "stats", "configs", "ns_agg"),
     order_by=FieldSorter("Node"),
 )
 
@@ -3241,9 +3309,10 @@ info_memory_headline_sheet = Sheet(
     (
         node_field,
         hidden_node_id_field,
+        Field("Build", Projectors.String("builds", None)),
         Field(
             "Capacity",
-            Projectors.Number("stats", "capacity_bytes"),
+            Projectors.Number("headline", "capacity_bytes"),
             converter=Converters.byte,
         ),
         Subgroup(
@@ -3251,41 +3320,43 @@ info_memory_headline_sheet = Sheet(
             (
                 Field(
                     "Total",
-                    Projectors.Number("stats", "allocated_bytes"),
+                    Projectors.Number("headline", "allocated_bytes"),
                     converter=Converters.byte,
                 ),
                 Field(
                     "Shmem",
-                    Projectors.Number("stats", "allocated_shmem_bytes"),
+                    Projectors.Number("headline", "allocated_shmem_bytes"),
                     converter=Converters.byte,
                 ),
                 Field(
                     "Heap",
-                    Projectors.Number("stats", "allocated_heap_bytes"),
+                    Projectors.Number("headline", "allocated_heap_bytes"),
                     converter=Converters.byte,
                 ),
                 Field(
                     "Heap%",
-                    Projectors.Float("stats", "allocated_heap_pct"),
+                    Projectors.Float("headline", "allocated_heap_pct"),
                     converter=Converters.pct,
                 ),
             ),
         ),
         Field(
             "Alloc%",
-            Projectors.Float("stats", "alloc_pct"),
+            Projectors.Float("headline", "alloc_pct"),
             converter=Converters.pct,
         ),
         Field(
             "Free%",
-            Projectors.Percent("stats", "free_pct"),
+            Projectors.Percent("headline", "free_pct"),
             converter=Converters.pct,
-            formatters=(
-                Formatters.red_alert(lambda edata: edata.value < 10),
-                Formatters.yellow_alert(lambda edata: 10 <= edata.value < 20),
-            ),
+            formatters=sys_memory_free_pct_formatters,
+        ),
+        Field(
+            "Stop%",
+            Projectors.Number("headline", "stop_writes_sys_memory_pct"),
+            converter=Converters.pct,
         ),
     ),
-    from_source=("node_names", "node_ids", "stats"),
+    from_source=("node_names", "node_ids", "headline", "builds"),
     order_by=FieldSorter("Node"),
 )

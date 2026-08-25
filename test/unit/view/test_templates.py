@@ -151,40 +151,86 @@ class InfoNamespaceUsageIndexFormattersTests(unittest.TestCase):
                 f"{subgroup} Used%={used_pct} Evict%={evict_pct}",
             )
 
-    @parameterized.expand(["shmem", "pmem", "flash"])
-    def test_physical_alloc_by_backing_rendered(self, backing):
-        node = "127.0.0.1:3000"
+    def _render_alloc_group(self, nodes):
         sources = dict(
-            node_names={node: "node-A"},
-            node_ids={node: "BB9040011AC4202"},
-            ns_stats={
-                node: {
-                    "test": {
-                        "index-type": backing,
-                        "index_{}_alloc_bytes".format(backing): 1073741824,
-                        "index_{}_alloc_pct".format(backing): 100,
-                        "sindex-type": backing,
-                        "sindex_{}_alloc_bytes".format(backing): 536870912,
-                        "sindex_{}_alloc_pct".format(backing): 50,
-                    }
-                }
-            },
-            service_stats={node: {}},
+            node_names={node: "node-%s" % i for i, node in enumerate(nodes)},
+            node_ids={node: "BB904001%dAC4202" % i for i, node in enumerate(nodes)},
+            ns_stats=nodes,
+            service_stats={node: {} for node in nodes},
         )
-        record = json.loads(
+        return json.loads(
             sheet.render(
                 templates.info_namespace_usage_sheet,
                 "Namespace Usage Information",
                 sources,
-                common=dict(principal="BB9040011AC4202"),
+                common=dict(principal="BB9040010AC4202"),
                 style=SheetStyle.json,
             )
-        )["groups"][0]["records"][0]
+        )["groups"][0]
+
+    @parameterized.expand(["shmem", "pmem", "flash"])
+    def test_physical_alloc_by_backing_rendered(self, backing):
+        def ns_stats(alloc, alloc_pct, sindex_alloc, sindex_alloc_pct):
+            return {
+                "test": {
+                    "index-type": backing,
+                    "index_{}_alloc_bytes".format(backing): alloc,
+                    "index_{}_alloc_pct".format(backing): alloc_pct,
+                    "sindex-type": backing,
+                    "sindex_{}_alloc_bytes".format(backing): sindex_alloc,
+                    "sindex_{}_alloc_pct".format(backing): sindex_alloc_pct,
+                }
+            }
+
+        group = self._render_alloc_group(
+            {
+                "127.0.0.1:3000": ns_stats(1073741824, 100, 536870912, 50),
+                "127.0.0.2:3000": ns_stats(1073741824, 50, 268435456, 25),
+            }
+        )
+        record = group["records"][0]
 
         self.assertEqual(record["Primary Index"]["Alloc"]["raw"], 1073741824)
         self.assertEqual(record["Primary Index"]["Alloc%"]["raw"], 100)
         self.assertEqual(record["Secondary Index"]["Alloc"]["raw"], 536870912)
         self.assertEqual(record["Secondary Index"]["Alloc%"]["raw"], 50)
+
+        aggregates = group["aggregates"]
+
+        self.assertEqual(aggregates["Primary Index"]["Alloc"]["raw"], 2 * 1073741824)
+        self.assertAlmostEqual(
+            aggregates["Primary Index"]["Alloc%"]["raw"], 200 / 3, places=6
+        )
+        self.assertEqual(
+            aggregates["Secondary Index"]["Alloc"]["raw"], 536870912 + 268435456
+        )
+        self.assertAlmostEqual(
+            aggregates["Secondary Index"]["Alloc%"]["raw"], 37.5, places=6
+        )
+
+    def test_alloc_pct_aggregate_skips_rows_with_no_ratio(self):
+        group = self._render_alloc_group(
+            {
+                "127.0.0.1:3000": {
+                    "test": {
+                        "index-type": "shmem",
+                        "index_shmem_alloc_bytes": 100,
+                        "index_shmem_alloc_pct": 50,
+                    }
+                },
+                "127.0.0.2:3000": {
+                    "test": {
+                        "index-type": "shmem",
+                        "index_shmem_alloc_bytes": 900,
+                    }
+                },
+            }
+        )
+
+        aggregates = group["aggregates"]
+
+        self.assertEqual(aggregates["Primary Index"]["Alloc"]["raw"], 1000)
+        self.assertEqual(aggregates["Primary Index"]["Alloc%"]["raw"], 50)
 
 
 class ShowPmapSheetTest(unittest.TestCase):
@@ -383,30 +429,54 @@ def _render_memory(template, sources):
 
 
 class InfoMemoryHeadlineSheetTest(unittest.TestCase):
-    def render(self, **stats):
+    def render(self, builds=None, **headline):
         return _render_memory(
-            templates.info_memory_headline_sheet, dict(stats={MEMORY_NODE: stats})
+            templates.info_memory_headline_sheet,
+            dict(
+                headline={MEMORY_NODE: headline},
+                builds={MEMORY_NODE: builds} if builds is not None else {},
+            ),
         )
 
     def test_free_pct_alert_tiers(self):
         for free_pct, expected in (
-            (5, "red-alert"),
-            (9.9, "red-alert"),
-            (10, "yellow-alert"),
-            (19.9, "yellow-alert"),
+            (5, None),
+            (9.9, None),
+            (10, None),
             (20, None),
             (75, None),
         ):
-            record = self.render(alloc_pct="50.0", free_pct=str(free_pct))
-            self.assertEqual(record["Free%"].get("format"), expected, free_pct)
+            with self.subTest(free_pct=free_pct):
+                record = self.render(alloc_pct="50.0", free_pct=str(free_pct))
+                self.assertEqual(record["Free%"].get("format"), expected)
+
+    def test_free_pct_reddens_exactly_at_the_servers_stop_writes_line(self):
+        for stop_pct, free_pct, expected in (
+            (90, 9.9, "red-alert"),
+            (90, 10, None),
+            (90, 20, None),
+            (75, 24, "red-alert"),
+            (75, 25, None),
+            (75, 34.9, None),
+            (50, 49, "red-alert"),
+            (50, 50, None),
+        ):
+            with self.subTest(stop_pct=stop_pct, free_pct=free_pct):
+                record = self.render(
+                    free_pct=str(free_pct), stop_writes_sys_memory_pct=str(stop_pct)
+                )
+                self.assertEqual(record["Free%"].get("format"), expected)
+                self.assertEqual(record["Stop%"]["raw"], stop_pct)
 
     def test_alloc_pct_never_alerts(self):
         for alloc_pct in (1, 50, 99, 150):
-            record = self.render(alloc_pct=str(alloc_pct), free_pct="50")
-            self.assertIsNone(record["Alloc%"].get("format"), alloc_pct)
+            with self.subTest(alloc_pct=alloc_pct):
+                record = self.render(alloc_pct=str(alloc_pct), free_pct="50")
+                self.assertIsNone(record["Alloc%"].get("format"))
 
     def test_allocated_subgroup_projects_each_component(self):
         record = self.render(
+            builds="8.1.3",
             capacity_bytes="1000",
             allocated_bytes="500",
             allocated_shmem_bytes="300",
@@ -416,6 +486,7 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
             free_pct="50",
         )
 
+        self.assertEqual(record["Build"]["raw"], "8.1.3")
         self.assertEqual(record["Capacity"]["raw"], 1000)
         self.assertEqual(record["Allocated"]["Total"]["raw"], 500)
         self.assertEqual(record["Allocated"]["Shmem"]["raw"], 300)
@@ -423,18 +494,49 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
         self.assertEqual(record["Allocated"]["Heap%"]["raw"], 40.0)
         self.assertEqual(record["Alloc%"]["raw"], 50.0)
 
+    def test_build_column_renders_an_unreachable_node_as_an_error(self):
+        record = self.render(builds=Exception("connection refused"), free_pct="50")
+
+        self.assertEqual(record["Build"]["raw"], "error")
+        self.assertNotIn("connection refused", str(record["Build"]))
+
+    def test_build_column_collapses_when_no_build_is_known(self):
+        record = self.render(free_pct="50")
+
+        self.assertNotIn("Build", record)
+
 
 class InfoMemoryHostSheetTest(unittest.TestCase):
-    def render(self, stats, configs=None):
+    def render(self, stats, configs=None, ns_agg=None):
         return _render_memory(
             templates.info_memory_sheet,
-            dict(stats={MEMORY_NODE: stats}, configs={MEMORY_NODE: configs or {}}),
+            dict(
+                stats={MEMORY_NODE: stats},
+                configs={MEMORY_NODE: configs or {}},
+                ns_agg={MEMORY_NODE: ns_agg or {}},
+            ),
         )
 
-    def test_free_sys_pct_alert_tiers(self):
-        for free_pct, expected in ((5, "red-alert"), (10, "yellow-alert"), (20, None)):
-            record = self.render({"system_free_mem_pct": str(free_pct)})
-            self.assertEqual(record["Free"]["Sys%"].get("format"), expected, free_pct)
+    def test_free_sys_pct_never_alerts_without_a_reported_threshold(self):
+        for free_pct in (1, 5, 10, 20, 90):
+            with self.subTest(free_pct=free_pct):
+                record = self.render({"system_free_mem_pct": str(free_pct)})
+                self.assertIsNone(record["Free"]["Sys%"].get("format"))
+
+    def test_free_sys_pct_reddens_exactly_at_the_servers_stop_writes_line(self):
+        for stop_pct, free_pct, expected in (
+            (90, 9, "red-alert"),
+            (90, 10, None),
+            (75, 24, "red-alert"),
+            (75, 25, None),
+        ):
+            with self.subTest(stop_pct=stop_pct, free_pct=free_pct):
+                record = self.render(
+                    {"system_free_mem_pct": str(free_pct)},
+                    ns_agg={"stop_writes_sys_memory_pct": str(stop_pct)},
+                )
+                self.assertEqual(record["Free"]["Sys%"].get("format"), expected)
+                self.assertEqual(record["Stop%"]["raw"], stop_pct)
 
     def test_thp_alerts_when_non_zero(self):
         self.assertEqual(
@@ -451,7 +553,6 @@ class InfoMemoryHostSheetTest(unittest.TestCase):
                 "cgroup_memory_used_bytes": "500",
                 "cgroup_memory_limit_effective_bytes": "1000",
                 "cgroup_memory_used_pct": "50.0",
-                "host_total_mem_bytes": "2000",
             },
             configs={"cgroup-mem-tracking": "true"},
         )
@@ -460,7 +561,7 @@ class InfoMemoryHostSheetTest(unittest.TestCase):
         self.assertEqual(record["CGroup"]["Used"]["raw"], 500)
         self.assertEqual(record["CGroup"]["Limit"]["raw"], 1000)
         self.assertEqual(record["CGroup"]["Used%"]["raw"], 50.0)
-        self.assertEqual(record["Host Total"]["raw"], 2000)
+        self.assertNotIn("Host Total (est)", record)
 
     def test_free_subgroup_fields(self):
         record = self.render(
@@ -492,8 +593,9 @@ class InfoMemoryProcessSheetTest(unittest.TestCase):
             (59.9, "yellow-alert"),
             (60, None),
         ):
-            record = self.render(heap_efficiency_pct=str(eff_pct))
-            self.assertEqual(record["Heap"]["Eff%"].get("format"), expected, eff_pct)
+            with self.subTest(eff_pct=eff_pct):
+                record = self.render(heap_efficiency_pct=str(eff_pct))
+                self.assertEqual(record["Heap"]["Eff%"].get("format"), expected)
 
     def test_heap_subgroup_fields(self):
         record = self.render(
@@ -539,5 +641,6 @@ class InfoMemoryIndexSheetTest(unittest.TestCase):
             "Set Index": (300, 290),
             "Data": (400, 330),
         }.items():
-            self.assertEqual(record[subgroup]["Alloc"]["raw"], alloc, subgroup)
-            self.assertEqual(record[subgroup]["Used"]["raw"], used, subgroup)
+            with self.subTest(subgroup=subgroup):
+                self.assertEqual(record[subgroup]["Alloc"]["raw"], alloc)
+                self.assertEqual(record[subgroup]["Used"]["raw"], used)

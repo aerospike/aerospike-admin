@@ -178,8 +178,8 @@ class CliView(object):
     def _warn_memory_gaps(node_names, untracked_limits, missing_ns_stats):
         if untracked_limits:
             logger.warning(
-                "%s capped by an untracked cgroup limit; 'info memory' describes "
-                "the host instead. Enable cgroup-mem-tracking.",
+                "%s capped by an untracked cgroup limit; Capacity and Alloc%% are "
+                "omitted. Enable cgroup-mem-tracking.",
                 ", ".join(sorted(node_names.get(n, n) for n in untracked_limits)),
             )
 
@@ -221,12 +221,13 @@ class CliView(object):
         stats = {n: v for n, v in stats.items() if n in node_names}
         configs = {n: v for n, v in configs.items() if n in node_names}
         ns_agg = {n: v for n, v in ns_agg.items() if n in node_names}
+        builds = {n: v for n, v in (builds or {}).items() if n in node_names}
 
         CliView.print_result(
             sheet.render(
                 templates.info_memory_headline_sheet,
                 "Memory Information" + title_suffix,
-                dict(stats=headline, **node_src),
+                dict(headline=headline, builds=builds, **node_src),
                 common=common,
             )
         )
@@ -245,7 +246,7 @@ class CliView(object):
             (
                 templates.info_memory_sheet,
                 "Host and CGroup Memory",
-                dict(stats=stats, configs=configs, **node_src),
+                dict(stats=stats, configs=configs, ns_agg=ns_agg, **node_src),
             ),
             (
                 templates.info_memory_index_sheet,

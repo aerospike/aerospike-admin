@@ -55,16 +55,20 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
         )
         self.addCleanup(patch.stopall)
 
-    def set_snapshot(self, builds=None, editions=None, node_names=None):
+    def _cinfo_log_mock(self, builds, node_names, editions=None):
         cinfo_log_mock = MagicMock()
-        cinfo_log_mock.get_asd_build.return_value = (
-            builds if builds is not None else {NODE: "8.1.3"}
-        )
+        cinfo_log_mock.get_asd_build.return_value = builds
         cinfo_log_mock.get_asd_version.return_value = (
             editions if editions is not None else {NODE: "Enterprise"}
         )
-        cinfo_log_mock.get_node_names.return_value = (
-            node_names if node_names is not None else {NODE: "node1"}
+        cinfo_log_mock.get_node_names.return_value = node_names
+        return cinfo_log_mock
+
+    def set_snapshot(self, builds=None, editions=None, node_names=None):
+        cinfo_log_mock = self._cinfo_log_mock(
+            builds if builds is not None else {NODE: "8.1.3"},
+            node_names if node_names is not None else {NODE: "node1"},
+            editions=editions,
         )
         self.log_handler.get_cinfo_log_at.return_value = cinfo_log_mock
         return cinfo_log_mock
@@ -224,12 +228,18 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
         ns_agg = self.view_mock.info_memory.call_args.args[2]
         self.assertEqual(ns_agg[NODE]["shmem_alloc_bytes"], "100")
 
-    def _run_with_builds(self, builds):
-        ts = "2025-01-01T00:00:00"
-        self.stats_getter_mock.get_service.return_value = {ts: {NODE: {}}}
-        self.config_getter_mock.get_service.return_value = {ts: {NODE: {}}}
-        self.stats_getter_mock.get_namespace.return_value = {ts: {NODE: {}}}
-        self.set_snapshot(builds=builds)
+    def _run_with_builds(self, builds, node_names=None):
+        timestamps = ("2025-01-01T00:00:00", "2025-01-02T00:00:00")
+        self.stats_getter_mock.get_service.return_value = {
+            ts: {NODE: {}} for ts in timestamps
+        }
+        self.config_getter_mock.get_service.return_value = {
+            ts: {NODE: {}} for ts in timestamps
+        }
+        self.stats_getter_mock.get_namespace.return_value = {
+            ts: {NODE: {}} for ts in timestamps
+        }
+        self.set_snapshot(builds=builds, node_names=node_names)
 
         self.controller.do_memory([])
 
@@ -239,16 +249,56 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
             ("empty", {NODE: ""}),
             ("not_entered", {NODE: "N/E"}),
             ("too_old", {NODE: "8.1.2"}),
-            ("no_nodes", {}),
+            ("exception", {NODE: Exception("corrupt snapshot")}),
         ]
     )
-    def test_do_memory_warns_once_when_alloc_stats_unsupported(self, _name, builds):
+    def test_do_memory_warns_once_across_snapshots_naming_the_nodes(
+        self, _name, builds
+    ):
         self._run_with_builds(builds)
 
         warnings_logged = self.warnings()
+        self.assertEqual(self.view_mock.info_memory.call_count, 2)
         self.assertEqual(len(warnings_logged), 1)
         self.assertIn("Allocation figures require server 8.1.3", warnings_logged[0])
-        self.view_mock.info_memory.assert_called_once()
+        self.assertIn("node1", warnings_logged[0])
+
+    @parameterized.expand(
+        [
+            ("supported", {NODE: "8.1.3"}),
+            ("no_nodes", {}),
+        ]
+    )
+    def test_do_memory_stays_quiet_when_no_node_is_unsupported(self, _name, builds):
+        self._run_with_builds(builds)
+
+        self.assertEqual(self.warnings(), [])
+        self.assertEqual(self.view_mock.info_memory.call_count, 2)
+
+    def test_do_memory_warning_unions_the_nodes_across_snapshots(self):
+        ts1, ts2 = "2025-01-01T00:00:00", "2025-01-02T00:00:00"
+        other = "2.2.2.2"
+        self.stats_getter_mock.get_service.return_value = {
+            ts1: {NODE: {}},
+            ts2: {other: {}},
+        }
+        self.config_getter_mock.get_service.return_value = {}
+        self.stats_getter_mock.get_namespace.return_value = {}
+
+        snapshots = {
+            ts1: self._cinfo_log_mock({NODE: "8.1.2"}, {NODE: "node1"}),
+            ts2: self._cinfo_log_mock({other: "8.1.1"}, {other: "node2"}),
+        }
+        self.log_handler.get_cinfo_log_at.side_effect = lambda timestamp: snapshots[
+            timestamp
+        ]
+
+        self.controller.do_memory([])
+
+        warnings_logged = self.warnings()
+        self.assertEqual(len(warnings_logged), 1)
+        self.assertIn("node1", warnings_logged[0])
+        self.assertIn("node2", warnings_logged[0])
 
     def _run_memory_line(self, line):
         ts = "2025-01-01T00:00:00"
