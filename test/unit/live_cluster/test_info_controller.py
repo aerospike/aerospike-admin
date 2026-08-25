@@ -254,6 +254,31 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
 
         self.view_mock.info_memory.assert_called_once()
 
+    async def test_do_memory_warning_stays_short_on_a_large_cluster(self):
+        nodes = [
+            "10-128-32-%d.datadog-agent.opentelemetry.svc.cluster.local:3000" % i
+            for i in range(14)
+        ]
+        await self._run_memory_line(
+            ["memory"], builds={node: "8.1.1" for node in nodes}
+        )
+
+        warning = self.warnings()[0]
+
+        self.assertIn("all 14 nodes", warning)
+        self.assertNotIn(nodes[0], warning)
+        self.assertLess(len(warning), 200, warning)
+
+    async def test_do_memory_warning_names_the_stragglers_mid_upgrade(self):
+        builds = {"10.0.0.%d" % i: ("8.1.3" if i > 1 else "8.1.1") for i in range(14)}
+        await self._run_memory_line(["memory"], builds=builds)
+
+        warning = self.warnings()[0]
+
+        self.assertIn("node-10.0.0.0", warning)
+        self.assertIn("node-10.0.0.1", warning)
+        self.assertNotIn("all 14 nodes", warning)
+
     @parameterized.expand(
         [
             ("all_supported", {"1.1.1.1": "8.1.3", "2.2.2.2": "8.2.0"}),

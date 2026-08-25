@@ -98,11 +98,14 @@ class InfoController(LiveClusterCommandController):
 
     @CommandHelp(
         "Displays node memory: Capacity (the cgroup limit when cgroup-mem-tracking",
-        "is enabled, else estimated host total) vs Allocated (the shmem index and",
+        "is enabled, otherwise a lower bound on total memory derived from the",
+        "reported free pct) vs Allocated (the shmem index and",
         "sindex arenas plus the process heap). Memory-engine data is in the arenas",
-        "on Enterprise and Federal, and in the heap on Community. Allocation",
-        f"figures require server {constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION}",
-        "or later.",
+        "on Enterprise and Federal, and in the heap on Community. The verbose",
+        "tables are not additive with each other: set index, and memory-engine",
+        "data on Community, are heap-allocated and appear in both Index and Data",
+        "Memory and Process Heap. Allocation figures require server",
+        f"{constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION} or later.",
         short_msg="Displays node memory availability vs allocation",
         usage=f"[-v] [{ModifierUsageHelp.WITH}]",
         modifiers=(
@@ -148,11 +151,14 @@ class InfoController(LiveClusterCommandController):
         if missing_alloc_stats:
             node_names = self.cluster.get_node_names(self.mods.get("with"))
             logger.warning(
-                "Allocation figures require server %s or later; node(s) %s report "
-                "an older or unreadable build, so their allocation totals are "
-                "empty.",
+                "Allocation figures require server %s or later; %s report an older "
+                "or unreadable build, so their allocation totals are empty. See "
+                "the Build column.",
                 constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
-                ", ".join(sorted(node_names.get(n, n) for n in missing_alloc_stats)),
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in missing_alloc_stats),
+                    len(node_names),
+                ),
             )
 
         editions = {

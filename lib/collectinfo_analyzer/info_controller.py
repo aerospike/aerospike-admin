@@ -92,11 +92,14 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp(
         "Displays node memory: Capacity (the cgroup limit when cgroup-mem-tracking",
-        "is enabled, else estimated host total) vs Allocated (the shmem index and",
+        "is enabled, otherwise a lower bound on total memory derived from the",
+        "reported free pct) vs Allocated (the shmem index and",
         "sindex arenas plus the process heap). Memory-engine data is in the arenas",
-        "on Enterprise and Federal, and in the heap on Community. Allocation",
-        f"figures require server {constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION}",
-        "or later.",
+        "on Enterprise and Federal, and in the heap on Community. The verbose",
+        "tables are not additive with each other: set index, and memory-engine",
+        "data on Community, are heap-allocated and appear in both Index and Data",
+        "Memory and Process Heap. Allocation figures require server",
+        f"{constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION} or later.",
         short_msg="Displays node memory availability vs allocation",
         usage="[-v]",
         modifiers=(
@@ -132,6 +135,7 @@ class InfoController(CollectinfoCommandController):
         ns_stats = self.stats_getter.get_namespace()
 
         missing_alloc_stats = set()
+        all_nodes = set()
 
         for timestamp in sorted(service_stats.keys()):
             if not service_stats[timestamp]:
@@ -140,6 +144,7 @@ class InfoController(CollectinfoCommandController):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
             node_names = cinfo_log.get_node_names()
+            all_nodes.update(node_names.values())
             missing_alloc_stats.update(
                 node_names.get(n, n)
                 for n in util.nodes_missing_memory_alloc_stats(builds)
@@ -161,11 +166,11 @@ class InfoController(CollectinfoCommandController):
 
         if missing_alloc_stats:
             logger.warning(
-                "Allocation figures require server %s or later; node(s) %s report "
-                "an older or unreadable build, so their allocation totals are "
-                "empty.",
+                "Allocation figures require server %s or later; %s report an older "
+                "or unreadable build, so their allocation totals are empty. See "
+                "the Build column.",
                 constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
-                ", ".join(sorted(missing_alloc_stats)),
+                util.summarize_nodes(missing_alloc_stats, len(all_nodes)),
             )
 
     @CommandHelp("Displays summary information for each set")

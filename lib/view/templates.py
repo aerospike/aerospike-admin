@@ -38,7 +38,7 @@ from lib.view.sheet import (
     Subgroup,
     TitleField,
 )
-from lib.utils import file_size
+from lib.utils import constants, file_size
 
 #
 # Projectors.
@@ -3084,28 +3084,38 @@ info_transactions_provisionals_sheet = Sheet(
 )
 
 
-def breaches_stop_writes_sys_memory(edata):
+SYS_MEMORY_FREE_PCT_WARN_MARGIN = 10
+
+
+def stop_writes_free_pct(record):
     """
-    Whether this node's Free% is at or past the point writes stop.
+    The Free% at which the first namespace on this node refuses writes.
 
     nsup.c eval_stop_writes compares one node-wide 100 - free pct against each
     namespace's stop-writes-sys-memory-pct, so the lowest configured namespace
     sets the node's floor and Free% breaches it below 100 - Stop%.
 
-    No Stop% means the server did not report the threshold, so there is no line
-    to alert against and the cell is left uncoloured rather than judged against
-    an assumed default.
+    Stop% reaches this row through ns_agg, which is the one source that can go
+    missing on its own (that is what the missing-namespace-stats warning is
+    for). Falling back keeps the alert on the column that carries it for a node
+    already in trouble, and the fallback is the server's own documented default
+    from namespace.c rather than a number asadm chose.
     """
-    stop_pct = edata.record.get("Stop%")
+    stop_pct = (
+        record.get("Stop%") or constants.SERVER_DEFAULT_STOP_WRITES_SYS_MEMORY_PCT
+    )
 
-    if not stop_pct:
-        return False
-
-    return edata.value < 100 - stop_pct
+    return 100 - stop_pct
 
 
 sys_memory_free_pct_formatters = (
-    Formatters.red_alert(breaches_stop_writes_sys_memory),
+    Formatters.red_alert(
+        lambda edata: edata.value < stop_writes_free_pct(edata.record)
+    ),
+    Formatters.yellow_alert(
+        lambda edata: edata.value
+        < stop_writes_free_pct(edata.record) + SYS_MEMORY_FREE_PCT_WARN_MARGIN
+    ),
 )
 
 info_memory_sheet = Sheet(

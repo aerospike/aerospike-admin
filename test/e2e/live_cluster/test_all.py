@@ -171,13 +171,32 @@ class TableRenderTestCase(unittest.TestCase):
             self.fail("Traceback found in stderr")
 
     def check_cmd_stdout_is_json(self, cmd: Cmd, cp: util.CompletedProcess):
+        """
+        Every table asadm renders under --json must parse.
+
+        A command that renders more than one sheet prints one JSON document per
+        sheet, back to back, so stdout is a stream of documents rather than a
+        single one. Decode them in sequence: that still catches a malformed
+        table or a warning leaking onto stdout, without asserting a shape asadm
+        has never emitted.
+        """
         if not cmd.cmd.startswith("info memory"):
             return
 
-        try:
-            json.loads(cp.stdout)
-        except ValueError as e:
-            self.fail(f"'{cmd.cmd}' --json stdout is not JSON: {e}\n{cp.stdout}")
+        decoder = json.JSONDecoder()
+        text = cp.stdout.strip()
+        sheets = 0
+
+        while text:
+            try:
+                _, end = decoder.raw_decode(text)
+            except ValueError as e:
+                self.fail(f"'{cmd.cmd}' --json stdout is not JSON: {e}\n{cp.stdout}")
+
+            sheets += 1
+            text = text[end:].strip()
+
+        self.assertGreater(sheets, 0, f"'{cmd.cmd}' --json produced no output")
 
 
 @parameterized_class(

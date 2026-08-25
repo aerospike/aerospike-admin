@@ -176,18 +176,25 @@ class CliView(object):
 
     @staticmethod
     def _warn_memory_gaps(node_names, untracked_limits, missing_ns_stats):
+        total = len(node_names)
+
         if untracked_limits:
             logger.warning(
-                "%s capped by an untracked cgroup limit; Capacity and Alloc%% are "
-                "omitted. Enable cgroup-mem-tracking.",
-                ", ".join(sorted(node_names.get(n, n) for n in untracked_limits)),
+                "%s capped by an untracked cgroup limit, so free memory is "
+                "reported against the host; Capacity and Alloc%% are omitted. "
+                "Enable cgroup-mem-tracking.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in untracked_limits), total
+                ),
             )
 
         if missing_ns_stats:
             logger.warning(
-                "No namespace statistics for node(s) %s; their allocation total "
-                "is omitted because index arenas are unknown.",
-                ", ".join(sorted(node_names.get(n, n) for n in missing_ns_stats)),
+                "No namespace statistics for %s; their allocation total is "
+                "omitted because index arenas are unknown.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in missing_ns_stats), total
+                ),
             )
 
     @staticmethod

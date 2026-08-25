@@ -1075,6 +1075,63 @@ class DeriveMemoryStatsTest(unittest.TestCase):
                 }
                 result = util.derive_memory_stats(stats)
                 self.assertNotIn("host_total_mem_bytes", result["node1"])
+                self.assertNotIn("system_total_mem_min_bytes", result["node1"])
+
+    def test_capacity_min_is_the_lower_bound_of_the_truncated_pct(self):
+        free_kbytes = 8000000
+
+        for pct in (1, 5, 29, 50, 99):
+            with self.subTest(pct=pct):
+                stats = {
+                    "node1": {
+                        "system_free_mem_kbytes": str(free_kbytes),
+                        "system_free_mem_pct": str(pct),
+                    }
+                }
+                result = util.derive_memory_stats(stats)
+
+                self.assertEqual(
+                    result["node1"]["system_total_mem_min_bytes"],
+                    str(free_kbytes * 1024 * 100 // (pct + 1)),
+                )
+
+    def test_capacity_min_never_exceeds_the_true_total(self):
+        """
+        The server truncates: pct = floor(100 * free / total). Whatever total
+        produced the pct, the bound must sit at or below it, so Alloc% built on
+        it can only read pessimistic.
+        """
+        for total_kbytes in (1000000, 16 * 1024**2, 128 * 1024**2):
+            for free_kbytes in range(10000, total_kbytes, total_kbytes // 7):
+                pct = (free_kbytes * 100) // total_kbytes
+
+                if pct <= 0:
+                    continue
+
+                with self.subTest(total=total_kbytes, free=free_kbytes):
+                    stats = {
+                        "node1": {
+                            "system_free_mem_kbytes": str(free_kbytes),
+                            "system_free_mem_pct": str(pct),
+                        }
+                    }
+                    bound = int(
+                        util.derive_memory_stats(stats)["node1"][
+                            "system_total_mem_min_bytes"
+                        ]
+                    )
+                    self.assertLessEqual(bound, total_kbytes * 1024)
+
+    def test_capacity_min_skipped_when_free_stats_unusable(self):
+        for node_stats in (
+            {"system_free_mem_kbytes": "8000000", "system_free_mem_pct": "0"},
+            {"system_free_mem_kbytes": "0", "system_free_mem_pct": "50"},
+            {"system_free_mem_pct": "50"},
+            {"system_free_mem_kbytes": "8000000"},
+        ):
+            with self.subTest(node_stats=node_stats):
+                result = util.derive_memory_stats({"node1": dict(node_stats)})
+                self.assertNotIn("system_total_mem_min_bytes", result["node1"])
 
     def test_host_free_stats_are_still_relayed(self):
         stats = {
@@ -1179,18 +1236,29 @@ class IntOrZeroTest(unittest.TestCase):
     def test_int_or_zero(self, _name, value, expected):
         self.assertEqual(util.int_or_zero(value), expected)
 
+
+class SummarizeNodesTest(unittest.TestCase):
     @parameterized.expand(
         [
-            ("float", "5.5", 5.5),
-            ("none", None, 0.0),
-            ("garbage", "notanumber", 0.0),
-            ("inf", "inf", 0.0),
-            ("overflow_exp", "1e400", 0.0),
-            ("nan", "nan", 0.0),
+            ("small_cluster_named", ["a", "b", "c"], 3, "a, b, c"),
+            ("single_node_named", ["a"], 1, "a"),
+            ("one_of_many", ["b"], 14, "b"),
+            ("under_limit", ["c", "a", "b"], 14, "a, b, c"),
+            ("over_limit", ["e", "d", "c", "b", "a"], 14, "a, b, c and 2 more"),
+            ("all_of_many", list("abcde"), 5, "all 5 nodes"),
+            ("unknown_total", ["b", "a"], 0, "a, b"),
         ]
     )
-    def test_float_or_zero(self, _name, value, expected):
-        self.assertEqual(util.float_or_zero(value), expected)
+    def test_summarize_nodes(self, _name, names, total, expected):
+        self.assertEqual(util.summarize_nodes(names, total), expected)
+
+    def test_a_full_cluster_never_lists_every_name(self):
+        names = ["node-%02d.very.long.fqdn.example.com:3000" % i for i in range(14)]
+
+        self.assertEqual(util.summarize_nodes(names, 14), "all 14 nodes")
+
+    def test_accepts_a_generator(self):
+        self.assertEqual(util.summarize_nodes((n for n in ["b", "a"]), 5), "a, b")
 
 
 class DeriveMemoryHeadlineTest(unittest.TestCase):
@@ -1249,13 +1317,106 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertNotIn("alloc_pct", headline["node1"])
         self.assertEqual(headline["node1"]["allocated_bytes"], str(1000 * 1024 + 500))
 
-    def test_no_untracked_warning_when_tracking_config_absent(self):
-        _, untracked, _ = self.headline(
-            {"node1": {"cgroup_memory_limit_bytes": "10000"}},
-            configs={"node1": {}},
-            ns_agg={"node1": {}},
+    def test_untracked_cgroup_limit_suppresses_the_host_bound(self):
+        """
+        With tracking off the server reports free memory against the host, so
+        the bound describes RAM this process cannot reach. Publishing it as
+        Capacity divides Alloc% down on the very node a cgroup is squeezing,
+        and contradicts the warning that says Capacity is omitted.
+        """
+        headline, untracked, _ = self.headline(
+            {
+                "node1": {
+                    "system_free_mem_kbytes": str(16 * 1024**2),
+                    "system_free_mem_pct": "68",
+                    "cgroup_memory_limit_bytes": str(16 * 1024**3),
+                    "heap_allocated_kbytes": "800000",
+                }
+            },
+            configs={"node1": {"cgroup-mem-tracking": "false"}},
+            ns_agg={"node1": {"shmem_alloc_bytes": str(6 * 1024**3)}},
         )
-        self.assertEqual(untracked, [])
+
+        self.assertEqual(untracked, ["node1"])
+        self.assertNotIn("capacity_bytes", headline["node1"])
+        self.assertNotIn("alloc_pct", headline["node1"])
+        self.assertIn("allocated_bytes", headline["node1"])
+
+    def test_capacity_falls_back_to_the_bound_without_a_tracked_cgroup(self):
+        headline, _, _ = self.headline(
+            {
+                "node1": {
+                    "system_free_mem_kbytes": "8000000",
+                    "system_free_mem_pct": "50",
+                    "heap_allocated_kbytes": "1000",
+                }
+            },
+            configs={"node1": {}},
+            ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
+        )
+        bound = 8000000 * 1024 * 100 // 51
+        allocated = 1000 * 1024 + 500
+
+        self.assertEqual(headline["node1"]["capacity_bytes"], str(bound))
+        self.assertEqual(float(headline["node1"]["alloc_pct"]), allocated * 100 / bound)
+
+    def test_tracked_cgroup_limit_wins_over_the_bound(self):
+        headline, _, _ = self.headline(
+            {
+                "node1": {
+                    "system_free_mem_kbytes": "8000000",
+                    "system_free_mem_pct": "50",
+                    "cgroup_memory_limit_bytes": "10000",
+                    "heap_allocated_kbytes": "0",
+                }
+            },
+            configs={"node1": {"cgroup-mem-tracking": "true"}},
+            ns_agg={"node1": {"shmem_alloc_bytes": "2500"}},
+        )
+        self.assertEqual(headline["node1"]["capacity_bytes"], "10000")
+        self.assertEqual(float(headline["node1"]["alloc_pct"]), 25.0)
+
+    def test_bound_makes_alloc_pct_read_pessimistic(self):
+        """
+        Same node, same allocation, bound vs the true total: the bound must
+        never report the lower utilisation of the two.
+        """
+        stats = {
+            "node1": {
+                "system_free_mem_kbytes": "8000000",
+                "system_free_mem_pct": "50",
+                "heap_allocated_kbytes": "1000000",
+            }
+        }
+        headline, _, _ = self.headline(stats, ns_agg={"node1": {}})
+        true_total = 8000000 * 1024 * 100 / 50
+        allocated = 1000000 * 1024
+
+        self.assertGreaterEqual(
+            float(headline["node1"]["alloc_pct"]), allocated * 100 / true_total
+        )
+
+    def test_untracked_warning_covers_every_suppressed_capacity(self):
+        """
+        Whatever suppresses Capacity must also name the node. An unreadable
+        tracking config is still an untracked limit, and staying silent there
+        would leave a blank Capacity with nothing explaining it.
+        """
+        for configs in ({"node1": {}}, {"node1": {"cgroup-mem-tracking": "false"}}, {}):
+            with self.subTest(configs=configs):
+                headline, untracked, _ = self.headline(
+                    {
+                        "node1": {
+                            "cgroup_memory_limit_bytes": "10000",
+                            "system_free_mem_kbytes": "8000000",
+                            "system_free_mem_pct": "50",
+                        }
+                    },
+                    configs=configs,
+                    ns_agg={"node1": {}},
+                )
+                self.assertEqual(untracked, ["node1"])
+                self.assertNotIn("capacity_bytes", headline["node1"])
 
     def test_cgroup_sentinel_does_not_become_capacity(self):
         headline, _, _ = self.headline(

@@ -454,16 +454,24 @@ def int_or_zero(value):
     return parsed
 
 
-def float_or_zero(value):
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
+def summarize_nodes(names, total, limit=3):
+    """
+    Render a node list for a warning without spilling a paragraph.
 
-    if math.isinf(parsed) or math.isnan(parsed):
-        return 0.0
+    A cluster-wide problem only needs its shape stated: on a 14 node cluster
+    every FQDN comes to about 1.2 KB of one-line warning to say 'all of them'.
+    The per-node answer already lives in the table's Build column, so the
+    warning names nodes only while the list is short enough to act on.
+    """
+    names = sorted(names)
 
-    return parsed
+    if len(names) <= limit:
+        return ", ".join(names)
+
+    if total and len(names) >= total:
+        return "all %d nodes" % total
+
+    return "%s and %d more" % (", ".join(names[:limit]), len(names) - limit)
 
 
 def cgroup_limit_or_zero(value):
@@ -692,10 +700,19 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
             stats at all. Omit to treat every node as reporting them.
         nodes: restrict to these nodes, defaults to every node in stats
 
-    A row only carries a value its inputs support. Capacity is the tracked
-    cgroup limit and nothing else: the server reports no host total, so on a
-    node without cgroup tracking there is no capacity to report and the cell
-    stays empty rather than carrying a figure asadm worked out for itself.
+    A row only carries a value its inputs support. capacity_bytes is the
+    tracked cgroup limit, an exact figure the kernel measured, or where the
+    node runs under no cgroup at all, the proven lower bound from
+    derive_memory_stats, since the server publishes no total-memory stat.
+    Either is safe to divide alloc_pct by: the limit is exact, and the bound
+    understates capacity so the pct reads high rather than low.
+
+    A cgroup limit that exists but is not tracked yields no capacity at all.
+    The bound comes from system_free_mem_pct, which the server computes against
+    host memory while tracking is off, so it would describe RAM this process
+    cannot reach and divide alloc_pct down towards zero on the very node a
+    cgroup is squeezing. The untracked limit is reported to the caller instead,
+    and the operator is pointed at cgroup-mem-tracking.
 
     The allocation total is omitted when the node's namespace stats never
     arrived or its build predates the allocation stats, since heap alone would
@@ -746,11 +763,10 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         )
         capacity = cgroup_limit if cgroup_tracked else 0
 
-        if (
-            cgroup_limit > 0
-            and not cgroup_tracked
-            and "cgroup-mem-tracking" in node_configs
-        ):
+        if capacity <= 0 and cgroup_limit <= 0:
+            capacity = int_or_zero(node_stats.get("system_total_mem_min_bytes"))
+
+        if cgroup_limit > 0 and not cgroup_tracked:
             untracked_limits.append(node)
 
         shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
@@ -797,10 +813,21 @@ def derive_memory_stats(stats):
     counts the server reports into a pct. A derived key is only added when its
     inputs are present and valid, so absent columns collapse on older servers.
 
-    Every value here is a unit conversion or a ratio of two figures the server
-    measured. Nothing is estimated: total host RAM is not a stat the server
-    emits, and asadm does not infer one from free bytes over a whole-number
-    free pct.
+    system_total_mem_min_bytes is a proven lower bound on total memory, not an
+    estimate of it. The server computes system_free_mem_pct as an integer
+    division (cf/src/os.c, both the /proc/meminfo and the cgroup paths), so
+
+        free * 100 / (pct + 1)  <  total  <=  free * 100 / pct
+
+    and the left side cannot exceed the truth whatever the rounding hid. Taking
+    it understates capacity, which overstates utilisation: a pressure signal
+    that errs pessimistic. The upper bound is the one that must never be used,
+    since it flatters the node exactly when free pct is small.
+
+    The system pair is used rather than the host pair because it is what the
+    server tracks against: cgroup-aware when cgroup-mem-tracking is on, host
+    memory otherwise, and present since before 8.1.1 where host_free_mem_pct
+    is not.
     """
     kb_to_bytes = {
         "system_free_mem_kbytes": "system_free_mem_bytes",
@@ -818,6 +845,14 @@ def derive_memory_stats(stats):
         for src, dst in kb_to_bytes.items():
             if src in node_stats:
                 node_stats[dst] = str(int_or_zero(node_stats[src]) * 1024)
+
+        free_kbytes = int_or_zero(node_stats.get("system_free_mem_kbytes"))
+        free_pct = int_or_zero(node_stats.get("system_free_mem_pct"))
+
+        if free_kbytes > 0 and 0 < free_pct <= 100:
+            node_stats["system_total_mem_min_bytes"] = str(
+                free_kbytes * 1024 * 100 // (free_pct + 1)
+            )
 
         if "cgroup_memory_limit_bytes" in node_stats:
             limit = cgroup_limit_or_zero(node_stats["cgroup_memory_limit_bytes"])

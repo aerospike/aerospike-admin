@@ -440,9 +440,10 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
 
     def test_free_pct_alert_tiers(self):
         for free_pct, expected in (
-            (5, None),
-            (9.9, None),
-            (10, None),
+            (5, "red-alert"),
+            (9.9, "red-alert"),
+            (10, "yellow-alert"),
+            (19.9, "yellow-alert"),
             (20, None),
             (75, None),
         ):
@@ -450,16 +451,19 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
                 record = self.render(alloc_pct="50.0", free_pct=str(free_pct))
                 self.assertEqual(record["Free%"].get("format"), expected)
 
-    def test_free_pct_reddens_exactly_at_the_servers_stop_writes_line(self):
+    def test_free_pct_tiers_track_the_servers_stop_writes_line(self):
         for stop_pct, free_pct, expected in (
             (90, 9.9, "red-alert"),
-            (90, 10, None),
+            (90, 10, "yellow-alert"),
+            (90, 19.9, "yellow-alert"),
             (90, 20, None),
             (75, 24, "red-alert"),
-            (75, 25, None),
-            (75, 34.9, None),
+            (75, 25, "yellow-alert"),
+            (75, 34.9, "yellow-alert"),
+            (75, 35, None),
             (50, 49, "red-alert"),
-            (50, 50, None),
+            (50, 50, "yellow-alert"),
+            (50, 60, None),
         ):
             with self.subTest(stop_pct=stop_pct, free_pct=free_pct):
                 record = self.render(
@@ -467,6 +471,11 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
                 )
                 self.assertEqual(record["Free%"].get("format"), expected)
                 self.assertEqual(record["Stop%"]["raw"], stop_pct)
+
+    def test_capacity_renders_whatever_backed_it(self):
+        record = self.render(capacity_bytes="2000", free_pct="50")
+
+        self.assertEqual(record["Capacity"]["raw"], 2000)
 
     def test_alloc_pct_never_alerts(self):
         for alloc_pct in (1, 50, 99, 150):
@@ -517,18 +526,24 @@ class InfoMemoryHostSheetTest(unittest.TestCase):
             ),
         )
 
-    def test_free_sys_pct_never_alerts_without_a_reported_threshold(self):
-        for free_pct in (1, 5, 10, 20, 90):
+    def test_free_sys_pct_falls_back_to_the_server_default_threshold(self):
+        for free_pct, expected in (
+            (5, "red-alert"),
+            (10, "yellow-alert"),
+            (20, None),
+        ):
             with self.subTest(free_pct=free_pct):
                 record = self.render({"system_free_mem_pct": str(free_pct)})
-                self.assertIsNone(record["Free"]["Sys%"].get("format"))
+                self.assertEqual(record["Free"]["Sys%"].get("format"), expected)
 
-    def test_free_sys_pct_reddens_exactly_at_the_servers_stop_writes_line(self):
+    def test_free_sys_pct_tiers_track_the_servers_stop_writes_line(self):
         for stop_pct, free_pct, expected in (
             (90, 9, "red-alert"),
-            (90, 10, None),
+            (90, 10, "yellow-alert"),
+            (90, 20, None),
             (75, 24, "red-alert"),
-            (75, 25, None),
+            (75, 25, "yellow-alert"),
+            (75, 35, None),
         ):
             with self.subTest(stop_pct=stop_pct, free_pct=free_pct):
                 record = self.render(
