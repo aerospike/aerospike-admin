@@ -531,18 +531,19 @@ jobs:
       - name: Install package locally
         run: |
           set -euo pipefail
-          arch="${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}"
+          deb_arch="${{ contains(matrix.host, 'arm') && 'arm64' || 'amd64' }}"
+          rpm_arch="${{ contains(matrix.host, 'arm') && 'aarch64' || 'x86_64' }}"
           case "${{ matrix.distro }}" in
             ubuntu*|debian*)
               export DEBIAN_FRONTEND=noninteractive
-              pkg=$(find ./packages -name "*${{ matrix.distro }}_*${arch}*.deb" | head -1)
-              [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
+              pkg=$(find ./packages -name "*${{ matrix.distro }}_${deb_arch}.deb" | head -1)
+              [[ -n "${pkg}" ]] || { echo "ERROR: no .deb found for ${{ matrix.distro }}/${deb_arch}" >&2; exit 1; }
               apt-get install -y "${pkg}"
               echo "ASTOOLS_REINSTALL=dpkg -i ${pkg}" >> "$GITHUB_ENV"
               ;;
             el*|amzn*)
-              pkg=$(find ./packages -name "*.${{ matrix.distro }}.*${arch}*.rpm" | head -1)
-              [[ -n "${pkg}" ]] || { echo "ERROR: no .rpm found for ${{ matrix.distro }}/${arch}" >&2; exit 1; }
+              pkg=$(find ./packages -name "*.${{ matrix.distro }}.${rpm_arch}.rpm" | head -1)
+              [[ -n "${pkg}" ]] || { echo "ERROR: no .rpm found for ${{ matrix.distro }}/${rpm_arch}" >&2; exit 1; }
               dnf install -y "${pkg}"
               echo "ASTOOLS_REINSTALL=dnf reinstall -y ${pkg}" >> "$GITHUB_ENV"
               ;;
