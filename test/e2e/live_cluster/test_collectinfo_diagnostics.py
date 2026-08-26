@@ -30,7 +30,7 @@ from lib.utils import constants
 from test.e2e import lib, util
 
 COLLECTINFO_PREFIX = "asadm_diag_test_"
-META_SUFFIX = "collectinfo_meta.json"
+META_SUFFIX = constants.COLLECTINFO_META_FILENAME
 
 
 class TestCollectinfoDiagnostics(unittest.TestCase):
@@ -229,7 +229,14 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         for node_key, node_meta in snapshot["nodes"].items():
             self.assertTrue(node_meta["node_id"], node_key)
             self.assertTrue(node_meta["responded"], node_key)
-            self.assertIn(node_meta["sysinfo_source"], ("local", "ssh", "none"))
+            self.assertIn(
+                node_meta["sysinfo_source"],
+                (
+                    constants.SysinfoSource.LOCAL,
+                    constants.SysinfoSource.SSH,
+                    constants.SysinfoSource.NONE,
+                ),
+            )
 
             failures = [
                 error
@@ -312,8 +319,9 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         self.assertIn("Network Information", cp.stdout)
 
     def _comparable_version(self):
-        """A development build has no comparable version, so the banner reports the
-        collector version without a verdict. Both outcomes are asserted."""
+        """A development build has no numeric version to compare against, so the
+        analyzer reports the collector version with no verdict; a release build
+        must state the verdict. Each build type asserts its own specific outcome."""
         return self.asadm_version[:1].isdigit()
 
     def _assert_version_reported(self, bundle, collector_version, verdict):
@@ -322,7 +330,8 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         if self._comparable_version():
             self.assertIn(verdict, cp.stderr)
         else:
-            self.assertIn("Collected by asadm", cp.stderr)
+            self.assertIn("Collected by asadm " + collector_version, cp.stderr)
+            self.assertNotIn(verdict, cp.stderr)
 
         self.assertIn(collector_version, cp.stderr)
         self.assertIn("Network Information", cp.stdout)
@@ -332,7 +341,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
             meta["bundle"]["asadm_version"] = "1.0.0"
 
         self._assert_version_reported(
-            self._mutated_bundle(make_older), "1.0.0", "older asadm"
+            self._mutated_bundle(make_older), "1.0.0", "older than this asadm"
         )
 
     def test_newer_collector_version_is_reported(self):
@@ -340,7 +349,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
             meta["bundle"]["asadm_version"] = "999.0.0"
 
         self._assert_version_reported(
-            self._mutated_bundle(make_newer), "999.0.0", "newer asadm"
+            self._mutated_bundle(make_newer), "999.0.0", "newer than this asadm"
         )
 
     def test_dropped_node_recorded_in_meta_is_reported(self):
@@ -415,7 +424,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
                     )
                 )
 
-        self._assert_version_reported(bundle, "1.0.0", "older asadm")
+        self._assert_version_reported(bundle, "1.0.0", "older than this asadm")
 
     def test_bundle_with_no_version_anywhere_is_reported_as_unknown(self):
         bundle = self._mutated_bundle(lambda meta: "delete")

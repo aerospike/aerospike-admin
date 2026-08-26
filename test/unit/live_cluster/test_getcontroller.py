@@ -170,6 +170,36 @@ class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.cluster_mock.info_latencies.assert_not_called()
 
+    async def test_get_all_scopes_the_build_query_to_the_requested_nodes(self):
+        """The mixed-version branch fans out to the node lists this call returns,
+        so an unscoped build query would make a single-node retry re-query the
+        whole cluster."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=([], ["2.2.2.2"])
+        )
+        self.cluster_mock.info_latency.return_value = self.latency_return_value
+
+        await self.controller.get_all(
+            nodes=["2.2.2.2"], buckets=5, exponent_increment=1, verbose=1
+        )
+
+        self.controller.get_latencies_and_latency_nodes.assert_awaited_once_with(
+            nodes=["2.2.2.2"]
+        )
+
+    async def test_get_all_keep_exceptions_preserves_per_node_failures(self):
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], [])
+        )
+        exc = Exception("late")
+        self.cluster_mock.info_latencies.return_value = {"1.1.1.1": exc}
+
+        kept = await self.controller.get_all(
+            nodes="all", buckets=5, exponent_increment=1, verbose=1, keep_exceptions=True
+        )
+
+        self.assertIs(kept["1.1.1.1"], exc)
+
     async def test_get_all_latencies_only(self):
         self.controller.get_latencies_and_latency_nodes = AsyncMock()
         self.controller.get_latencies_and_latency_nodes.return_value = (
@@ -695,6 +725,26 @@ class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.controller.get_logging()
 
         self.assertDictEqual(actual, expected)
+
+    async def test_get_service_keep_exceptions_preserves_per_node_failures(self):
+        exc = Exception("boom")
+        self.cluster_mock.info_get_config.return_value = {"1.1.1.1": exc}
+
+        kept = await self.controller.get_service(keep_exceptions=True)
+
+        self.assertIs(kept["1.1.1.1"], exc)
+
+    async def test_get_security_always_substitutes_failures(self):
+        """Security legitimately errors on a security-disabled or Community
+        Edition cluster; preserving the exception would let collectinfo record a
+        healthy cluster as a failed collection on every such bundle."""
+        self.cluster_mock.info_get_config.return_value = {
+            "1.1.1.1": Exception("security not supported")
+        }
+
+        actual = await self.controller.get_security()
+
+        self.assertDictEqual(actual, {"1.1.1.1": {}})
 
     async def test_get_namespace(self):
         self.cluster_mock.info_namespaces.return_value = {

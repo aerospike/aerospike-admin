@@ -22,6 +22,11 @@ import unittest
 
 from mock import MagicMock, patch
 
+# lib.utils.logger installs BaseLogger via logging.setLoggerClass, so it must be
+# imported before any collectinfo module creates its module-level logger (asadm.py
+# imports in this order); otherwise the exit-code regression test below is vacuous.
+from lib.utils import log_util, logger
+
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import (
     BundleWarning,
     DiagSeverity,
@@ -29,7 +34,6 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
-from lib.utils import log_util, logger
 
 
 class LogUtilTest(unittest.TestCase):
@@ -415,11 +419,35 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
 
         self.assertEqual(logger.get_exit_code(), 0)
 
-    def test_iter_bundle_files_finds_log_files(self):
+    def test_the_diagnostics_module_logger_is_the_exit_code_setting_one(self):
+        """Without this, test_..._does_not_set_the_exit_code passes vacuously: with
+        a plain logging.Logger the exit code can never move, no matter what the
+        banner code does. Production (asadm.py) imports lib.utils.logger first,
+        which installs BaseLogger for every logger created after it."""
+        from lib.collectinfo_analyzer.collectinfo_handler import (
+            collectinfo_diagnostics,
+        )
+
+        self.assertIsInstance(collectinfo_diagnostics.logger, logger.BaseLogger)
+
+    def test_print_diagnostics_banner_defaults_to_stderr(self):
+        """Execute mode is built to be scripted: the banner must land on stderr by
+        default and leave stdout untouched."""
+        self._write_json("collectinfo_meta.json", META_DATA)
+        handler = self._handler()
+        err, out = io.StringIO(), io.StringIO()
+
+        with patch("sys.stderr", err), patch("sys.stdout", out):
+            handler.print_diagnostics_banner()
+
+        self.assertIn("Collectinfo Bundle Diagnostics", err.getvalue())
+        self.assertEqual(out.getvalue(), "")
+
+    def test_bundle_files_finds_log_files(self):
         self._write_text("sysinfo.log", "sysinfo")
         handler = self._handler()
 
-        found = handler._iter_bundle_files(("sysinfo.log",))
+        found = handler.bundle_files(("sysinfo.log",))
 
         self.assertEqual(
             [os.path.basename(f) for f in found], ["20260720_100000_sysinfo.log"]

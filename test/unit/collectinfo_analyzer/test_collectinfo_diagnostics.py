@@ -62,17 +62,35 @@ def make_snapshot(nodes, cluster_name="prod", timestamp=TS):
     )
 
 
-def make_log_handler(
-    scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1
-):
-    handler = MagicMock()
-    handler.collector_asadm_version.return_value = scanned_version
-    handler._scan_bundle_for_asadm_version.return_value = scanned_version
-    handler.bundle_snapshot_count = snapshot_count
-    handler._iter_bundle_files.side_effect = lambda suffixes: [
-        file for file in bundle_files if file.endswith(tuple(suffixes))
-    ]
-    return handler
+class FakeLogHandler:
+    """Explicit double carrying exactly the members the diagnostics use.
+
+    A MagicMock answers every attribute, so a renamed handler method would keep
+    every test green while the production lookup silently broke.
+    """
+
+    def __init__(
+        self, scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1
+    ):
+        self._scanned_version = scanned_version
+        self._bundle_files = tuple(bundle_files)
+        self.bundle_snapshot_count = snapshot_count
+
+    def collector_asadm_version(self):
+        return self._scanned_version
+
+    def bundle_files(self, suffixes):
+        return [
+            file for file in self._bundle_files if file.endswith(tuple(suffixes))
+        ]
+
+
+def make_log_handler(scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1):
+    return FakeLogHandler(
+        scanned_version=scanned_version,
+        bundle_files=bundle_files,
+        snapshot_count=snapshot_count,
+    )
 
 
 def diagnostics(nodes=None, meta=None, running_version="5.0.2", **handler_kwargs):
@@ -494,23 +512,52 @@ class SysinfoCoverageTest(unittest.TestCase):
         self.assertIn("any of the 3 nodes", body)
         self.assertIn("--enable-ssh", body)
 
-    def test_one_node_of_many_is_the_ordinary_local_collect(self):
-        """A plain collect covers exactly the node asadm ran on, so this is
-        information rather than a fault."""
+    def test_one_node_of_many_is_the_ordinary_local_collect_and_stays_silent(self):
+        """A plain collect covers exactly the node asadm ran on. That is the
+        documented behaviour, not a gap, and a finding that fires on every
+        ordinary bundle trains readers to skip the banner."""
+        warnings = diagnostics(
+            nodes=self._nodes(with_sysinfo=1, without_sysinfo=26), meta=meta_with()
+        ).analyze()
+
+        self.assertIsNone(find(warnings, "partial-sysinfo"))
+        self.assertIsNone(find(warnings, "missing-sysinfo"))
+
+    def test_partial_coverage_beyond_one_node_is_informational(self):
         warning = find(
             diagnostics(
-                nodes=self._nodes(with_sysinfo=1, without_sysinfo=26), meta=meta_with()
+                nodes=self._nodes(with_sysinfo=2, without_sysinfo=2), meta=meta_with()
             ).analyze(),
             "partial-sysinfo",
         )
 
         self.assertIsNotNone(warning)
         self.assertEqual(warning.severity, DiagSeverity.INFO)
-        self.assertEqual(warning.title, "System information covers 1 of 27 nodes")
+        self.assertEqual(warning.title, "System information covers 2 of 4 nodes")
         body = " ".join(warning.lines)
-        self.assertIn("10.0.0.0:3000", body)
-        self.assertIn("No host-level data for the other 26 nodes", body)
-        self.assertIn("--enable-ssh", body)
+        self.assertIn("`health` cannot run its system checks", body)
+        self.assertIn("`summary` reports no OS version", body)
+
+    def test_ssh_collection_with_gaps_is_a_warning(self):
+        """--enable-ssh promised full coverage, so a node with no sysinfo means
+        SSH to it failed; that is the surprising case worth warning about."""
+        meta = meta_with()
+        meta["collection"]["flags"]["enable_ssh"] = True
+
+        warning = find(
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=1, without_sysinfo=2), meta=meta
+            ).analyze(),
+            "partial-sysinfo",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.WARNING)
+        self.assertIn("--enable-ssh", warning.title)
+        self.assertIn("2 of 3 nodes", warning.title)
+        body = " ".join(warning.lines)
+        self.assertIn("SSH to those hosts failed", body)
+        self.assertIn("`health` cannot run its system checks", body)
 
     def test_partial_coverage_is_not_reported_as_missing(self):
         warnings = diagnostics(
@@ -879,17 +926,26 @@ class CuratedAnomalyTest(unittest.TestCase):
         self.assertIsNone(find(diagnostics().analyze(), "cluster-state"))
 
     def test_migrations_report_nodes_not_a_summed_partition_count(self):
-        """migrate_partitions_remaining is per node and counts both directions, so a
-        cross-node total would be a number no command can reproduce."""
+        """The node count comes from the service statistic
+        migrate_partitions_remaining (per node, both directions, so a cross-node
+        total would be a number no command can reproduce); the per-namespace
+        detail comes from the namespace-level tx/rx pair, which is the only shape
+        real namespace statistics have."""
         nodes = {
             "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
             "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
         }
 
         for node in nodes.values():
+            node["as_stat"]["statistics"]["service"][
+                "migrate_partitions_remaining"
+            ] = "42"
             node["as_stat"]["statistics"]["namespace"] = {
                 "test": {
-                    "service": {"migrate_partitions_remaining": "42"},
+                    "service": {
+                        "migrate_tx_partitions_remaining": "30",
+                        "migrate_rx_partitions_remaining": "12",
+                    },
                     "set": {},
                     "bin": {},
                     "sindex": {},
@@ -905,8 +961,21 @@ class CuratedAnomalyTest(unittest.TestCase):
         self.assertIn("test=42", body)
         self.assertNotIn("84", body)
 
+    def test_migrations_ignore_the_service_stat_name_at_namespace_level(self):
+        """No server writes migrate_partitions_remaining into namespace
+        statistics; a check keyed on that shape can never fire on a real
+        bundle."""
+        nodes = self._with_ns_stats(migrate_partitions_remaining="200")
+
+        self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "migrations"))
+
     def test_zero_migrations_is_silent(self):
-        nodes = self._with_ns_stats(migrate_partitions_remaining="0")
+        nodes = self._with_ns_stats(
+            migrate_tx_partitions_remaining="0", migrate_rx_partitions_remaining="0"
+        )
+        nodes["1.1.1.1:3000"]["as_stat"]["statistics"]["service"][
+            "migrate_partitions_remaining"
+        ] = "0"
 
         self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "migrations"))
 
@@ -1032,22 +1101,76 @@ class CuratedAnomalyTest(unittest.TestCase):
             find(diagnostics(nodes=nodes).analyze(), "partition-availability")
         )
 
-    def test_clock_skew(self):
+    def test_clock_skew_with_no_governing_threshold_uses_the_constant(self):
         nodes = self._with_service_stats(cluster_clock_skew_ms="4000")
 
         warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
 
         self.assertIsNotNone(warning)
-        self.assertIn("4000 ms", warning.title)
+        self.assertIn("4.0 s", warning.title)
 
     def test_small_clock_skew_is_silent(self):
         nodes = self._with_service_stats(cluster_clock_skew_ms="12")
 
         self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
 
-    def test_clock_skew_threshold_shown_for_strong_consistency(self):
+    def _strong_consistency_nodes(self, skew_ms, stop_writes_sec="20"):
         nodes = self._with_service_stats(
-            cluster_clock_skew_ms="4000", cluster_clock_skew_stop_writes_sec="20"
+            cluster_clock_skew_ms=skew_ms,
+            cluster_clock_skew_stop_writes_sec=stop_writes_sec,
+        )
+        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
+            "test": {"service": {"strong-consistency": "true"}}
+        }
+        return nodes
+
+    def test_clock_skew_below_three_quarters_of_the_sc_threshold_is_silent(self):
+        """The trigger scales to the cluster's own stop-writes point, matching the
+        health checks: 4 s of skew against a 20 s threshold is not a warning."""
+        nodes = self._strong_consistency_nodes(skew_ms="4000")
+
+        self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
+
+    def test_clock_skew_approaching_the_sc_threshold_states_it(self):
+        nodes = self._strong_consistency_nodes(skew_ms="16000")
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("16.0 s", warning.title)
+        body = " ".join(warning.lines)
+        self.assertIn("Writes stop at 20 s of skew", body)
+        self.assertIn("cluster_clock_skew_stop_writes_sec", body)
+
+    def test_clock_skew_past_the_sc_threshold_says_writes_were_refused(self):
+        nodes = self._strong_consistency_nodes(skew_ms="27000")
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        self.assertIn(
+            "past the 20 s stop-writes threshold", " ".join(warning.lines)
+        )
+
+    def test_clock_skew_disagreeing_thresholds_use_the_lowest(self):
+        """Each node stops writes at its own configured value, so the cluster
+        stops at the lowest one; quoting the most forgiving value understates
+        the risk."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
+        }
+        nodes["1.1.1.1:3000"]["as_stat"]["statistics"]["service"].update(
+            {
+                "cluster_clock_skew_ms": "9000",
+                "cluster_clock_skew_stop_writes_sec": "10",
+            }
+        )
+        nodes["2.2.2.2:3000"]["as_stat"]["statistics"]["service"].update(
+            {
+                "cluster_clock_skew_ms": "9000",
+                "cluster_clock_skew_stop_writes_sec": "30",
+            }
         )
         nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
             "test": {"service": {"strong-consistency": "true"}}
@@ -1056,23 +1179,33 @@ class CuratedAnomalyTest(unittest.TestCase):
         warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
 
         self.assertIsNotNone(warning)
-        self.assertIn(
-            "Strong-consistency namespaces stop taking writes at 20000 ms",
-            " ".join(warning.lines),
-        )
+        self.assertIn("10 s", " ".join(warning.lines))
 
-    def test_clock_skew_threshold_omitted_without_strong_consistency(self):
-        """cluster_clock_skew_stop_writes_sec only governs strong-consistency
-        namespaces; stating it for an AP cluster would claim a stop-writes point
-        that does not apply."""
+    def test_clock_skew_ap_cluster_with_nsup_uses_the_fixed_limit(self):
+        """A pure-AP cluster stops writes at a fixed 40 s (with nsup enabled), so
+        a 5.2 s skew is nowhere near actionable and the configured SC threshold
+        does not apply."""
         nodes = self._with_service_stats(
-            cluster_clock_skew_ms="4000", cluster_clock_skew_stop_writes_sec="20"
+            cluster_clock_skew_ms="5200", cluster_clock_skew_stop_writes_sec="20"
         )
+        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
+            "test": {"service": {"strong-consistency": "false", "nsup-period": "120"}}
+        }
+
+        self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
+
+    def test_clock_skew_ap_cluster_past_the_fixed_limit_warns(self):
+        nodes = self._with_service_stats(cluster_clock_skew_ms="41000")
+        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
+            "test": {"service": {"strong-consistency": "false", "nsup-period": "120"}}
+        }
 
         warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
 
         self.assertIsNotNone(warning)
-        self.assertNotIn("stop taking writes", " ".join(warning.lines))
+        body = " ".join(warning.lines)
+        self.assertIn("past the 40 s stop-writes threshold", body)
+        self.assertIn("AP namespaces with nsup enabled", body)
 
 
 class CheckIsolationTest(unittest.TestCase):
@@ -1137,6 +1270,7 @@ class HealthyProductionBundleTest(unittest.TestCase):
                             "failed_best_practices": "false",
                             "cluster_clock_skew_ms": "0",
                             "cluster_clock_skew_stop_writes_sec": "20",
+                            "migrate_partitions_remaining": "0",
                         },
                         "namespace": {
                             "test": {
@@ -1145,7 +1279,8 @@ class HealthyProductionBundleTest(unittest.TestCase):
                                     "clock_skew_stop_writes": "false",
                                     "dead_partitions": "0",
                                     "unavailable_partitions": "0",
-                                    "migrate_partitions_remaining": "0",
+                                    "migrate_tx_partitions_remaining": "0",
+                                    "migrate_rx_partitions_remaining": "0",
                                 },
                                 "set": {},
                                 "bin": {},
@@ -1248,26 +1383,22 @@ class HealthyProductionBundleTest(unittest.TestCase):
 
         self.assertEqual(flagged, [])
 
-    def test_provenance_and_sysinfo_coverage_are_the_only_findings(self):
+    def test_provenance_is_the_only_finding(self):
+        """One-node sysinfo coverage is the documented shape of a plain collect,
+        so nothing but the version line survives on a clean bundle."""
         self.assertEqual(
             sorted(categories(self._warnings())),
-            ["collector-version-match", "partial-sysinfo"],
+            ["collector-version-match"],
         )
 
     def test_the_interactive_banner_is_quiet(self):
-        """The intro already states the collector version, and partial sysinfo is the
-        expected outcome of a plain collect, so a clean bundle prints no banner."""
-        self.assertEqual(
-            render_banner(
-                [
-                    warning
-                    for warning in self._warnings()
-                    if warning.category != "partial-sysinfo"
-                ],
-                use_color=False,
-            ),
-            "",
-        )
+        """The intro already states the collector version, so a clean bundle
+        prints no banner at all, with no findings filtered out to make it so."""
+        banner = render_banner(self._warnings(), use_color=False)
+
+        self.assertEqual(banner, "")
+        self.assertNotIn("WARNING", banner)
+        self.assertNotIn("ERROR", banner)
 
 
 class RenderTest(unittest.TestCase):
@@ -1340,6 +1471,44 @@ class RenderTest(unittest.TestCase):
         )
         self.assertIn("\x1b[%sm%s" % (terminal_module.fgred, "ERROR: an error"), banner)
 
+    def test_findings_render_most_severe_first(self):
+        """The banner is often redirected or scrolled off a small terminal, so a
+        data-loss ERROR must not render below an INFO note."""
+        warnings = [
+            BundleWarning("a", DiagSeverity.INFO, "an info"),
+            BundleWarning("b", DiagSeverity.WARNING, "a warning"),
+            BundleWarning("c", DiagSeverity.ERROR, "an error"),
+        ]
+
+        banner = render_banner(warnings, use_color=False)
+
+        self.assertLess(banner.index("ERROR: an error"), banner.index("a warning"))
+        self.assertLess(banner.index("WARNING: a warning"), banner.index("an info"))
+
+    def test_severity_sort_is_stable_within_a_severity(self):
+        warnings = [
+            BundleWarning("a", DiagSeverity.WARNING, "first warning"),
+            BundleWarning("b", DiagSeverity.WARNING, "second warning"),
+        ]
+
+        banner = render_banner(warnings, use_color=False)
+
+        self.assertLess(banner.index("first warning"), banner.index("second warning"))
+
+    def test_title_carries_severity_counts(self):
+        warnings = [
+            BundleWarning("a", DiagSeverity.ERROR, "an error"),
+            BundleWarning("b", DiagSeverity.WARNING, "a warning"),
+            BundleWarning("c", DiagSeverity.WARNING, "another warning"),
+            BundleWarning("d", DiagSeverity.INFO, "an info"),
+        ]
+
+        banner = render_banner(warnings, use_color=False)
+
+        self.assertIn(
+            "Collectinfo Bundle Diagnostics (1 error, 2 warnings, 1 info)", banner
+        )
+
     def test_banner_omits_the_version_line_the_intro_already_prints(self):
         warnings = [
             BundleWarning(
@@ -1376,6 +1545,296 @@ class RenderTest(unittest.TestCase):
         print_banner(warnings, stream)
 
         self.assertIn("Collected by asadm 5.0.2", stream.getvalue())
+
+
+class MetaFormatVersionTest(unittest.TestCase):
+    def test_current_format_is_silent(self):
+        warnings = diagnostics(meta=meta_with()).analyze()
+
+        self.assertIsNone(find(warnings, "meta-format-newer"))
+
+    def test_newer_format_is_reported_and_still_read(self):
+        """A v2 meta parsed as v1 must not silently read as a clean collection."""
+        meta = meta_with(asadm_version="5.0.2")
+        meta["meta_format_version"] = 2
+
+        warnings = diagnostics(meta=meta).analyze()
+
+        warning = find(warnings, "meta-format-newer")
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.WARNING)
+        self.assertIn("v2", warning.title)
+        self.assertIn("v1", warning.title)
+        self.assertIsNotNone(find(warnings, "collector-version-match"))
+
+    def test_no_meta_is_silent(self):
+        self.assertIsNone(find(diagnostics().analyze(), "meta-format-newer"))
+
+
+class NodeSelectionTest(unittest.TestCase):
+    def test_count_comes_from_expected_nodes_not_the_selector_list(self):
+        """One prefix wildcard can resolve to many nodes, so counting selector
+        strings announces a 3-node bundle as a 1-node collection."""
+        meta = meta_with()
+        meta["collection"]["flags"]["node_selection"] = ["1.*"]
+        meta["snapshots"][0]["expected_nodes"] = [
+            "1.1.1.1:3000",
+            "1.1.1.2:3000",
+            "1.1.1.3:3000",
+        ]
+
+        warning = find(diagnostics(meta=meta).analyze(), "partial-node-selection")
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(
+            warning.title, "Collection was limited to 3 nodes by `collectinfo with`"
+        )
+
+    def test_a_requested_node_that_was_never_collected_is_a_warning(self):
+        """The selection fix stops blaming excluded nodes; it must not also cover
+        a node the user explicitly asked for and did not get."""
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [
+                    {"node_key": "9.9.9.9:3000", "reason": "seen in peers of A"}
+                ],
+                "dropped_during_collection": [],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+        meta["collection"]["flags"]["node_selection"] = ["1.1.1.1", "9.9.9.9"]
+
+        warning = find(diagnostics(meta=meta).analyze(), "partial-node-selection")
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.WARNING)
+        body = " ".join(warning.lines)
+        self.assertIn("requested", body)
+        self.assertIn("9.9.9.9:3000", body)
+
+    def test_a_selector_for_one_node_does_not_claim_a_longer_address(self):
+        """`1.1.1.1` must not substring-match `11.1.1.1:3000`: promoting a
+        deliberately excluded node to 'requested but never collected' is the
+        false claim this check exists to remove."""
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [
+                    {"node_key": "11.1.1.1:3000", "reason": "seen in peers of A"}
+                ],
+                "dropped_during_collection": [],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+        meta["collection"]["flags"]["node_selection"] = ["1.1.1.1"]
+
+        warning = find(diagnostics(meta=meta).analyze(), "partial-node-selection")
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.INFO)
+        self.assertNotIn("requested", " ".join(warning.lines))
+
+    def test_duplicate_snapshot_timestamps_use_the_last_entry(self):
+        """Sub-second snapshots share a timestamp and the writer keeps the last
+        snapshot's data, so the last meta entry is the one that describes it."""
+        meta = meta_with()
+        stale = copy.deepcopy(meta["snapshots"][0])
+        stale["no_data_nodes"] = ["9.9.9.9:3000"]
+        stale["discrepancies"]["dropped_during_collection"] = [
+            {"node_key": "9.9.9.9:3000", "reason": "timed out"}
+        ]
+        meta["snapshots"].insert(0, stale)
+
+        warnings = diagnostics(meta=meta).analyze()
+
+        self.assertIsNone(find(warnings, "dropped-or-missing-nodes"))
+
+    def test_single_node_collection_is_stated_and_not_read_as_missing_nodes(self):
+        """--single-node stops the crawl at the seed while the seed still
+        advertises every peer; that is the user's choice, not a defect."""
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [
+                    {"node_key": "9.9.9.9:3000", "reason": "seen in peers of A"}
+                ],
+                "dropped_during_collection": [],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+        meta["collection"]["flags"]["node_selection"] = "all"
+        meta["collection"]["flags"]["only_connect_seed"] = True
+
+        warnings = diagnostics(meta=meta).analyze()
+
+        self.assertIsNone(find(warnings, "dropped-or-missing-nodes"))
+        selection = find(warnings, "partial-node-selection")
+        self.assertIsNotNone(selection)
+        self.assertEqual(selection.severity, DiagSeverity.INFO)
+        self.assertIn("--single-node", selection.title)
+
+
+class ListTruncationTest(unittest.TestCase):
+    def test_dropped_node_list_names_how_many_are_hidden(self):
+        dropped = [
+            {"node_key": "10.1.0.%d:3000" % (index,), "reason": "timed out"}
+            for index in range(12)
+        ]
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [],
+                "dropped_during_collection": dropped,
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "dropped-or-missing-nodes")
+
+        self.assertIsNotNone(warning)
+        body = "\n".join(warning.lines)
+        self.assertIn("12 nodes were connected to", body)
+        self.assertIn("and 2 more; the full list is in collectinfo_meta.json", body)
+
+
+class AggregatedErrorFindingsTest(unittest.TestCase):
+    def _two_nodes_with_ns_stats(self, **stats):
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
+        }
+
+        for node in nodes.values():
+            node["as_stat"]["statistics"]["namespace"] = {
+                "test": {"service": dict(stats), "set": {}, "bin": {}, "sindex": {}}
+            }
+
+        return nodes
+
+    def test_stop_writes_aggregates_by_namespace_with_a_node_denominator(self):
+        nodes = self._two_nodes_with_ns_stats(stop_writes="true")
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "stop-writes")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("test (2 of 2 nodes)", " ".join(warning.lines))
+
+    def test_partition_counts_aggregate_by_namespace_with_the_worst_node(self):
+        nodes = self._two_nodes_with_ns_stats(dead_partitions="4")
+        nodes["2.2.2.2:3000"]["as_stat"]["statistics"]["namespace"]["test"][
+            "service"
+        ]["dead_partitions"] = "12"
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "partition-availability")
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("test 16 across 2 nodes", body)
+        self.assertIn("worst 2.2.2.2:3000 = 12", body)
+
+
+class ZeroUsableNodesSetComparisonTest(unittest.TestCase):
+    def test_a_malformed_node_entry_does_not_condemn_the_healthy_ones(self):
+        """nodes_without_as_stat counts a node whose whole value is {} while
+        get_node_names skips it, so a count comparison can declare a bundle
+        empty while naming its healthy nodes."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": {},
+            "3.3.3.3:3000": {},
+        }
+
+        warnings = diagnostics(nodes=nodes).analyze()
+
+        self.assertIsNone(find(warnings, "no-usable-nodes"))
+
+
+class BestPracticesMixedBundleTest(unittest.TestCase):
+    def test_nodes_without_metadata_still_count_via_the_service_stat(self):
+        """One node's collected metadata must not hide another node's violation
+        when that node's best-practices call failed during collection."""
+        nodes = {
+            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
+            "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
+        }
+        nodes["1.1.1.1:3000"]["as_stat"]["meta_data"]["best_practices"] = ["rmem-max"]
+        nodes["2.2.2.2:3000"]["as_stat"]["meta_data"]["best_practices"] = ""
+        nodes["2.2.2.2:3000"]["as_stat"]["statistics"]["service"][
+            "failed_best_practices"
+        ] = "true"
+        nodes["2.2.2.2:3000"]["as_stat"]["meta_data"]["node_id"] = "BB2"
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "best-practices")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("2 nodes are violating", warning.title)
+        body = " ".join(warning.lines)
+        self.assertIn("1.1.1.1:3000", body)
+        self.assertIn("2.2.2.2:3000", body)
+        self.assertIn("rmem-max", body)
+
+
+class NodeErrorTableTest(unittest.TestCase):
+    def _meta_with_errors(self, node_count):
+        return meta_with(
+            nodes={
+                "10.0.0.%d:3000" % (index,): {
+                    "node_id": "BB%d" % (index,),
+                    "responded": True,
+                    "sysinfo_source": "none",
+                    "errors": [
+                        {
+                            "section": "latency",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        }
+                    ],
+                }
+                for index in range(node_count)
+            }
+        )
+
+    def test_the_error_column_reads_as_prose_not_a_class_name(self):
+        warning = find(
+            diagnostics(meta=self._meta_with_errors(1)).analyze(),
+            "node-collection-errors",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("timed out", warning.table)
+
+    def test_the_table_is_capped_and_says_where_the_rest_lives(self):
+        warning = find(
+            diagnostics(meta=self._meta_with_errors(14)).analyze(),
+            "node-collection-errors",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("Showing 10 of 14 affected nodes", " ".join(warning.lines))
+        self.assertIn("collectinfo_meta.json", " ".join(warning.lines))
+        self.assertEqual(len(warning.table_lines), 10)
+
+    def test_the_table_is_not_rendered_as_json_under_json_mode(self):
+        """The banner is prose; under --json the sheet renderer would embed a
+        JSON document inside it, so the plain-text rows are used instead."""
+        from lib.view.sheet.render import get_style_json, set_style_json
+
+        was_json = get_style_json()
+        set_style_json(True)
+        self.addCleanup(set_style_json, was_json)
+
+        warning = find(
+            diagnostics(meta=self._meta_with_errors(1)).analyze(),
+            "node-collection-errors",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIsNone(warning.table)
+        banner = render_banner([warning], use_color=False, skip_redundant=False)
+        self.assertNotIn('"groups"', banner)
+        self.assertIn("10.0.0.0:3000", banner)
 
 
 class SnapshotHelperTest(unittest.TestCase):
