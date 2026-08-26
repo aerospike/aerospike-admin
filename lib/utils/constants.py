@@ -86,7 +86,9 @@ COLLECTINFO_META_FORMAT_VERSION = 1
 COLLECTINFO_ASCINFO_SCHEMA = "1.0"
 COLLECTINFO_GENERATED_BY = "asadm collectinfo"
 
-COLLECTINFO_MAX_RETRIES = 1
+COLLECTINFO_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
+
+COLLECTINFO_RETRY_TIMED_OUT_SECTIONS = True
 
 
 class CollectinfoErrorClass:
@@ -98,10 +100,19 @@ class CollectinfoErrorClass:
     UNSUPPORTED = "unsupported"
 
 
+COLLECTINFO_ERROR_CLASS_REASON = {
+    CollectinfoErrorClass.UNREACHABLE: "unreachable",
+    CollectinfoErrorClass.AUTH: "authentication failed",
+    CollectinfoErrorClass.TIMEOUT: "timed out",
+    CollectinfoErrorClass.CORRUPT: "returned an unusable response",
+    CollectinfoErrorClass.OTHER: "failed",
+}
+
+
 class CollectinfoSection:
     STATISTICS = "statistics"
     CONFIG = "config"
-    METADATA = "metadata"
+    METADATA = "meta_data"
     HISTOGRAM = "histogram"
     LATENCY = "latency"
     ACL = "acl"

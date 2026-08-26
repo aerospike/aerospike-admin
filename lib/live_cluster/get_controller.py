@@ -193,8 +193,26 @@ class GetLatenciesController:
     async def get_namespace_set(self, nodes) -> set[str]:
         return set(await _get_all_namespaces(self.cluster, nodes))
 
-    async def get_all(self, nodes, buckets, exponent_increment, verbose, ns_set=None):
-        latencies_nodes, latency_nodes = await self.get_latencies_and_latency_nodes()
+    async def get_all(
+        self,
+        nodes,
+        buckets,
+        exponent_increment,
+        verbose,
+        ns_set=None,
+        keep_exceptions=False,
+    ):
+        """keep_exceptions preserves per-node Exception values instead of dropping
+        the node key, so collectinfo can record which nodes failed and why. The
+        interactive `show` paths keep the default and never see an Exception.
+
+        The build query is scoped to the requested nodes so the mixed-version
+        branch fans out to the same subset the caller asked for; collectinfo's
+        timeout retry passes a single node and must not re-query the cluster.
+        """
+        latencies_nodes, latency_nodes = await self.get_latencies_and_latency_nodes(
+            nodes=nodes
+        )
         latencies = None
 
         # all nodes support "show latencies"
@@ -222,6 +240,9 @@ class GetLatenciesController:
                 ),
             )
             latencies = self.merge_latencies_and_latency_tables(latencies, latency)
+
+        if keep_exceptions:
+            return latencies
 
         return util.filter_exceptions(latencies)
 
@@ -274,7 +295,16 @@ class GetConfigController(BaseGetConfigController):
     def __init__(self, cluster):
         self.cluster = cluster
 
-    async def get_all(self, nodes="all"):
+    async def get_all(self, nodes="all", keep_exceptions=False):
+        """keep_exceptions preserves whole-node Exception values in the service
+        and network subsections instead of substituting {}, so collectinfo can
+        record which nodes failed and why. Those two stanzas exist on every
+        server; security legitimately errors on a security-disabled or Community
+        Edition cluster and logging is not served everywhere, so preserving
+        their failures would report a healthy cluster as a failed collection.
+        The nested subsections still drop failures: their exceptions sit a
+        level deeper than any consumer inspects.
+        """
         futures = [
             (
                 constants.CONFIG_SECURITY,
@@ -282,7 +312,9 @@ class GetConfigController(BaseGetConfigController):
             ),
             (
                 constants.CONFIG_SERVICE,
-                asyncio.create_task(self.get_service(nodes=nodes)),
+                asyncio.create_task(
+                    self.get_service(nodes=nodes, keep_exceptions=keep_exceptions)
+                ),
             ),
             (
                 constants.CONFIG_NAMESPACE,
@@ -294,7 +326,9 @@ class GetConfigController(BaseGetConfigController):
             ),
             (
                 constants.CONFIG_NETWORK,
-                asyncio.create_task(self.get_network(nodes=nodes)),
+                asyncio.create_task(
+                    self.get_network(nodes=nodes, keep_exceptions=keep_exceptions)
+                ),
             ),
             (constants.CONFIG_XDR, asyncio.create_task(self.get_xdr(nodes=nodes))),
             (constants.CONFIG_DC, asyncio.create_task(self.get_xdr_dcs(nodes=nodes))),
@@ -342,21 +376,21 @@ class GetConfigController(BaseGetConfigController):
 
         return security_configs
 
-    async def get_service(self, nodes="all"):
+    async def get_service(self, nodes="all", keep_exceptions=False):
         service_configs = await self.cluster.info_get_config(
             nodes=nodes, stanza="service"
         )
         for node in service_configs:
-            if isinstance(service_configs[node], Exception):
+            if not keep_exceptions and isinstance(service_configs[node], Exception):
                 service_configs[node] = {}
 
         return service_configs
 
-    async def get_network(self, nodes="all"):
+    async def get_network(self, nodes="all", keep_exceptions=False):
         nw_configs = await self.cluster.info_get_config(nodes=nodes, stanza="network")
 
         for node in nw_configs:
-            if isinstance(nw_configs[node], Exception):
+            if not keep_exceptions and isinstance(nw_configs[node], Exception):
                 nw_configs[node] = {}
 
         return nw_configs
@@ -584,11 +618,19 @@ class GetStatisticsController:
     def __init__(self, cluster):
         self.cluster: Cluster = cluster
 
-    async def get_all(self, nodes="all"):
+    async def get_all(self, nodes="all", keep_exceptions=False):
+        """keep_exceptions preserves whole-node Exception values in the service
+        subsection instead of dropping the node key, so collectinfo can record
+        which nodes failed and why. The per-namespace subsections still drop
+        failed nodes: their exceptions are nested a level deeper than any
+        consumer inspects, and leaking one into a JSON dump would break it.
+        """
         futures = [
             (
                 constants.STAT_SERVICE,
-                asyncio.create_task(self.get_service(nodes=nodes)),
+                asyncio.create_task(
+                    self.get_service(nodes=nodes, keep_exceptions=keep_exceptions)
+                ),
             ),
             (
                 constants.STAT_NAMESPACE,
@@ -609,8 +651,12 @@ class GetStatisticsController:
 
         return stat_map
 
-    async def get_service(self, nodes="all"):
+    async def get_service(self, nodes="all", keep_exceptions=False):
         service_stats = await self.cluster.info_statistics(nodes=nodes)
+
+        if keep_exceptions:
+            return service_stats
+
         return util.filter_exceptions(service_stats)
 
     async def get_namespace(self, flip=False, nodes="all", for_mods=[]):

@@ -15,7 +15,7 @@
 
 Customers routinely collect with one asadm and analyze with another. Anything the
 analyzing asadm expects but the collecting asadm never wrote is simply absent, and
-until now nothing said so. These checks run once at analyzer startup and surface
+nothing in the analyzer reported it. These checks run once at analyzer startup and surface
 provenance (who collected the bundle, when, with which flags), collection integrity
 (nodes that were expected but never landed, per-node section failures, missing
 sysinfo), and a curated set of high-signal cluster anomalies that are otherwise only
@@ -32,13 +32,24 @@ import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from lib.utils import common, constants, util, version
+from lib.utils.logger import BaseLogger
 from lib.view import terminal
 from lib.view.sheet import Field, Projectors, Sheet, render as sheet_render
+from lib.view.sheet.render import get_style_json
+from lib.view.terminal import terminal as terminal_state
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from .collectinfo_log import _CollectinfoSnapshot
+    from .log_handler import CollectinfoLogHandler
+
+logger = cast(BaseLogger, logging.getLogger(__name__))
+"""Importing lib.utils.logger above installs BaseLogger as the logger class, so
+this module's logger matches production no matter who imports it first. That is
+what gives the exit-code regression test teeth: BaseLogger.error sets the process
+exit code, which is exactly what the banner must never do."""
 
 BANNER_TITLE = "Collectinfo Bundle Diagnostics"
 BANNER_REDUNDANT_CATEGORIES = frozenset(
@@ -46,7 +57,9 @@ BANNER_REDUNDANT_CATEGORIES = frozenset(
 )
 BUNDLE_STALE_DAYS = 7
 CLOCK_SKEW_WARN_MS = 1000
-TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
+AP_NSUP_CLOCK_SKEW_STOP_WRITES_MS = 40000
+NODE_LIST_LIMIT = 10
+TIMESTAMP_FORMAT = constants.COLLECTINFO_TIMESTAMP_FORMAT
 _NUMERIC_VERSION_RE = re.compile(r"^\d+(\.\d+)*")
 
 
@@ -64,7 +77,7 @@ class BundleWarning:
     lines: list[str] = field(default_factory=list)
     table: str | None = None
     table_lines: list[str] = field(default_factory=list)
-    """Plain-text equivalent of `table`, for the log-based execute-mode path."""
+    """Plain-text rows, used when the sheet renderer is unavailable or unusable."""
 
 
 node_errors_sheet = Sheet(
@@ -122,11 +135,69 @@ def _summarize(items, limit: int = 6) -> str:
     return "%s (and %d more)" % (shown, len(items) - limit)
 
 
+def _selector_matches(selector: str, node_key: str) -> bool:
+    """Whether a `collectinfo with` selector plausibly names this node key.
+
+    Selectors may be IPs, FQDNs, node IDs, or prefix wildcards, while node keys
+    are ip:port, so this is a heuristic that must only ever promote a finding's
+    severity, never suppress one. It matches an exact key, a bare address (the
+    key with its port stripped), or a non-empty wildcard prefix; a substring
+    test would let a selector for 1.1.1.1 claim 11.1.1.1:3000 was requested.
+    """
+    selector = str(selector)
+
+    if selector.endswith("*"):
+        prefix = selector.rstrip("*")
+        return bool(prefix) and node_key.startswith(prefix)
+
+    return node_key == selector or node_key.startswith(selector + ":")
+
+
+def _node_sort_key(node_key: str) -> list[tuple[int, Any]]:
+    """Numeric ordering for node keys, so 10.0.0.2 sorts before 10.0.0.10.
+
+    String sort puts .10 before .2, which makes every truncated sample an
+    artifact of the dotted-quad spelling rather than the lowest-numbered nodes.
+    Each part is tagged so hostnames and numbers never compare directly.
+    """
+    return [
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in re.split(r"[.:\[\]]+", str(node_key))
+        if part
+    ]
+
+
+def _sorted_nodes(nodes) -> list[str]:
+    return sorted(nodes, key=_node_sort_key)
+
+
+def _format_partition_counts(per_ns: dict[str, dict[str, int]]) -> str:
+    """One complete clause per namespace: total, node spread, and worst node."""
+    parts = []
+
+    for ns in sorted(per_ns):
+        nodes = per_ns[ns]
+        worst = max(nodes, key=lambda node: nodes[node])
+        parts.append(
+            "%s %d across %d %s (worst %s = %d)"
+            % (
+                ns,
+                sum(nodes.values()),
+                len(nodes),
+                _plural(len(nodes), "node"),
+                worst,
+                nodes[worst],
+            )
+        )
+
+    return _summarize(parts)
+
+
 class CollectinfoDiagnostics:
     def __init__(
         self,
-        log_handler,
-        snapshot,
+        log_handler: "CollectinfoLogHandler",
+        snapshot: "_CollectinfoSnapshot",
         timestamp: str,
         running_version: str = "",
         meta: dict[str, Any] | None = None,
@@ -168,6 +239,12 @@ class CollectinfoDiagnostics:
         except Exception:
             return []
 
+    def _collection_flags(self) -> dict[str, Any]:
+        """The flags recorded at collection time, or {} for a bundle without them."""
+        flags = (self.meta.get("collection") or {}).get("flags")
+
+        return flags if isinstance(flags, dict) else {}
+
     def snapshot_meta(self) -> dict[str, Any]:
         """The meta entry for the snapshot being analyzed, if the bundle has one.
 
@@ -175,6 +252,9 @@ class CollectinfoDiagnostics:
         would report its expected nodes, dropped nodes, and per-node errors against
         this one, which is the false 'nodes are missing' claim these checks exist to
         remove. No match means no meta, and the heuristics take over.
+
+        The last match wins: sub-second snapshots can share a timestamp, and the
+        writer keeps the last snapshot's data under that key.
         """
         if self._snapshot_meta is not None:
             return self._snapshot_meta
@@ -188,7 +268,6 @@ class CollectinfoDiagnostics:
         for entry in snapshots:
             if isinstance(entry, dict) and entry.get("timestamp") == self.timestamp:
                 self._snapshot_meta = entry
-                break
 
         return self._snapshot_meta
 
@@ -208,6 +287,7 @@ class CollectinfoDiagnostics:
 
         for check in (
             self._check_collector_version,
+            self._check_meta_format_version,
             self._check_zero_usable_nodes,
         ):
             self._run(check, warnings)
@@ -342,7 +422,45 @@ class CollectinfoDiagnostics:
             lines=[],
         )
 
+    def _check_meta_format_version(self) -> BundleWarning | None:
+        """A meta written by a newer asadm is read best-effort, and this says so.
+
+        Unknown fields are ignored and absent fields mean 'not recorded', so the
+        fields this asadm understands are still used rather than the file being
+        rejected. Without this finding, detail recorded in a newer format would
+        silently read as a clean collection.
+        """
+        if not self.meta:
+            return None
+
+        format_version = _to_int(self.meta.get("meta_format_version"))
+
+        if (
+            format_version is None
+            or format_version <= constants.COLLECTINFO_META_FORMAT_VERSION
+        ):
+            return None
+
+        return BundleWarning(
+            category="meta-format-newer",
+            severity=DiagSeverity.WARNING,
+            title="Bundle metadata is format v%d; this asadm understands v%d"
+            % (format_version, constants.COLLECTINFO_META_FORMAT_VERSION),
+            lines=[
+                "The fields this asadm knows are still read, but collection "
+                "detail added in newer formats is not reported here. Upgrade "
+                "asadm to see everything the bundle recorded."
+            ],
+        )
+
     def _check_zero_usable_nodes(self) -> BundleWarning | None:
+        """Compare the empty set against the named set as sets.
+
+        nodes_without_as_stat and get_node_names apply different guards to a
+        malformed node entry, so comparing their counts can declare a bundle
+        empty while naming its healthy nodes. Intersecting first keeps both the
+        verdict and the node list inside one node universe.
+        """
         node_names = self._node_names()
 
         if not node_names:
@@ -353,9 +471,10 @@ class CollectinfoDiagnostics:
                 lines=["No node data could be read from this bundle."],
             )
 
-        empty_nodes = set(self._nodes_without_as_stat())
+        present = set(node_names)
+        empty_nodes = set(self._nodes_without_as_stat()) & present
 
-        if empty_nodes and len(empty_nodes) >= len(node_names):
+        if empty_nodes and empty_nodes == present:
             return BundleWarning(
                 category="no-usable-nodes",
                 severity=DiagSeverity.ERROR,
@@ -364,7 +483,7 @@ class CollectinfoDiagnostics:
                 lines=[
                     "asadm connected to these nodes but every information call "
                     "failed, so no command can report anything: %s."
-                    % (_summarize(sorted(node_names)),),
+                    % (_summarize(_sorted_nodes(empty_nodes)),),
                     "Re-collect from a host that can reach the cluster, raising "
                     "--timeout if the nodes are slow to respond.",
                 ],
@@ -418,7 +537,9 @@ class CollectinfoDiagnostics:
         expected = snapshot_meta.get("expected_nodes") or []
         responded = snapshot_meta.get("responded_nodes") or []
 
-        if self._collected_node_subset() is not None:
+        if self._collected_node_subset() is not None or self._collection_flags().get(
+            "only_connect_seed"
+        ):
             missing = []
 
         if not dropped and not missing:
@@ -440,10 +561,19 @@ class CollectinfoDiagnostics:
                     _plural(len(dropped), "it is", "they are"),
                 )
             )
-            for entry in dropped[:10]:
+            for entry in dropped[:NODE_LIST_LIMIT]:
                 lines.append(
                     "  %s (%s)"
                     % (entry.get("node_key", "unknown"), entry.get("reason", "unknown"))
+                )
+
+            if len(dropped) > NODE_LIST_LIMIT:
+                lines.append(
+                    "  (and %d more; the full list is in %s)"
+                    % (
+                        len(dropped) - NODE_LIST_LIMIT,
+                        constants.COLLECTINFO_META_FILENAME,
+                    )
                 )
 
         if missing:
@@ -456,10 +586,19 @@ class CollectinfoDiagnostics:
                     _plural(len(missing), "it", "them"),
                 )
             )
-            for entry in missing[:10]:
+            for entry in missing[:NODE_LIST_LIMIT]:
                 lines.append(
                     "  %s (%s)"
                     % (entry.get("node_key", "unknown"), entry.get("reason", "unknown"))
+                )
+
+            if len(missing) > NODE_LIST_LIMIT:
+                lines.append(
+                    "  (and %d more; the full list is in %s)"
+                    % (
+                        len(missing) - NODE_LIST_LIMIT,
+                        constants.COLLECTINFO_META_FILENAME,
+                    )
                 )
 
         return BundleWarning(
@@ -472,11 +611,11 @@ class CollectinfoDiagnostics:
     def _collected_node_subset(self) -> list[str] | None:
         """The node list the collection was limited to, or None if it collected all.
 
-        Recorded from TOOLS-4135 onward. Older bundles return None, which is the
-        same answer as a full collection: neither can be told apart from the data.
+        Only bundles carrying collectinfo_meta.json (meta_format_version 1 and
+        later) record it. Older bundles return None, which is the same answer as a
+        full collection: neither can be told apart from the data.
         """
-        flags = (self.meta.get("collection") or {}).get("flags") or {}
-        selection = flags.get("node_selection")
+        selection = self._collection_flags().get("node_selection")
 
         if isinstance(selection, (list, tuple)) and selection:
             return [str(node) for node in selection]
@@ -486,16 +625,38 @@ class CollectinfoDiagnostics:
     def _check_node_selection(self) -> BundleWarning | None:
         """A deliberately partial collection, stated so it is not read as a fault.
 
-        `collectinfo with <nodes>` collects only the nodes named. Every other
-        cluster node is then advertised in the collected nodes' peer lists and
-        present nowhere else, which is indistinguishable from a node asadm could
-        not reach unless the selection itself is recorded.
+        `collectinfo with <nodes>` collects only the nodes named, and
+        --single-node stops the cluster crawl at the seed. Every other cluster
+        node is then advertised in the collected nodes' peer lists and present
+        nowhere else, which is indistinguishable from a node asadm could not
+        reach unless the scope itself is recorded.
+
+        The node count comes from the meta's expected_nodes rather than the
+        selector list: a selector may be a prefix wildcard that resolves to many
+        nodes. A requested node that was never collected is promoted back to a
+        warning; the match between selectors and node keys is a heuristic
+        (selectors may be node IDs, FQDNs, or bare IPs), so it only ever
+        promotes, never suppresses.
         """
         subset = self._collected_node_subset()
 
         if subset is None:
+            if self._collection_flags().get("only_connect_seed"):
+                return BundleWarning(
+                    category="partial-node-selection",
+                    severity=DiagSeverity.INFO,
+                    title="Collection was limited to the seed node by --single-node",
+                    lines=[
+                        "Peers advertised by the seed were deliberately not "
+                        "contacted, so every command below shows the seed node "
+                        "only."
+                    ],
+                )
+
             return None
 
+        expected = self.snapshot_meta().get("expected_nodes") or []
+        count = len(expected) or len(subset)
         lines = ["Requested: %s." % (_summarize(subset),)]
         excluded = sorted(
             entry.get("node_key", "unknown")
@@ -504,24 +665,40 @@ class CollectinfoDiagnostics:
             )
             or []
         )
+        requested_missing = [
+            key for key in excluded if any(_selector_matches(sel, key) for sel in subset)
+        ]
+        other_missing = [key for key in excluded if key not in requested_missing]
 
-        if excluded:
+        if requested_missing:
+            lines.append(
+                "%d requested %s never collected: %s."
+                % (
+                    len(requested_missing),
+                    _plural(len(requested_missing), "node was", "nodes were"),
+                    _summarize(requested_missing),
+                )
+            )
+
+        if other_missing:
             lines.append(
                 "%d other cluster %s never contacted, so %s absent from every "
                 "command below: %s."
                 % (
-                    len(excluded),
-                    _plural(len(excluded), "node was", "nodes were"),
-                    _plural(len(excluded), "it is", "they are"),
-                    _summarize(excluded),
+                    len(other_missing),
+                    _plural(len(other_missing), "node was", "nodes were"),
+                    _plural(len(other_missing), "it is", "they are"),
+                    _summarize(other_missing),
                 )
             )
 
         return BundleWarning(
             category="partial-node-selection",
-            severity=DiagSeverity.INFO,
-            title="Collection was limited to %d %s"
-            % (len(subset), _plural(len(subset), "node")),
+            severity=(
+                DiagSeverity.WARNING if requested_missing else DiagSeverity.INFO
+            ),
+            title="Collection was limited to %d %s by `collectinfo with`"
+            % (count, _plural(count, "node")),
             lines=lines,
         )
 
@@ -569,10 +746,10 @@ class CollectinfoDiagnostics:
         )
 
     def _check_dropped_from_heuristics(self) -> BundleWarning | None:
-        """Infer missing nodes for bundles collected before TOOLS-4135.
+        """Infer missing nodes for bundles that carry no collectinfo_meta.json.
 
-        Old bundles carry no record of what was expected, so every statement here
-        is a proxy and is phrased as such.
+        Such bundles record nothing about what was expected, so every statement
+        here is a proxy and is phrased as such.
         """
         present = set(self._node_names())
         service_stats = self._service_stats()
@@ -611,7 +788,7 @@ class CollectinfoDiagnostics:
         for keys in advertised.values():
             peer_keys.update(keys)
 
-        unseen = sorted(peer_keys - self._known_endpoints(present))
+        unseen = _sorted_nodes(peer_keys - self._known_endpoints(present))
 
         if unseen:
             lines.append(
@@ -658,17 +835,24 @@ class CollectinfoDiagnostics:
         return known
 
     def _check_missing_sysinfo(self) -> BundleWarning | None:
-        """Report sysinfo coverage.
+        """Report sysinfo coverage only when it differs from what was requested.
 
-        asadm gathers system statistics locally for the node it runs on, and over SSH
-        for the rest only when --enable-ssh is passed. So a bundle covering exactly
-        one node is the ordinary outcome of a plain collect and is reported as
-        information; a bundle covering none means collectinfo ran off-cluster and
-        nothing host-level was captured at all, which is the case worth warning about.
+        asadm gathers system statistics locally for the node it runs on, and over
+        SSH for the rest only when --enable-ssh is passed. A plain collect
+        covering at most one node is therefore the documented outcome, not a gap,
+        and stays silent; a finding that fires on every ordinary bundle would
+        train readers to skip the whole banner. What is worth saying:
 
-        Nodes that returned no data at all are excluded from both counts: they are
-        already reported as dropped, and their missing sysinfo is a consequence of
-        that rather than a separate finding.
+        - --enable-ssh was requested and some nodes still have no sysinfo, which
+          means SSH to them failed during collection.
+        - No node has sysinfo at all: collectinfo ran off-cluster without SSH.
+
+        For bundles with no recorded flags the same inference applies: exactly
+        one covered node is the ordinary shape and stays silent.
+
+        Nodes that returned no data at all are excluded from both counts: they
+        are already reported as dropped, and their missing sysinfo is a
+        consequence of that rather than a separate finding.
         """
         node_names = self._node_names()
 
@@ -676,7 +860,9 @@ class CollectinfoDiagnostics:
             return None
 
         empty_nodes = set(self._nodes_without_as_stat())
-        responded = [node for node in sorted(node_names) if node not in empty_nodes]
+        responded = [
+            node for node in _sorted_nodes(node_names) if node not in empty_nodes
+        ]
 
         if not responded:
             return None
@@ -694,21 +880,45 @@ class CollectinfoDiagnostics:
                 continue
 
         has_sysinfo_files = self._bundle_has_files(("sysinfo.log", "aerospike.conf"))
+        enable_ssh = bool(self._collection_flags().get("enable_ssh"))
 
-        if not without_sysinfo and has_sysinfo_files:
+        if enable_ssh and without_sysinfo:
+            recorded_none = set(
+                self._nodes_with_sysinfo_source(constants.SysinfoSource.NONE)
+            )
+            ssh_failed = _sorted_nodes(recorded_none & set(without_sysinfo)) or list(
+                without_sysinfo
+            )
+
+            return BundleWarning(
+                category="partial-sysinfo",
+                severity=DiagSeverity.WARNING,
+                title=(
+                    "--enable-ssh was used but system information is missing "
+                    "for %d of %d nodes" % (len(without_sysinfo), len(responded))
+                ),
+                lines=[
+                    "No host-level data for %s. SSH to those hosts failed "
+                    "during collection." % (_summarize(_sorted_nodes(ssh_failed)),),
+                    "`health` cannot run its system checks for them and "
+                    "`summary` reports no OS version.",
+                ],
+            )
+
+        if not without_sysinfo and has_sysinfo_files is not False:
             return None
 
         if not with_sysinfo:
             lines = [
                 "No host-level data was captured for any of the %d nodes, so "
-                "`summary` and `info network` cannot report on CPU, memory, "
-                "disks, or the OS." % (len(responded),),
+                "`health` cannot run its system checks and `summary` reports "
+                "no OS version." % (len(responded),),
                 "collectinfo gathers system statistics locally for the node it runs "
                 "on and over SSH for every other node, so this bundle was collected "
                 "from a host that is not an Aerospike node, without --enable-ssh.",
             ]
 
-            if not has_sysinfo_files:
+            if has_sysinfo_files is False:
                 lines.append(
                     "The bundle also has no sysinfo.log and no aerospike.conf, which "
                     "are only ever collected when asadm runs on a cluster node."
@@ -733,6 +943,9 @@ class CollectinfoDiagnostics:
                 ],
             )
 
+        if len(with_sysinfo) <= 1:
+            return None
+
         lines = [
             "Captured for %s. No host-level data for the other %s: %s."
             % (
@@ -744,11 +957,11 @@ class CollectinfoDiagnostics:
                 ),
                 _summarize(without_sysinfo),
             ),
-            "Expected unless collectinfo was run with --enable-ssh, which is what "
-            "lets it collect system statistics from nodes it is not running on.",
+            "`health` cannot run its system checks for the uncovered nodes and "
+            "`summary` reports no OS version for them.",
         ]
 
-        if not has_sysinfo_files:
+        if has_sysinfo_files is False:
             lines.append("The bundle has no sysinfo.log and no aerospike.conf either.")
 
         return BundleWarning(
@@ -759,16 +972,30 @@ class CollectinfoDiagnostics:
             lines=lines,
         )
 
-    def _bundle_has_files(self, suffixes: tuple[str, ...]) -> bool:
-        iter_files = getattr(self.log_handler, "_iter_bundle_files", None)
+    def _nodes_with_sysinfo_source(self, source: str) -> list[str]:
+        """Node keys whose recorded sysinfo_source matches, from the meta."""
+        nodes_meta = (
+            (self.snapshot_meta().get("nodes") or {}) if self.has_meta() else {}
+        )
 
-        if iter_files is None:
-            return True
+        return sorted(
+            node_key
+            for node_key, node_meta in nodes_meta.items()
+            if isinstance(node_meta, dict)
+            and node_meta.get("sysinfo_source") == source
+        )
 
+    def _bundle_has_files(self, suffixes: tuple[str, ...]) -> bool | None:
+        """Whether the bundle holds any file with these suffixes; None if unknown.
+
+        'Unknown' is a real third state: folding a failed walk into True would
+        make a check whose job is to report absence assert presence forever.
+        """
         try:
-            return bool(iter_files(suffixes))
-        except Exception:
-            return True
+            return bool(self.log_handler.bundle_files(suffixes))
+        except Exception as e:
+            logger.debug("Could not enumerate bundle files: %s", e, exc_info=True)
+            return None
 
     def _check_node_collection_errors(self) -> BundleWarning | None:
         """Sections that failed to collect, per node.
@@ -786,7 +1013,6 @@ class CollectinfoDiagnostics:
             return None
 
         rows: dict[str, dict[str, str]] = {}
-        node_names: dict[str, str] = {}
         recovered = 0
 
         for node_key, node_meta in sorted(nodes_meta.items()):
@@ -806,13 +1032,18 @@ class CollectinfoDiagnostics:
 
             sections = sorted({str(error.get("section", "?")) for error in unrecovered})
             reasons = sorted(
-                {str(error.get("error_class", "?")) for error in unrecovered}
+                {
+                    constants.COLLECTINFO_ERROR_CLASS_REASON.get(
+                        str(error.get("error_class", "")),
+                        str(error.get("error_class", "?")),
+                    )
+                    for error in unrecovered
+                }
             )
             rows[node_key] = {
                 "sections": ", ".join(sections),
                 "reason": ", ".join(reasons),
             }
-            node_names[node_key] = node_key
 
         if not rows:
             if recovered:
@@ -825,21 +1056,11 @@ class CollectinfoDiagnostics:
                 )
             return None
 
-        table = None
-
-        try:
-            table = sheet_render(
-                node_errors_sheet,
-                "Per-node collection errors",
-                dict(data=rows, node_names=node_names),
-                common=dict(principal="", self_node=""),
-            )
-        except Exception as e:
-            logger.debug("Could not render node error table: %s", e, exc_info=True)
-
+        shown = dict(list(rows.items())[:NODE_LIST_LIMIT])
+        table = self._render_node_errors_table(shown)
         table_lines = [
             "  %s: %s (%s)" % (node_key, row["sections"], row["reason"])
-            for node_key, row in rows.items()
+            for node_key, row in shown.items()
         ]
         lines = [
             "Those sections are empty for those nodes, so commands reading them show "
@@ -852,6 +1073,13 @@ class CollectinfoDiagnostics:
                 % (recovered, _plural(recovered, "error"))
             )
 
+        if len(rows) > len(shown):
+            lines.append(
+                "Showing %d of %d affected nodes; the full list and the error "
+                "messages are in %s inside the bundle."
+                % (len(shown), len(rows), constants.COLLECTINFO_META_FILENAME)
+            )
+
         return BundleWarning(
             category="node-collection-errors",
             severity=DiagSeverity.WARNING,
@@ -861,6 +1089,36 @@ class CollectinfoDiagnostics:
             table=table,
             table_lines=table_lines,
         )
+
+    def _render_node_errors_table(self, rows: dict[str, dict[str, str]]) -> str | None:
+        """Render the per-node error table, or None to use the plain-text rows.
+
+        Skipped under --json: the sheet renderer consults the global style flag,
+        which would embed a JSON document inside the banner's prose. The banner
+        is a human artifact regardless of the output mode.
+
+        Rendered with color disabled: the global palette follows stdout, which
+        says nothing about the stream the banner lands on, so a colored table
+        would carry raw escapes into a redirected stderr.
+        """
+        if get_style_json():
+            return None
+
+        was_color_enabled = terminal_state.color_enabled
+        terminal_state.enable_color(False)
+
+        try:
+            return sheet_render(
+                node_errors_sheet,
+                "Per-node collection errors",
+                dict(data=rows, node_names={key: key for key in rows}),
+                common=dict(principal="", self_node=""),
+            )
+        except Exception as e:
+            logger.debug("Could not render node error table: %s", e, exc_info=True)
+            return None
+        finally:
+            terminal_state.enable_color(was_color_enabled)
 
     def _check_empty_and_partial_nodes(self) -> BundleWarning | None:
         """Nodes that answered some calls but not all.
@@ -877,12 +1135,12 @@ class CollectinfoDiagnostics:
         statistics = self._data("statistics")
         configs = self._data("config")
 
-        no_statistics = sorted(
+        no_statistics = _sorted_nodes(
             node
             for node in node_names
             if node not in empty_nodes and not util.has_content(statistics.get(node))
         )
-        no_config = sorted(
+        no_config = _sorted_nodes(
             node
             for node in node_names
             if node not in empty_nodes and not util.has_content(configs.get(node))
@@ -891,7 +1149,9 @@ class CollectinfoDiagnostics:
         lines = []
 
         if not self.has_meta():
-            present_empty = sorted(node for node in empty_nodes if node in node_names)
+            present_empty = _sorted_nodes(
+                node for node in empty_nodes if node in node_names
+            )
 
             if present_empty:
                 lines.append(
@@ -919,7 +1179,7 @@ class CollectinfoDiagnostics:
         )
 
     def _check_multiple_snapshots(self) -> BundleWarning | None:
-        count = getattr(self.log_handler, "bundle_snapshot_count", 0) or 0
+        count = self.log_handler.bundle_snapshot_count or 0
 
         if count <= 1:
             return None
@@ -927,11 +1187,12 @@ class CollectinfoDiagnostics:
         return BundleWarning(
             category="multiple-snapshots",
             severity=DiagSeverity.INFO,
-            title="Bundle holds %d snapshots; only the newest is analyzed" % (count,),
+            title="Bundle holds %d snapshots; diagnostics describe only the newest"
+            % (count,),
             lines=[
-                "Showing %s. The older snapshots are in ascinfo.json but no command "
-                "reads them, so any change between snapshots is invisible here."
-                % (self.timestamp,)
+                "These findings are computed from %s. Commands may render the "
+                "other snapshots too, so their output can describe a different "
+                "moment than this banner." % (self.timestamp,)
             ],
         )
 
@@ -976,9 +1237,18 @@ class CollectinfoDiagnostics:
         lines = []
 
         if flagged:
-            lines.append(
-                "Namespaces reporting stop-writes: %s." % (_summarize(flagged),)
-            )
+            totals = self._namespace_node_counts()
+            parts = [
+                "%s (%d of %d %s)"
+                % (
+                    ns,
+                    len(nodes),
+                    totals.get(ns, len(nodes)),
+                    _plural(totals.get(ns, len(nodes)), "node"),
+                )
+                for ns, nodes in sorted(flagged.items())
+            ]
+            lines.append("Namespaces in stop-writes: %s." % (_summarize(parts),))
 
         lines.append("Run `show stop-writes` for the triggering metrics.")
 
@@ -989,13 +1259,16 @@ class CollectinfoDiagnostics:
             lines=lines,
         )
 
-    def _namespaces_flagging_stop_writes(self) -> list[str]:
-        """Namespaces whose own stop_writes flag was set.
+    def _namespaces_flagging_stop_writes(self) -> dict[str, set[str]]:
+        """Nodes flagging stop_writes, per namespace.
 
         The derived summary only reports triggers whose usage and threshold metrics
         are both present in the bundle; the server's own flag catches the rest.
+        Aggregated by namespace so the finding stays complete at any cluster size:
+        a flat node/namespace pair list truncates on exactly the clusters where
+        the blast radius matters most.
         """
-        flagged = set()
+        flagged: dict[str, set[str]] = {}
 
         for node, ns_data in self._ns_stats().items():
             if not isinstance(ns_data, dict):
@@ -1008,9 +1281,23 @@ class CollectinfoDiagnostics:
                 if _is_true(stats.get("stop_writes")) or _is_true(
                     stats.get("clock_skew_stop_writes")
                 ):
-                    flagged.add("%s/%s" % (node, ns))
+                    flagged.setdefault(ns, set()).add(node)
 
-        return sorted(flagged)
+        return flagged
+
+    def _namespace_node_counts(self) -> dict[str, int]:
+        """How many nodes carry each namespace, the denominator for per-ns claims."""
+        counts: dict[str, int] = {}
+
+        for ns_data in self._ns_stats().values():
+            if not isinstance(ns_data, dict):
+                continue
+
+            for ns, stats in ns_data.items():
+                if isinstance(stats, dict):
+                    counts[ns] = counts.get(ns, 0) + 1
+
+        return counts
 
     def _check_cluster_state(self) -> BundleWarning | None:
         service_stats = self._service_stats()
@@ -1019,12 +1306,12 @@ class CollectinfoDiagnostics:
             return None
 
         lines = []
-        broken_integrity = sorted(
+        broken_integrity = _sorted_nodes(
             node
             for node, stats in service_stats.items()
             if isinstance(stats, dict) and _is_false(stats.get("cluster_integrity"))
         )
-        orphans = sorted(
+        orphans = _sorted_nodes(
             node
             for node, stats in service_stats.items()
             if isinstance(stats, dict) and _is_false(stats.get("cluster_is_member"))
@@ -1104,12 +1391,24 @@ class CollectinfoDiagnostics:
     def _check_migrations(self) -> BundleWarning | None:
         """Report which nodes were migrating, not a summed partition count.
 
-        migrate_partitions_remaining is per node and counts both incoming and
-        outgoing partitions, so a total across nodes double counts the same work and
-        would be a number the user cannot reconcile with any command.
+        The node count comes from the service statistic
+        migrate_partitions_remaining, which is per node and counts both incoming
+        and outgoing partitions; a total across nodes would double count the same
+        work and be a number the user cannot reconcile with any command. The
+        per-namespace detail comes from the namespace-level
+        migrate_tx/rx_partitions_remaining pair, because the service-level name
+        does not exist in namespace statistics.
         """
         migrating: dict[str, int] = {}
         node_count = 0
+        ns_node_count = 0
+
+        for stats in self._service_stats().values():
+            if not isinstance(stats, dict):
+                continue
+
+            if (_to_int(stats.get("migrate_partitions_remaining")) or 0) > 0:
+                node_count += 1
 
         for ns_data in self._ns_stats().values():
             if not isinstance(ns_data, dict):
@@ -1121,14 +1420,18 @@ class CollectinfoDiagnostics:
                 if not isinstance(stats, dict):
                     continue
 
-                value = _to_int(stats.get("migrate_partitions_remaining"))
+                remaining = (
+                    _to_int(stats.get("migrate_tx_partitions_remaining")) or 0
+                ) + (_to_int(stats.get("migrate_rx_partitions_remaining")) or 0)
 
-                if value and value > 0:
-                    migrating[ns] = max(migrating.get(ns, 0), value)
+                if remaining > 0:
+                    migrating[ns] = max(migrating.get(ns, 0), remaining)
                     node_migrating = True
 
             if node_migrating:
-                node_count += 1
+                ns_node_count += 1
+
+        node_count = node_count or ns_node_count
 
         if not migrating:
             return None
@@ -1207,8 +1510,11 @@ class CollectinfoDiagnostics:
         """Practices the server itself reports as violated.
 
         meta_data.best_practices holds the list of violated check names; the service
-        statistic failed_best_practices is the fallback for bundles collected before
-        that key was stored, and is only a boolean.
+        statistic failed_best_practices is only a boolean but exists on every node,
+        so it backstops both bundles collected before the metadata key was stored
+        and individual nodes whose best-practices call failed during collection.
+        The two sources are unioned per node: gating the fallback on the whole
+        bundle would let one node's metadata hide every other node's violation.
         """
         failing_nodes = set()
         practice_names = set()
@@ -1223,17 +1529,16 @@ class CollectinfoDiagnostics:
                 failing_nodes.add(node)
                 practice_names.update(str(practice) for practice in practices)
 
-        if not failing_nodes:
-            for node, stats in self._service_stats().items():
-                if isinstance(stats, dict) and _is_true(
-                    stats.get("failed_best_practices")
-                ):
-                    failing_nodes.add(node)
+        for node, stats in self._service_stats().items():
+            if isinstance(stats, dict) and _is_true(
+                stats.get("failed_best_practices")
+            ):
+                failing_nodes.add(node)
 
         if not failing_nodes:
             return None
 
-        lines = ["Nodes: %s." % (_summarize(sorted(failing_nodes)),)]
+        lines = ["Nodes: %s." % (_summarize(_sorted_nodes(failing_nodes)),)]
 
         if practice_names:
             lines.append("Violated: %s." % (_summarize(sorted(practice_names)),))
@@ -1288,7 +1593,7 @@ class CollectinfoDiagnostics:
         if not outlier_nodes:
             return None
 
-        lines = ["Nodes: %s." % (_summarize(sorted(outlier_nodes)),)]
+        lines = ["Nodes: %s." % (_summarize(_sorted_nodes(outlier_nodes)),)]
 
         if reasons:
             lines.append("Reported as: %s." % (_summarize(sorted(reasons)),))
@@ -1313,9 +1618,13 @@ class CollectinfoDiagnostics:
         The server emits both stats for every namespace but they are only ever
         non-zero under strong consistency, so the namespace's strong-consistency
         config decides the wording rather than being assumed.
+
+        Aggregated per namespace with a node count and the worst node, so the
+        line answers 'which namespaces, and how widespread' at any cluster size
+        instead of truncating a node/namespace pair list.
         """
-        dead: dict[str, int] = {}
-        unavailable: dict[str, int] = {}
+        dead: dict[str, dict[str, int]] = {}
+        unavailable: dict[str, dict[str, int]] = {}
         namespaces = set()
 
         for node, ns_data in self._ns_stats().items():
@@ -1330,11 +1639,11 @@ class CollectinfoDiagnostics:
                 unavailable_count = _to_int(stats.get("unavailable_partitions"))
 
                 if dead_count:
-                    dead["%s/%s" % (node, ns)] = dead_count
+                    dead.setdefault(ns, {})[node] = dead_count
                     namespaces.add(ns)
 
                 if unavailable_count:
-                    unavailable["%s/%s" % (node, ns)] = unavailable_count
+                    unavailable.setdefault(ns, {})[node] = unavailable_count
                     namespaces.add(ns)
 
         if not dead and not unavailable:
@@ -1345,22 +1654,13 @@ class CollectinfoDiagnostics:
         if dead:
             lines.append(
                 "dead_partitions (data lost, no copy left in the cluster): %s."
-                % (
-                    _summarize(
-                        "%s=%d" % (key, val) for key, val in sorted(dead.items())
-                    ),
-                )
+                % (_format_partition_counts(dead),)
             )
 
         if unavailable:
             lines.append(
                 "unavailable_partitions (data exists but cannot be read or written): "
-                "%s."
-                % (
-                    _summarize(
-                        "%s=%d" % (key, val) for key, val in sorted(unavailable.items())
-                    ),
-                )
+                "%s." % (_format_partition_counts(unavailable),)
             )
 
         if self._strong_consistency_namespaces() & namespaces:
@@ -1397,16 +1697,20 @@ class CollectinfoDiagnostics:
         return strong
 
     def _check_clock_skew(self) -> BundleWarning | None:
-        """Compare measured skew against the cluster's own stop-writes threshold.
+        """Warn relative to the cluster's own stop-writes threshold.
 
-        A bare millisecond figure means little on its own, so where the server
-        reports cluster_clock_skew_stop_writes_sec the warning states the point at
-        which writes stop. That threshold only governs strong-consistency
-        namespaces (AP namespaces use a fixed 40 s, and only with nsup enabled), so
-        the line is omitted when the cluster has none.
+        Strong-consistency namespaces stop taking writes at
+        cluster_clock_skew_stop_writes_sec; AP namespaces stop at a fixed 40 s,
+        and only with nsup enabled. The trigger is three quarters of whichever
+        threshold governs this cluster, matching the rule the health checks use,
+        so the warning fires when skew is approaching the point where something
+        actually happens rather than at an absolute constant. A cluster where
+        neither threshold applies falls back to that constant. When nodes
+        disagree on the configured value the lowest wins, because that is the
+        node that stops writes first.
         """
         worst = 0
-        threshold_sec = None
+        configured_sec: list[int] = []
 
         for stats in self._service_stats().values():
             if not isinstance(stats, dict):
@@ -1420,9 +1724,19 @@ class CollectinfoDiagnostics:
             configured = _to_int(stats.get("cluster_clock_skew_stop_writes_sec"))
 
             if configured:
-                threshold_sec = max(threshold_sec or 0, configured)
+                configured_sec.append(configured)
 
-        if worst < CLOCK_SKEW_WARN_MS:
+        strong_consistency = bool(self._strong_consistency_namespaces())
+        threshold_ms = None
+
+        if strong_consistency and configured_sec:
+            threshold_ms = min(configured_sec) * 1000
+        elif self._nsup_enabled_ap_namespaces():
+            threshold_ms = AP_NSUP_CLOCK_SKEW_STOP_WRITES_MS
+
+        trigger = CLOCK_SKEW_WARN_MS if threshold_ms is None else threshold_ms * 3 // 4
+
+        if worst < trigger:
             return None
 
         lines = [
@@ -1430,20 +1744,51 @@ class CollectinfoDiagnostics:
             "synchronized clocks. Check NTP on every node."
         ]
 
-        if threshold_sec and self._strong_consistency_namespaces():
-            lines.insert(
-                0,
-                "Strong-consistency namespaces stop taking writes at %d ms "
-                "(cluster_clock_skew_stop_writes_sec is %d)."
-                % (threshold_sec * 1000, threshold_sec),
+        if threshold_ms:
+            source = (
+                "cluster_clock_skew_stop_writes_sec"
+                if strong_consistency and configured_sec
+                else "the fixed limit for AP namespaces with nsup enabled"
             )
+
+            if worst >= threshold_ms:
+                lines.insert(
+                    0,
+                    "That is past the %d s stop-writes threshold (%s), so writes "
+                    "were being refused." % (threshold_ms // 1000, source),
+                )
+            else:
+                lines.insert(
+                    0,
+                    "Writes stop at %d s of skew (%s)."
+                    % (threshold_ms // 1000, source),
+                )
 
         return BundleWarning(
             category="clock-skew",
             severity=DiagSeverity.WARNING,
-            title="Clock skew between nodes reached %d ms" % (worst,),
+            title="Clock skew between nodes reached %.1f s" % (worst / 1000.0,),
             lines=lines,
         )
+
+    def _nsup_enabled_ap_namespaces(self) -> set[str]:
+        namespaces = set()
+
+        for ns_data in self._data("config", constants.CONFIG_NAMESPACE).values():
+            if not isinstance(ns_data, dict):
+                continue
+
+            for ns, config in ns_data.items():
+                if not isinstance(config, dict):
+                    continue
+
+                if _is_true(config.get("strong-consistency")):
+                    continue
+
+                if (_to_int(config.get("nsup-period")) or 0) > 0:
+                    namespaces.add(ns)
+
+        return namespaces
 
 
 ###############################################################################
@@ -1455,6 +1800,45 @@ _SEVERITY_COLOR = {
     DiagSeverity.WARNING: terminal.fg_yellow,
     DiagSeverity.ERROR: terminal.fg_red,
 }
+
+_SEVERITY_ORDER = {
+    DiagSeverity.ERROR: 0,
+    DiagSeverity.WARNING: 1,
+    DiagSeverity.INFO: 2,
+}
+
+
+def _banner_title(warnings: list[BundleWarning]) -> str:
+    """The banner title with per-severity counts, so a reader who scrolled past
+    the top knows whether anything above was worse than what they see."""
+    counts = {severity: 0 for severity in _SEVERITY_ORDER}
+
+    for warning in warnings:
+        counts[warning.severity] += 1
+
+    labels = {
+        DiagSeverity.ERROR: "error",
+        DiagSeverity.WARNING: "warning",
+        DiagSeverity.INFO: "info",
+    }
+    parts = [
+        "%d %s"
+        % (
+            counts[severity],
+            (
+                labels[severity]
+                if severity is DiagSeverity.INFO
+                else _plural(counts[severity], labels[severity])
+            ),
+        )
+        for severity in _SEVERITY_ORDER
+        if counts[severity]
+    ]
+
+    if not parts:
+        return BANNER_TITLE
+
+    return "%s (%s)" % (BANNER_TITLE, ", ".join(parts))
 
 
 def render_banner(
@@ -1469,6 +1853,10 @@ def render_banner(
     already prints a 'Collected by' line, so a version finding with nothing to act
     on is dropped by default. Execute mode has no intro and passes
     skip_redundant=False to keep provenance.
+
+    Findings render most severe first (a stable sort, so registration order still
+    breaks ties): the banner is often redirected or scrolled off an 80x24
+    terminal, and a data-loss ERROR must not sit below a best-practices note.
     """
     if skip_redundant:
         warnings = [
@@ -1480,19 +1868,18 @@ def render_banner(
     if not warnings:
         return ""
 
+    warnings = sorted(warnings, key=lambda warning: _SEVERITY_ORDER[warning.severity])
+
     def colorize(severity: DiagSeverity, text: str) -> str:
         if not use_color:
             return text
 
         return _SEVERITY_COLOR[severity]() + text + terminal.fg_clear()
 
+    title = _banner_title(warnings)
     out = [
         "",
-        (
-            BANNER_TITLE
-            if not use_color
-            else terminal.bold() + BANNER_TITLE + terminal.unbold()
-        ),
+        (title if not use_color else terminal.bold() + title + terminal.unbold()),
     ]
 
     for warning in warnings:

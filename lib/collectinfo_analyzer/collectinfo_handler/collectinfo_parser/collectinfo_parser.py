@@ -18,7 +18,7 @@ import json
 import logging
 import os
 
-from lib.utils import conf_parser
+from lib.utils import conf_parser, constants
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
@@ -93,7 +93,7 @@ def _match_nodeip(sys_map, known_ips):
 
 
 def _is_valid_collectinfo_json(cinfo_map):
-    timestamp_format = "%Y-%m-%d %H:%M:%S UTC"
+    timestamp_format = constants.COLLECTINFO_TIMESTAMP_FORMAT
     if len(cinfo_map) == 0:
         return False
     for timestamp in cinfo_map:

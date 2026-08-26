@@ -125,12 +125,14 @@ class CollectinfoLogHandler(object):
 
         return status_str
 
-    def _iter_bundle_files(self, suffixes: tuple[str, ...]) -> list[str]:
+    def bundle_files(self, suffixes: tuple[str, ...]) -> list[str]:
         """Every bundle file whose name ends with one of the given suffixes.
 
-        Walks the bundle path and the extraction directory directly rather than
-        going through _get_valid_files, which keeps only .json and .conf files and
-        so cannot see the .log files the version scan needs.
+        Public because the bundle diagnostics use it to check which files the
+        bundle physically contains. Walks the bundle path and the extraction
+        directory directly rather than going through _get_valid_files, which
+        keeps only .json and .conf files and so cannot see the .log files the
+        version scan needs.
         """
         matches = []
 
@@ -159,9 +161,14 @@ class CollectinfoLogHandler(object):
     def _load_collectinfo_meta(self) -> dict:
         """Read the collectinfo_meta.json describing the analyzed snapshot.
 
-        Absent for every bundle collected before TOOLS-4135, and absent whenever a
-        bundle is analyzed from ascinfo.json alone, so a missing file is normal and
-        must stay silent.
+        Absent for every bundle collected before asadm wrote collectinfo_meta.json
+        (meta_format_version 1), and absent whenever a bundle is analyzed from
+        ascinfo.json alone, so a missing file is normal and must stay silent.
+
+        A meta written by a newer asadm (a larger meta_format_version) is still
+        returned: unknown fields are ignored and absent fields mean "not
+        recorded", so reading the parts this asadm understands beats discarding
+        the file. The diagnostics report the version mismatch separately.
 
         A path holding more than one bundle is a supported input: every archive under
         it is extracted and every ascinfo.json merged, while only the newest snapshot
@@ -171,7 +178,7 @@ class CollectinfoLogHandler(object):
         """
         timestamp = self._analyzed_timestamp()
 
-        for file in self._iter_bundle_files((constants.COLLECTINFO_META_FILENAME,)):
+        for file in self.bundle_files((constants.COLLECTINFO_META_FILENAME,)):
             try:
                 with open(file) as meta_file:
                     meta = json.load(meta_file)
@@ -190,7 +197,7 @@ class CollectinfoLogHandler(object):
         asadm has always echoed 'asadm version <v>' into ascollectinfo.log and
         summary.log. Reads a capped prefix because the line is written first.
         """
-        for file in self._iter_bundle_files(ASADM_VERSION_SCAN_FILES):
+        for file in self.bundle_files(ASADM_VERSION_SCAN_FILES):
             try:
                 with open(file, errors="ignore") as log_file:
                     head = log_file.read(ASADM_VERSION_SCAN_BYTES)
