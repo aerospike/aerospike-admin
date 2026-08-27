@@ -48,6 +48,66 @@ jobs:
       - name: Test the version assertions
         run: bash .github/bin/test/version_lib_test.sh
 
+
+      - name: Install bats
+        env:
+          BATS_VERSION: "1.11.0"
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" -o /tmp/bats.tgz
+          tar -xzf /tmp/bats.tgz -C /tmp
+          sudo "/tmp/bats-core-${BATS_VERSION}/install.sh" /usr/local
+          bats --version
+
+      - name: Test pkg_release.sh
+        run: bats .github/bin/test/pkg_release.bats
+
+      # The .deb/.rpm legs below only count that a package appeared; nothing
+      # asserts the NAME. Assert it here, where the expected name is derived
+      # from the same script pkg/Makefile uses, so the two cannot drift.
+      - name: Assert package names for an rc version
+        run: |
+          set -euo pipefail
+          release=$(.github/bin/pkg_release.sh 5.0.4-rc3 release)
+          pkg_version=$(.github/bin/pkg_release.sh 5.0.4-rc3 version)
+          iteration=$(.github/bin/pkg_release.sh 5.0.4-rc3 iteration)
+          [[ "${release}" == "5.0.4-3" ]] || { echo "::error::rc3 resolved to release '${release}', expected 5.0.4-3" >&2; exit 1; }
+
+          # make -n so no build deps are needed. Collect only the emitted
+          # --package paths: the rest of the output includes recipe text that
+          # legitimately echoes the rcN version.
+          names=$(make -C pkg -n deb rpm tar VERSION=5.0.4-rc3 BUILD_DISTRO=ubuntu24.04 \
+                  | tr ' ' '\n' | grep -E '\.(deb|rpm|tar)$')
+          echo "${names}"
+          for want in \
+            "_${pkg_version}-${iteration}ubuntu24.04_" \
+            "-${pkg_version}-${iteration}.ubuntu24.04." \
+            "-${release}-ubuntu24.04-"; do
+            printf '%s\n' "${names}" | grep -qF -- "${want}" \
+              || { echo "::error::expected '${want}' in the emitted package names" >&2; exit 1; }
+          done
+          if printf '%s\n' "${names}" | grep -qiE 'rc[0-9]'; then
+            echo "::error::an rc identifier leaked into a package name" >&2
+            exit 1
+          fi
+          echo "OK: rcN folded into the iteration, absent from all package names"
+
+          # dpkg spells architectures differently from uname and rpm, so assert
+          # the mapping rather than trusting whatever arch the runner reports.
+          amd=$(make -C pkg -n deb rpm VERSION=5.0.4-rc3 BUILD_DISTRO=ubuntu24.04 ARCH=x86_64 \
+                | tr ' ' '\n' | grep -E '\.(deb|rpm)$')
+          arm=$(make -C pkg -n deb rpm VERSION=5.0.4-rc3 BUILD_DISTRO=ubuntu24.04 ARCH=aarch64 \
+                | tr ' ' '\n' | grep -E '\.(deb|rpm)$')
+          for want in "_amd64.deb" ".x86_64.rpm"; do
+            printf '%s\n' "${amd}" | grep -qF -- "${want}" \
+              || { echo "::error::ARCH=x86_64 did not emit '${want}': ${amd}" >&2; exit 1; }
+          done
+          for want in "_arm64.deb" ".aarch64.rpm"; do
+            printf '%s\n' "${arm}" | grep -qF -- "${want}" \
+              || { echo "::error::ARCH=aarch64 did not emit '${want}': ${arm}" >&2; exit 1; }
+          done
+          echo "OK: deb names carry the dpkg architecture, rpm names the uname one"
+
   installer-build:
     name: Build .${{ matrix.pkg }} (${{ matrix.distro }}, amd64)
     runs-on: ubuntu-24.04
