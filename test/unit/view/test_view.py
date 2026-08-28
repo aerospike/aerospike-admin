@@ -2886,10 +2886,7 @@ class InfoMemoryViewTest(unittest.TestCase):
             self.cluster_mock,
         )
 
-        warnings = self.warnings()
-        self.assertEqual(len(warnings), 1)
-        self.assertNotIn("untracked cgroup limit", warnings[0])
-        self.assertIn("No cgroup memory limit", warnings[0])
+        self.assertEqual(self.warnings(), [])
 
     def test_info_memory_warns_when_namespace_stats_missing(self):
         self.set_nodes("1.1.1.1")
@@ -2911,7 +2908,12 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertIn("No namespace statistics", warnings[0])
         self.assertIn("node1", warnings[0])
 
-    def test_info_memory_warns_when_a_node_has_no_cgroup_limit(self):
+    def test_info_memory_silent_when_no_node_has_a_capacity(self):
+        """
+        With no capacity anywhere the sheet hides Capacity and Alloc%
+        entirely, so a warning would explain the absence of columns the
+        operator never saw.
+        """
         self.set_nodes("1.1.1.1")
 
         CliView.info_memory(
@@ -2927,15 +2929,49 @@ class InfoMemoryViewTest(unittest.TestCase):
             self.cluster_mock,
         )
 
-        warnings = self.warnings()
-        self.assertEqual(len(warnings), 1)
-        self.assertIn("No cgroup memory limit", warnings[0])
-        self.assertIn("node1", warnings[0])
+        self.assertEqual(self.warnings(), [])
 
         row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
         self.assertNotIn("capacity_bytes", row)
-        self.assertNotIn("alloc_pct", row)
-        self.assertIn("allocated_bytes", row)
+
+    def test_info_memory_warns_about_blank_capacity_in_a_mixed_cluster(self):
+        """
+        One node has a tracked limit, so Capacity renders and the other
+        node's blank cell needs explaining.
+        """
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "cgroup_memory_limit_bytes": str(8 * 1024**3),
+                },
+                "2.2.2.2": {
+                    "heap_allocated_kbytes": "500000",
+                    "host_free_mem_kbytes": "8000000",
+                    "host_free_mem_pct": "50",
+                },
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}, "2.2.2.2": {}},
+            {
+                "1.1.1.1": {"shmem_alloc_bytes": "500"},
+                "2.2.2.2": {"shmem_alloc_bytes": "500"},
+            },
+            self.cluster_mock,
+        )
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No cgroup memory limit was reported", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
+
+        headline = self.render_mock.call_args[0][2]["headline"]
+        self.assertIn("capacity_bytes", headline["1.1.1.1"])
+        self.assertNotIn("capacity_bytes", headline["2.2.2.2"])
+        self.assertNotIn("alloc_pct", headline["2.2.2.2"])
+        self.assertIn("allocated_bytes", headline["2.2.2.2"])
 
     def test_info_memory_verbose_shows_breakdown(self):
         stats = {

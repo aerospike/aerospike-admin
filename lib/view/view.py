@@ -176,26 +176,28 @@ class CliView(object):
 
     @staticmethod
     def _warn_memory_gaps(
-        node_names, untracked_limits, no_cgroup_limits, missing_ns_stats
+        node_names, headline, untracked_limits, no_cgroup_limits, missing_ns_stats
     ):
         total = len(node_names)
+        capacity_rendered = any(
+            "capacity_bytes" in row
+            for row in headline.values()
+            if isinstance(row, dict)
+        )
 
         if untracked_limits:
             logger.warning(
-                "%s capped by an untracked cgroup limit, so free memory is "
-                "reported against the host; Capacity and Alloc%% are omitted. "
-                "Enable cgroup-mem-tracking.",
+                "%s runs under an untracked cgroup limit. Capacity and Alloc%% "
+                "are omitted. Enable cgroup-mem-tracking to see them.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in untracked_limits), total
                 ),
             )
 
-        if no_cgroup_limits:
+        if no_cgroup_limits and capacity_rendered:
             logger.warning(
-                "No cgroup memory limit on %s, so total memory is unknown; "
-                "Capacity and Alloc%% are omitted. Run the server in a "
-                "memory-limited cgroup with cgroup-mem-tracking enabled to "
-                "see them.",
+                "Capacity and Alloc%% are blank for %s. No cgroup memory limit "
+                "was reported.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in no_cgroup_limits), total
                 ),
@@ -203,7 +205,7 @@ class CliView(object):
 
         if missing_ns_stats:
             logger.warning(
-                "No namespace statistics for %s; their allocation total is "
+                "No namespace statistics for %s. Their allocation total is "
                 "omitted because index arenas are unknown.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in missing_ns_stats), total
@@ -238,7 +240,7 @@ class CliView(object):
         )
 
         CliView._warn_memory_gaps(
-            node_names, untracked_limits, no_cgroup_limits, missing_ns_stats
+            node_names, headline, untracked_limits, no_cgroup_limits, missing_ns_stats
         )
         common = CliView._common(cluster)
         node_src = dict(node_names=node_names, node_ids=node_ids)
