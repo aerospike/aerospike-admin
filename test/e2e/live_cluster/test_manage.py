@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from lib.live_cluster.client.types import ASINFO_RESPONSE_OK
+from lib.utils import constants, version
 import os
 import time
 import unittest
@@ -769,6 +770,17 @@ class ManageSindexTest(TestManage):
     def test_can_create_numeric_sindex(self):
         exp_stdout = self.success_msg
         exp_stderr = ""
+
+        if version.LooseVersion(lib.server_build()) >= version.LooseVersion(
+            constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+        ):
+            exp_stderr = (
+                "WARNING: The 'numeric' sindex type is deprecated as of server v. {} "
+                "and has been replaced by 'integer'. Creating index with type "
+                "'integer' instead.".format(
+                    constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION
+                )
+            )
 
         actual = test_util.run_asadm(
             self.get_args(

@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from lib.utils import version
 from test.e2e import util
 
 # the port to use for one of the cluster nodes
@@ -836,6 +837,17 @@ def create_sindex(name, type_, ns, bin, set_: str | None = None):
 
     time.sleep(1)  # TODO: Instead of sleep wait for sindex to exist
     print("Successfully created secondary index", name)
+
+
+def server_build():
+    global CLIENT
+    builds = set()
+
+    for response in CLIENT.info_all("build").values():
+        if response and response[1]:
+            builds.add(response[1].strip())
+
+    return min(builds, key=version.LooseVersion) if builds else ""
 
 
 def create_xdr_filter(ns, dc, exp):
