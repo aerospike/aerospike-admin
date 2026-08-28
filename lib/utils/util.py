@@ -701,18 +701,15 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         nodes: restrict to these nodes, defaults to every node in stats
 
     A row only carries a value its inputs support. capacity_bytes is the
-    tracked cgroup limit, an exact figure the kernel measured, or where the
-    node runs under no cgroup at all, the proven lower bound from
-    derive_memory_stats, since the server publishes no total-memory stat.
-    Either is safe to divide alloc_pct by: the limit is exact, and the bound
-    understates capacity so the pct reads high rather than low.
+    tracked cgroup limit, an exact figure the kernel measured. The server
+    publishes no total-memory stat (SERVER-1546 tracks exposing one), and
+    asadm does not estimate one, so a node without a tracked limit renders
+    no Capacity or Alloc% and is reported to the caller instead.
 
-    A cgroup limit that exists but is not tracked yields no capacity at all.
-    The bound comes from system_free_mem_pct, which the server computes against
-    host memory while tracking is off, so it would describe RAM this process
-    cannot reach and divide alloc_pct down towards zero on the very node a
-    cgroup is squeezing. The untracked limit is reported to the caller instead,
-    and the operator is pointed at cgroup-mem-tracking.
+    A cgroup limit that exists but is not tracked is reported separately:
+    there the fix is enabling cgroup-mem-tracking, and free memory is
+    measured against the host rather than the cgroup that is actually
+    squeezing the process.
 
     The allocation total is omitted when the node's namespace stats never
     arrived or its build predates the allocation stats, since heap alone would
@@ -726,11 +723,12 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
     visible: it is real information on any version.
 
     Returns:
-        (headline rows, nodes capped by an untracked cgroup, nodes whose
-        namespace stats are missing)
+        (headline rows, nodes capped by an untracked cgroup, nodes with no
+        cgroup limit at all, nodes whose namespace stats are missing)
     """
     headline = {}
     untracked_limits = []
+    no_cgroup_limits = []
     missing_ns_stats = []
 
     for node in stats if nodes is None else nodes:
@@ -763,11 +761,11 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         )
         capacity = cgroup_limit if cgroup_tracked else 0
 
-        if capacity <= 0 and cgroup_limit <= 0:
-            capacity = int_or_zero(node_stats.get("system_total_mem_min_bytes"))
-
-        if cgroup_limit > 0 and not cgroup_tracked:
-            untracked_limits.append(node)
+        if capacity <= 0:
+            if cgroup_limit > 0:
+                untracked_limits.append(node)
+            else:
+                no_cgroup_limits.append(node)
 
         shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
         heap = max(0, int_or_zero(node_stats.get("heap_allocated_bytes")))
@@ -801,7 +799,7 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
 
         headline[node] = row
 
-    return headline, untracked_limits, missing_ns_stats
+    return headline, untracked_limits, no_cgroup_limits, missing_ns_stats
 
 
 def derive_memory_stats(stats):
@@ -813,21 +811,7 @@ def derive_memory_stats(stats):
     counts the server reports into a pct. A derived key is only added when its
     inputs are present and valid, so absent columns collapse on older servers.
 
-    system_total_mem_min_bytes is a proven lower bound on total memory, not an
-    estimate of it. The server computes system_free_mem_pct as an integer
-    division (cf/src/os.c, both the /proc/meminfo and the cgroup paths), so
-
-        free * 100 / (pct + 1)  <  total  <=  free * 100 / pct
-
-    and the left side cannot exceed the truth whatever the rounding hid. Taking
-    it understates capacity, which overstates utilisation: a pressure signal
-    that errs pessimistic. The upper bound is the one that must never be used,
-    since it flatters the node exactly when free pct is small.
-
-    The system pair is used rather than the host pair because it is what the
-    server tracks against: cgroup-aware when cgroup-mem-tracking is on, host
-    memory otherwise, and present since before 8.1.1 where host_free_mem_pct
-    is not.
+    Nothing is estimated: total memory is never inferred from the free stats.
     """
     kb_to_bytes = {
         "system_free_mem_kbytes": "system_free_mem_bytes",
@@ -845,14 +829,6 @@ def derive_memory_stats(stats):
         for src, dst in kb_to_bytes.items():
             if src in node_stats:
                 node_stats[dst] = str(int_or_zero(node_stats[src]) * 1024)
-
-        free_kbytes = int_or_zero(node_stats.get("system_free_mem_kbytes"))
-        free_pct = int_or_zero(node_stats.get("system_free_mem_pct"))
-
-        if free_kbytes > 0 and 0 < free_pct <= 100:
-            node_stats["system_total_mem_min_bytes"] = str(
-                free_kbytes * 1024 * 100 // (free_pct + 1)
-            )
 
         if "cgroup_memory_limit_bytes" in node_stats:
             limit = cgroup_limit_or_zero(node_stats["cgroup_memory_limit_bytes"])

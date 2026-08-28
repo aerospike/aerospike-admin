@@ -175,7 +175,9 @@ class CliView(object):
         )
 
     @staticmethod
-    def _warn_memory_gaps(node_names, untracked_limits, missing_ns_stats):
+    def _warn_memory_gaps(
+        node_names, untracked_limits, no_cgroup_limits, missing_ns_stats
+    ):
         total = len(node_names)
 
         if untracked_limits:
@@ -185,6 +187,17 @@ class CliView(object):
                 "Enable cgroup-mem-tracking.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in untracked_limits), total
+                ),
+            )
+
+        if no_cgroup_limits:
+            logger.warning(
+                "No cgroup memory limit on %s, so total memory is unknown; "
+                "Capacity and Alloc%% are omitted. Run the server in a "
+                "memory-limited cgroup with cgroup-mem-tracking enabled to "
+                "see them.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in no_cgroup_limits), total
                 ),
             )
 
@@ -218,11 +231,15 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         stats = util.derive_memory_stats(stats)
-        headline, untracked_limits, missing_ns_stats = util.derive_memory_headline(
-            stats, configs, ns_agg, builds=builds, nodes=node_names
+        headline, untracked_limits, no_cgroup_limits, missing_ns_stats = (
+            util.derive_memory_headline(
+                stats, configs, ns_agg, builds=builds, nodes=node_names
+            )
         )
 
-        CliView._warn_memory_gaps(node_names, untracked_limits, missing_ns_stats)
+        CliView._warn_memory_gaps(
+            node_names, untracked_limits, no_cgroup_limits, missing_ns_stats
+        )
         common = CliView._common(cluster)
         node_src = dict(node_names=node_names, node_ids=node_ids)
         stats = {n: v for n, v in stats.items() if n in node_names}

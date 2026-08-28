@@ -480,7 +480,7 @@ def start_server(
     first_base,
     index,
     access_address="127.0.0.1",
-    docker_tag="latest",
+    docker_tag="8.1.3.0",
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
@@ -531,7 +531,7 @@ def start_server(
     except:
         pass
 
-    image_name = f"aerospike/aerospike-server-enterprise:{docker_tag}"
+    image_name = f"artifact.aerospike.io/database-docker-test-local/aerospike-server-enterprise:{docker_tag}"
 
     try:
         print(f"Pulling latest image: {image_name}")
@@ -578,7 +578,7 @@ def start_server(
 def start(
     do_reset=True,
     num_nodes=DEFAULT_N_NODES,
-    docker_tag="8.1",  # Change this to the desired latest Docker tag
+    docker_tag="8.1.3.0",  # Change this to the desired latest Docker tag
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,

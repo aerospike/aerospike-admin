@@ -270,44 +270,6 @@ def create_usage_weighted_avg(type: str):
     return usage_weighted_avg
 
 
-def create_alloc_weighted_avg(type: str):
-    """
-    Aggregate Alloc% as sum(alloc) / sum(capacity), capacity recovered per row
-    as alloc * 100 / pct.
-
-    The server reports the ratio, not the budget behind it, so the capacity has
-    to be reconstructed before the percentages can be combined. Weighting by
-    Alloc alone would bias the result by the numerator, and leaving the
-    aggregate empty next to a summed Alloc ships a half-aggregated row.
-    """
-
-    def alloc_weighted_avg(edatas: list[EntryData]):
-        alloc_total = 0.0
-        capacity_total = 0.0
-        itr = 0
-
-        for edata in edatas:
-            pct = edata.value
-            alloc = edata.record[type]["Alloc"]
-
-            if not pct or alloc is None:
-                continue
-
-            alloc_total += alloc
-            capacity_total += alloc * 100 / pct
-            itr += 1
-
-        if itr == 0:
-            return None
-
-        if not capacity_total:
-            return 0.0
-
-        return alloc_total * 100 / capacity_total
-
-    return alloc_weighted_avg
-
-
 info_namespace_usage_sheet = Sheet(
     (
         namespace_field,
@@ -429,20 +391,6 @@ info_namespace_usage_sheet = Sheet(
                     aggregator=Aggregators.sum(),
                 ),
                 Field(
-                    "Alloc%",
-                    Projectors.Float(
-                        "ns_stats",
-                        "index_shmem_alloc_pct",
-                        "index_pmem_alloc_pct",
-                        "index_flash_alloc_pct",
-                    ),
-                    converter=Converters.pct,
-                    aggregator=ComplexAggregator(
-                        create_alloc_weighted_avg("Primary Index"),
-                        converter=Converters.pct,
-                    ),
-                ),
-                Field(
                     "Evict%",
                     Projectors.Number(
                         "ns_stats",
@@ -540,20 +488,6 @@ info_namespace_usage_sheet = Sheet(
                     ),
                     converter=Converters.byte,
                     aggregator=Aggregators.sum(),
-                ),
-                Field(
-                    "Alloc%",
-                    Projectors.Float(
-                        "ns_stats",
-                        "sindex_shmem_alloc_pct",
-                        "sindex_pmem_alloc_pct",
-                        "sindex_flash_alloc_pct",
-                    ),
-                    converter=Converters.pct,
-                    aggregator=ComplexAggregator(
-                        create_alloc_weighted_avg("Secondary Index"),
-                        converter=Converters.pct,
-                    ),
                 ),
                 Field(
                     "Evict%",
