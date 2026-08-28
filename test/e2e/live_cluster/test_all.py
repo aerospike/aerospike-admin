@@ -201,7 +201,7 @@ class TableRenderTestCase(unittest.TestCase):
 
 @parameterized_class(
     [
-        {"template_file": "aerospike_latest.conf", "docker_tag": "latest"},
+        {"template_file": "aerospike_latest.conf", "docker_tag": "8.1.3.0"},
         # {"template_file": "aerospike_6.x.conf", "docker_tag": "6.4.0.7"}, # Add this
         # to all tests once we create multiple test workflows. I am thinking one for
         # unittest, one for e2e against latest, and another that is e2e against all
@@ -274,7 +274,7 @@ class TableRenderNoErrorTests(TableRenderTestCase):
 
 @parameterized_class(
     [
-        {"template_file": "aerospike_latest.conf", "docker_tag": "latest"},
+        {"template_file": "aerospike_latest.conf", "docker_tag": "8.1.3.0"},
         # {"template_file": "aerospike_6.x.conf", "docker_tag": "6.4.0.7"}, # Add this
         # to all tests once we create multiple test workflows. I am thinking one for
         # unittest, one for e2e against latest, and another that is e2e against all

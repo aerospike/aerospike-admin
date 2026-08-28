@@ -170,67 +170,33 @@ class InfoNamespaceUsageIndexFormattersTests(unittest.TestCase):
 
     @parameterized.expand(["shmem", "pmem", "flash"])
     def test_physical_alloc_by_backing_rendered(self, backing):
-        def ns_stats(alloc, alloc_pct, sindex_alloc, sindex_alloc_pct):
+        def ns_stats(alloc, sindex_alloc):
             return {
                 "test": {
                     "index-type": backing,
                     "index_{}_alloc_bytes".format(backing): alloc,
-                    "index_{}_alloc_pct".format(backing): alloc_pct,
                     "sindex-type": backing,
                     "sindex_{}_alloc_bytes".format(backing): sindex_alloc,
-                    "sindex_{}_alloc_pct".format(backing): sindex_alloc_pct,
                 }
             }
 
         group = self._render_alloc_group(
             {
-                "127.0.0.1:3000": ns_stats(1073741824, 100, 536870912, 50),
-                "127.0.0.2:3000": ns_stats(1073741824, 50, 268435456, 25),
+                "127.0.0.1:3000": ns_stats(1073741824, 536870912),
+                "127.0.0.2:3000": ns_stats(1073741824, 268435456),
             }
         )
         record = group["records"][0]
 
         self.assertEqual(record["Primary Index"]["Alloc"]["raw"], 1073741824)
-        self.assertEqual(record["Primary Index"]["Alloc%"]["raw"], 100)
         self.assertEqual(record["Secondary Index"]["Alloc"]["raw"], 536870912)
-        self.assertEqual(record["Secondary Index"]["Alloc%"]["raw"], 50)
 
         aggregates = group["aggregates"]
 
         self.assertEqual(aggregates["Primary Index"]["Alloc"]["raw"], 2 * 1073741824)
-        self.assertAlmostEqual(
-            aggregates["Primary Index"]["Alloc%"]["raw"], 200 / 3, places=6
-        )
         self.assertEqual(
             aggregates["Secondary Index"]["Alloc"]["raw"], 536870912 + 268435456
         )
-        self.assertAlmostEqual(
-            aggregates["Secondary Index"]["Alloc%"]["raw"], 37.5, places=6
-        )
-
-    def test_alloc_pct_aggregate_skips_rows_with_no_ratio(self):
-        group = self._render_alloc_group(
-            {
-                "127.0.0.1:3000": {
-                    "test": {
-                        "index-type": "shmem",
-                        "index_shmem_alloc_bytes": 100,
-                        "index_shmem_alloc_pct": 50,
-                    }
-                },
-                "127.0.0.2:3000": {
-                    "test": {
-                        "index-type": "shmem",
-                        "index_shmem_alloc_bytes": 900,
-                    }
-                },
-            }
-        )
-
-        aggregates = group["aggregates"]
-
-        self.assertEqual(aggregates["Primary Index"]["Alloc"]["raw"], 1000)
-        self.assertEqual(aggregates["Primary Index"]["Alloc%"]["raw"], 50)
 
 
 class ShowPmapSheetTest(unittest.TestCase):

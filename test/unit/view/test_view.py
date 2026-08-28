@@ -2886,7 +2886,10 @@ class InfoMemoryViewTest(unittest.TestCase):
             self.cluster_mock,
         )
 
-        self.assertEqual(self.warnings(), [])
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("untracked cgroup limit", warnings[0])
+        self.assertIn("No cgroup memory limit", warnings[0])
 
     def test_info_memory_warns_when_namespace_stats_missing(self):
         self.set_nodes("1.1.1.1")
@@ -2895,11 +2898,10 @@ class InfoMemoryViewTest(unittest.TestCase):
             {
                 "1.1.1.1": {
                     "heap_allocated_kbytes": "500000",
-                    "host_free_mem_kbytes": "8000000",
-                    "host_free_mem_pct": "50",
+                    "cgroup_memory_limit_bytes": "10000",
                 }
             },
-            {},
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
             {},
             self.cluster_mock,
         )
@@ -2909,7 +2911,7 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertIn("No namespace statistics", warnings[0])
         self.assertIn("node1", warnings[0])
 
-    def test_info_memory_stays_quiet_when_a_node_simply_has_no_cgroup(self):
+    def test_info_memory_warns_when_a_node_has_no_cgroup_limit(self):
         self.set_nodes("1.1.1.1")
 
         CliView.info_memory(
@@ -2925,7 +2927,10 @@ class InfoMemoryViewTest(unittest.TestCase):
             self.cluster_mock,
         )
 
-        self.assertEqual(self.warnings(), [])
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No cgroup memory limit", warnings[0])
+        self.assertIn("node1", warnings[0])
 
         row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
         self.assertNotIn("capacity_bytes", row)

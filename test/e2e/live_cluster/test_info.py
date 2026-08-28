@@ -37,7 +37,7 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         # Use a release-capable server image so the release command is available.
-        lib.start(docker_tag="latest")
+        lib.start(docker_tag="8.1.3.0")
 
     async def asyncSetUp(self):
         # Point the controller at the test cluster started by lib.start()
@@ -170,7 +170,6 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
             for build in builds.values()
         )
 
-    @pytest.mark.skip(reason="TOOLS-4134: no 8.1.3 server image published yet")
     async def test_memory(self):
         """
         This test asserts <b> info memory </b> output heading and the headline
@@ -198,7 +197,6 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         for column in always_present:
             self.assertIn(column, actual_header)
 
-    @pytest.mark.skip(reason="TOOLS-4134: no 8.1.3 server image published yet")
     async def test_memory_verbose(self):
         """
         This test asserts <b> info memory --verbose </b> renders the breakdown
