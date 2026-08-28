@@ -537,8 +537,8 @@ def start_server(
         print(f"Pulling latest image: {image_name}")
         DOCKER_CLIENT.images.pull(image_name)
         print(f"Pulled latest image: {image_name}")
-    except:
-        pass
+    except Exception as e:
+        print(f"Failed to pull {image_name}: {e}")
 
     container = DOCKER_CLIENT.containers.run(
         image_name,
