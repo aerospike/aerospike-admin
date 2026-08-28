@@ -135,7 +135,7 @@ def parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
     asd_flag = False
     xdr_flag = False
 
-    for index, line in enumerate(output_lines):
+    for line in output_lines:
         line = line.strip()
         if re.search("top -n3 -b", line):
             continue
@@ -173,20 +173,26 @@ def parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
             if obj2:
                 mn = int(obj2.group(1))
 
-            topdata["uptime"]["seconds"] = (
-                (days * 24 * 60 * 60) + (hr * 60 * 60) + (mn * 60)
-            )
+            if not topdata["uptime"]:
+                topdata["uptime"]["seconds"] = (
+                    (days * 24 * 60 * 60) + (hr * 60 * 60) + (mn * 60)
+                )
             # topdata['uptime']['days'] = matchobj_1.group(1)
 
         if re.search(r"Tasks.*total", line):
-            obj = _parse_top_section_line(line, ",", [" "])
-            topdata["tasks"] = obj
+            if not topdata["tasks"]:
+                topdata["tasks"] = _parse_top_section_line(line, ",", [" "])
 
         elif re.search(r"Cpu.*us", line):
-            obj = _parse_top_section_line(line, ",", [" ", "%"])
-            topdata["cpu_utilization"] = obj
+            if not topdata["cpu_utilization"]:
+                topdata["cpu_utilization"] = _parse_top_section_line(
+                    line, ",", [" ", "%"]
+                )
 
         elif re.search(r"Mem.*total", line):
+            if topdata["ram"]:
+                continue
+
             shift = 1
             if "Ki_b" in line or "KiB" in line:
                 shift = 10
@@ -203,6 +209,9 @@ def parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
                     )
 
         elif matchobj_2 or matchobj_3:
+            if topdata["swap"]:
+                continue
+
             shift = 1
             if "Ki_b" in line or "KiB" in line:
                 shift = 10
@@ -227,14 +236,19 @@ def parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
 
         else:
             # Break, If we found data for both process.
-            # Also break if it chacked more the top 15 process.
-            if (asd_flag and xdr_flag) or index > 25:
+            if asd_flag and xdr_flag:
                 break
             # "  PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND\n"
             # "26937 root      20   0 59.975g 0.049t 0.048t S 117.6 83.9 164251:27 asd\n"
-            if not asd_flag and re.search("asd", line):
+            l = re.split(r"\ +", line)
+
+            if len(l) < 10:
+                continue
+
+            command = l[-1]
+
+            if not asd_flag and command == "asd":
                 asd_flag = True
-                l = re.split(r"\ +", line)
                 topdata["asd_process"]["virtual_memory"] = l[4]
                 topdata["asd_process"]["resident_memory"] = l[5]
                 topdata["asd_process"]["shared_memory"] = l[6]
@@ -246,9 +260,8 @@ def parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
                     topdata["asd_process"][field] = _get_mem_in_byte_from_str(
                         topdata["asd_process"][field], 1
                     )
-            elif not xdr_flag and re.search("xdr", line):
+            elif not xdr_flag and "xdr" in command:
                 xdr_flag = True
-                l = re.split(r"\ +", line)
                 topdata["xdr_process"]["virtual_memory"] = l[4]
                 topdata["xdr_process"]["resident_memory"] = l[5]
                 topdata["xdr_process"]["shared_memory"] = l[6]
