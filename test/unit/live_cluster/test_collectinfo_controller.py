@@ -1077,9 +1077,7 @@ class DetectNodeDiscrepanciesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(meta["discrepancies"]["missing_from_collection"], [])
-        self.assertEqual(
-            meta["discrepancies"]["cluster_down_nodes"], ["9.9.9.9:3000"]
-        )
+        self.assertEqual(meta["discrepancies"]["cluster_down_nodes"], ["9.9.9.9:3000"])
 
     async def test_scrubbed_services_string_is_ignored(self):
         """A failed services call is scrubbed to "" by _check_for_exception_and_set."""

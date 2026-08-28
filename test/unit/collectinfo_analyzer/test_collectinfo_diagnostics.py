@@ -80,12 +80,12 @@ class FakeLogHandler:
         return self._scanned_version
 
     def bundle_files(self, suffixes):
-        return [
-            file for file in self._bundle_files if file.endswith(tuple(suffixes))
-        ]
+        return [file for file in self._bundle_files if file.endswith(tuple(suffixes))]
 
 
-def make_log_handler(scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1):
+def make_log_handler(
+    scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1
+):
     return FakeLogHandler(
         scanned_version=scanned_version,
         bundle_files=bundle_files,
@@ -1148,9 +1148,7 @@ class CuratedAnomalyTest(unittest.TestCase):
         warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
 
         self.assertIsNotNone(warning)
-        self.assertIn(
-            "past the 20 s stop-writes threshold", " ".join(warning.lines)
-        )
+        self.assertIn("past the 20 s stop-writes threshold", " ".join(warning.lines))
 
     def test_clock_skew_disagreeing_thresholds_use_the_lowest(self):
         """Each node stops writes at its own configured value, so the cluster
@@ -1722,9 +1720,9 @@ class AggregatedErrorFindingsTest(unittest.TestCase):
 
     def test_partition_counts_aggregate_by_namespace_with_the_worst_node(self):
         nodes = self._two_nodes_with_ns_stats(dead_partitions="4")
-        nodes["2.2.2.2:3000"]["as_stat"]["statistics"]["namespace"]["test"][
-            "service"
-        ]["dead_partitions"] = "12"
+        nodes["2.2.2.2:3000"]["as_stat"]["statistics"]["namespace"]["test"]["service"][
+            "dead_partitions"
+        ] = "12"
 
         warning = find(diagnostics(nodes=nodes).analyze(), "partition-availability")
 
@@ -1779,7 +1777,8 @@ class NodeErrorTableTest(unittest.TestCase):
     def _meta_with_errors(self, node_count):
         return meta_with(
             nodes={
-                "10.0.0.%d:3000" % (index,): {
+                "10.0.0.%d:3000"
+                % (index,): {
                     "node_id": "BB%d" % (index,),
                     "responded": True,
                     "sysinfo_source": "none",

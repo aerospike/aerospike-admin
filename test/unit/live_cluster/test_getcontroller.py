@@ -195,7 +195,11 @@ class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_latencies.return_value = {"1.1.1.1": exc}
 
         kept = await self.controller.get_all(
-            nodes="all", buckets=5, exponent_increment=1, verbose=1, keep_exceptions=True
+            nodes="all",
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            keep_exceptions=True,
         )
 
         self.assertIs(kept["1.1.1.1"], exc)

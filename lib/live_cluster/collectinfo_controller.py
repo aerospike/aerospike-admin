@@ -1129,9 +1129,7 @@ class CollectinfoController(LiveClusterCommandController):
                 node_key,
                 section,
                 merged,
-                detail_value=(
-                    node_value.get if isinstance(node_value, dict) else None
-                ),
+                detail_value=(node_value.get if isinstance(node_value, dict) else None),
             )
 
     def _merge_retried_as_map(
@@ -1162,9 +1160,7 @@ class CollectinfoController(LiveClusterCommandController):
                     section,
                     merged,
                     detail_value=(
-                        section_value.get
-                        if isinstance(section_value, dict)
-                        else None
+                        section_value.get if isinstance(section_value, dict) else None
                     ),
                 )
 
@@ -1432,7 +1428,9 @@ class CollectinfoController(LiveClusterCommandController):
         start_ts = time.strftime(constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime())
 
         for i in range(snp_count):
-            snp_timestamp = time.strftime(constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime())
+            snp_timestamp = time.strftime(
+                constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime()
+            )
             logger.info(
                 "Data collection for Snapshot: " + str(i + 1) + " in progress..."
             )
@@ -1575,7 +1573,9 @@ class CollectinfoController(LiveClusterCommandController):
             "collection": {
                 "host": host,
                 "start_ts_utc": start_ts,
-                "end_ts_utc": time.strftime(constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime()),
+                "end_ts_utc": time.strftime(
+                    constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime()
+                ),
                 "snapshot_count": snp_count,
                 "flags": {
                     "enable_ssh": bool(enable_ssh),

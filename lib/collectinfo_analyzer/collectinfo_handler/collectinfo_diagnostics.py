@@ -666,7 +666,9 @@ class CollectinfoDiagnostics:
             or []
         )
         requested_missing = [
-            key for key in excluded if any(_selector_matches(sel, key) for sel in subset)
+            key
+            for key in excluded
+            if any(_selector_matches(sel, key) for sel in subset)
         ]
         other_missing = [key for key in excluded if key not in requested_missing]
 
@@ -694,9 +696,7 @@ class CollectinfoDiagnostics:
 
         return BundleWarning(
             category="partial-node-selection",
-            severity=(
-                DiagSeverity.WARNING if requested_missing else DiagSeverity.INFO
-            ),
+            severity=(DiagSeverity.WARNING if requested_missing else DiagSeverity.INFO),
             title="Collection was limited to %d %s by `collectinfo with`"
             % (count, _plural(count, "node")),
             lines=lines,
@@ -981,8 +981,7 @@ class CollectinfoDiagnostics:
         return sorted(
             node_key
             for node_key, node_meta in nodes_meta.items()
-            if isinstance(node_meta, dict)
-            and node_meta.get("sysinfo_source") == source
+            if isinstance(node_meta, dict) and node_meta.get("sysinfo_source") == source
         )
 
     def _bundle_has_files(self, suffixes: tuple[str, ...]) -> bool | None:
@@ -1530,9 +1529,7 @@ class CollectinfoDiagnostics:
                 practice_names.update(str(practice) for practice in practices)
 
         for node, stats in self._service_stats().items():
-            if isinstance(stats, dict) and _is_true(
-                stats.get("failed_best_practices")
-            ):
+            if isinstance(stats, dict) and _is_true(stats.get("failed_best_practices")):
                 failing_nodes.add(node)
 
         if not failing_nodes:
