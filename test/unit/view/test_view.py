@@ -3081,6 +3081,28 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertNotIn("host_free_mem_bytes", derived)
         self.assertNotIn("host_free_mem_pct", derived)
 
+    def test_info_memory_keeps_host_free_when_only_bytes_match(self):
+        """
+        Under cgroup tracking the two free counts are measured against
+        different capacities, so equal bytes with unequal percentages is real
+        host context, not a duplicate row.
+        """
+        stats = {
+            "1.1.1.1": {
+                "system_free_mem_kbytes": "8000000",
+                "system_free_mem_pct": "20",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "50",
+            }
+        }
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(stats, {}, {}, self.cluster_mock, verbose=True)
+
+        derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
+        self.assertEqual(derived["host_free_mem_bytes"], str(8000000 * 1024))
+        self.assertEqual(derived["host_free_mem_pct"], "50")
+
     def test_info_memory_verbose_keeps_lone_host_pct(self):
         """
         With neither free-bytes stat present the dedup has nothing to compare;

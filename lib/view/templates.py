@@ -383,7 +383,7 @@ info_namespace_usage_sheet = Sheet(
                     "Alloc",
                     Projectors.Number(
                         "ns_stats",
-                        "index_shmem_alloc_bytes",  # Added in 8.1.3, one variant per backing
+                        "index_shmem_alloc_bytes",  # 8.1.3, per backing; no _pct shipped (SERVER-742)
                         "index_pmem_alloc_bytes",
                         "index_flash_alloc_bytes",
                     ),
@@ -482,7 +482,7 @@ info_namespace_usage_sheet = Sheet(
                     "Alloc",
                     Projectors.Number(
                         "ns_stats",
-                        "sindex_shmem_alloc_bytes",  # Added in 8.1.3, one variant per backing
+                        "sindex_shmem_alloc_bytes",  # 8.1.3, per backing; no _pct shipped (SERVER-742)
                         "sindex_pmem_alloc_bytes",
                         "sindex_flash_alloc_bytes",
                     ),

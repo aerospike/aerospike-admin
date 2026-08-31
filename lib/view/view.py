@@ -225,6 +225,35 @@ class CliView(object):
             )
 
     @staticmethod
+    def _collapse_duplicate_host_free(node_stats):
+        """
+        Drop the Host free pair when it repeats the System pair exactly.
+
+        Without cgroup tracking the server measures both against the host and
+        reports one figure twice, which is two columns of noise. With tracking
+        the two are measured against different capacities, so the byte counts
+        can coincide while the percentages do not: system_free_mem_pct nets out
+        inactive_file and clamps by host availability (SERVER-742), so equal
+        bytes alone do not make the Host pair redundant. Both halves have to
+        match before the Host context is discarded.
+        """
+        if "host_free_mem_bytes" not in node_stats:
+            return
+
+        if node_stats["host_free_mem_bytes"] != node_stats.get(
+            "system_free_mem_bytes"
+        ):
+            return
+
+        if node_stats.get("host_free_mem_pct") != node_stats.get(
+            "system_free_mem_pct"
+        ):
+            return
+
+        node_stats.pop("host_free_mem_bytes", None)
+        node_stats.pop("host_free_mem_pct", None)
+
+    @staticmethod
     @reserved_modifiers
     def info_memory(
         stats,
@@ -274,14 +303,8 @@ class CliView(object):
             return
 
         for node_stats in stats.values():
-            if (
-                isinstance(node_stats, dict)
-                and "host_free_mem_bytes" in node_stats
-                and node_stats["host_free_mem_bytes"]
-                == node_stats.get("system_free_mem_bytes")
-            ):
-                node_stats.pop("host_free_mem_bytes", None)
-                node_stats.pop("host_free_mem_pct", None)
+            if isinstance(node_stats, dict):
+                CliView._collapse_duplicate_host_free(node_stats)
 
         for template, title, sources in (
             (
