@@ -1102,8 +1102,8 @@ class CollectinfoDiagnostics:
             lines=[
                 "No host-level data for %s. SSH to those hosts failed during "
                 "collection." % (_summarize(ssh_failed),),
-                "`health` cannot run its system checks for them and `summary` "
-                "reports no OS version.",
+                "Nothing in the bundle describes their OS, CPU, memory, disks or "
+                "network settings, and `summary` reports no OS version for them.",
             ],
         )
 
@@ -1118,9 +1118,9 @@ class CollectinfoDiagnostics:
         so it gets both possibilities rather than the wrong one.
         """
         lines = [
-            "No host-level data was captured for any of the %d nodes, so "
-            "`health` cannot run its system checks and `summary` reports "
-            "no OS version." % (len(responded),),
+            "No host-level data was captured for any of the %d nodes, so nothing "
+            "in the bundle describes their OS, CPU, memory, disks or network "
+            "settings and `summary` reports no OS version." % (len(responded),),
         ]
         preamble = (
             "collectinfo gathers system statistics locally for the node it runs "
@@ -1202,8 +1202,8 @@ class CollectinfoDiagnostics:
                 ),
                 _summarize(without_sysinfo),
             ),
-            "`health` cannot run its system checks for the uncovered nodes and "
-            "`summary` reports no OS version for them.",
+            "Nothing describes the uncovered nodes' OS, CPU, memory, disks or "
+            "network settings, and `summary` reports no OS version for them.",
         ]
 
         if has_files is False:
@@ -1415,9 +1415,9 @@ class CollectinfoDiagnostics:
             title="Bundle holds %d snapshots; diagnostics describe only the newest"
             % (count,),
             lines=[
-                "These findings are computed from %s. Commands may render the "
-                "other snapshots too, so their output can describe a different "
-                "moment than this banner." % (self.timestamp,)
+                "These findings are computed from %s, and so is every command: the "
+                "older snapshots stay in the bundle but nothing renders them."
+                % (self.timestamp,)
             ],
         )
 

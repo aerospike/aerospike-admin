@@ -252,6 +252,8 @@ def create_disabled_controller(controller, command_):
 
 
 class ShellException(Exception):
+    carries_its_own_message = True
+
     def __call__(self, *ignore):
         # act as a callable and raise self
         raise self

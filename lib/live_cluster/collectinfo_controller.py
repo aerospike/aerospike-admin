@@ -13,6 +13,7 @@
 # limitations under the License.
 import asyncio
 import copy
+import functools
 import json
 import logging
 from os import path
@@ -230,6 +231,143 @@ def _record_node_error(
         entry["detail"] = detail
 
     node_entry[entry_key] = entry
+
+
+_INFO_CALL_SUBSECTIONS = {
+    "info_statistics": constants.STAT_SERVICE,
+    "info_namespace_statistics": constants.STAT_NAMESPACE,
+    "info_all_namespace_statistics": constants.STAT_NAMESPACE,
+    "info_all_set_statistics": constants.STAT_SETS,
+    "info_bin_statistics": constants.STAT_BINS,
+    "info_sindex": constants.STAT_SINDEX,
+    "info_sindex_statistics": constants.STAT_SINDEX,
+    "info_XDR_statistics": constants.STAT_XDR,
+    "info_all_dc_statistics": constants.STAT_DC,
+    "info_all_xdr_namespaces_statistics": constants.STAT_XDR_NS,
+    "info_logging_config": constants.CONFIG_LOGGING,
+    "info_xdr_config": constants.CONFIG_XDR,
+    "info_xdr_dcs_config": constants.CONFIG_DC,
+    "info_xdr_namespaces_config": constants.CONFIG_XDR_NS,
+    "info_get_xdr_filter": constants.CONFIG_XDR_FILTER,
+    "info_roster": constants.CONFIG_ROSTER,
+    "info_racks": constants.CONFIG_RACKS,
+    "info_rack_ids": constants.CONFIG_RACK_IDS,
+}
+"""The bundle subsection each info call fills, for calls made below a subsection.
+
+`info_get_config` is absent because it fills four of them and says which in its
+`stanza` argument. A call missing from here is named by its own method instead:
+a new getter's failures are then recorded under a detail nobody chose, which is
+worse than a good name and much better than silence.
+
+`info_all_set_statistics` serves both the statistics and the config getter - the
+server returns set stats and set config in one response - so a node that fails
+it is recorded under both sections, which is what the bundle actually loses.
+"""
+
+_ALWAYS_SERVED_INFO_CALLS = frozenset({"info_statistics", "info_namespaces"})
+"""Calls whose failure always means data the bundle should have is missing.
+
+Everything else is recorded as an optional call, so an ASInfoError from it is
+classified 'unsupported' rather than as lost data. That is not laxity: a
+namespace, set, sindex, datacenter or roster call legitimately errors on a node
+that does not have the thing being asked about, and a heterogeneous cluster
+would otherwise report a corrupt bundle on every collection. What the flag does
+not swallow is every failure a reader has to act on - a timeout, an unreachable
+host, a rejected login - because those are classified before it is consulted.
+
+`info_get_config` is decided by stanza rather than listed here: every server
+serves service and network, while security legitimately errors on a
+security-disabled or Community Edition cluster.
+"""
+
+_ALWAYS_SERVED_CONFIG_STANZAS = frozenset(
+    {constants.CONFIG_SERVICE, constants.CONFIG_NETWORK}
+)
+
+
+def _info_call_detail(method_name: str, kwargs: dict[str, Any]) -> str:
+    if method_name == "info_get_config":
+        return str(kwargs.get("stanza") or "")
+
+    return _INFO_CALL_SUBSECTIONS.get(
+        method_name, method_name.removeprefix("info_").lower()
+    )
+
+
+def _info_call_is_optional(method_name: str, kwargs: dict[str, Any]) -> bool:
+    if method_name == "info_get_config":
+        return kwargs.get("stanza") not in _ALWAYS_SERVED_CONFIG_STANZAS
+
+    return method_name not in _ALWAYS_SERVED_INFO_CALLS
+
+
+def _record_info_call_error(
+    ledger: NodeErrorLedger,
+    section: str,
+    method_name: str,
+    kwargs: dict[str, Any],
+    node_key: str,
+    exc: Exception,
+) -> None:
+    """Ledger one per-node info-call failure seen inside a section's collection."""
+    _record_node_error(
+        ledger,
+        node_key,
+        section,
+        exc,
+        detail=_info_call_detail(method_name, kwargs),
+        optional=_info_call_is_optional(method_name, kwargs),
+    )
+
+
+class _ErrorRecordingCluster:
+    """A cluster that ledgers the per-node failures a getter is about to drop.
+
+    The getters keep whole-node exceptions only for the subsections a consumer
+    inspects - `service` and `network` - and drop the ones nested deeper, because
+    an Exception reaching ascinfo.json would break every reader of it. The
+    fan-out call's own result is where those failures are all still visible, so
+    collectinfo hands its getters a cluster that reads them off there. Nothing
+    about the data the getter returns changes.
+
+    Wrapping rather than a flag on each getter: a getter fills one bundle
+    subsection out of one to four info calls, several of them per namespace or
+    per datacenter, and there is no place in its return value to put the failure
+    of a call that another namespace answered.
+
+    Delegates by __getattr__, which is how Cluster dispatches these calls in the
+    first place, so a getter added later is covered without being told to be.
+    """
+
+    def __init__(self, cluster, section: str, ledger: NodeErrorLedger):
+        self._cluster = cluster
+        self._section = section
+        self._ledger = ledger
+
+    def __getattr__(self, name: str):
+        attr = getattr(self._cluster, name)
+
+        if not name.startswith("info_") or not callable(attr):
+            return attr
+
+        async def recording_call(*args, **kwargs):
+            result = await attr(*args, **kwargs)
+            self._record(name, kwargs, result)
+
+            return result
+
+        return recording_call
+
+    def _record(self, method_name: str, kwargs: dict[str, Any], result) -> None:
+        if not isinstance(result, dict):
+            return
+
+        for node_key, value in result.items():
+            if isinstance(value, Exception):
+                _record_info_call_error(
+                    self._ledger, self._section, method_name, kwargs, node_key, value
+                )
 
 
 def _retry_reported_failure(
@@ -613,8 +751,10 @@ class CollectinfoController(LiveClusterCommandController):
         node values for: `service` and `network` for config, `service` for
         statistics, `users` and `roles` for acl. Everything nested deeper - a
         namespace, a set, a sindex, an xdr datacenter - has its failures dropped
-        by the getters a level below, so nothing here can see them and the ledger
-        never names them.
+        by the getters a level below, and is recorded by the
+        _ErrorRecordingCluster the getter was handed instead. Both paths ledger
+        the same (section, class, detail) key, so a service failure seen by both
+        is one entry.
         """
         for section in data:
             for node in data[section]:
@@ -641,11 +781,28 @@ class CollectinfoController(LiveClusterCommandController):
 
         return cluster_name
 
+    def _cluster_for_section(self, section: str, ledger):
+        """The cluster a section's getter should query.
+
+        With a ledger to record into, an _ErrorRecordingCluster, so the failures
+        the getter drops below the subsection level are still recorded. Without
+        one - nothing to record into - the cluster itself.
+        """
+        if ledger is None:
+            return self.cluster
+
+        return _ErrorRecordingCluster(self.cluster, section, ledger)
+
     async def _get_as_data_json(self, nodes=None, ledger=None):
         as_map = {}
         nodes = self.nodes if nodes is None else nodes
-        stat_getter = GetStatisticsController(self.cluster)
-        config_getter = GetConfigController(self.cluster)
+        section = constants.CollectinfoSection
+        stat_getter = GetStatisticsController(
+            self._cluster_for_section(section.STATISTICS, ledger)
+        )
+        config_getter = GetConfigController(
+            self._cluster_for_section(section.CONFIG, ledger)
+        )
 
         stats, config = await asyncio.gather(
             stat_getter.get_all(nodes=nodes, keep_exceptions=True),
@@ -950,6 +1107,62 @@ class CollectinfoController(LiveClusterCommandController):
 
         return masking_map
 
+    @staticmethod
+    def _sysinfo_query_kwargs(context: CollectionContext) -> dict[str, Any]:
+        """The SSH context every sysinfo query has to be made with.
+
+        Shared by the first pass and the retry: a retry made without it collects
+        nothing for every node but the local one, which would then be recorded as
+        a permanent failure.
+        """
+        return {
+            "enable_ssh": context.enable_ssh,
+            "ssh_user": context.ssh_user,
+            "ssh_pwd": context.ssh_pwd,
+            "ssh_key": context.ssh_key,
+            "ssh_key_pwd": context.ssh_key_pwd,
+            "ssh_port": context.ssh_port,
+        }
+
+    async def _get_as_sysinfo(
+        self, *, context: CollectionContext, nodes=None, ledger=None
+    ) -> dict[str, Any]:
+        """Re-query host statistics for the nodes whose sysinfo timed out.
+
+        Records what failed again into the given ledger but does not repeat
+        _record_sysinfo_errors' escalation: that decides a failed collection from
+        how much of the cluster failed, and this pass only ever holds the nodes
+        that already failed once.
+        """
+        nodes = self.nodes if nodes is None else nodes
+        sys_map = await self.cluster.info_system_statistics(
+            nodes=nodes, **self._sysinfo_query_kwargs(context)
+        )
+        self._record_sysinfo_failures(sys_map, ledger)
+
+        return sys_map
+
+    @staticmethod
+    def _record_sysinfo_failures(
+        sys_map: dict[str, Any], ledger: NodeErrorLedger | None
+    ) -> dict[str, Exception]:
+        """Ledger every per-node sysinfo failure and blank the node's entry.
+
+        Blanking is unconditional: an Exception left in sys_map would be written
+        into the bundle's sys_stat, where nothing downstream expects one.
+        """
+        failed = {}
+
+        for node_key, value in sys_map.items():
+            if isinstance(value, Exception):
+                _record_node_error(
+                    ledger, node_key, constants.CollectinfoSection.SYSINFO, value
+                )
+                failed[node_key] = value
+                sys_map[node_key] = {}
+
+        return failed
+
     def _record_sysinfo_errors(
         self, sys_map: dict[str, Any], ledger: NodeErrorLedger
     ) -> None:
@@ -972,15 +1185,7 @@ class CollectinfoController(LiveClusterCommandController):
         _get_collectinfo_data_json before ascinfo.json and the metadata are
         written, throwing away every snapshot already collected.
         """
-        failed = {}
-
-        for node_key, value in sys_map.items():
-            if isinstance(value, Exception):
-                _record_node_error(
-                    ledger, node_key, constants.CollectinfoSection.SYSINFO, value
-                )
-                failed[node_key] = value
-                sys_map[node_key] = {}
+        failed = self._record_sysinfo_failures(sys_map, ledger)
 
         if not failed:
             return
@@ -1036,13 +1241,7 @@ class CollectinfoController(LiveClusterCommandController):
             self._get_as_data_json(ledger=node_errors),
             self._get_as_metadata(ledger=node_errors),
             self.cluster.info_system_statistics(
-                enable_ssh=context.enable_ssh,
-                ssh_user=context.ssh_user,
-                ssh_pwd=context.ssh_pwd,
-                ssh_key=context.ssh_key,
-                ssh_key_pwd=context.ssh_key_pwd,
-                ssh_port=context.ssh_port,
-                nodes=self.nodes,
+                nodes=self.nodes, **self._sysinfo_query_kwargs(context)
             ),
         )
 
@@ -1070,8 +1269,10 @@ class CollectinfoController(LiveClusterCommandController):
 
         await self._retry_timed_out_nodes(
             node_errors,
+            context=context,
             as_map=as_map,
             meta_map=meta_map,
+            sys_map=sys_map,
             histogram_map=histogram_map,
             latency_map=latency_map,
             user_agents_map=user_agents_map,
@@ -1109,8 +1310,10 @@ class CollectinfoController(LiveClusterCommandController):
     async def _retry_timed_out_nodes(
         self,
         ledger: NodeErrorLedger,
+        context: CollectionContext,
         as_map,
         meta_map,
+        sys_map,
         histogram_map,
         latency_map,
         user_agents_map,
@@ -1122,6 +1325,12 @@ class CollectinfoController(LiveClusterCommandController):
         timeout-only: an unreachable or unauthenticated node will not recover and
         re-querying it just doubles collection time. acl and masking are excluded
         because their getters are not node-scoped.
+
+        sysinfo is included and is the one section whose re-query needs the
+        collection's own SSH context, without which the retry would collect
+        nothing for any node but the local one. An SSH timeout is exactly the
+        failure a second attempt recovers, and a node that loses sysinfo loses
+        every host-level fact the bundle has about it.
 
         The retry gets a ledger of its own, folded into the collection's at the
         end. That is what makes recovery decidable: an entry recovered when the
@@ -1176,6 +1385,12 @@ class CollectinfoController(LiveClusterCommandController):
                 getter=self._get_as_user_agents,
                 merge_section=section.USER_AGENTS,
                 target=user_agents_map,
+            ),
+            _RetryableSection(
+                ledger_sections=(section.SYSINFO,),
+                getter=functools.partial(self._get_as_sysinfo, context=context),
+                merge_section=section.SYSINFO,
+                target=sys_map,
             ),
         )
 

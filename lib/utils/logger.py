@@ -18,15 +18,22 @@ import traceback
 from typing import Optional
 
 
-from lib.base_controller import ShellException
-from lib.live_cluster.client import ASProtocolError, ASInfoError
 from lib.utils.exit_code import get_exit_code, set_exit_code  # noqa: F401
 from lib.view import terminal
 
 
 def _carries_its_own_message(exc: Exception) -> bool:
-    """Whether an exception explains itself, so no traceback is needed."""
-    return isinstance(exc, (ShellException, ASProtocolError, ASInfoError))
+    """Whether an exception explains itself, so no traceback is needed.
+
+    Asked of the exception rather than isinstance-checked against
+    ShellException, ASProtocolError and ASInfoError here: importing those pulls
+    lib.base_controller and lib.live_cluster.client, whose module-level
+    getLogger() calls would then run before setLoggerClass(BaseLogger) at the
+    bottom of this module. Those modules would be left with plain Loggers, whose
+    error() neither prints a traceback nor sets the process exit code, and which
+    is why asadm.py imports this module first.
+    """
+    return getattr(exc, "carries_its_own_message", False)
 
 
 class BaseLogger(logging.Logger, object):
