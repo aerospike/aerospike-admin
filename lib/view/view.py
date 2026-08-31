@@ -187,8 +187,10 @@ class CliView(object):
 
         if untracked_limits:
             logger.warning(
-                "%s runs under an untracked cgroup limit. Capacity and Alloc%% "
-                "are omitted. Enable cgroup-mem-tracking to see them.",
+                "%s: the cgroup limit is not tracked, so Free%% and Stop%% are "
+                "measured against the host rather than the cgroup. Enable "
+                "cgroup-mem-tracking so asadm can also report Capacity and "
+                "Alloc%%.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in untracked_limits), total
                 ),
@@ -196,10 +198,20 @@ class CliView(object):
 
         if no_cgroup_limits and capacity_rendered:
             logger.warning(
-                "Capacity and Alloc%% are blank for %s. No cgroup memory limit "
-                "was reported.",
+                "Capacity is blank for %s: without a tracked cgroup limit asadm "
+                "has no total-memory figure to divide Alloc%% by.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in no_cgroup_limits), total
+                ),
+            )
+
+        missing_service_stats = [n for n in node_names if n not in headline]
+
+        if missing_service_stats:
+            logger.warning(
+                "No service statistics for %s. Their whole memory row is blank.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in missing_service_stats), total
                 ),
             )
 
@@ -262,9 +274,12 @@ class CliView(object):
             return
 
         for node_stats in stats.values():
-            if isinstance(node_stats, dict) and node_stats.get(
-                "host_free_mem_bytes"
-            ) == node_stats.get("system_free_mem_bytes"):
+            if (
+                isinstance(node_stats, dict)
+                and "host_free_mem_bytes" in node_stats
+                and node_stats["host_free_mem_bytes"]
+                == node_stats.get("system_free_mem_bytes")
+            ):
                 node_stats.pop("host_free_mem_bytes", None)
                 node_stats.pop("host_free_mem_pct", None)
 

@@ -240,33 +240,33 @@ def parse_top_section(cmd_raw_output: str) -> dict[str, Any]:
                 break
             # "  PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND\n"
             # "26937 root      20   0 59.975g 0.049t 0.048t S 117.6 83.9 164251:27 asd\n"
-            l = re.split(r"\ +", line)
+            fields = re.split(r"\ +", line)
 
-            if len(l) < 10:
+            if len(fields) < 12:
                 continue
 
-            command = l[-1]
+            command = fields[11]
 
             if not asd_flag and command == "asd":
                 asd_flag = True
-                topdata["asd_process"]["virtual_memory"] = l[4]
-                topdata["asd_process"]["resident_memory"] = l[5]
-                topdata["asd_process"]["shared_memory"] = l[6]
-                topdata["asd_process"]["%cpu"] = l[8]
-                topdata["asd_process"]["%mem"] = l[9]
+                topdata["asd_process"]["virtual_memory"] = fields[4]
+                topdata["asd_process"]["resident_memory"] = fields[5]
+                topdata["asd_process"]["shared_memory"] = fields[6]
+                topdata["asd_process"]["%cpu"] = fields[8]
+                topdata["asd_process"]["%mem"] = fields[9]
                 for field in topdata["asd_process"]:
                     if field == "%cpu" or field == "%mem":
                         continue
                     topdata["asd_process"][field] = _get_mem_in_byte_from_str(
                         topdata["asd_process"][field], 1
                     )
-            elif not xdr_flag and "xdr" in command:
+            elif not xdr_flag and command in ("asxdr", "xdr"):
                 xdr_flag = True
-                topdata["xdr_process"]["virtual_memory"] = l[4]
-                topdata["xdr_process"]["resident_memory"] = l[5]
-                topdata["xdr_process"]["shared_memory"] = l[6]
-                topdata["xdr_process"]["%cpu"] = l[8]
-                topdata["xdr_process"]["%mem"] = l[9]
+                topdata["xdr_process"]["virtual_memory"] = fields[4]
+                topdata["xdr_process"]["resident_memory"] = fields[5]
+                topdata["xdr_process"]["shared_memory"] = fields[6]
+                topdata["xdr_process"]["%cpu"] = fields[8]
+                topdata["xdr_process"]["%mem"] = fields[9]
                 for field in topdata["xdr_process"]:
                     if field == "%cpu" or field == "%mem":
                         continue

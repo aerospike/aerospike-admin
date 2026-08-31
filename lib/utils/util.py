@@ -460,7 +460,7 @@ def summarize_nodes(names, total, limit=3):
 
     A cluster-wide problem only needs its shape stated: on a 14 node cluster
     every FQDN comes to about 1.2 KB of one-line warning to say 'all of them'.
-    The per-node answer already lives in the table's Build column, so the
+    The per-node answer is already visible in the table itself, so the
     warning names nodes only while the list is short enough to act on.
     """
     names = sorted(names)
@@ -482,8 +482,8 @@ def cgroup_limit_or_zero(value):
     near-int64 sentinel (v1), and CGROUP_MEMORY_NO_LIMIT_THRESHOLD catches every
     one of those without reference to anything else. Any other value the kernel
     reports is a measurement and is reported as given, even when it exceeds host
-    RAM: that is a real misconfiguration the operator needs to see, and the only
-    yardstick asadm could check it against is its own estimated host total.
+    RAM: that is a real misconfiguration the operator needs to see, and asadm
+    has no total-memory figure of its own to check it against.
     """
     limit = int_or_zero(value)
 
@@ -764,7 +764,7 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         if capacity <= 0:
             if cgroup_limit > 0:
                 untracked_limits.append(node)
-            else:
+            elif alloc_known:
                 no_cgroup_limits.append(node)
 
         shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
@@ -838,7 +838,9 @@ def derive_memory_stats(stats):
 
                 if "cgroup_memory_used_bytes" in node_stats:
                     used = int_or_zero(node_stats["cgroup_memory_used_bytes"])
-                    node_stats["cgroup_memory_used_pct"] = str(used * 100 / limit)
+
+                    if used > 0:
+                        node_stats["cgroup_memory_used_pct"] = str(used * 100 / limit)
 
     return stats
 

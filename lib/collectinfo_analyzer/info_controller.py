@@ -165,9 +165,9 @@ class InfoController(CollectinfoCommandController):
 
         if missing_alloc_stats:
             logger.warning(
-                "Allocation figures require server %s or later; %s report an older "
-                "or unreadable build, so their allocation totals are empty. See "
-                "the Build column.",
+                "Allocation figures require server %s or later; allocation totals "
+                "are empty for %s, whose build is older or unreadable. See the "
+                "Build column.",
                 constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
                 util.summarize_nodes(missing_alloc_stats, len(all_nodes)),
             )
