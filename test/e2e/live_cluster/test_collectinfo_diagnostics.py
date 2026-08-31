@@ -281,10 +281,19 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
     ENVIRONMENTAL_BANNER_WARNINGS = (
         "No system information in this bundle",
         "Bundle has no sysinfo.log or aerospike.conf",
+        "violating Aerospike best-practices",
     )
-    """Findings that describe where the e2e collection runs from, not a defect:
-    asadm collects from the test host while the cluster runs elsewhere, so no
-    host-level data is captured. Anything else in the banner is a regression."""
+    """Findings that describe where this test runs, not a defect in collection.
+
+    asadm collects from the test host while the server runs elsewhere, so no
+    host-level data is captured and neither host file is written. The server
+    also reports the CI machine's kernel tuning - swappiness, thp-enabled,
+    rmem-max and friends - as violated best practices, which is a property of
+    the runner rather than of anything this suite controls.
+
+    Kept as an explicit list: anything else in the banner is a regression, and a
+    new environmental finding belongs here deliberately rather than as a looser
+    check."""
 
     def _unexpected_banner_lines(self, stderr):
         return [
