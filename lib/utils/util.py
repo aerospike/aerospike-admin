@@ -25,7 +25,7 @@ import socket
 import subprocess
 import sys
 import logging
-from lib.utils import version
+from lib.utils import constants, version
 from time import time
 from typing import (
     Any,
@@ -667,6 +667,38 @@ def has_content(value: Any) -> bool:
     if isinstance(value, str):
         return value != ""
     return value is not None
+
+
+def as_stat_has_aerospike_data(as_stat) -> bool:
+    """Whether a bundle node's as_stat holds any server-returned data.
+
+    Shared by the collector, which decides from it which nodes returned nothing,
+    and the analyzer, which decides from it which nodes are empty. Two copies had
+    already drifted in their guards, and a node counted as empty by one and not
+    the other produces contradictory findings about the same bundle.
+
+    node_names and ip are derived locally from the node object without an info
+    call, so they are populated even when every info call failed; counting them
+    would make a fully-failed node read as having data (TOOLS-3596).
+    """
+    if not as_stat:
+        return False
+
+    try:
+        for key, section in as_stat.items():
+            if key == constants.CollectinfoSection.METADATA:
+                if any(
+                    has_content(value)
+                    for meta_key, value in section.items()
+                    if meta_key not in constants.COLLECTINFO_LOCALLY_DERIVED_META_KEYS
+                ):
+                    return True
+            elif has_content(section):
+                return True
+    except Exception:
+        return False
+
+    return False
 
 
 def pct_to_value(data, d_pct):

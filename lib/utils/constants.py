@@ -83,7 +83,6 @@ COLLECTINFO_LOCALLY_DERIVED_META_KEYS = frozenset(("node_names", "ip"))
 
 COLLECTINFO_META_FILENAME = "collectinfo_meta.json"
 COLLECTINFO_META_FORMAT_VERSION = 1
-COLLECTINFO_ASCINFO_SCHEMA = "1.0"
 COLLECTINFO_GENERATED_BY = "asadm collectinfo"
 
 COLLECTINFO_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
@@ -110,6 +109,13 @@ COLLECTINFO_ERROR_CLASS_REASON = {
 
 
 class CollectinfoSection:
+    """The bundle stanza a failed collection call would have written to.
+
+    One value per stanza in the snapshot, so a reader can enumerate them. A call
+    whose command the cluster does not have is recorded under the stanza it
+    belongs to with error_class 'unsupported', not under a section named after
+    the feature."""
+
     STATISTICS = "statistics"
     CONFIG = "config"
     METADATA = "meta_data"
@@ -118,10 +124,7 @@ class CollectinfoSection:
     ACL = "acl"
     USER_AGENTS = "user_agents"
     MASKING = "masking"
-    SYSINFO = "sysinfo"
-    RELEASE = "release"
-    FEATURE_KEY = "feature_key"
-    BEST_PRACTICES = "best_practices"
+    SYSINFO = "sys_stat"
 
 
 class SysinfoSource:
