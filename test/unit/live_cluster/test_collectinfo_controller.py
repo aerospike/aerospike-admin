@@ -39,6 +39,7 @@ from lib.live_cluster.collectinfo_controller import (
     COLLECTINFO_NODE_TIMEOUT,
     _classify_exception,
     _node_error_entries,
+    _record_info_call_error,
     _record_node_error,
     _severe_error_class,
 )
@@ -326,6 +327,52 @@ class GetCollectinfoDataJsonTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(any("system statistics" in msg for msg in cm.output), cm.output)
 
+    async def test_a_timed_out_sysinfo_call_recovers_on_retry(self):
+        """sysinfo failures were recorded but never retried, so a node that timed
+        out over SSH carried no host data even though the re-query would have
+        reached it. The retry must be scoped to that node and use the same SSH
+        context the collection was started with."""
+        self.controller.cluster.info_system_statistics = AsyncMock(
+            side_effect=[
+                {"A": {"sys": 1}, "B": asyncio.TimeoutError("late")},
+                {"B": {"sys": 2}},
+            ]
+        )
+
+        with self.assertLogs(LOGGER_NAME, level="INFO"):
+            result, snapshot_meta = await self.controller._get_collectinfo_data_json(
+                CollectionContext(enable_ssh=True, ssh_user="admin")
+            )
+
+        dump_map = result["testcluster"]
+        self.assertEqual(dump_map["B"]["sys_stat"], {"sys": 2})
+        self.assertTrue(snapshot_meta["nodes"]["B"]["errors"][0]["recovered_on_retry"])
+
+        retry_kwargs = self.controller.cluster.info_system_statistics.await_args.kwargs
+        self.assertEqual(retry_kwargs["nodes"], ["B"])
+        self.assertTrue(retry_kwargs["enable_ssh"])
+        self.assertEqual(retry_kwargs["ssh_user"], "admin")
+
+    async def test_a_sysinfo_retry_that_fails_again_does_not_escalate(self):
+        """The retry only ever holds nodes that already failed, so re-running the
+        whole-cluster escalation over that subset would claim a failed collection
+        from one node."""
+        self.controller.cluster.info_system_statistics = AsyncMock(
+            side_effect=[
+                {"A": {"sys": 1}, "B": asyncio.TimeoutError("late")},
+                {"B": asyncio.TimeoutError("late again")},
+            ]
+        )
+        logger_util.set_exit_code(0)
+        self.addCleanup(logger_util.set_exit_code, 0)
+
+        _, snapshot_meta = await self.controller._get_collectinfo_data_json(
+            CollectionContext(enable_ssh=True)
+        )
+
+        self.assertEqual(logger_util.get_exit_code(), 0)
+        self.assertFalse(snapshot_meta["nodes"]["B"]["errors"][0]["recovered_on_retry"])
+
     async def test_a_sysinfo_failure_on_every_node_is_reported_without_losing_the_bundle(
         self,
     ):
@@ -503,6 +550,109 @@ class NoDataWarningProductionShapeTest(unittest.IsolatedAsyncioTestCase):
 
         warn_mock.assert_not_called()
         self.assertIn("A", result["testcluster"])
+
+
+class DataJsonSubsectionLedgerTest(unittest.IsolatedAsyncioTestCase):
+    """_get_as_data_json through the real statistics and config getters.
+
+    The getters drop per-node failures below the subsection level, so this is the
+    only way to tell that the bundle records them: assert on the ledger the real
+    getters produced, not on a wrapper in isolation.
+    """
+
+    TIMEOUT = constants.CollectinfoErrorClass.TIMEOUT
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+
+        cluster = MagicMock()
+
+        for empty_call in (
+            "info_all_dc_statistics",
+            "info_all_set_statistics",
+            "info_all_xdr_namespaces_statistics",
+            "info_bin_statistics",
+            "info_get_xdr_filter",
+            "info_logging_config",
+            "info_rack_ids",
+            "info_racks",
+            "info_roster",
+            "info_sindex_statistics",
+            "info_xdr_config",
+            "info_xdr_dcs_config",
+            "info_xdr_namespaces_config",
+            "info_XDR_statistics",
+        ):
+            setattr(cluster, empty_call, AsyncMock(return_value={"A": {}, "B": {}}))
+
+        cluster.info_dcs = AsyncMock(return_value={"A": [], "B": []})
+        cluster.info_sindex = AsyncMock(return_value={"A": [], "B": []})
+        cluster.info_namespaces = AsyncMock(return_value={"A": ["test"], "B": ["test"]})
+        cluster.info_statistics = AsyncMock(
+            return_value={"A": {"objects": "1"}, "B": {"objects": "2"}}
+        )
+        cluster.info_namespace_statistics = AsyncMock(
+            return_value={"A": {"objects": "1"}, "B": asyncio.TimeoutError("late")}
+        )
+
+        async def get_config(nodes="all", stanza=None, namespace=None):
+            if stanza == constants.CONFIG_NAMESPACE:
+                return {
+                    "A": {"test": {"replication-factor": "2"}},
+                    "B": asyncio.TimeoutError("late"),
+                }
+
+            return {"A": {}, "B": {}}
+
+        cluster.info_get_config = AsyncMock(side_effect=get_config)
+        self.controller.cluster = cluster
+
+    async def test_a_dropped_namespace_failure_is_recorded_per_section(self):
+        """Both getters lost node B's namespace data, and each names its own
+        section: a config failure says nothing about the statistics call."""
+        ledger = {}
+
+        await self.controller._get_as_data_json(ledger=ledger)
+
+        self.assertIn(
+            (
+                constants.CollectinfoSection.STATISTICS,
+                self.TIMEOUT,
+                constants.STAT_NAMESPACE,
+            ),
+            ledger["B"],
+        )
+        self.assertIn(
+            (
+                constants.CollectinfoSection.CONFIG,
+                self.TIMEOUT,
+                constants.CONFIG_NAMESPACE,
+            ),
+            ledger["B"],
+        )
+        self.assertNotIn("A", ledger)
+
+    async def test_no_exception_reaches_the_data(self):
+        """The reason the getters drop these in the first place: ascinfo.json is
+        written with json.dumps."""
+        as_map = await self.controller._get_as_data_json(ledger={})
+
+        json.dumps(as_map)
+
+    async def test_a_healthy_collection_records_nothing(self):
+        self.controller.cluster.info_namespace_statistics.return_value = {
+            "A": {"objects": "1"},
+            "B": {"objects": "2"},
+        }
+        self.controller.cluster.info_get_config = AsyncMock(
+            return_value={"A": {"test": {}}, "B": {"test": {}}}
+        )
+        ledger = {}
+
+        await self.controller._get_as_data_json(ledger=ledger)
+
+        self.assertEqual(ledger, {})
 
 
 class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
@@ -942,6 +1092,209 @@ class RecordNodeErrorTest(unittest.TestCase):
 
         entry = ledger["A"][("config", constants.CollectinfoErrorClass.TIMEOUT, "")]
         self.assertEqual(entry["message"], "TimeoutError")
+
+
+class InfoCallErrorRecordingTest(unittest.TestCase):
+    """What the recording cluster makes of a failure the getters drop.
+
+    The getters keep whole-node exceptions only for `service` and `network`;
+    everything nested deeper is dropped before collectinfo can look at the data,
+    so these failures are recorded from the call instead.
+    """
+
+    STATISTICS = constants.CollectinfoSection.STATISTICS
+    CONFIG = constants.CollectinfoSection.CONFIG
+    TIMEOUT = constants.CollectinfoErrorClass.TIMEOUT
+    UNSUPPORTED = constants.CollectinfoErrorClass.UNSUPPORTED
+
+    def _record(self, section, method_name, kwargs, exc):
+        ledger = {}
+        _record_info_call_error(ledger, section, method_name, kwargs, "B", exc)
+
+        return ledger
+
+    def test_a_namespace_statistics_timeout_is_named_by_its_subsection(self):
+        ledger = self._record(
+            self.STATISTICS, "info_namespace_statistics", {}, asyncio.TimeoutError()
+        )
+
+        entry = ledger["B"][(self.STATISTICS, self.TIMEOUT, constants.STAT_NAMESPACE)]
+        self.assertEqual(entry["error_class"], self.TIMEOUT)
+
+    def test_a_config_failure_is_named_by_its_stanza(self):
+        ledger = self._record(
+            self.CONFIG,
+            "info_get_config",
+            {"stanza": constants.CONFIG_NAMESPACE, "namespace": "test"},
+            asyncio.TimeoutError(),
+        )
+
+        self.assertIn(
+            (self.CONFIG, self.TIMEOUT, constants.CONFIG_NAMESPACE), ledger["B"]
+        )
+
+    def test_every_namespace_of_one_call_collapses_into_one_entry(self):
+        """A node that fails config for eight namespaces failed one call as far as
+        a reader is concerned, and the ledger names the subsection, not the
+        namespace."""
+        ledger = {}
+
+        for namespace in ("bar", "foo", "test"):
+            _record_info_call_error(
+                ledger,
+                self.CONFIG,
+                "info_get_config",
+                {"stanza": constants.CONFIG_NAMESPACE, "namespace": namespace},
+                "B",
+                asyncio.TimeoutError(),
+            )
+
+        self.assertEqual(len(ledger["B"]), 1)
+
+    def test_a_service_failure_dedupes_with_the_one_read_off_the_data(self):
+        """service is kept in the data and also seen on the call, so both paths
+        record it. Two entries for one failure would be counted twice by every
+        reader of the meta."""
+        exc = asyncio.TimeoutError()
+        ledger = {}
+        _record_node_error(
+            ledger, "B", self.STATISTICS, exc, detail=constants.STAT_SERVICE
+        )
+        _record_info_call_error(
+            ledger, self.STATISTICS, "info_statistics", {}, "B", exc
+        )
+
+        self.assertEqual(len(ledger["B"]), 1)
+
+    def test_a_feature_dependent_call_is_not_reported_as_lost_data(self):
+        """A namespace with no sindexes, a cluster with no XDR: those calls error
+        on a healthy node, so an info error from them is an absent section rather
+        than a collection failure."""
+        ledger = self._record(
+            self.STATISTICS, "info_sindex_statistics", {}, ASInfoError("err", "no")
+        )
+
+        entry = ledger["B"][(self.STATISTICS, self.UNSUPPORTED, constants.STAT_SINDEX)]
+        self.assertEqual(entry["error_class"], self.UNSUPPORTED)
+
+    def test_a_timeout_on_a_feature_dependent_call_is_still_a_timeout(self):
+        """The optional flag must not absorb the failures a reader has to act on."""
+        ledger = self._record(
+            self.STATISTICS, "info_sindex_statistics", {}, asyncio.TimeoutError()
+        )
+
+        self.assertIn(
+            (self.STATISTICS, self.TIMEOUT, constants.STAT_SINDEX), ledger["B"]
+        )
+
+    def test_a_namespace_stanza_failure_is_not_reported_as_lost_data(self):
+        """The namespace getter asks every node for the union of the cluster's
+        namespaces, so a node that does not have one of them errors on a
+        perfectly healthy cluster."""
+        ledger = self._record(
+            self.CONFIG,
+            "info_get_config",
+            {"stanza": constants.CONFIG_NAMESPACE, "namespace": "test"},
+            ASInfoError("err", "no"),
+        )
+
+        self.assertIn(
+            (self.CONFIG, self.UNSUPPORTED, constants.CONFIG_NAMESPACE), ledger["B"]
+        )
+
+    def test_a_service_config_failure_is_lost_data(self):
+        """Every server serves the service and network stanzas, so an info error
+        from one of them is not an absent section."""
+        ledger = self._record(
+            self.CONFIG,
+            "info_get_config",
+            {"stanza": constants.CONFIG_SERVICE},
+            ASInfoError("err", "no"),
+        )
+
+        self.assertIn(
+            (self.CONFIG, constants.CollectinfoErrorClass.CORRUPT, "service"),
+            ledger["B"],
+        )
+
+    def test_an_unmapped_call_is_named_after_itself(self):
+        """A getter added later records under a detail nobody chose, which beats
+        recording nothing."""
+        ledger = self._record(
+            self.STATISTICS, "info_something_new", {}, asyncio.TimeoutError()
+        )
+
+        self.assertIn((self.STATISTICS, self.TIMEOUT, "something_new"), ledger["B"])
+
+
+class ErrorRecordingClusterTest(unittest.IsolatedAsyncioTestCase):
+    """The cluster collectinfo hands its getters, which reads the failures the
+    getters are about to drop off the fan-out call's own result."""
+
+    STATISTICS = constants.CollectinfoSection.STATISTICS
+    TIMEOUT = constants.CollectinfoErrorClass.TIMEOUT
+
+    def setUp(self):
+        self.controller = CollectinfoController()
+        self.controller.cluster = MagicMock()
+
+    def _wrapped(self, ledger, **calls):
+        for name, result in calls.items():
+            setattr(self.controller.cluster, name, AsyncMock(return_value=result))
+
+        return self.controller._cluster_for_section(self.STATISTICS, ledger)
+
+    async def test_a_dropped_nested_failure_reaches_the_ledger(self):
+        """A namespace whose statistics one node failed to answer: the getter
+        drops that node and the bundle used to record nothing."""
+        ledger = {}
+        cluster = self._wrapped(
+            ledger,
+            info_namespace_statistics={"A": {"objects": "1"}, "B": SSHTimeoutError()},
+        )
+
+        await cluster.info_namespace_statistics("test", nodes="all")
+
+        self.assertIn(
+            (self.STATISTICS, self.TIMEOUT, constants.STAT_NAMESPACE), ledger["B"]
+        )
+        self.assertNotIn("A", ledger)
+
+    async def test_the_data_reaches_the_getter_unchanged(self):
+        """The wrapper only records: a getter must see exactly what the cluster
+        returned, exceptions included, or keep_exceptions would stop working."""
+        exc = SSHTimeoutError()
+        cluster = self._wrapped(
+            ledger={}, info_statistics={"A": {"objects": "1"}, "B": exc}
+        )
+
+        result = await cluster.info_statistics(nodes="all")
+
+        self.assertEqual(result, {"A": {"objects": "1"}, "B": exc})
+
+    async def test_a_successful_call_records_nothing(self):
+        ledger = {}
+        cluster = self._wrapped(
+            ledger, info_namespace_statistics={"A": {"objects": "1"}}
+        )
+
+        await cluster.info_namespace_statistics("test", nodes="all")
+
+        self.assertEqual(ledger, {})
+
+    async def test_non_info_attributes_are_passed_straight_through(self):
+        """The getters use the cluster for more than info calls."""
+        self.controller.cluster.get_node_names.return_value = {"A": "node-a"}
+        cluster = self.controller._cluster_for_section(self.STATISTICS, {})
+
+        self.assertEqual(cluster.get_node_names(), {"A": "node-a"})
+
+    async def test_without_a_ledger_the_cluster_is_not_wrapped(self):
+        """Nothing to record into, so nothing to wrap: the interactive paths and
+        the no-ledger retry get the cluster itself."""
+        cluster = self.controller._cluster_for_section(self.STATISTICS, None)
+
+        self.assertIs(cluster, self.controller.cluster)
 
 
 class LedgerPlumbingTest(unittest.TestCase):
@@ -1409,8 +1762,10 @@ class RetryTimedOutNodesTest(unittest.IsolatedAsyncioTestCase):
     async def _retry(self, **maps):
         await self.controller._retry_timed_out_nodes(
             maps.pop("ledger"),
+            context=maps.pop("context", CollectionContext()),
             as_map=maps.pop("as_map", {}),
             meta_map=maps.pop("meta_map", {}),
+            sys_map=maps.pop("sys_map", {}),
             histogram_map=maps.pop("histogram_map", {}),
             latency_map=maps.pop("latency_map", {}),
             user_agents_map=maps.pop("user_agents_map", {}),
@@ -1781,6 +2136,55 @@ class RetryTimedOutNodesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user_agents_map["A"], [{"client_version": "1.0"}])
         self.assertTrue(
             self._recovered(ledger, "B", constants.CollectinfoSection.USER_AGENTS)
+        )
+
+    async def test_a_timed_out_sysinfo_call_is_retried_with_the_ssh_context(self):
+        """A node that loses sysinfo loses every host-level fact the bundle holds
+        about it, and an SSH timeout is exactly what a second attempt recovers.
+        The re-query has to carry the collection's SSH context: without it the
+        retry reaches no host but the local one."""
+        ledger = {}
+        _record_node_error(
+            ledger,
+            "B",
+            constants.CollectinfoSection.SYSINFO,
+            SSHTimeoutError("late"),
+        )
+        sys_map = {"A": {"uname": {"uname_out": "Linux"}}, "B": {}}
+        context = CollectionContext(enable_ssh=True, ssh_user="admin", ssh_port=22)
+
+        with patch.object(
+            CollectinfoController,
+            "_get_as_sysinfo",
+            self._getter({"B": {"uname": {"uname_out": "Linux"}}}),
+        ) as sys_mock:
+            await self._retry(ledger=ledger, sys_map=sys_map, context=context)
+
+        self._assert_retried(sys_mock, ["B"])
+        self.assertEqual(sys_mock.await_args.kwargs["context"], context)
+        self.assertEqual(sys_map["B"], {"uname": {"uname_out": "Linux"}})
+        self.assertEqual(sys_map["A"], {"uname": {"uname_out": "Linux"}})
+        self.assertTrue(
+            self._recovered(ledger, "B", constants.CollectinfoSection.SYSINFO)
+        )
+
+    async def test_a_sysinfo_retry_that_failed_again_is_not_a_recovery(self):
+        ledger = {}
+        _record_node_error(
+            ledger,
+            "B",
+            constants.CollectinfoSection.SYSINFO,
+            SSHTimeoutError("late"),
+        )
+        fails = (("B", constants.CollectinfoSection.SYSINFO, SSHError("no route"), ""),)
+
+        with patch.object(
+            CollectinfoController, "_get_as_sysinfo", self._getter({"B": {}}, fails)
+        ):
+            await self._retry(ledger=ledger, sys_map={"B": {}})
+
+        self.assertFalse(
+            self._recovered(ledger, "B", constants.CollectinfoSection.SYSINFO)
         )
 
     async def test_retry_exception_is_swallowed(self):

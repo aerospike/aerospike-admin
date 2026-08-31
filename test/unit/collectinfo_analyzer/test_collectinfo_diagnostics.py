@@ -574,8 +574,9 @@ class SysinfoCoverageTest(unittest.TestCase):
         self.assertEqual(warning.severity, DiagSeverity.INFO)
         self.assertEqual(warning.title, "System information covers 2 of 4 nodes")
         body = " ".join(warning.lines)
-        self.assertIn("`health` cannot run its system checks", body)
+        self.assertIn("OS, CPU, memory, disks or network settings", body)
         self.assertIn("`summary` reports no OS version", body)
+        self.assertNotIn("`health`", body)
 
     def _ssh_meta(self, covered, uncovered):
         """A meta shaped the way the collector writes one for an SSH collect."""
@@ -613,7 +614,8 @@ class SysinfoCoverageTest(unittest.TestCase):
         body = " ".join(warning.lines)
         self.assertIn("10.0.0.1:3000", body)
         self.assertIn("SSH to those hosts failed", body)
-        self.assertIn("`health` cannot run its system checks", body)
+        self.assertIn("OS, CPU, memory, disks or network settings", body)
+        self.assertNotIn("`health`", body)
 
     def test_the_ssh_gap_counts_the_nodes_it_names(self):
         """The title counted the uncovered set while the body listed the subset

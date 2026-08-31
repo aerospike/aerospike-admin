@@ -283,6 +283,68 @@ class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
             ns_set=None,
         )
 
+    async def test_get_all_mixed_versions_keeps_an_old_server_failure(self):
+        """The merge builds an entry for every old-server node from a new-server
+        template. Handing it the failure replaced that node's exception with a
+        fabricated all-N/A table, so collectinfo recorded no error for a node whose
+        latency call never answered."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], ["2.2.2.2"])
+        )
+        exc = Exception("latency timed out")
+        self.cluster_mock.info_latencies.return_value = copy.deepcopy(
+            self.latencies_return_value
+        )
+        self.cluster_mock.info_latency.return_value = {"2.2.2.2": exc}
+
+        kept = await self.controller.get_all(
+            "nodes",
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            keep_exceptions=True,
+        )
+
+        self.assertIs(kept["2.2.2.2"], exc)
+        self.assertIn("1.1.1.1", kept)
+
+    async def test_get_all_mixed_versions_keeps_a_new_server_failure(self):
+        """A new-server failure used to be picked as the merge template and then
+        iterated, aborting the whole latency collection with a TypeError."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], ["2.2.2.2"])
+        )
+        exc = Exception("latencies timed out")
+        self.cluster_mock.info_latencies.return_value = {"1.1.1.1": exc}
+        self.cluster_mock.info_latency.return_value = copy.deepcopy(
+            self.latency_return_value
+        )
+
+        kept = await self.controller.get_all(
+            "nodes",
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            keep_exceptions=True,
+        )
+
+        self.assertIs(kept["1.1.1.1"], exc)
+        self.assertEqual(kept["2.2.2.2"], self.latency_return_value["2.2.2.2"])
+
+    async def test_get_all_mixed_versions_drops_failures_by_default(self):
+        """The interactive `show` paths must still never see an Exception."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], ["2.2.2.2"])
+        )
+        self.cluster_mock.info_latencies.return_value = {"1.1.1.1": Exception("nope")}
+        self.cluster_mock.info_latency.return_value = {"2.2.2.2": Exception("nope")}
+
+        actual = await self.controller.get_all(
+            "nodes", buckets=5, exponent_increment=1, verbose=1
+        )
+
+        self.assertDictEqual(actual, {})
+
 
 class GetControllerStaticHelpersTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

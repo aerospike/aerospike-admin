@@ -19,11 +19,14 @@ mutation tests rewrite a copy of the extracted bundle so the older-collector and
 dropped-node paths can be exercised without a broken cluster.
 """
 
+import calendar
+import copy
 import json
 import os
 import shutil
 import tarfile
 import tempfile
+import time
 import unittest
 
 from lib.utils import constants
@@ -121,34 +124,42 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         return node_keys
 
-    def _mutated_ascinfo_bundle(self, mutate_node):
-        """A copy of the bundle with every node's namespace statistics rewritten."""
-        target = tempfile.mkdtemp(prefix="asadm_diag_ascinfo_")
+    def _bundle_copy(self, prefix):
+        target = tempfile.mkdtemp(prefix=prefix)
         self.addCleanup(shutil.rmtree, target, ignore_errors=True)
         bundle_copy = os.path.join(target, os.path.basename(self.bundle_dir))
         shutil.copytree(self.bundle_dir, bundle_copy)
 
+        return bundle_copy
+
+    def _mutated_ascinfo_file(self, mutate_ascinfo):
+        """A copy of the bundle whose whole ascinfo.json has been rewritten."""
+        bundle_copy = self._bundle_copy("asadm_diag_snapshots_")
         ascinfo_path = self._find_file(bundle_copy, "ascinfo.json")
 
         with open(ascinfo_path) as ascinfo_file:
             ascinfo = json.load(ascinfo_file)
 
-        for cluster_data in ascinfo[sorted(ascinfo)[-1]].values():
-            for node_data in cluster_data.values():
-                mutate_node(node_data)
+        mutate_ascinfo(ascinfo)
 
         with open(ascinfo_path, "w") as ascinfo_file:
             json.dump(ascinfo, ascinfo_file)
 
         return bundle_copy
 
+    def _mutated_ascinfo_bundle(self, mutate_node):
+        """A copy of the bundle with every node's collected data rewritten."""
+
+        def mutate_every_node(ascinfo):
+            for cluster_data in ascinfo[sorted(ascinfo)[-1]].values():
+                for node_data in cluster_data.values():
+                    mutate_node(node_data)
+
+        return self._mutated_ascinfo_file(mutate_every_node)
+
     def _mutated_bundle(self, mutate_meta):
         """A copy of the extracted bundle whose meta has been rewritten."""
-        target = tempfile.mkdtemp(prefix="asadm_diag_mutated_")
-        self.addCleanup(shutil.rmtree, target, ignore_errors=True)
-        bundle_copy = os.path.join(target, os.path.basename(self.bundle_dir))
-        shutil.copytree(self.bundle_dir, bundle_copy)
-
+        bundle_copy = self._bundle_copy("asadm_diag_mutated_")
         meta_path = self._find_file(bundle_copy, META_SUFFIX)
 
         with open(meta_path) as meta_file:
@@ -334,6 +345,43 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
 
         self.assertNotEqual(self._unexpected_banner_lines(cp.stderr), [], cp.stderr)
+
+    def test_the_banner_never_names_the_deprecated_health_command(self):
+        """`health` is deprecated and no longer maintained, so no finding may send
+        a reader to it. The sysinfo findings are where it was named, so the host
+        data is stripped here to make them fire wherever this suite runs."""
+
+        def drop_the_host_data(node_data):
+            node_data.pop("sys_stat", None)
+
+        bundle = self._mutated_ascinfo_bundle(drop_the_host_data)
+
+        cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
+
+        self.assertIn("No system information in this bundle", cp.stderr)
+        self.assertIn("OS, CPU, memory, disks or network settings", cp.stderr)
+        self.assertNotIn("`health`", cp.stderr)
+
+    def test_multiple_snapshots_are_reported_as_unrendered(self):
+        """Only the newest snapshot is ever loaded, so the finding must not
+        suggest a command might describe one of the others."""
+
+        def add_an_older_snapshot(ascinfo):
+            newest = sorted(ascinfo)[-1]
+            collected = time.strptime(newest, constants.COLLECTINFO_TIMESTAMP_FORMAT)
+            older = time.strftime(
+                constants.COLLECTINFO_TIMESTAMP_FORMAT,
+                time.gmtime(calendar.timegm(collected) - 3600),
+            )
+            ascinfo[older] = copy.deepcopy(ascinfo[newest])
+
+        bundle = self._mutated_ascinfo_file(add_an_older_snapshot)
+
+        cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
+
+        self.assertIn("Bundle holds 2 snapshots", cp.stderr)
+        self.assertIn("nothing renders them", cp.stderr)
+        self.assertIn("Network Information", cp.stdout)
 
     def test_execute_mode_states_the_collector_version(self):
         """The provenance line is the point of the whole check, and execute mode

@@ -222,6 +222,19 @@ class TableRenderNoErrorTests(TableRenderTestCase):
 
         self.check_cmd_for_errors(o)
 
+    def test_a_privileged_command_without_enable_exits_nonzero(self):
+        """The error is logged by lib.base_controller's own module logger, which
+        only sets the exit code while it is a BaseLogger - and it only is one
+        because asadm.py imports lib.utils.logger before anything else. A script
+        that checks the exit code is how this regression would otherwise be
+        found in the field."""
+        args = f"-h {lib.SERVER_IP}:{lib.PORT} -e 'asinfo -v build' -Uadmin -Padmin"
+
+        cp = util.run_asadm(args)
+
+        self.assertEqual(cp.returncode, 2, cp.stderr)
+        self.assertIn("privileged mode", cp.stderr)
+
     def test_admin_port_connection_sanity_check(self):
         """Sanity check: Test that admin port connection works"""
         admin_port = lib.PORT + 4
