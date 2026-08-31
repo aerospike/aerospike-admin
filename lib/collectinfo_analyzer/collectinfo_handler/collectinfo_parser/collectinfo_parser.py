@@ -39,7 +39,7 @@ def parse_collectinfo_files(file_paths, parsed_map, ignore_exception=False):
     # IF a valid cinfo json is present in cinfo_paths then append
     # its data in parsed_map.
     for cinfo_path_name in file_paths:
-        if cinfo_path_name.endswith("ascinfo.json"):
+        if cinfo_path_name.endswith(constants.COLLECTINFO_DATA_FILENAME):
             cinfo_map = {}
             try:
                 with open(cinfo_path_name) as cinfo_json:

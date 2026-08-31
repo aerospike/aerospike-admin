@@ -37,6 +37,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
 )
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
+    LogHandlerException,
 )
 
 
@@ -215,6 +216,59 @@ class BundleExtractionTest(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(self.dest_dir, "20260720_100000_ascinfo.json"))
         )
+
+
+class NoSnapshotReasonTest(unittest.TestCase):
+    """What asadm says about a path it cannot read a cluster snapshot from.
+
+    All three cases used to share "Multiple snapshots available without JSON
+    dump.", which describes none of them: an archive that is not a collectinfo
+    bundle at all is the common one, and it sends the reader looking for
+    snapshots that were never there."""
+
+    def setUp(self):
+        self.bundle_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.bundle_dir, ignore_errors=True)
+
+    def _write(self, name, text="{}"):
+        path = os.path.join(self.bundle_dir, name)
+
+        with open(path, "w") as handle:
+            handle.write(text)
+
+        return path
+
+    def test_an_archive_that_is_not_a_bundle_says_so(self):
+        files = [self._write("Chart.yaml"), self._write("values.yaml")]
+
+        message = CollectinfoLogHandler._no_snapshot_reason(
+            MagicMock(spec=CollectinfoLogHandler), self.bundle_dir, files
+        )
+
+        self.assertIn("No Aerospike collectinfo data found", message)
+        self.assertIn(self.bundle_dir, message)
+        self.assertIn("ascinfo.json", message)
+        self.assertIn("2 other file(s)", message)
+
+    def test_an_unparsable_bundle_names_the_file_it_found(self):
+        files = [self._write("20260720_100000_ascinfo.json", "{not json")]
+
+        message = CollectinfoLogHandler._no_snapshot_reason(
+            MagicMock(spec=CollectinfoLogHandler), self.bundle_dir, files
+        )
+
+        self.assertIn("Could not read a cluster snapshot", message)
+        self.assertIn("20260720_100000_ascinfo.json", message)
+        self.assertNotIn("No Aerospike collectinfo data found", message)
+
+    def test_a_directory_with_no_collectinfo_raises_the_new_message(self):
+        self._write("Chart.yaml")
+
+        with self.assertRaises(LogHandlerException) as raised:
+            handler = CollectinfoLogHandler(self.bundle_dir)
+            self.addCleanup(handler.close)
+
+        self.assertIn("No Aerospike collectinfo data found", str(raised.exception))
 
 
 class NodeIdMappingTest(unittest.TestCase):

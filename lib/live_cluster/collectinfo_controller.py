@@ -1593,7 +1593,9 @@ class CollectinfoController(LiveClusterCommandController):
             aborted = False
         finally:
             if snpshots:
-                self._dump_in_json_file(as_logfile_prefix + "ascinfo.json", snpshots)
+                self._dump_in_json_file(
+                    as_logfile_prefix + constants.COLLECTINFO_DATA_FILENAME, snpshots
+                )
 
             self._dump_collectinfo_meta(
                 as_logfile_prefix,

@@ -617,9 +617,39 @@ class CollectinfoLogHandler(object):
         self.selected_cinfo_logs = cinfo_log.snapshots
         self.all_cinfo_logs = cinfo_log.snapshots
         self.bundle_snapshot_count = len(cinfo_log.data or {})
-        snapshots_added = len(self.all_cinfo_logs)
-        if not snapshots_added:
-            raise LogHandlerException("Multiple snapshots available without JSON dump.")
+
+        if not self.all_cinfo_logs:
+            raise LogHandlerException(self._no_snapshot_reason(cinfo_path, files))
+
+    def _no_snapshot_reason(self, cinfo_path, files) -> str:
+        """Why no cluster snapshot could be read, in terms of what the path holds.
+
+        Three different situations used to share one message about multiple
+        snapshots: a path holding no ascinfo.json at all (an archive that is not
+        a collectinfo bundle), one holding an ascinfo.json this asadm could not
+        parse, and one whose snapshots were all empty. They need different things
+        from the reader, and naming the wrong one sends them after the wrong
+        problem.
+        """
+        data_files = sorted(
+            os.path.basename(file)
+            for file in files
+            if file.endswith(constants.COLLECTINFO_DATA_FILENAME)
+        )
+
+        if not data_files:
+            return (
+                "No Aerospike collectinfo data found in %s. A collectinfo bundle "
+                "holds an %s written by `asadm -e collectinfo`; this path holds %d "
+                "other file(s)."
+                % (cinfo_path, constants.COLLECTINFO_DATA_FILENAME, len(files))
+            )
+
+        return (
+            "Could not read a cluster snapshot from %s. Found %s, but nothing in "
+            "it parsed as collected cluster data: the file may be truncated, or "
+            "written by a tool other than asadm." % (cinfo_path, ", ".join(data_files))
+        )
 
     def _fetch_from_cinfo_log(
         self,

@@ -81,6 +81,7 @@ COLLECTINFO_SEPERATOR = "\n====ASCOLLECTINFO====\n"
 COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress..."
 COLLECTINFO_LOCALLY_DERIVED_META_KEYS = frozenset(("node_names", "ip"))
 
+COLLECTINFO_DATA_FILENAME = "ascinfo.json"
 COLLECTINFO_META_FILENAME = "collectinfo_meta.json"
 COLLECTINFO_META_FORMAT_VERSION = 1
 COLLECTINFO_GENERATED_BY = "asadm collectinfo"
