@@ -22,10 +22,13 @@ import zipfile
 
 from lib.utils import common, log_util, util, constants
 from lib.utils.constants import NodeSelection, NodeSelectionType
+from lib.utils.exit_code import set_exit_code
 from lib.view import terminal
 from .collectinfo_diagnostics import (
     BundleWarning,
     CollectinfoDiagnostics,
+    DiagSeverity,
+    FATAL_DIAGNOSTIC_CATEGORIES,
     print_banner,
     render_banner,
 )
@@ -90,6 +93,8 @@ class CollectinfoLogHandler(object):
         self.bundle_snapshot_count = 0
         self._bundle_diagnostics: list[BundleWarning] | None = None
         self._collector_asadm_version: str | None = None
+        self.bundle_meta_seen = False
+        self.bundle_meta_format_version = 0
 
         try:
             self._add_cinfo_log_files(cinfo_path)
@@ -175,8 +180,17 @@ class CollectinfoLogHandler(object):
         is analyzed. Taking the first meta found would then report another bundle's
         node reconciliation and collector version against this snapshot, so only a
         meta that carries the analyzed timestamp is used.
+
+        Every readable meta still leaves a trace in bundle_meta_seen and
+        bundle_meta_format_version, whatever snapshot it describes. Those two are
+        how the diagnostics tell "no meta was ever written" from "a meta exists
+        and this asadm could not read its shape": a v2 meta that renames
+        `snapshots` or `timestamp` joins to nothing here, and without the trace it
+        would be reported as an old bundle - the exact false claim the version
+        gate exists to prevent.
         """
         timestamp = self._analyzed_timestamp()
+        joined = {}
 
         for file in self.bundle_files((constants.COLLECTINFO_META_FILENAME,)):
             try:
@@ -186,17 +200,36 @@ class CollectinfoLogHandler(object):
                 logger.debug("Could not read %s: %s", file, e)
                 continue
 
-            if isinstance(meta, dict) and _describes_snapshot(meta, timestamp):
-                return meta
+            if not isinstance(meta, dict):
+                continue
 
-        return {}
+            self.bundle_meta_seen = True
+            format_version = meta.get("meta_format_version")
+
+            if isinstance(format_version, int):
+                self.bundle_meta_format_version = max(
+                    self.bundle_meta_format_version, format_version
+                )
+
+            if not joined and _describes_snapshot(meta, timestamp):
+                joined = meta
+
+        return joined
 
     def _scan_bundle_for_asadm_version(self) -> str:
         """Best-effort collector version for bundles with no collectinfo_meta.json.
 
         asadm has always echoed 'asadm version <v>' into ascollectinfo.log and
         summary.log. Reads a capped prefix because the line is written first.
+
+        A path holding two bundles is a supported input and the scan cannot tell
+        which log belongs to the snapshot being analyzed, so a version is returned
+        only when every log found agrees. Returning the first match would
+        attribute one bundle's collector to another's data, which is worse than
+        reporting the version as unrecorded.
         """
+        versions = set()
+
         for file in self.bundle_files(ASADM_VERSION_SCAN_FILES):
             try:
                 with open(file, errors="ignore") as log_file:
@@ -208,7 +241,17 @@ class CollectinfoLogHandler(object):
             match = ASADM_VERSION_RE.search(head)
 
             if match:
-                return match.group(1)
+                versions.add(match.group(1))
+
+        if len(versions) == 1:
+            return versions.pop()
+
+        if versions:
+            logger.debug(
+                "Bundle logs record more than one asadm version (%s); "
+                "not attributing one to this snapshot.",
+                ", ".join(sorted(versions)),
+            )
 
         return ""
 
@@ -274,6 +317,18 @@ class CollectinfoLogHandler(object):
             self._bundle_diagnostics = diagnostics.analyze()
         except Exception as e:
             logger.debug("Failed to compute bundle diagnostics: %s", e, exc_info=True)
+            self._bundle_diagnostics = [
+                BundleWarning(
+                    category="diagnostics-unavailable",
+                    severity=DiagSeverity.WARNING,
+                    title="Diagnostics could not be computed for this bundle",
+                    lines=[
+                        "Nothing below has been checked. An empty finding list would "
+                        "read as a healthy bundle, which is not what happened. Run "
+                        "with --debug for the failure.",
+                    ],
+                )
+            ]
 
         return self._bundle_diagnostics
 
@@ -281,7 +336,36 @@ class CollectinfoLogHandler(object):
         return render_banner(self.get_bundle_diagnostics())
 
     def print_diagnostics_banner(self, stream=None) -> None:
-        print_banner(self.get_bundle_diagnostics(), stream)
+        """Print the banner for --execute mode, failing only on an unusable bundle.
+
+        A finding about the collected cluster's health must not fail the command
+        the user ran, so the banner itself stays logger-free. A bundle with no
+        readable node data is different in kind: every command over it prints an
+        empty table, and `asadm -e ... || handle_error` would call that success.
+        Only FATAL_DIAGNOSTIC_CATEGORIES fail the command.
+
+        The exit code is set here rather than left to BaseLogger.error: importing
+        it would pull the live-cluster client and OpenSSL into the analyzer, and
+        which logger class is installed depends on import order.
+
+        The interactive path prints the same banner through __str__ and keeps
+        going: the shell continues and the banner is on screen.
+        """
+        warnings = self.get_bundle_diagnostics()
+        print_banner(warnings, stream)
+
+        unusable = [
+            warning
+            for warning in warnings
+            if warning.category in FATAL_DIAGNOSTIC_CATEGORIES
+        ]
+
+        if unusable:
+            logger.error(
+                "%s. No command can report anything from this bundle.",
+                unusable[0].title,
+            )
+            set_exit_code(2)
 
     def close(self):
         if self.all_cinfo_logs:
@@ -574,15 +658,31 @@ class CollectinfoLogHandler(object):
         return False
 
     def _extract_to(self, file, dest_dir):
+        """Extract one bundle archive under dest_dir, refusing to write outside it.
+
+        Opening a bundle is opening a third party's archive: a tar member named
+        ../../../.ssh/authorized_keys writes outside dest_dir on Python 3.12,
+        whose default extraction filter is still fully_trusted. filter="data"
+        rejects absolute and traversing paths, and with them symlinks, device
+        nodes and non-portable modes. Genuine asadm bundles contain only regular
+        files and directories, so nothing legitimate is lost; a non-asadm archive
+        carrying symlinks is now rejected, which is the intended trade.
+
+        A refusal is reported rather than swallowed: silently extracting nothing
+        surfaces later as "no valid Aerospike collectinfo log available", which
+        sends the reader after the wrong problem.
+        """
         if not file or not os.path.exists(file):
             return False
 
         try:
             if tarfile.is_tarfile(file):
                 compressed_file = tarfile.open(file)
+                is_tar = True
 
             elif zipfile.is_zipfile(file):
                 compressed_file = zipfile.ZipFile(file, "r")
+                is_tar = False
 
             else:
                 return False
@@ -592,9 +692,15 @@ class CollectinfoLogHandler(object):
 
         file_extracted = False
         try:
-            compressed_file.extractall(path=dest_dir)
+            if is_tar:
+                compressed_file.extractall(path=dest_dir, filter="data")
+            else:
+                compressed_file.extractall(path=dest_dir)
+
             file_extracted = True
-        except Exception:
+        except Exception as e:
+            logger.warning("Could not extract %s: %s", file, e)
+            logger.debug("Extraction of %s failed", file, exc_info=True)
             file_extracted = False
         finally:
             compressed_file.close()

@@ -17,6 +17,9 @@ import io
 import json
 import os
 import shutil
+import subprocess
+import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -29,6 +32,7 @@ from lib.utils import log_util, logger
 
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import (
     BundleWarning,
+    CollectinfoDiagnostics,
     DiagSeverity,
 )
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
@@ -147,6 +151,70 @@ class CollectinfoLogHandlerTest(unittest.TestCase):
 
         # Verify it was called with the correct type and stanza
         fetch_mock.assert_called_once_with(type="meta_data", stanza="release")
+
+
+class BundleExtractionTest(unittest.TestCase):
+    """Opening a bundle is opening a third party's archive."""
+
+    def setUp(self):
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        self.dest_dir = os.path.join(self.work_dir, "dest")
+        os.makedirs(self.dest_dir)
+
+    def _handler(self):
+        handler = MagicMock(spec=CollectinfoLogHandler)
+        handler._extract_to = CollectinfoLogHandler._extract_to.__get__(handler)
+
+        return handler
+
+    def _tar_with(self, member_name, payload=b"pwned"):
+        path = os.path.join(self.work_dir, "bundle.tgz")
+        content = os.path.join(self.work_dir, "content")
+
+        with open(content, "wb") as content_file:
+            content_file.write(payload)
+
+        with tarfile.open(path, "w:gz") as archive:
+            archive.add(content, arcname=member_name)
+
+        return path
+
+    def test_a_traversing_member_is_not_written_outside_the_destination(self):
+        """A tar member named ../escaped writes outside dest_dir on Python 3.12,
+        whose default extraction filter is still fully_trusted."""
+        archive = self._tar_with("../escaped.txt")
+        escaped = os.path.join(self.work_dir, "escaped.txt")
+
+        with self.assertLogs(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler", level="WARNING"
+        ):
+            extracted = self._handler()._extract_to(archive, self.dest_dir)
+
+        self.assertFalse(extracted)
+        self.assertFalse(os.path.exists(escaped), escaped)
+
+    def test_an_absolute_member_is_not_written_outside_the_destination(self):
+        """tarfile strips the leading separator when the archive is built, but
+        the destination is what matters: nothing lands outside it."""
+        outside = os.path.join(self.work_dir, "absolute.txt")
+        archive = self._tar_with(outside)
+
+        self._handler()._extract_to(archive, self.dest_dir)
+
+        self.assertFalse(os.path.exists(outside), outside)
+
+    def test_an_ordinary_bundle_still_extracts(self):
+        """asadm's own bundles hold regular files only, so the filter must not
+        cost the product anything."""
+        archive = self._tar_with("20260720_100000_ascinfo.json", b"{}")
+
+        extracted = self._handler()._extract_to(archive, self.dest_dir)
+
+        self.assertTrue(extracted)
+        self.assertTrue(
+            os.path.exists(os.path.join(self.dest_dir, "20260720_100000_ascinfo.json"))
+        )
 
 
 class NodeIdMappingTest(unittest.TestCase):
@@ -329,6 +397,26 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
 
         self.assertEqual(handler._scan_bundle_for_asadm_version(), "4.0.1")
 
+    def test_version_scan_agreeing_logs_report_the_version(self):
+        self._write_text("ascollectinfo.log", "asadm version 4.0.1\n")
+        self._write_text("summary.log", "asadm version 4.0.1\n")
+
+        handler = self._handler()
+
+        self.assertEqual(handler._scan_bundle_for_asadm_version(), "4.0.1")
+
+    def test_version_scan_disagreeing_logs_report_nothing(self):
+        """A directory holding two bundles is a supported input, and the scan
+        cannot tell which log belongs to the analyzed snapshot. Attributing one
+        bundle's collector to another's data is worse than reporting the version
+        as unrecorded."""
+        self._write_text("ascollectinfo.log", "asadm version 2.9.0\n")
+        self._write_text("summary.log", "asadm version 4.0.1\n")
+
+        handler = self._handler()
+
+        self.assertEqual(handler._scan_bundle_for_asadm_version(), "")
+
     def test_meta_version_drives_the_banner(self):
         self._write_json("collectinfo_meta.json", META_DATA)
 
@@ -381,6 +469,21 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
         self.assertIn("Collected by:  asadm 3.1.0", str(handler))
         self.assertNotIn("Collected by asadm 3.1.0", handler.diagnostics_banner())
 
+    def test_diagnostics_that_could_not_be_computed_say_so(self):
+        """An empty finding list reads as a healthy bundle. When the analyzer
+        itself failed, nothing was checked, and the banner must say that rather
+        than print a clean bill of health."""
+        self._write_json("collectinfo_meta.json", META_DATA)
+        handler = self._handler()
+
+        with patch.object(
+            CollectinfoDiagnostics, "analyze", side_effect=ValueError("boom")
+        ):
+            warnings = handler.get_bundle_diagnostics()
+
+        self.assertEqual([w.category for w in warnings], ["diagnostics-unavailable"])
+        self.assertIn("Diagnostics could not be computed", str(warnings[0].title))
+
     def test_diagnostics_are_cached(self):
         handler = self._handler()
 
@@ -419,16 +522,48 @@ class BundleDiagnosticsWiringTest(unittest.TestCase):
 
         self.assertEqual(logger.get_exit_code(), 0)
 
-    def test_the_diagnostics_module_logger_is_the_exit_code_setting_one(self):
-        """Without this, test_..._does_not_set_the_exit_code passes vacuously: with
-        a plain logging.Logger the exit code can never move, no matter what the
-        banner code does. Production (asadm.py) imports lib.utils.logger first,
-        which installs BaseLogger for every logger created after it."""
-        from lib.collectinfo_analyzer.collectinfo_handler import (
-            collectinfo_diagnostics,
+    def test_an_unusable_bundle_fails_the_command(self):
+        """A bundle with no readable node data makes every command print an empty
+        table, so `asadm -e ... || handle_error` would read the failure as
+        success."""
+        self._write_json("collectinfo_meta.json", META_DATA)
+        handler = self._handler()
+        handler._bundle_diagnostics = [
+            BundleWarning(
+                category="no-usable-nodes",
+                severity=DiagSeverity.ERROR,
+                title="Bundle contains no nodes",
+            )
+        ]
+        logger.set_exit_code(0)
+        self.addCleanup(logger.set_exit_code, 0)
+
+        handler.print_diagnostics_banner(io.StringIO())
+
+        self.assertEqual(logger.get_exit_code(), 2)
+
+    def test_importing_the_analyzer_does_not_load_the_client(self):
+        """Reaching for BaseLogger used to pull lib.live_cluster.client, and
+        OpenSSL with it, into a module graph that needs neither. Asserted by
+        importing in a fresh interpreter: inside this process something else has
+        already imported the client."""
+        repo_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+        script = (
+            "import sys;"
+            "import lib.collectinfo_analyzer.collectinfo_handler.log_handler;"
+            "print('lib.live_cluster.client' in sys.modules)"
         )
 
-        self.assertIsInstance(collectinfo_diagnostics.logger, logger.BaseLogger)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+        )
+
+        self.assertEqual(result.stdout.strip(), "False", result.stderr)
 
     def test_print_diagnostics_banner_defaults_to_stderr(self):
         """Execute mode is built to be scripted: the banner must land on stderr by
