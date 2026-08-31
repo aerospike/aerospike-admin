@@ -17,7 +17,6 @@ from typing import Any
 
 from lib.utils import common, util
 from lib.utils.constants import (
-    COLLECTINFO_LOCALLY_DERIVED_META_KEYS,
     NodeSelection,
     NodeSelectionType,
     PRINCIPAL_SCOPED_TYPES,
@@ -25,33 +24,6 @@ from lib.utils.constants import (
 from lib.utils.lookup_dict import LookupDict
 
 from .collectinfo_parser import collectinfo_parser
-
-
-def _as_stat_has_aerospike_data(as_stat) -> bool:
-    """Whether an as_stat section holds any server-returned data.
-
-    Mirrors the collection-side check in collectinfo_controller. node_names and ip
-    are derived locally from the node object without an info call, so counting them
-    would make a fully-failed node read as having data (TOOLS-3596).
-    """
-    if not as_stat:
-        return False
-
-    try:
-        for key, section in as_stat.items():
-            if key == "meta_data":
-                if any(
-                    util.has_content(v)
-                    for k, v in section.items()
-                    if k not in COLLECTINFO_LOCALLY_DERIVED_META_KEYS
-                ):
-                    return True
-            elif util.has_content(section):
-                return True
-    except Exception:
-        return False
-
-    return False
 
 
 def _endpoint_keys(value) -> list[str]:
@@ -492,7 +464,7 @@ class _CollectinfoSnapshot:
 
             as_stat = (node_data or {}).get("as_stat") or {}
 
-            if not _as_stat_has_aerospike_data(as_stat):
+            if not util.as_stat_has_aerospike_data(as_stat):
                 empty_nodes.append(node_key)
 
         return sorted(empty_nodes)

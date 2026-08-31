@@ -28,6 +28,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_log import (
     _CollectinfoSnapshot,
 )
+from lib.utils import constants
 
 TS = "2026-07-20 10:00:00 UTC"
 
@@ -70,11 +71,18 @@ class FakeLogHandler:
     """
 
     def __init__(
-        self, scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1
+        self,
+        scanned_version="",
+        bundle_files=("sysinfo.log",),
+        snapshot_count=1,
+        bundle_meta_seen=False,
+        bundle_meta_format_version=0,
     ):
         self._scanned_version = scanned_version
         self._bundle_files = tuple(bundle_files)
         self.bundle_snapshot_count = snapshot_count
+        self.bundle_meta_seen = bundle_meta_seen
+        self.bundle_meta_format_version = bundle_meta_format_version
 
     def collector_asadm_version(self):
         return self._scanned_version
@@ -83,20 +91,20 @@ class FakeLogHandler:
         return [file for file in self._bundle_files if file.endswith(tuple(suffixes))]
 
 
-def make_log_handler(
-    scanned_version="", bundle_files=("sysinfo.log",), snapshot_count=1
-):
-    return FakeLogHandler(
-        scanned_version=scanned_version,
-        bundle_files=bundle_files,
-        snapshot_count=snapshot_count,
-    )
-
-
 def diagnostics(nodes=None, meta=None, running_version="5.0.2", **handler_kwargs):
+    """A diagnostics object whose handler agrees with the meta it is given.
+
+    The real handler records that it saw a metadata file, and its format version,
+    whether or not the file joined to the analyzed snapshot; tests that need the
+    two to disagree pass bundle_meta_seen explicitly."""
     nodes = {"1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE)} if nodes is None else nodes
+    handler_kwargs.setdefault("bundle_meta_seen", isinstance(meta, dict) and bool(meta))
+    handler_kwargs.setdefault(
+        "bundle_meta_format_version",
+        meta.get("meta_format_version", 0) if isinstance(meta, dict) else 0,
+    )
     return CollectinfoDiagnostics(
-        log_handler=make_log_handler(**handler_kwargs),
+        log_handler=FakeLogHandler(**handler_kwargs),
         snapshot=make_snapshot(nodes),
         timestamp=TS,
         running_version=running_version,
@@ -125,7 +133,6 @@ def meta_with(
         "snapshots": [
             {
                 "timestamp": TS,
-                "cluster_name": "prod",
                 "expected_nodes": ["1.1.1.1:3000"],
                 "responded_nodes": ["1.1.1.1:3000"],
                 "no_data_nodes": no_data_nodes or [],
@@ -287,21 +294,53 @@ class DroppedAndMissingNodesTest(unittest.TestCase):
         self.assertIn("no route to host", " ".join(warning.lines))
 
     def test_detection_error_still_reports_no_data_nodes(self):
-        """no_data_nodes is written before reconciliation runs, so it survives a
-        detection failure and the dropped node does not vanish from diagnostics."""
+        """Bundles written before the drop list was recorded separately carry only
+        no_data_nodes, so the dropped node must still be named from it."""
         meta = meta_with(
             discrepancies={"detection_error": "no route to host"},
             no_data_nodes=["2.2.2.2:3000"],
         )
+
+        warning = find(diagnostics(meta=meta).analyze(), "dropped-or-missing-nodes")
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("2.2.2.2:3000", body)
+        self.assertIn("returned no data", body)
+        self.assertIn("Node reconciliation did not complete", body)
+
+    def test_detection_error_still_reports_the_recorded_drop_list(self):
+        """The drop list is computed from the collected data, so a failed live
+        reconciliation does not make it unknown. Reporting only the failure hid
+        nodes the bundle plainly recorded as returning nothing."""
+        meta = meta_with(
+            discrepancies={
+                "detection_error": "no route to host",
+                "dropped_during_collection": [
+                    {"node_key": "2.2.2.2:3000", "error_class": "unreachable"}
+                ],
+            },
+            no_data_nodes=["2.2.2.2:3000"],
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "dropped-or-missing-nodes")
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("2.2.2.2:3000 (unreachable)", body)
+        self.assertIn("cannot be confirmed for this bundle", body)
+
+    def test_detection_error_alone_is_still_reported(self):
+        """Nothing was dropped, but the peer reconciliation did not run, so the
+        bundle cannot claim every cluster node is present."""
+        meta = meta_with(discrepancies={"detection_error": "no route to host"})
 
         warning = find(
             diagnostics(meta=meta).analyze(), "node-discrepancy-detection-failed"
         )
 
         self.assertIsNotNone(warning)
-        body = " ".join(warning.lines)
-        self.assertIn("2.2.2.2:3000", body)
-        self.assertIn("returned no data", body)
+        self.assertIn("no route to host", " ".join(warning.lines))
 
     def test_old_bundle_cluster_size_heuristic(self):
         node = copy.deepcopy(HEALTHY_NODE)
@@ -538,26 +577,145 @@ class SysinfoCoverageTest(unittest.TestCase):
         self.assertIn("`health` cannot run its system checks", body)
         self.assertIn("`summary` reports no OS version", body)
 
-    def test_ssh_collection_with_gaps_is_a_warning(self):
-        """--enable-ssh promised full coverage, so a node with no sysinfo means
-        SSH to it failed; that is the surprising case worth warning about."""
-        meta = meta_with()
+    def _ssh_meta(self, covered, uncovered):
+        """A meta shaped the way the collector writes one for an SSH collect."""
+        meta = meta_with(
+            nodes={
+                node_key: {
+                    "responded": True,
+                    "sysinfo_source": source,
+                    "errors": [],
+                }
+                for node_key, source in [(key, "ssh") for key in covered]
+                + [(key, "none") for key in uncovered]
+            }
+        )
         meta["collection"]["flags"]["enable_ssh"] = True
 
-        warning = find(
-            diagnostics(
-                nodes=self._nodes(with_sysinfo=1, without_sysinfo=2), meta=meta
-            ).analyze(),
-            "partial-sysinfo",
+        return meta
+
+    def test_ssh_collection_with_gaps_is_a_warning(self):
+        """--enable-ssh promised full coverage, so a node the meta records as
+        having no host data means SSH to it failed; that is the surprising case
+        worth warning about."""
+        nodes = self._nodes(with_sysinfo=1, without_sysinfo=2)
+        meta = self._ssh_meta(
+            covered=["10.0.0.0:3000"],
+            uncovered=["10.0.0.1:3000", "10.0.0.2:3000"],
         )
+
+        warning = find(diagnostics(nodes=nodes, meta=meta).analyze(), "ssh-sysinfo-gap")
 
         self.assertIsNotNone(warning)
         self.assertEqual(warning.severity, DiagSeverity.WARNING)
         self.assertIn("--enable-ssh", warning.title)
         self.assertIn("2 of 3 nodes", warning.title)
         body = " ".join(warning.lines)
+        self.assertIn("10.0.0.1:3000", body)
         self.assertIn("SSH to those hosts failed", body)
         self.assertIn("`health` cannot run its system checks", body)
+
+    def test_the_ssh_gap_counts_the_nodes_it_names(self):
+        """The title counted the uncovered set while the body listed the subset
+        the meta had evidence for, so the two disagreed."""
+        nodes = self._nodes(with_sysinfo=1, without_sysinfo=2)
+        meta = self._ssh_meta(covered=["10.0.0.0:3000"], uncovered=["10.0.0.1:3000"])
+        meta["snapshots"][0]["nodes"]["10.0.0.2:3000"] = {
+            "responded": True,
+            "sysinfo_source": "ssh",
+            "errors": [],
+        }
+
+        warning = find(diagnostics(nodes=nodes, meta=meta).analyze(), "ssh-sysinfo-gap")
+
+        self.assertIn("1 of 3 nodes", warning.title)
+        body = " ".join(warning.lines)
+        self.assertIn("10.0.0.1:3000", body)
+        self.assertNotIn("10.0.0.2:3000", body)
+
+    def test_ssh_failure_is_not_asserted_without_evidence(self):
+        """With --enable-ssh recorded but no per-node source in the meta, the
+        bundle does not say SSH failed. Coverage is still described; the cause is
+        not invented."""
+        nodes = self._nodes(with_sysinfo=2, without_sysinfo=2)
+        meta = meta_with()
+        meta["collection"]["flags"]["enable_ssh"] = True
+
+        warnings = diagnostics(nodes=nodes, meta=meta).analyze()
+
+        self.assertIsNone(find(warnings, "ssh-sysinfo-gap"))
+        partial = find(warnings, "partial-sysinfo")
+        self.assertIsNotNone(partial)
+        self.assertEqual(partial.severity, DiagSeverity.INFO)
+        self.assertNotIn("SSH", " ".join(partial.lines))
+
+    def test_partial_sysinfo_has_one_severity(self):
+        """The SSH gap has its own category, so partial-sysinfo is INFO always
+        and a reader can key off the category."""
+        nodes = self._nodes(with_sysinfo=2, without_sysinfo=2)
+        meta = self._ssh_meta(
+            covered=["10.0.0.0:3000", "10.0.0.1:3000"],
+            uncovered=["10.0.0.2:3000", "10.0.0.3:3000"],
+        )
+
+        warnings = diagnostics(nodes=nodes, meta=meta).analyze()
+
+        self.assertIsNone(find(warnings, "partial-sysinfo"))
+        self.assertIsNotNone(find(warnings, "ssh-sysinfo-gap"))
+
+    def test_one_covered_node_with_no_host_files_is_still_reported(self):
+        """A bundle collected on a cluster node whose sysinfo.log and
+        aerospike.conf writes failed: the coverage guard silences the coverage
+        finding, and nothing else covers those two files."""
+        warning = find(
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=1, without_sysinfo=2),
+                meta=meta_with(),
+                bundle_files=(),
+            ).analyze(),
+            "missing-sysinfo-files",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.INFO)
+        self.assertIn("10.0.0.0:3000", " ".join(warning.lines))
+
+    def test_one_covered_node_with_host_files_stays_silent(self):
+        warnings = diagnostics(
+            nodes=self._nodes(with_sysinfo=1, without_sysinfo=2), meta=meta_with()
+        ).analyze()
+
+        self.assertIsNone(find(warnings, "missing-sysinfo-files"))
+        self.assertIsNone(find(warnings, "partial-sysinfo"))
+
+    def test_a_bundle_with_no_recorded_flags_states_both_possibilities(self):
+        """'You forgot --enable-ssh' is not provable for a bundle that records no
+        flags: every pre-meta bundle collected with --enable-ssh where SSH failed
+        everywhere looks exactly like one collected without it."""
+        warning = find(
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=0, without_sysinfo=3), meta=None
+            ).analyze(),
+            "missing-sysinfo",
+        )
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("either", body)
+        self.assertIn("SSH failed for every node", body)
+        self.assertIn("records no collection flags", body)
+
+    def test_a_recorded_flag_still_states_the_cause_as_fact(self):
+        warning = find(
+            diagnostics(
+                nodes=self._nodes(with_sysinfo=0, without_sysinfo=3), meta=meta_with()
+            ).analyze(),
+            "missing-sysinfo",
+        )
+
+        body = " ".join(warning.lines)
+        self.assertIn("without --enable-ssh", body)
+        self.assertNotIn("either", body)
 
     def test_partial_coverage_is_not_reported_as_missing(self):
         warnings = diagnostics(
@@ -817,7 +975,7 @@ class BundleShapeTest(unittest.TestCase):
             "%Y-%m-%d %H:%M:%S UTC", time.gmtime(time.time() - 30 * 86400)
         )
         diag = CollectinfoDiagnostics(
-            log_handler=make_log_handler(),
+            log_handler=FakeLogHandler(),
             snapshot=make_snapshot(
                 {"1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE)}, timestamp=old_ts
             ),
@@ -835,7 +993,7 @@ class BundleShapeTest(unittest.TestCase):
     def test_fresh_bundle_is_silent(self):
         fresh_ts = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
         diag = CollectinfoDiagnostics(
-            log_handler=make_log_handler(),
+            log_handler=FakeLogHandler(),
             snapshot=make_snapshot(
                 {"1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE)}, timestamp=fresh_ts
             ),
@@ -969,6 +1127,20 @@ class CuratedAnomalyTest(unittest.TestCase):
 
         self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "migrations"))
 
+    def test_migrations_fire_without_the_namespace_statistics(self):
+        """Statistics are collected per subsection, so a bundle whose namespace
+        call failed while the service call succeeded is a shape the collector
+        actively produces. Requiring both withheld a finding the bundle plainly
+        recorded."""
+        nodes = self._with_service_stats(migrate_partitions_remaining="42")
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "migrations")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("1 node", warning.title)
+        body = " ".join(warning.lines)
+        self.assertIn("per-namespace migration statistics are not in this bundle", body)
+
     def test_zero_migrations_is_silent(self):
         nodes = self._with_ns_stats(
             migrate_tx_partitions_remaining="0", migrate_rx_partitions_remaining="0"
@@ -1101,109 +1273,188 @@ class CuratedAnomalyTest(unittest.TestCase):
             find(diagnostics(nodes=nodes).analyze(), "partition-availability")
         )
 
-    def test_clock_skew_with_no_governing_threshold_uses_the_constant(self):
-        nodes = self._with_service_stats(cluster_clock_skew_ms="4000")
+    def _clock_skew_nodes(
+        self,
+        skew_ms,
+        stop_writes_sec="20",
+        strong_consistency="true",
+        nsup_period="0",
+        clock_skew_stop_writes="false",
+        namespaces=("test",),
+        per_node_stop_writes_sec=None,
+    ):
+        """A bundle shaped the way the collector writes one.
 
-        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+        The per-namespace clock-skew threshold only exists in the stop-writes
+        summary when the namespace statistics carry clock_skew_stop_writes and the
+        namespace config carries strong-consistency and nsup-period, which is what
+        every real bundle holds. A fixture with config alone produces no entry at
+        all, which is how a check driven off the summary can look silent while
+        working."""
+        nodes = {}
+        thresholds = per_node_stop_writes_sec or {"1.1.1.1:3000": stop_writes_sec}
 
-        self.assertIsNotNone(warning)
-        self.assertIn("4.0 s", warning.title)
+        for index, (node_key, node_threshold) in enumerate(thresholds.items()):
+            node = copy.deepcopy(HEALTHY_NODE)
+            node["as_stat"]["meta_data"]["node_id"] = "BB%d" % (index,)
+            node["as_stat"]["statistics"]["service"].update(
+                {
+                    "cluster_clock_skew_ms": skew_ms,
+                    "cluster_clock_skew_stop_writes_sec": node_threshold,
+                }
+            )
+            node["as_stat"]["statistics"]["namespace"] = {
+                ns: {
+                    "service": {"clock_skew_stop_writes": clock_skew_stop_writes},
+                    "set": {},
+                    "bin": {},
+                    "sindex": {},
+                }
+                for ns in namespaces
+            }
+            node["as_stat"]["config"]["namespace"] = {
+                ns: {
+                    "service": {
+                        "strong-consistency": strong_consistency,
+                        "nsup-period": nsup_period,
+                    }
+                }
+                for ns in namespaces
+            }
+            nodes[node_key] = node
 
-    def test_small_clock_skew_is_silent(self):
-        nodes = self._with_service_stats(cluster_clock_skew_ms="12")
-
-        self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
-
-    def _strong_consistency_nodes(self, skew_ms, stop_writes_sec="20"):
-        nodes = self._with_service_stats(
-            cluster_clock_skew_ms=skew_ms,
-            cluster_clock_skew_stop_writes_sec=stop_writes_sec,
-        )
-        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
-            "test": {"service": {"strong-consistency": "true"}}
-        }
         return nodes
 
-    def test_clock_skew_below_three_quarters_of_the_sc_threshold_is_silent(self):
-        """The trigger scales to the cluster's own stop-writes point, matching the
-        health checks: 4 s of skew against a 20 s threshold is not a warning."""
-        nodes = self._strong_consistency_nodes(skew_ms="4000")
+    def test_clock_skew_below_three_quarters_of_the_threshold_is_silent(self):
+        """The trigger scales to the namespace's own stop-writes point: 4 s of
+        skew against a 20 s threshold is not a warning."""
+        nodes = self._clock_skew_nodes(skew_ms="4000")
 
         self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
 
-    def test_clock_skew_approaching_the_sc_threshold_states_it(self):
-        nodes = self._strong_consistency_nodes(skew_ms="16000")
+    def test_clock_skew_approaching_the_threshold_names_the_namespace(self):
+        nodes = self._clock_skew_nodes(skew_ms="16000")
 
         warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
 
         self.assertIsNotNone(warning)
         self.assertIn("16.0 s", warning.title)
         body = " ".join(warning.lines)
-        self.assertIn("Writes stop at 20 s of skew", body)
-        self.assertIn("cluster_clock_skew_stop_writes_sec", body)
+        self.assertIn("Approaching the stop-writes threshold", body)
+        self.assertIn("test (20 s)", body)
 
-    def test_clock_skew_past_the_sc_threshold_says_writes_were_refused(self):
-        nodes = self._strong_consistency_nodes(skew_ms="27000")
-
-        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
-
-        self.assertIsNotNone(warning)
-        self.assertIn("past the 20 s stop-writes threshold", " ".join(warning.lines))
-
-    def test_clock_skew_disagreeing_thresholds_use_the_lowest(self):
-        """Each node stops writes at its own configured value, so the cluster
-        stops at the lowest one; quoting the most forgiving value understates
-        the risk."""
-        nodes = {
-            "1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE),
-            "2.2.2.2:3000": copy.deepcopy(HEALTHY_NODE),
-        }
-        nodes["1.1.1.1:3000"]["as_stat"]["statistics"]["service"].update(
-            {
-                "cluster_clock_skew_ms": "9000",
-                "cluster_clock_skew_stop_writes_sec": "10",
-            }
-        )
-        nodes["2.2.2.2:3000"]["as_stat"]["statistics"]["service"].update(
-            {
-                "cluster_clock_skew_ms": "9000",
-                "cluster_clock_skew_stop_writes_sec": "30",
-            }
-        )
-        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
-            "test": {"service": {"strong-consistency": "true"}}
-        }
-
-        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
-
-        self.assertIsNotNone(warning)
-        self.assertIn("10 s", " ".join(warning.lines))
-
-    def test_clock_skew_ap_cluster_with_nsup_uses_the_fixed_limit(self):
-        """A pure-AP cluster stops writes at a fixed 40 s (with nsup enabled), so
-        a 5.2 s skew is nowhere near actionable and the configured SC threshold
-        does not apply."""
-        nodes = self._with_service_stats(
-            cluster_clock_skew_ms="5200", cluster_clock_skew_stop_writes_sec="20"
-        )
-        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
-            "test": {"service": {"strong-consistency": "false", "nsup-period": "120"}}
-        }
-
-        self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
-
-    def test_clock_skew_ap_cluster_past_the_fixed_limit_warns(self):
-        nodes = self._with_service_stats(cluster_clock_skew_ms="41000")
-        nodes["1.1.1.1:3000"]["as_stat"]["config"]["namespace"] = {
-            "test": {"service": {"strong-consistency": "false", "nsup-period": "120"}}
-        }
+    def test_clock_skew_past_the_threshold_says_writes_were_refused(self):
+        nodes = self._clock_skew_nodes(skew_ms="27000")
 
         warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
 
         self.assertIsNotNone(warning)
         body = " ".join(warning.lines)
-        self.assertIn("past the 40 s stop-writes threshold", body)
-        self.assertIn("AP namespaces with nsup enabled", body)
+        self.assertIn("writes were being refused", body)
+        self.assertIn("test (20 s)", body)
+
+    def test_clock_skew_names_only_namespaces_the_bundle_has_a_threshold_for(self):
+        """The consequence of skew is per namespace, so the finding names
+        namespaces rather than making one claim about the cluster. A namespace
+        whose statistics do not report clock_skew_stop_writes has no threshold in
+        the bundle and is not named."""
+        nodes = self._clock_skew_nodes(skew_ms="27000", namespaces=("sc", "quiet"))
+        node = nodes["1.1.1.1:3000"]
+        del node["as_stat"]["statistics"]["namespace"]["quiet"]["service"][
+            "clock_skew_stop_writes"
+        ]
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("sc (20 s)", body)
+        self.assertNotIn("quiet (", body)
+
+    def test_clock_skew_disagreeing_thresholds_use_the_lowest(self):
+        """Each node stops writes at its own configured value, so the namespace
+        stops at the lowest one; quoting the most forgiving value understates
+        the risk."""
+        nodes = self._clock_skew_nodes(
+            skew_ms="9000",
+            per_node_stop_writes_sec={"1.1.1.1:3000": "10", "2.2.2.2:3000": "30"},
+        )
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("test (10 s)", " ".join(warning.lines))
+
+    def test_clock_skew_ap_cluster_with_nsup_uses_the_fixed_limit(self):
+        """An AP namespace with nsup enabled stops writes at a fixed 40 s, so a
+        5.2 s skew is nowhere near actionable and the configured SC threshold
+        does not apply."""
+        nodes = self._clock_skew_nodes(
+            skew_ms="5200",
+            stop_writes_sec="20",
+            strong_consistency="false",
+            nsup_period="120",
+        )
+
+        self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
+
+    def test_clock_skew_ap_cluster_past_the_fixed_limit_warns(self):
+        nodes = self._clock_skew_nodes(
+            skew_ms="41000",
+            stop_writes_sec="20",
+            strong_consistency="false",
+            nsup_period="120",
+        )
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("writes were being refused", body)
+        self.assertIn("test (40 s)", body)
+
+    def test_the_servers_own_stop_writes_flag_is_believed(self):
+        """`show stop-writes` marks the trigger active only when the server flag
+        and the threshold agree, and this finding reuses that verdict rather than
+        deciding again. Below the threshold, the flag alone reports the namespace
+        as approaching, not as refusing."""
+        nodes = self._clock_skew_nodes(skew_ms="19000", clock_skew_stop_writes="true")
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        body = " ".join(warning.lines)
+        self.assertIn("Approaching the stop-writes threshold", body)
+        self.assertNotIn("refused", body)
+
+    def test_clock_skew_and_stop_writes_both_fire(self):
+        """One is an ERROR about the cluster refusing writes, the other a WARNING
+        about the clocks that caused it, and the fixes differ."""
+        nodes = self._clock_skew_nodes(skew_ms="27000", clock_skew_stop_writes="true")
+
+        warnings = diagnostics(nodes=nodes).analyze()
+
+        self.assertIsNotNone(find(warnings, "stop-writes"))
+        self.assertIsNotNone(find(warnings, "clock-skew"))
+
+    def test_a_bundle_with_no_threshold_recorded_states_no_threshold(self):
+        """An older server, or a bundle whose namespace statistics failed to
+        collect, records no clock-skew stop-writes entry anywhere. The skew is
+        still reported; what it would cost is not invented."""
+        nodes = self._with_service_stats(cluster_clock_skew_ms="4000")
+
+        warning = find(diagnostics(nodes=nodes).analyze(), "clock-skew")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("4.0 s", warning.title)
+        body = " ".join(warning.lines)
+        self.assertIn("records no clock-skew stop-writes threshold", body)
+        self.assertNotIn("refused", body)
+
+    def test_small_clock_skew_is_silent(self):
+        nodes = self._with_service_stats(cluster_clock_skew_ms="12")
+
+        self.assertIsNone(find(diagnostics(nodes=nodes).analyze(), "clock-skew"))
 
 
 class CheckIsolationTest(unittest.TestCase):
@@ -1222,7 +1473,7 @@ class CheckIsolationTest(unittest.TestCase):
         broken.nodes_without_as_stat.side_effect = ValueError("boom")
 
         diag = CollectinfoDiagnostics(
-            log_handler=make_log_handler(),
+            log_handler=FakeLogHandler(),
             snapshot=broken,
             timestamp=TS,
             running_version="5.0.2",
@@ -1233,6 +1484,404 @@ class CheckIsolationTest(unittest.TestCase):
         self.assertEqual(
             categories(warnings), ["collector-version-unknown", "no-usable-nodes"]
         )
+
+
+class DataAccessCachingTest(unittest.TestCase):
+    """analyze() reads the same stanzas from a dozen checks, and every read deep
+    copies what it returns. Reading them once is most of the analyzer's cost."""
+
+    def _counting_diagnostics(self, nodes=None, meta=None):
+        diag = diagnostics(nodes=nodes, meta=meta)
+        real_get_data = diag.snapshot.get_data
+        calls = []
+
+        def counted(type="", stanza="", **kwargs):
+            calls.append((type, stanza))
+
+            return real_get_data(type=type, stanza=stanza, **kwargs)
+
+        diag.snapshot.get_data = counted
+
+        return diag, calls
+
+    def test_each_stanza_is_read_once_per_analysis(self):
+        diag, calls = self._counting_diagnostics(meta=meta_with())
+
+        diag.analyze()
+
+        self.assertEqual(len(calls), len(set(calls)), sorted(calls))
+
+    def test_the_whole_meta_data_stanza_is_never_read(self):
+        """Every node's jobs listing lives under meta_data, and the three checks
+        that read it need one key each."""
+        diag, calls = self._counting_diagnostics(meta=meta_with())
+
+        diag.analyze()
+
+        self.assertNotIn(("meta_data", ""), calls)
+
+    def test_node_names_and_empty_nodes_are_read_once(self):
+        diag = diagnostics(meta=meta_with())
+        diag.snapshot.get_node_names = MagicMock(return_value={"1.1.1.1:3000": "host1"})
+        diag.snapshot.nodes_without_as_stat = MagicMock(return_value=[])
+
+        diag.analyze()
+
+        diag.snapshot.get_node_names.assert_called_once()
+        diag.snapshot.nodes_without_as_stat.assert_called_once()
+
+    def test_the_stop_writes_summary_does_not_mutate_the_shared_stanzas(self):
+        """create_stop_writes_summary deep-merges config into the statistics it
+        is handed. Handing it the cached stanza would leave namespace
+        configuration inside the statistics every later check reads."""
+        diag = diagnostics(nodes=self._namespace_nodes(), meta=meta_with())
+        ns_before = copy.deepcopy(diag._ns_stats())
+        sets_before = copy.deepcopy(diag._data("statistics", constants.STAT_SETS))
+
+        diag._check_stop_writes()
+
+        self.assertEqual(diag._ns_stats(), ns_before)
+        self.assertEqual(diag._data("statistics", constants.STAT_SETS), sets_before)
+
+    def test_a_failing_snapshot_read_is_not_cached_as_a_success(self):
+        broken = MagicMock()
+        broken.get_data.side_effect = ValueError("boom")
+
+        diag = CollectinfoDiagnostics(
+            log_handler=FakeLogHandler(),
+            snapshot=broken,
+            timestamp=TS,
+            running_version="5.0.2",
+        )
+
+        self.assertEqual(diag._data("statistics", "service"), {})
+        self.assertEqual(diag._data("statistics", "service"), {})
+
+    @staticmethod
+    def _namespace_nodes():
+        nodes = {"1.1.1.1:3000": copy.deepcopy(HEALTHY_NODE)}
+        node = nodes["1.1.1.1:3000"]
+        node["as_stat"]["statistics"]["namespace"] = {
+            "test": {
+                "service": {"stop_writes": "false", "clock_skew_stop_writes": "false"},
+                "set": {"testset": {"objects": "5"}},
+                "bin": {},
+                "sindex": {},
+            }
+        }
+        node["as_stat"]["config"]["namespace"] = {
+            "test": {
+                "service": {"stop-writes-sys-memory-pct": "90"},
+                "set": {"testset": {"stop-writes-count": "1000"}},
+            }
+        }
+
+        return nodes
+
+
+class PerKeyMetadataReadTest(unittest.TestCase):
+    """The meta_data checks read one key each rather than the whole stanza,
+    which carries every node's jobs listing. The keys they read have to keep
+    matching what the bundle stores, and nothing but a test says so."""
+
+    def _nodes_with_meta(self, **per_node_meta):
+        nodes = {}
+
+        for index, (node_key, meta) in enumerate(per_node_meta.items()):
+            node = copy.deepcopy(HEALTHY_NODE)
+            node["as_stat"]["meta_data"].update(meta)
+            node["as_stat"]["meta_data"]["node_id"] = "BB%d" % (index,)
+            nodes[node_key.replace("_", ".") + ":3000"] = node
+
+        return nodes
+
+    def test_mixed_builds_are_still_detected(self):
+        nodes = self._nodes_with_meta(
+            n1_1_1_1={"asd_build": "8.0.0.0"}, n2_2_2_2={"asd_build": "8.1.0.0"}
+        )
+
+        warning = find(
+            diagnostics(nodes=nodes, meta=meta_with()).analyze(),
+            "mixed-server-versions",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("8.0.0.0", " ".join(warning.lines))
+        self.assertIn("8.1.0.0", " ".join(warning.lines))
+
+    def test_best_practices_are_still_read_from_the_metadata(self):
+        nodes = self._nodes_with_meta(
+            n1_1_1_1={constants.METADATA_PRACTICES: ["disable-thp"]}
+        )
+
+        warning = find(
+            diagnostics(nodes=nodes, meta=meta_with()).analyze(), "best-practices"
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("disable-thp", " ".join(warning.lines))
+
+    def test_health_outliers_are_still_read_from_the_metadata(self):
+        nodes = self._nodes_with_meta(
+            n1_1_1_1={
+                "health": {
+                    "outlier0": {"reason": "device_write_q", "confidence": "high"}
+                }
+            }
+        )
+
+        warning = find(
+            diagnostics(nodes=nodes, meta=meta_with()).analyze(), "health-outliers"
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("device_write_q", " ".join(warning.lines))
+
+    def test_a_node_without_the_key_is_not_an_outlier(self):
+        """A node whose meta lacks the key reads as {} rather than a value."""
+        warnings = diagnostics(meta=meta_with()).analyze()
+
+        self.assertIsNone(find(warnings, "health-outliers"))
+        self.assertIsNone(find(warnings, "best-practices"))
+        self.assertIsNone(find(warnings, "mixed-server-versions"))
+
+
+class AbortedCollectionTest(unittest.TestCase):
+    """A bundle whose collection died partway must say so.
+
+    Without the recorded flag it is indistinguishable from a bundle collected
+    before the metadata file existed, and the heuristics then describe a
+    truncated bundle as an old one."""
+
+    def test_an_aborted_collection_is_reported(self):
+        meta = meta_with()
+        meta["collection"]["aborted"] = True
+        meta["collection"]["snapshot_count"] = 3
+
+        warning = find(diagnostics(meta=meta).analyze(), "collection-aborted")
+
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.WARNING)
+        body = " ".join(warning.lines)
+        self.assertIn("1 of 3 requested snapshots completed", body)
+
+    def test_a_complete_collection_is_silent(self):
+        self.assertIsNone(
+            find(diagnostics(meta=meta_with()).analyze(), "collection-aborted")
+        )
+
+    def test_a_bundle_with_no_flag_is_silent(self):
+        """Every bundle written before the flag existed omits it, and an absent
+        key means 'not recorded', never 'aborted'."""
+        meta = meta_with()
+        del meta["collection"]["flags"]
+
+        self.assertIsNone(find(diagnostics(meta=meta).analyze(), "collection-aborted"))
+
+
+class FailedCheckAccountingTest(unittest.TestCase):
+    """A check that crashed has to reach the banner.
+
+    The banner prints counts of what the checks found. If a crashed check is
+    invisible, those counts are a claim that every check ran, which is the one
+    thing the banner must never say falsely."""
+
+    @staticmethod
+    def _crashing_check(name):
+        def check():
+            raise ValueError("boom")
+
+        check.__name__ = name
+
+        return check
+
+    def test_a_crashing_check_is_named_in_the_findings(self):
+        diag = diagnostics(meta=meta_with())
+        diag._check_cluster_state = self._crashing_check("_check_cluster_state")
+
+        warnings = diag.analyze()
+
+        incomplete = find(warnings, "diagnostics-incomplete")
+        self.assertIsNotNone(incomplete)
+        self.assertEqual(incomplete.severity, DiagSeverity.WARNING)
+        self.assertIn("cluster state", "\n".join(incomplete.lines))
+
+    def test_a_crash_before_the_early_return_is_still_reported(self):
+        """analyze() stops after no-usable-nodes, which is the path a broken
+        bundle takes, so it is exactly where a lost crash would hide."""
+        broken = MagicMock()
+        broken.get_data.side_effect = ValueError("boom")
+        broken.get_node_names.side_effect = ValueError("boom")
+        broken.nodes_without_as_stat.side_effect = ValueError("boom")
+
+        diag = CollectinfoDiagnostics(
+            log_handler=FakeLogHandler(),
+            snapshot=broken,
+            timestamp=TS,
+            running_version="5.0.2",
+        )
+        diag._check_meta_format_version = self._crashing_check(
+            "_check_meta_format_version"
+        )
+
+        warnings = diag.analyze()
+
+        self.assertIn("diagnostics-incomplete", categories(warnings))
+        self.assertIn("no-usable-nodes", categories(warnings))
+
+    def test_no_finding_when_every_check_ran(self):
+        warnings = diagnostics(meta=meta_with()).analyze()
+
+        self.assertIsNone(find(warnings, "diagnostics-incomplete"))
+
+    def test_analyze_is_repeatable(self):
+        """The failed-check list is per-run: a second analyze() of the same
+        object must not report the first run's crashes twice."""
+        diag = diagnostics(meta=meta_with())
+        diag._check_cluster_state = self._crashing_check("_check_cluster_state")
+
+        first = find(diag.analyze(), "diagnostics-incomplete")
+        second = find(diag.analyze(), "diagnostics-incomplete")
+
+        self.assertEqual(first.lines, second.lines)
+
+
+class MalformedMetaShapeTest(unittest.TestCase):
+    """The property, not the shapes: whatever a hostile or truncated meta holds,
+    no check crashes and the provenance finding still gets made.
+
+    Pinning the individual isinstance guards instead lets them be deleted one by
+    one with every test still green."""
+
+    SHAPES = {
+        "meta is a list": [],
+        "meta is a string": "nonsense",
+        "bundle is a string": {"meta_format_version": 1, "bundle": "3.1.0"},
+        "bundle is a list": {"meta_format_version": 1, "bundle": []},
+        "snapshots is a dict": {"snapshots": {"timestamp": TS}},
+        "snapshot entry is a string": {"snapshots": ["nonsense"]},
+        "nodes is a list": {"snapshots": [{"timestamp": TS, "nodes": []}]},
+        "node meta is a string": {
+            "snapshots": [{"timestamp": TS, "nodes": {"1.1.1.1:3000": "broken"}}]
+        },
+        "errors is a dict": {
+            "snapshots": [
+                {"timestamp": TS, "nodes": {"1.1.1.1:3000": {"errors": {"a": 1}}}}
+            ]
+        },
+        "error entry is a string": {
+            "snapshots": [
+                {"timestamp": TS, "nodes": {"1.1.1.1:3000": {"errors": ["broken"]}}}
+            ]
+        },
+        "discrepancies is a list": {
+            "snapshots": [{"timestamp": TS, "discrepancies": []}]
+        },
+        "dropped is a dict": {
+            "snapshots": [
+                {"timestamp": TS, "discrepancies": {"dropped_during_collection": {}}}
+            ]
+        },
+        "dropped entry is a string": {
+            "snapshots": [
+                {
+                    "timestamp": TS,
+                    "discrepancies": {"dropped_during_collection": ["nonsense"]},
+                }
+            ]
+        },
+        "missing entry is a string": {
+            "snapshots": [
+                {
+                    "timestamp": TS,
+                    "discrepancies": {"missing_from_collection": ["nonsense"]},
+                }
+            ]
+        },
+        "collection flags is a string": {
+            "meta_format_version": 1,
+            "collection": {"flags": "enable_ssh"},
+        },
+    }
+
+    def test_no_shape_crashes_a_check_or_loses_provenance(self):
+        for name, meta in self.SHAPES.items():
+            with self.subTest(shape=name):
+                diag = diagnostics(meta=meta, scanned_version="3.1.0")
+
+                with self.assertNoLogs(
+                    "lib.collectinfo_analyzer.collectinfo_handler."
+                    "collectinfo_diagnostics",
+                    level="DEBUG",
+                ):
+                    warnings = diag.analyze()
+
+                self.assertEqual(diag._failed_checks, [])
+                self.assertIsNone(find(warnings, "diagnostics-incomplete"))
+                self.assertTrue(
+                    any(
+                        warning.category.startswith("collector-version")
+                        for warning in warnings
+                    ),
+                    categories(warnings),
+                )
+
+
+class DiscrepancyEntryRenderingTest(unittest.TestCase):
+    """The bundle stores facts; the reader composes the sentence."""
+
+    def _lines(self, dropped=(), missing=()):
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": list(missing),
+                "dropped_during_collection": list(dropped),
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+        warning = find(diagnostics(meta=meta).analyze(), "dropped-or-missing-nodes")
+        self.assertIsNotNone(warning)
+
+        return "\n".join(warning.lines)
+
+    def test_an_error_class_becomes_prose(self):
+        body = self._lines(
+            dropped=[{"node_key": "2.2.2.2:3000", "error_class": "unreachable"}]
+        )
+
+        self.assertIn("2.2.2.2:3000 (unreachable)", body)
+
+    def test_an_unknown_error_class_is_shown_as_recorded(self):
+        body = self._lines(
+            dropped=[{"node_key": "2.2.2.2:3000", "error_class": "quantum"}]
+        )
+
+        self.assertIn("2.2.2.2:3000 (quantum)", body)
+
+    def test_a_pre_error_class_bundle_still_renders_its_reason(self):
+        """Bundles collected before this format change carry prose and nothing
+        else; they must keep rendering."""
+        body = self._lines(
+            dropped=[{"node_key": "2.2.2.2:3000", "reason": "timed out"}],
+            missing=[
+                {"node_key": "9.9.9.9:3000", "reason": "seen in peers of 1.1.1.1:3000"}
+            ],
+        )
+
+        self.assertIn("2.2.2.2:3000 (timed out)", body)
+        self.assertIn("9.9.9.9:3000 (seen in peers of 1.1.1.1:3000)", body)
+
+    def test_a_missing_peer_names_who_advertised_it(self):
+        body = self._lines(
+            missing=[{"node_key": "9.9.9.9:3000", "advertised_by": "1.1.1.1:3000"}]
+        )
+
+        self.assertIn("9.9.9.9:3000 (advertised by 1.1.1.1:3000)", body)
+
+    def test_an_entry_with_neither_field_still_names_the_node(self):
+        body = self._lines(dropped=[{"node_key": "2.2.2.2:3000"}])
+
+        self.assertIn("2.2.2.2:3000 (returned no data)", body)
 
 
 class HealthyProductionBundleTest(unittest.TestCase):
@@ -1363,9 +2012,7 @@ class HealthyProductionBundleTest(unittest.TestCase):
     def _warnings(self):
         nodes, meta = self._bundle()
         return CollectinfoDiagnostics(
-            log_handler=make_log_handler(
-                bundle_files=("sysinfo.log", "aerospike.conf")
-            ),
+            log_handler=FakeLogHandler(bundle_files=("sysinfo.log", "aerospike.conf")),
             snapshot=make_snapshot(nodes, timestamp=self.timestamp),
             timestamp=self.timestamp,
             running_version="5.0.2",
@@ -1568,6 +2215,47 @@ class MetaFormatVersionTest(unittest.TestCase):
     def test_no_meta_is_silent(self):
         self.assertIsNone(find(diagnostics().analyze(), "meta-format-newer"))
 
+    def test_a_newer_format_that_renames_the_join_fields_is_still_reported(self):
+        """The case the finding exists for: a v2 meta is free to rename
+        `snapshots` or `timestamp`, so it joins to nothing here. Gating the
+        finding on a successful join silences it exactly when it matters."""
+        warnings = diagnostics(
+            meta={"meta_format_version": 2, "collections": []},
+            bundle_meta_seen=True,
+            bundle_meta_format_version=2,
+        ).analyze()
+
+        warning = find(warnings, "meta-format-newer")
+        self.assertIsNotNone(warning)
+        self.assertIn("v2", warning.title)
+
+    def test_a_meta_that_cannot_be_joined_is_reported_as_broken_not_old(self):
+        """A bundle whose meta describes another snapshot is a broken or
+        mismatched file. Saying nothing lets the heuristics claim the bundle
+        predates metadata, which is a false statement about a bundle that has
+        it."""
+        meta = meta_with()
+        meta["snapshots"][0]["timestamp"] = "2026-01-01 00:00:00 UTC"
+
+        warnings = diagnostics(meta=meta).analyze()
+
+        warning = find(warnings, "meta-unreadable")
+        self.assertIsNotNone(warning)
+        self.assertEqual(warning.severity, DiagSeverity.WARNING)
+        body = " ".join(warning.lines)
+        self.assertIn(TS, body)
+        self.assertIn("not an old bundle", body)
+
+    def test_a_joined_meta_is_not_reported_as_broken(self):
+        self.assertIsNone(
+            find(diagnostics(meta=meta_with()).analyze(), "meta-unreadable")
+        )
+
+    def test_a_bundle_with_no_meta_at_all_is_not_reported_as_broken(self):
+        """Every bundle collected before the metadata file existed. A finding
+        here would fire on most bundles in the wild."""
+        self.assertIsNone(find(diagnostics().analyze(), "meta-unreadable"))
+
 
 class NodeSelectionTest(unittest.TestCase):
     def test_count_comes_from_expected_nodes_not_the_selector_list(self):
@@ -1694,6 +2382,63 @@ class ListTruncationTest(unittest.TestCase):
         body = "\n".join(warning.lines)
         self.assertIn("12 nodes were connected to", body)
         self.assertIn("and 2 more; the full list is in collectinfo_meta.json", body)
+
+    def test_truncated_lists_show_the_lowest_numbered_nodes(self):
+        """String sort puts .10 before .2, which makes the ten nodes shown an
+        artifact of the dotted-quad spelling rather than the lowest-numbered
+        ones."""
+        dropped = [
+            {"node_key": "10.1.0.%d:3000" % (index,), "error_class": "timeout"}
+            for index in range(1, 13)
+        ]
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [],
+                "dropped_during_collection": dropped,
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+            }
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "dropped-or-missing-nodes")
+
+        body = "\n".join(warning.lines)
+        self.assertIn("10.1.0.8:3000", body)
+        self.assertIn("10.1.0.9:3000", body)
+        self.assertNotIn("10.1.0.11:3000", body)
+        self.assertNotIn("10.1.0.12:3000", body)
+
+    def test_per_node_error_rows_are_numerically_sorted_before_truncation(self):
+        nodes = {
+            "10.1.0.%d:3000" % (index,): copy.deepcopy(HEALTHY_NODE)
+            for index in range(1, 13)
+        }
+        node_meta = {
+            node_key: {
+                "responded": True,
+                "errors": [
+                    {
+                        "section": "latency",
+                        "error_class": "timeout",
+                        "recovered_on_retry": False,
+                    }
+                ],
+            }
+            for node_key in nodes
+        }
+        meta = meta_with(nodes=node_meta)
+        meta["snapshots"][0]["expected_nodes"] = sorted(nodes)
+        meta["snapshots"][0]["responded_nodes"] = sorted(nodes)
+
+        warning = find(
+            diagnostics(nodes=nodes, meta=meta).analyze(), "node-collection-errors"
+        )
+
+        body = "\n".join(warning.table_lines)
+        self.assertIn("10.1.0.8:3000", body)
+        self.assertIn("10.1.0.9:3000", body)
+        self.assertNotIn("10.1.0.11:3000", body)
+        self.assertNotIn("10.1.0.12:3000", body)
 
 
 class AggregatedErrorFindingsTest(unittest.TestCase):
