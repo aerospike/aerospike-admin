@@ -18,29 +18,20 @@ import traceback
 from typing import Optional
 
 
+from lib.base_controller import ShellException
+from lib.live_cluster.client import ASProtocolError, ASInfoError
+from lib.utils.exit_code import get_exit_code, set_exit_code  # noqa: F401
 from lib.view import terminal
 
-exit_code = 0
 
-
-def get_exit_code():
-    global exit_code
-    return exit_code
-
-
-def set_exit_code(code):
-    global exit_code
-    exit_code = code
+def _carries_its_own_message(exc: Exception) -> bool:
+    """Whether an exception explains itself, so no traceback is needed."""
+    return isinstance(exc, (ShellException, ASProtocolError, ASInfoError))
 
 
 class BaseLogger(logging.Logger, object):
     def _handle_exception(self, msg):
-        if (
-            isinstance(msg, Exception)
-            and not isinstance(msg, ShellException)
-            and not isinstance(msg, ASProtocolError)
-            and not isinstance(msg, ASInfoError)
-        ):
+        if isinstance(msg, Exception) and not _carries_its_own_message(msg):
             traceback.print_exc()
 
     def debug(self, msg, *args, **kwargs):
@@ -155,13 +146,3 @@ stderr_log_handler.setLevel(
 )  # This only allows WARNING and above to be logged to stderr.
 stderr_log_handler.setFormatter(LogFormatter())
 logger.addHandler(stderr_log_handler)
-
-
-# must be imported after logger instantiation
-from lib.base_controller import (  # noqa: E402 - suppress flake warning
-    ShellException,
-)
-from lib.live_cluster.client import (  # noqa: E402 - suppress flake warning
-    ASProtocolError,
-    ASInfoError,
-)

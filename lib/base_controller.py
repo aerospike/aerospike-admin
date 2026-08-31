@@ -261,8 +261,8 @@ class BaseController(object):
     # Create static instances of view / health_checker / asadm_version / logger
     view = view.CliView()
     health_checker = HealthChecker()
-    asadm_version: str | None
-    asadm_build: str | None = None
+    asadm_version: str = ""
+    asadm_build: str = ""
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")
