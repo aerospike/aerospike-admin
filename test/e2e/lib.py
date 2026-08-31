@@ -48,6 +48,12 @@ CLIENT_ATTEMPTS = 20
 NODE_CAPACITY = 3
 DEFAULT_N_NODES = 2
 
+IMAGE_REPO = os.environ.get(
+    "ASADM_E2E_IMAGE_REPO",
+    "artifact.aerospike.io/database-docker-test-local/aerospike-server-enterprise",
+)
+SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.1.3.0")
+
 WORK_DIRECTORY = "work"
 LUA_DIRECTORY = "work/lua"
 STATE_DIRECTORIES = ["state-%d" % i for i in range(1, NODE_CAPACITY + 1)]
@@ -481,7 +487,7 @@ def start_server(
     first_base,
     index,
     access_address="127.0.0.1",
-    docker_tag="8.1.3.0",
+    docker_tag=SERVER_TAG,
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
@@ -532,14 +538,20 @@ def start_server(
     except:
         pass
 
-    image_name = f"artifact.aerospike.io/database-docker-test-local/aerospike-server-enterprise:{docker_tag}"
+    image_name = f"{IMAGE_REPO}:{docker_tag}"
 
     try:
         print(f"Pulling latest image: {image_name}")
         DOCKER_CLIENT.images.pull(image_name)
         print(f"Pulled latest image: {image_name}")
     except Exception as e:
-        print(f"Failed to pull {image_name}: {e}")
+        if not DOCKER_CLIENT.images.list(name=image_name):
+            raise Exception(
+                f"Failed to pull {image_name}: {e}. This image comes from an "
+                f"authenticated registry; run 'docker login artifact.aerospike.io'."
+            ) from e
+
+        print(f"WARNING: pull of {image_name} failed ({e}); using the local copy")
 
     container = DOCKER_CLIENT.containers.run(
         image_name,
@@ -579,7 +591,7 @@ def start_server(
 def start(
     do_reset=True,
     num_nodes=DEFAULT_N_NODES,
-    docker_tag="8.1.3.0",  # Change this to the desired latest Docker tag
+    docker_tag=SERVER_TAG,
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
@@ -847,7 +859,7 @@ def server_build():
         if response and response[1]:
             builds.add(response[1].strip())
 
-    return min(builds, key=version.LooseVersion) if builds else ""
+    return min(builds, key=version.LooseVersion) if builds else "0"
 
 
 def create_xdr_filter(ns, dc, exp):

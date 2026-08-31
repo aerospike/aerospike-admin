@@ -1102,6 +1102,18 @@ class DeriveMemoryStatsTest(unittest.TestCase):
         result = util.derive_memory_stats(stats)
         self.assertNotIn("cgroup_memory_used_pct", result["node1"])
 
+    def test_cgroup_used_pct_skipped_on_invalid_used(self):
+        for used in ("N/E", "notanumber", "-500"):
+            with self.subTest(used=used):
+                stats = {
+                    "node1": {
+                        "cgroup_memory_used_bytes": used,
+                        "cgroup_memory_limit_bytes": "200",
+                    }
+                }
+                result = util.derive_memory_stats(stats)
+                self.assertNotIn("cgroup_memory_used_pct", result["node1"])
+
     def test_cgroup_no_limit_sentinels_rejected(self):
         for limit in ("9223372036854771712", "max", "-1", "0"):
             with self.subTest(limit=limit):
@@ -1326,6 +1338,23 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertNotIn("alloc_pct", headline["node1"])
         self.assertEqual(untracked, [])
         self.assertEqual(no_cgroup, ["node1"])
+
+    def test_old_build_without_cgroup_stats_is_not_reported_as_limitless(self):
+        """
+        A pre-8.1.3 node cannot report cgroup_memory_limit_bytes at all, so
+        its absence is no evidence about the node's cgroup. The build warning
+        already names the node; a no-limit warning on top would assert a fact
+        asadm never observed.
+        """
+        headline, untracked, no_cgroup, _ = util.derive_memory_headline(
+            util.derive_memory_stats({"n1": {"heap_allocated_kbytes": "1000"}}),
+            {},
+            {"n1": {"shmem_alloc_bytes": "500"}},
+            builds={"n1": "8.1.2.0"},
+        )
+        self.assertEqual(untracked, [])
+        self.assertEqual(no_cgroup, [])
+        self.assertNotIn("capacity_bytes", headline["n1"])
 
     def test_allocated_is_shmem_plus_heap(self):
         headline, _, _, _ = self.headline(

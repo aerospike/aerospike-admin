@@ -91,6 +91,7 @@ class ParseTopSectionTest(unittest.TestCase):
             .replace("Tasks: 149 total", "Tasks: 150 total")
             .replace("11.3 us", "99.9 us")
             .replace("52694652 avail Mem", "1 avail Mem")
+            .replace("up 9 min", "up 3 days, 14:22")
         )
         result = sys_cmd_parser.parse_top_section(
             "\n".join([_top_output(30), second_iteration, ASD_LINE])
@@ -100,6 +101,7 @@ class ParseTopSectionTest(unittest.TestCase):
         self.assertEqual(result["cpu_utilization"]["us"], "11.3")
         self.assertEqual(result["ram"]["used"], 54829756 * 1024)
         self.assertEqual(result["swap"]["avail"], 52694652 * 1024)
+        self.assertEqual(result["uptime"]["seconds"], 540)
 
     def test_short_lines_do_not_raise(self):
         lines = [TOP_HEADER, "   1 root asd", "garbage", "", ASD_LINE]
@@ -141,6 +143,24 @@ class ParseTopSectionTest(unittest.TestCase):
         result = sys_cmd_parser.parse_top_section("\n".join(lines))
 
         self.assertEqual(result["asd_process"], {})
+
+    def test_xdr_command_matched_exactly_not_by_substring(self):
+        """
+        The standalone XDR daemon (pre-5.0) shows up in top as 'asxdr'. Any
+        other process whose name merely contains 'xdr' must not fill
+        xdr_process from the wrong row.
+        """
+        for command in ("xdr-proxy", "myxdrtool", "xdrd"):
+            with self.subTest(command=command):
+                lines = [TOP_HEADER, ASD_LINE.replace(" asd", " " + command)]
+                result = sys_cmd_parser.parse_top_section("\n".join(lines))
+
+                self.assertEqual(result["xdr_process"], {})
+
+        lines = [TOP_HEADER, ASD_LINE.replace(" asd", " asxdr")]
+        result = sys_cmd_parser.parse_top_section("\n".join(lines))
+
+        self.assertEqual(result["xdr_process"]["resident_memory"], 53876069761)
 
     def test_first_asd_line_wins(self):
         second_asd = ASD_LINE.replace("0.049t", "0.010t")

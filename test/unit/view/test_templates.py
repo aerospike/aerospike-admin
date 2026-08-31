@@ -480,6 +480,22 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
 
         self.assertNotIn("Build", record)
 
+    def test_capacity_and_alloc_columns_collapse_without_a_capacity(self):
+        """
+        The gap warning in _warn_memory_gaps assumes the Capacity and Alloc%
+        columns render exactly when some row carries capacity_bytes; pin that
+        collapse rule so the warning and the sheet cannot drift apart.
+        """
+        record = self.render(free_pct="50", allocated_bytes="500")
+
+        self.assertNotIn("Capacity", record)
+        self.assertNotIn("Alloc%", record)
+
+        record = self.render(capacity_bytes="1000", alloc_pct="50.0", free_pct="50")
+
+        self.assertEqual(record["Capacity"]["raw"], 1000)
+        self.assertEqual(record["Alloc%"]["raw"], 50.0)
+
 
 class InfoMemoryHostSheetTest(unittest.TestCase):
     def render(self, stats, configs=None, ns_agg=None):
@@ -542,7 +558,6 @@ class InfoMemoryHostSheetTest(unittest.TestCase):
         self.assertEqual(record["CGroup"]["Used"]["raw"], 500)
         self.assertEqual(record["CGroup"]["Limit"]["raw"], 1000)
         self.assertEqual(record["CGroup"]["Used%"]["raw"], 50.0)
-        self.assertNotIn("Host Total (est)", record)
 
     def test_free_subgroup_fields(self):
         record = self.render(

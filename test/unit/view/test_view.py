@@ -2847,7 +2847,7 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("untracked cgroup limit", warnings[0])
+        self.assertIn("cgroup limit is not tracked", warnings[0])
         self.assertIn("node1", warnings[0])
 
     def test_info_memory_warnings_never_reach_stdout(self):
@@ -2868,7 +2868,7 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertTrue(self.warnings())
         self.assertIn("Memory Information", printed)
         self.assertNotIn("WARNING", printed)
-        self.assertNotIn("untracked cgroup limit", printed)
+        self.assertNotIn("cgroup limit is not tracked", printed)
         self.assertNotIn("No namespace statistics", printed)
 
     def test_info_memory_no_untracked_warning_without_cgroup_limit(self):
@@ -2907,6 +2907,27 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("No namespace statistics", warnings[0])
         self.assertIn("node1", warnings[0])
+
+    def test_info_memory_warns_when_service_stats_missing(self):
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "cgroup_memory_limit_bytes": "10000",
+                }
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "500"}, "2.2.2.2": {}},
+            self.cluster_mock,
+        )
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No service statistics", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
 
     def test_info_memory_silent_when_no_node_has_a_capacity(self):
         """
@@ -2963,7 +2984,7 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("No cgroup memory limit was reported", warnings[0])
+        self.assertIn("Capacity is blank", warnings[0])
         self.assertIn("node2", warnings[0])
         self.assertNotIn("node1", warnings[0])
 
@@ -3059,7 +3080,19 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertEqual(derived["system_free_mem_bytes"], str(8000000 * 1024))
         self.assertNotIn("host_free_mem_bytes", derived)
         self.assertNotIn("host_free_mem_pct", derived)
-        self.assertNotIn("host_total_mem_bytes", derived)
+
+    def test_info_memory_verbose_keeps_lone_host_pct(self):
+        """
+        With neither free-bytes stat present the dedup has nothing to compare;
+        it must not treat the two absences as equal and blank the Host% cell.
+        """
+        stats = {"1.1.1.1": {"host_free_mem_pct": "50"}}
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(stats, {}, {}, self.cluster_mock, verbose=True)
+
+        derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
+        self.assertEqual(derived["host_free_mem_pct"], "50")
 
     def test_info_memory_with_node_filter(self):
         self.set_nodes("1.1.1.1")
