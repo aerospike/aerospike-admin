@@ -495,6 +495,41 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
             "get_down_nodes did not return the expected result",
         )
 
+    async def test_get_down_nodes_queries_nodes_concurrently(self):
+        """Serially, one hung node costs its whole per-node timeout before the
+        next is asked, and collectinfo calls this once per snapshot at a raised
+        timeout."""
+        cl = await self.get_cluster_mock(3)
+        in_flight = 0
+        peak = 0
+
+        async def slow_peers():
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return []
+
+        for node in cl.nodes.values():
+            node.alive = True
+            node.info_peers_alumni = slow_peers
+
+        await cl.get_down_nodes()
+
+        self.assertGreater(peak, 1)
+
+    async def test_get_down_nodes_survives_one_failing_node(self):
+        cl = await self.get_cluster_mock(3)
+        nodes = list(cl.nodes.values())
+
+        for node in nodes:
+            node.alive = True
+
+        nodes[0].info_peers_alumni = AsyncMock(side_effect=OSError("gone"))
+
+        self.assertIsInstance(await cl.get_down_nodes(), list)
+
     async def test_update_aliases(self):
         cl = await self.get_cluster_mock(3)
         aliases = {}

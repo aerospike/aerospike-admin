@@ -267,39 +267,48 @@ class Cluster(AsyncObject):
         return cluster_visibility_error_nodes
 
     async def get_down_nodes(self) -> list[str]:
+        """Nodes the cluster's alumni lists name but its live peer lists do not.
+
+        Every node is queried concurrently. Serially, a hung node costs its whole
+        per-node timeout before the next one is asked, so ten unresponsive nodes
+        held the caller for ten timeouts - and collectinfo, which raises the
+        timeout and calls this once per snapshot, paid that repeatedly.
+        """
+        nodes = [node for node in self.nodes.values() if node.alive]
+        results = await asyncio.gather(
+            *(self._node_down_peers(node) for node in nodes),
+            return_exceptions=True,
+        )
         cluster_down_nodes = []
-        for node in self.nodes.values():
-            try:
-                if not node.alive:
-                    # in case of using alumni services, we might have offline
-                    # nodes which can't detect online nodes
-                    continue
 
-                alumni_peers, alumni_alt_peers, peers, alt_peers = await asyncio.gather(
-                    node.info_peers_alumni(),
-                    node.info_peers_alumni_alt(),
-                    node.info_peers(),
-                    node.info_peers_alt(),
-                )
-                alumni_peers = client_util.flatten(alumni_peers)
-                alumni_alt_peers = client_util.flatten(alumni_alt_peers)
-                peers = client_util.flatten(peers)
-                alt_peers = client_util.flatten(alt_peers)
-                not_visible = (
-                    set(alumni_peers).union(set(alumni_alt_peers))
-                    - set(peers)
-                    - set(alt_peers)
-                )
+        for result in results:
+            if isinstance(result, BaseException):
+                logger.debug(result, exc_info=True)
+                continue
 
-                if len(not_visible) >= 1:
-                    for n in not_visible:
-                        _key = Node.create_key(n[0], n[1])
-                        if _key not in cluster_down_nodes:
-                            cluster_down_nodes.append(_key)
-            except Exception as e:
-                logger.debug(e, exc_info=True)
+            for key in result:
+                if key not in cluster_down_nodes:
+                    cluster_down_nodes.append(key)
 
         return cluster_down_nodes
+
+    async def _node_down_peers(self, node) -> list[str]:
+        """Peer keys this node's alumni lists name but its live peer lists do not."""
+        alumni_peers, alumni_alt_peers, peers, alt_peers = await asyncio.gather(
+            node.info_peers_alumni(),
+            node.info_peers_alumni_alt(),
+            node.info_peers(),
+            node.info_peers_alt(),
+        )
+        not_visible = (
+            set(client_util.flatten(alumni_peers)).union(
+                set(client_util.flatten(alumni_alt_peers))
+            )
+            - set(client_util.flatten(peers))
+            - set(client_util.flatten(alt_peers))
+        )
+
+        return [Node.create_key(peer[0], peer[1]) for peer in not_visible]
 
     def update_aliases(self, aliases, endpoints, key):
         for e in endpoints:
