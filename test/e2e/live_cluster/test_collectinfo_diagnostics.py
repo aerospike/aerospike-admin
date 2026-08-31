@@ -176,7 +176,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         self.assertEqual(bundle["asadm_version"], self.asadm_version)
         self.assertEqual(bundle["generated_by"], "asadm collectinfo")
-        self.assertTrue(bundle["ascinfo_schema"])
+        self.assertNotIn("ascinfo_schema", bundle)
 
     def test_collection_records_host_flags_and_seeds(self):
         collection = self.meta["collection"]
@@ -278,15 +278,53 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         self.assertNotIn("Multiple snapshots", cp.stderr)
         self.assertIn("Network Information", cp.stdout)
 
+    ENVIRONMENTAL_BANNER_WARNINGS = (
+        "No system information in this bundle",
+        "Bundle has no sysinfo.log or aerospike.conf",
+    )
+    """Findings that describe where the e2e collection runs from, not a defect:
+    asadm collects from the test host while the cluster runs elsewhere, so no
+    host-level data is captured. Anything else in the banner is a regression."""
+
+    def _unexpected_banner_lines(self, stderr):
+        return [
+            line
+            for line in stderr.splitlines()
+            if ("WARNING:" in line or "ERROR:" in line)
+            and not any(
+                allowed in line for allowed in self.ENVIRONMENTAL_BANNER_WARNINGS
+            )
+        ]
+
     def test_healthy_bundle_emits_no_integrity_warnings(self):
+        """Asserted positively: the command must succeed, print its own output,
+        and leave no unexplained warning behind. A list of assertNotIn strings
+        only catches the wordings someone thought to list, and passes for free
+        when a finding is reworded or never fires at all."""
         cp = util.run_asadm(f"-cf {self.bundle_dir} -e 'info network'")
 
-        self.assertNotIn("Cluster nodes are missing from this bundle", cp.stderr)
-        self.assertNotIn("may be missing cluster nodes", cp.stderr)
-        self.assertNotIn("Collection failed for some sections", cp.stderr)
-        self.assertNotIn("no Aerospike data for any", cp.stderr)
-        self.assertNotIn("only partially represented", cp.stderr)
-        self.assertNotIn("as a health outlier", cp.stderr)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("Network Information", cp.stdout)
+        self.assertEqual(self._unexpected_banner_lines(cp.stderr), [], cp.stderr)
+
+    def test_the_healthy_bundle_guard_fires_on_a_broken_bundle(self):
+        """Without this the guard above passes for a bundle that emits nothing at
+        all, including one where diagnostics silently stopped running."""
+
+        def break_the_namespaces(node_data):
+            namespaces = (
+                node_data.get("as_stat", {}).get("statistics", {}).get("namespace")
+                or {}
+            )
+
+            for ns_data in namespaces.values():
+                ns_data["service"]["stop_writes"] = "true"
+
+        bundle = self._mutated_ascinfo_bundle(break_the_namespaces)
+
+        cp = util.run_asadm(f"-cf {bundle} -e 'info network'")
+
+        self.assertNotEqual(self._unexpected_banner_lines(cp.stderr), [], cp.stderr)
 
     def test_execute_mode_states_the_collector_version(self):
         """The provenance line is the point of the whole check, and execute mode
@@ -361,7 +399,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
             ]
             snapshot["no_data_nodes"] = [dropped]
             snapshot["discrepancies"]["dropped_during_collection"] = [
-                {"node_key": dropped, "reason": "timed out"}
+                {"node_key": dropped, "error_class": "timeout"}
             ]
 
         dropped_node = self._snapshot_meta()["expected_nodes"][0]
