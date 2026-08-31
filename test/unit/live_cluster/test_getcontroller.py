@@ -31,6 +31,7 @@ from lib.live_cluster.get_controller import (
     _get_all_dcs,
     _get_all_namespaces,
 )
+from lib.utils import constants
 
 import unittest
 
@@ -339,6 +340,77 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info = AsyncMock()
         self.cluster_mock.info.side_effect = self.mock_info_call
         self.controller = GetStatisticsController(self.cluster_mock)
+
+    async def test_get_service_keep_exceptions_preserves_per_node_failures(self):
+        """Without this the node whose statistics call failed is dropped from the
+        map, and the bundle's meta records errors: [] for a node that failed."""
+        exc = Exception("boom")
+        self.cluster_mock.info_statistics.return_value = {
+            "1.1.1.1": exc,
+            "2.2.2.2": {"uptime": "10"},
+        }
+
+        kept = await self.controller.get_service(keep_exceptions=True)
+
+        self.assertIs(kept["1.1.1.1"], exc)
+        self.assertEqual(kept["2.2.2.2"], {"uptime": "10"})
+
+    async def test_get_service_drops_failures_by_default(self):
+        """The interactive show paths must never see an Exception value."""
+        self.cluster_mock.info_statistics.return_value = {
+            "1.1.1.1": Exception("boom"),
+            "2.2.2.2": {"uptime": "10"},
+        }
+
+        dropped = await self.controller.get_service()
+
+        self.assertEqual(dropped, {"2.2.2.2": {"uptime": "10"}})
+
+    async def test_get_all_propagates_keep_exceptions_to_the_service_subsection(self):
+        """get_all is what collectinfo calls; a keep_exceptions that stops at
+        get_all's signature ships bundles whose meta records no error for a node
+        whose statistics call failed."""
+        exc = Exception("boom")
+        self.cluster_mock.info_statistics.return_value = {"1.1.1.1": exc}
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_bins",
+            "get_sindex",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+        ):
+            patch.object(
+                GetStatisticsController, name, AsyncMock(return_value={})
+            ).start()
+        self.addCleanup(patch.stopall)
+
+        stat_map = await self.controller.get_all(keep_exceptions=True)
+
+        self.assertIs(stat_map[constants.STAT_SERVICE]["1.1.1.1"], exc)
+
+    async def test_get_all_drops_failures_by_default(self):
+        self.cluster_mock.info_statistics.return_value = {"1.1.1.1": Exception("boom")}
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_bins",
+            "get_sindex",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+        ):
+            patch.object(
+                GetStatisticsController, name, AsyncMock(return_value={})
+            ).start()
+        self.addCleanup(patch.stopall)
+
+        stat_map = await self.controller.get_all()
+
+        self.assertEqual(stat_map[constants.STAT_SERVICE], {})
 
     async def test_get_namespace(self):
         self.cluster_mock.info_namespaces.return_value = {
@@ -737,6 +809,97 @@ class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
         kept = await self.controller.get_service(keep_exceptions=True)
 
         self.assertIs(kept["1.1.1.1"], exc)
+
+    async def test_get_service_drops_failures_by_default(self):
+        self.cluster_mock.info_get_config.return_value = {
+            "1.1.1.1": Exception("boom"),
+            "2.2.2.2": {"proto-fd-max": "15000"},
+        }
+
+        dropped = await self.controller.get_service()
+
+        self.assertEqual(dropped["1.1.1.1"], {})
+
+    async def test_get_network_keep_exceptions_preserves_per_node_failures(self):
+        """network is served by every server, so a failure there is a real
+        collection failure and must reach the bundle's meta."""
+        exc = Exception("boom")
+        self.cluster_mock.info_get_config.return_value = {"1.1.1.1": exc}
+
+        kept = await self.controller.get_network(keep_exceptions=True)
+
+        self.assertIs(kept["1.1.1.1"], exc)
+
+    async def test_get_network_drops_failures_by_default(self):
+        self.cluster_mock.info_get_config.return_value = {"1.1.1.1": Exception("boom")}
+
+        dropped = await self.controller.get_network()
+
+        self.assertEqual(dropped["1.1.1.1"], {})
+
+    async def test_get_all_propagates_keep_exceptions_to_service_and_network(self):
+        """get_all is what collectinfo calls. Security keeps substituting {} on
+        the same run: it legitimately errors on a security-disabled or Community
+        Edition cluster, and recording that as a failure would report a healthy
+        cluster as a failed collection."""
+        service_exc = Exception("service boom")
+        network_exc = Exception("network boom")
+
+        async def by_stanza(nodes="all", stanza=None, **kwargs):
+            if stanza == "service":
+                return {"1.1.1.1": service_exc}
+            if stanza == "network":
+                return {"1.1.1.1": network_exc}
+            if stanza == "security":
+                return {"1.1.1.1": Exception("security not supported")}
+            return {}
+
+        self.cluster_mock.info_get_config.side_effect = by_stanza
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+            "get_xdr_filters",
+            "get_roster",
+            "get_racks",
+            "get_rack_ids",
+            "get_logging",
+        ):
+            patch.object(GetConfigController, name, AsyncMock(return_value={})).start()
+
+        config_map = await self.controller.get_all(keep_exceptions=True)
+
+        self.assertIs(config_map[constants.CONFIG_SERVICE]["1.1.1.1"], service_exc)
+        self.assertIs(config_map[constants.CONFIG_NETWORK]["1.1.1.1"], network_exc)
+        self.assertEqual(config_map[constants.CONFIG_SECURITY]["1.1.1.1"], {})
+
+    async def test_get_all_drops_failures_by_default(self):
+        async def by_stanza(nodes="all", stanza=None, **kwargs):
+            return {"1.1.1.1": Exception("boom")}
+
+        self.cluster_mock.info_get_config.side_effect = by_stanza
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+            "get_xdr_filters",
+            "get_roster",
+            "get_racks",
+            "get_rack_ids",
+            "get_logging",
+        ):
+            patch.object(GetConfigController, name, AsyncMock(return_value={})).start()
+
+        config_map = await self.controller.get_all()
+
+        self.assertEqual(config_map[constants.CONFIG_SERVICE]["1.1.1.1"], {})
+        self.assertEqual(config_map[constants.CONFIG_NETWORK]["1.1.1.1"], {})
 
     async def test_get_security_always_substitutes_failures(self):
         """Security legitimately errors on a security-disabled or Community
