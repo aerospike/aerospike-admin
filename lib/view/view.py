@@ -240,14 +240,10 @@ class CliView(object):
         if "host_free_mem_bytes" not in node_stats:
             return
 
-        if node_stats["host_free_mem_bytes"] != node_stats.get(
-            "system_free_mem_bytes"
-        ):
+        if node_stats["host_free_mem_bytes"] != node_stats.get("system_free_mem_bytes"):
             return
 
-        if node_stats.get("host_free_mem_pct") != node_stats.get(
-            "system_free_mem_pct"
-        ):
+        if node_stats.get("host_free_mem_pct") != node_stats.get("system_free_mem_pct"):
             return
 
         node_stats.pop("host_free_mem_bytes", None)
