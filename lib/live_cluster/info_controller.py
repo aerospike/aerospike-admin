@@ -96,6 +96,87 @@ class InfoController(LiveClusterCommandController):
             **self.mods,
         )
 
+    @CommandHelp(
+        "Displays node memory: Capacity (the cgroup limit, shown only when",
+        "cgroup-mem-tracking is enabled) vs Allocated (the shmem index and",
+        "sindex arenas plus the process heap). Memory-engine data is in the arenas",
+        "on Enterprise and Federal, and in the heap on Community. The verbose",
+        "tables are not additive with each other: set index, and memory-engine",
+        "data on Community, are heap-allocated and appear in both Index and Data",
+        "Memory and Process Heap. Allocation figures require server",
+        f"{constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION} or later.",
+        short_msg="Displays node memory availability vs allocation",
+        usage=f"[-v] [{ModifierUsageHelp.WITH}]",
+        modifiers=(
+            ModifierHelp(
+                "-v, --verbose",
+                "Show the per-node host, index/data, and heap breakdown",
+                default="off",
+            ),
+            with_modifier_help,
+        ),
+    )
+    async def do_memory(self, line):
+        verbose = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--verbose",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-v",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+
+        if self.mods.get("for"):
+            raise ShellException(
+                "info memory: the 'for' modifier is not supported. Host, cgroup, and "
+                "heap values are per-node and cannot be filtered by namespace."
+            )
+
+        stats, configs, ns_stats, builds, editions = await asyncio.gather(
+            self.stat_getter.get_service(nodes=self.nodes),
+            self.config_getter.get_service(nodes=self.nodes),
+            self.stat_getter.get_namespace(nodes=self.nodes),
+            self.cluster.info_build(nodes=self.nodes),
+            self.cluster.info("edition", nodes=self.nodes),
+        )
+
+        missing_alloc_stats = util.nodes_missing_memory_alloc_stats(builds)
+
+        if missing_alloc_stats:
+            node_names = self.cluster.get_node_names(self.mods.get("with"))
+            logger.warning(
+                "Allocation figures require server %s or later; allocation totals "
+                "are empty for %s, whose build is older or unreadable. See the "
+                "Build column.",
+                constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in missing_alloc_stats),
+                    len(node_names),
+                ),
+            )
+
+        editions = {
+            node: util.convert_edition_to_shortform(str(edition))
+            for node, edition in editions.items()
+            if edition and not isinstance(edition, Exception)
+        }
+        ns_agg = util.aggregate_ns_memory_stats(ns_stats, editions=editions)
+        return util.callable(
+            self.view.info_memory,
+            stats,
+            configs,
+            ns_agg,
+            self.cluster,
+            builds=builds,
+            verbose=verbose,
+            **self.mods,
+        )
+
     @CommandHelp("Displays summary information for each set")
     async def do_set(self, line):
         stats = await self.cluster.info_all_set_statistics(nodes=self.nodes)

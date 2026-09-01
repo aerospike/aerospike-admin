@@ -2740,6 +2740,477 @@ class CliViewInfoReleaseTest(unittest.TestCase):
         cluster_mock.get_node_ids.assert_called_once_with(["node1"])
 
 
+class InfoMemoryViewTest(unittest.TestCase):
+    def setUp(self):
+        self.cluster_patcher = patch(
+            "lib.live_cluster.live_cluster_root_controller.Cluster"
+        )
+        self.render_patcher = patch("lib.view.sheet.render")
+        self.print_result_patcher = patch("lib.view.view.CliView.print_result")
+        self.logger_patcher = patch("lib.view.view.logger")
+        self.cluster_mock = self.cluster_patcher.start()
+        self.render_mock = self.render_patcher.start()
+        self.print_result_mock = self.print_result_patcher.start()
+        self.logger_mock = self.logger_patcher.start()
+        self.addCleanup(patch.stopall)
+        self.cluster_mock.get_expected_principal.return_value = "principal"
+        self.cluster_mock.get_self_node.return_value = "self-node"
+
+    def _stop_patches(self, *patchers):
+        for patcher in patchers:
+            patcher.stop()
+
+    def set_nodes(self, *nodes):
+        self.cluster_mock.get_node_names.return_value = {
+            node: "node%d" % (i + 1) for i, node in enumerate(nodes)
+        }
+        self.cluster_mock.get_node_ids.return_value = {
+            node: "NODE%d" % (i + 1) for i, node in enumerate(nodes)
+        }
+
+    def warnings(self):
+        return [c[0][0] % c[0][1:] for c in self.logger_mock.warning.call_args_list]
+
+    def test_info_memory_default_shows_headline(self):
+        capacity = 4 * 1024**3
+        stats = {
+            "1.1.1.1": {
+                "heap_allocated_kbytes": "500000",
+                "cgroup_memory_limit_bytes": str(capacity),
+            }
+        }
+        configs = {"1.1.1.1": {"cgroup-mem-tracking": "true"}}
+        ns_agg = {"1.1.1.1": {"shmem_alloc_bytes": "2048000"}}
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            stats, configs, ns_agg, self.cluster_mock, timestamp="test-stamp"
+        )
+
+        self.render_mock.assert_called_once()
+        args, kwargs = self.render_mock.call_args
+        template, title, sources = args
+
+        self.assertEqual(template, templates.info_memory_headline_sheet)
+        self.assertEqual(title, "Memory Information (test-stamp)")
+        self.assertEqual(kwargs.get("common")["principal"], "principal")
+
+        heap = 500000 * 1024
+        allocated = 2048000 + heap
+        row = sources["headline"]["1.1.1.1"]
+        self.assertEqual(row["capacity_bytes"], str(capacity))
+        self.assertEqual(row["allocated_bytes"], str(allocated))
+        self.assertEqual(row["allocated_shmem_bytes"], "2048000")
+        self.assertEqual(row["allocated_heap_bytes"], str(heap))
+        self.assertEqual(float(row["allocated_heap_pct"]), heap * 100 / allocated)
+        self.assertEqual(float(row["alloc_pct"]), allocated * 100 / capacity)
+        self.assertNotIn("free_pct", row)
+
+    def _cgroup_limit_stats(self):
+        return {
+            "1.1.1.1": {
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "50",
+                "heap_allocated_kbytes": "0",
+                "cgroup_memory_limit_bytes": "10000",
+            }
+        }
+
+    def test_info_memory_capacity_uses_cgroup_limit_when_tracked(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            self._cgroup_limit_stats(),
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "2500"}},
+            self.cluster_mock,
+        )
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertEqual(row["capacity_bytes"], "10000")
+        self.assertEqual(row["allocated_bytes"], "2500")
+        self.assertEqual(float(row["alloc_pct"]), 25.0)
+
+    def test_info_memory_capacity_ignores_cgroup_limit_when_untracked(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            self._cgroup_limit_stats(),
+            {"1.1.1.1": {"cgroup-mem-tracking": "false"}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "2500"}},
+            self.cluster_mock,
+        )
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertNotIn("capacity_bytes", row)
+        self.assertNotIn("alloc_pct", row)
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("cgroup limit is not tracked", warnings[0])
+        self.assertIn("node1", warnings[0])
+
+    def test_info_memory_warnings_never_reach_stdout(self):
+        self._stop_patches(self.print_result_patcher, self.render_patcher)
+        self.set_nodes("1.1.1.1")
+        stdout = io.StringIO()
+
+        with redirect_stdout(stdout):
+            CliView.info_memory(
+                self._cgroup_limit_stats(),
+                {"1.1.1.1": {"cgroup-mem-tracking": "false"}},
+                {},
+                self.cluster_mock,
+            )
+
+        printed = stdout.getvalue()
+
+        self.assertTrue(self.warnings())
+        self.assertIn("Memory Information", printed)
+        self.assertNotIn("WARNING", printed)
+        self.assertNotIn("cgroup limit is not tracked", printed)
+        self.assertNotIn("No namespace statistics", printed)
+
+    def test_info_memory_no_untracked_warning_without_cgroup_limit(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "host_free_mem_kbytes": "8000000",
+                    "host_free_mem_pct": "50",
+                }
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "false"}},
+            {"1.1.1.1": {}},
+            self.cluster_mock,
+        )
+
+        self.assertEqual(self.warnings(), [])
+
+    def test_info_memory_warns_when_namespace_stats_missing(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "cgroup_memory_limit_bytes": "10000",
+                }
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
+            {},
+            self.cluster_mock,
+        )
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No namespace statistics", warnings[0])
+        self.assertIn("node1", warnings[0])
+
+    def test_info_memory_warns_when_service_payload_is_empty(self):
+        """A truncated statistics stanza parses to {}, and that node is in
+        headline, so a membership test cannot see it."""
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "cgroup_memory_limit_bytes": "10000",
+                },
+                "2.2.2.2": {},
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
+            {
+                "1.1.1.1": {"shmem_alloc_bytes": "500"},
+                "2.2.2.2": {"shmem_alloc_bytes": "500"},
+            },
+            self.cluster_mock,
+        )
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No service statistics", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
+
+    def test_info_memory_warns_when_service_stats_missing(self):
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "cgroup_memory_limit_bytes": "10000",
+                }
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "500"}, "2.2.2.2": {}},
+            self.cluster_mock,
+        )
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No service statistics", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
+
+    def test_info_memory_silent_when_no_node_has_a_capacity(self):
+        """
+        With no capacity anywhere the sheet hides Capacity and Alloc%
+        entirely, so a warning would explain the absence of columns the
+        operator never saw.
+        """
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "host_free_mem_kbytes": "8000000",
+                    "host_free_mem_pct": "50",
+                }
+            },
+            {"1.1.1.1": {}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "500"}},
+            self.cluster_mock,
+        )
+
+        self.assertEqual(self.warnings(), [])
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertNotIn("capacity_bytes", row)
+
+    def test_info_memory_warns_about_blank_capacity_in_a_mixed_cluster(self):
+        """
+        One node has a tracked limit, so Capacity renders and the other
+        node's blank cell needs explaining.
+        """
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "cgroup_memory_limit_bytes": str(8 * 1024**3),
+                },
+                "2.2.2.2": {
+                    "heap_allocated_kbytes": "500000",
+                    "host_free_mem_kbytes": "8000000",
+                    "host_free_mem_pct": "50",
+                },
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}, "2.2.2.2": {}},
+            {
+                "1.1.1.1": {"shmem_alloc_bytes": "500"},
+                "2.2.2.2": {"shmem_alloc_bytes": "500"},
+            },
+            self.cluster_mock,
+        )
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Capacity is blank", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
+
+        headline = self.render_mock.call_args[0][2]["headline"]
+        self.assertIn("capacity_bytes", headline["1.1.1.1"])
+        self.assertNotIn("capacity_bytes", headline["2.2.2.2"])
+        self.assertNotIn("alloc_pct", headline["2.2.2.2"])
+        self.assertIn("allocated_bytes", headline["2.2.2.2"])
+
+    def test_info_memory_verbose_shows_breakdown(self):
+        stats = {
+            "1.1.1.1": {
+                "system_free_mem_kbytes": "1200000",
+                "system_free_mem_pct": "8",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "52",
+                "heap_allocated_kbytes": "500000",
+                "cgroup_memory_used_bytes": "5000",
+                "cgroup_memory_limit_bytes": "10000",
+            }
+        }
+        configs = {"1.1.1.1": {"cgroup-mem-tracking": "true"}}
+        ns_agg = {"1.1.1.1": {"shmem_alloc_bytes": "2048000"}}
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            stats,
+            configs,
+            ns_agg,
+            self.cluster_mock,
+            verbose=True,
+            timestamp="test-stamp",
+        )
+
+        self.assertEqual(self.render_mock.call_count, 4)
+        calls = self.render_mock.call_args_list
+        self.assertEqual(calls[0][0][0], templates.info_memory_headline_sheet)
+        self.assertEqual(calls[1][0][0], templates.info_memory_sheet)
+        self.assertEqual(calls[1][0][1], "Host and CGroup Memory (test-stamp)")
+        self.assertEqual(calls[2][0][0], templates.info_memory_index_sheet)
+        self.assertEqual(calls[2][0][1], "Index and Data Memory (test-stamp)")
+        self.assertEqual(calls[3][0][0], templates.info_memory_process_sheet)
+        self.assertEqual(calls[3][0][1], "Process Heap (test-stamp)")
+
+        self.assertEqual(calls[0][0][2]["headline"]["1.1.1.1"]["free_pct"], "8")
+
+        derived = calls[1][0][2]["stats"]["1.1.1.1"]
+        self.assertEqual(derived["system_free_mem_bytes"], str(1200000 * 1024))
+        self.assertEqual(float(derived["cgroup_memory_used_pct"]), 50.0)
+        self.assertEqual(derived["host_free_mem_bytes"], str(8000000 * 1024))
+        self.assertEqual(derived["cgroup_memory_limit_bytes"], "10000")
+
+    def test_info_memory_each_sheet_gets_only_its_own_sources(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {"1.1.1.1": {"heap_allocated_kbytes": "1000"}},
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "10"}},
+            self.cluster_mock,
+            verbose=True,
+        )
+
+        calls = self.render_mock.call_args_list
+        host_sources, index_sources, process_sources = (
+            calls[1][0][2],
+            calls[2][0][2],
+            calls[3][0][2],
+        )
+
+        self.assertIn("configs", host_sources)
+        self.assertIn("ns_agg", host_sources)
+        self.assertIn("ns_agg", index_sources)
+        self.assertNotIn("stats", index_sources)
+        self.assertNotIn("configs", index_sources)
+        self.assertNotIn("ns_agg", process_sources)
+        self.assertNotIn("configs", process_sources)
+
+    def test_info_memory_collapses_host_free_when_same_as_system(self):
+        stats = {
+            "1.1.1.1": {
+                "system_free_mem_kbytes": "8000000",
+                "system_free_mem_pct": "50",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "50",
+            }
+        }
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(stats, {}, {}, self.cluster_mock, verbose=True)
+
+        derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
+        self.assertEqual(derived["system_free_mem_bytes"], str(8000000 * 1024))
+        self.assertNotIn("host_free_mem_bytes", derived)
+        self.assertNotIn("host_free_mem_pct", derived)
+
+    def test_info_memory_keeps_host_free_when_only_bytes_match(self):
+        """
+        Under cgroup tracking the two free counts are measured against
+        different capacities, so equal bytes with unequal percentages is real
+        host context, not a duplicate row.
+        """
+        stats = {
+            "1.1.1.1": {
+                "system_free_mem_kbytes": "8000000",
+                "system_free_mem_pct": "20",
+                "host_free_mem_kbytes": "8000000",
+                "host_free_mem_pct": "50",
+            }
+        }
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(stats, {}, {}, self.cluster_mock, verbose=True)
+
+        derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
+        self.assertEqual(derived["host_free_mem_bytes"], str(8000000 * 1024))
+        self.assertEqual(derived["host_free_mem_pct"], "50")
+
+    def test_info_memory_verbose_keeps_lone_host_pct(self):
+        """
+        With neither free-bytes stat present the dedup has nothing to compare;
+        it must not treat the two absences as equal and blank the Host% cell.
+        """
+        stats = {"1.1.1.1": {"host_free_mem_pct": "50"}}
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(stats, {}, {}, self.cluster_mock, verbose=True)
+
+        derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
+        self.assertEqual(derived["host_free_mem_pct"], "50")
+
+    def test_info_memory_with_node_filter(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {"1.1.1.1": {"heap_allocated_kbytes": "1000"}, "2.2.2.2": {}},
+            {"1.1.1.1": {}, "2.2.2.2": {}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "10"}, "2.2.2.2": {}},
+            self.cluster_mock,
+            builds={"1.1.1.1": "8.1.3", "2.2.2.2": "8.1.3"},
+            verbose=True,
+            with_=["1.1.1.1"],
+        )
+
+        self.cluster_mock.get_node_names.assert_called_once_with(["1.1.1.1"])
+        self.cluster_mock.get_node_ids.assert_called_once_with(["1.1.1.1"])
+
+        filtered_sources = ("headline", "builds", "stats", "configs", "ns_agg")
+
+        for sources in [c[0][2] for c in self.render_mock.call_args_list]:
+            for name in filtered_sources:
+                if name in sources:
+                    self.assertEqual(
+                        list(sources[name].keys()), ["1.1.1.1"], (name, sources[name])
+                    )
+
+    def test_info_memory_keeps_nodes_missing_from_a_source_visible(self):
+        stats = {
+            "1.1.1.1": {"heap_allocated_kbytes": "1000"},
+            "2.2.2.2": {"heap_allocated_kbytes": "1000"},
+        }
+        ns_agg = {"1.1.1.1": {"shmem_alloc_bytes": "2048000"}}
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(stats, {}, ns_agg, self.cluster_mock, verbose=True)
+
+        for sources in [c[0][2] for c in self.render_mock.call_args_list]:
+            self.assertIn("2.2.2.2", sources["node_names"])
+
+        headline = self.render_mock.call_args_list[0][0][2]["headline"]
+        self.assertIn("allocated_bytes", headline["1.1.1.1"])
+        self.assertIn("allocated_heap_bytes", headline["2.2.2.2"])
+        self.assertNotIn("allocated_bytes", headline["2.2.2.2"])
+
+    def test_info_memory_old_build_omits_allocated_total(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {"1.1.1.1": {"heap_allocated_kbytes": "500000"}},
+            {},
+            {"1.1.1.1": {"index_used_bytes": "1024"}},
+            self.cluster_mock,
+            builds={"1.1.1.1": "8.1.2"},
+        )
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertNotIn("allocated_bytes", row)
+        self.assertNotIn("alloc_pct", row)
+        self.assertEqual(row["allocated_heap_bytes"], str(500000 * 1024))
+
+    def test_info_memory_renders_nothing_without_nodes(self):
+        self.set_nodes()
+
+        CliView.info_memory({}, {}, {}, self.cluster_mock)
+
+        self.render_mock.assert_not_called()
+        self.print_result_mock.assert_not_called()
+
+
 class CliViewCollectinfoCompatTest(unittest.TestCase):
     """Verify CliView._common works with _CollectinfoSnapshot, not just Cluster."""
 

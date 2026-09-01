@@ -1018,7 +1018,8 @@ class Sheet(object):
         def populate_seen_sources(fields: tuple[Field | Subgroup]):
             for field in fields:
                 if isinstance(field, Subgroup):
-                    return populate_seen_sources(field.fields)
+                    populate_seen_sources(field.fields)
+                    continue
 
                 assert not isinstance(
                     field, DynamicFields

@@ -70,7 +70,15 @@ def run_asadm(args=None, strip_header=True) -> CompletedProcess:
     cmd = [binary]
     cmd.extend(args)
     print("Running cmd: {}".format(cmd))
-    cp = CompletedProcess(subprocess.run(cmd, capture_output=True, env=os.environ))
+    cp = CompletedProcess(
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            env=os.environ,
+        )
+    )
 
     if strip_header:
         lines = cp.stdout.split("\n")

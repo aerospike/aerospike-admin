@@ -118,35 +118,30 @@ class CollectinfoController(LiveClusterCommandController):
             raise e
 
     async def _collectinfo_capture_and_write_to_file(
-        self, filename: str, func: Callable, param: list[str] = []
+        self, filename: str, func: Callable, param: list[str] | None = None
     ):
+        param = list(param or [])
+
         if self.nodes and isinstance(self.nodes, list):
             param += ["with"] + self.nodes
-
-        o = await util.capture_stdout(func, param[:])
-
-        self._write_func_output_to_file(filename, func, param, o)
-
-    def _write_func_output_to_file(
-        self, filename: str, func: Callable, param: list[str], content: str
-    ):
-        name = ""
-        sep = constants.COLLECTINFO_SEPERATOR
 
         old_style_json = get_style_json()
         set_style_json(False)
 
         try:
-            name = func.__name__
-        except Exception as e:
-            pass
+            o = await util.capture_stdout(func, param[:])
+        finally:
+            set_style_json(old_style_json)
+
+        self._write_func_output_to_file(filename, param, o)
+
+    def _write_func_output_to_file(self, filename: str, param: list[str], content: str):
+        sep = constants.COLLECTINFO_SEPERATOR
 
         if param:
             sep += " ".join(param) + "\n"
 
         util.write_to_file(filename, sep + str(content))
-
-        set_style_json(old_style_json)
 
     def _write_version(self, line):
         print("asadm version " + str(self.asadm_version))
@@ -700,8 +695,11 @@ class CollectinfoController(LiveClusterCommandController):
         logger.info(f"Capturing pretty print output for {file} . . .")
 
         try:
+            # memory is verbose here so the bundle carries the host/index/heap
+            # breakdown behind the headline sheet, not just the headline.
             dignostic_info_params = [
                 "network",
+                "memory -v",
                 "namespace",
                 "set",
                 "xdr",
@@ -798,53 +796,69 @@ class CollectinfoController(LiveClusterCommandController):
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
 
+            # Every command is isolated: one that raises must not take the rest
+            # of the bundle with it.
             try:
                 info_controller = InfoController()
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+            else:
                 for info_param in dignostic_info_params:
                     logger.info(
                         f"Capturing output of command 'info {info_param}' and writing to {file}"
                     )
-                    await self._collectinfo_capture_and_write_to_file(
-                        complete_filename, info_controller, info_param.split()
-                    )
-            except Exception as e:
-                util.write_to_file(complete_filename, str(e))
+
+                    try:
+                        await self._collectinfo_capture_and_write_to_file(
+                            complete_filename, info_controller, info_param.split()
+                        )
+                    except Exception as e:
+                        util.write_to_file(complete_filename, str(e))
 
             try:
                 show_controller = ShowController()
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+            else:
                 for show_param in dignostic_show_params:
                     logger.info(
                         f"Capturing output of command 'show {show_param}' for {file}"
                     )
-                    await self._collectinfo_capture_and_write_to_file(
-                        complete_filename, show_controller, show_param.split()
-                    )
-            except Exception as e:
-                util.write_to_file(complete_filename, str(e))
+
+                    try:
+                        await self._collectinfo_capture_and_write_to_file(
+                            complete_filename, show_controller, show_param.split()
+                        )
+                    except Exception as e:
+                        util.write_to_file(complete_filename, str(e))
 
             try:
                 features_controller = FeaturesController()
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+            else:
                 for cmd in dignostic_features_params:
                     logger.info(
                         f"Capturing output of command '{cmd}' and writing to {file}"
                     )
-                    await self._collectinfo_capture_and_write_to_file(
-                        complete_filename, features_controller, cmd.split()
-                    )
-            except Exception as e:
-                util.write_to_file(complete_filename, str(e))
 
-            try:
-                for cmd in dignostic_aerospike_info_commands:
-                    logger.info(
-                        f"Capturing output of asinfo command '{cmd}' and writing to {file}"
-                    )
+                    try:
+                        await self._collectinfo_capture_and_write_to_file(
+                            complete_filename, features_controller, cmd.split()
+                        )
+                    except Exception as e:
+                        util.write_to_file(complete_filename, str(e))
+
+            for cmd in dignostic_aerospike_info_commands:
+                logger.info(
+                    f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+                )
+
+                try:
                     result = await self.cluster.info(cmd)
-                    self._write_func_output_to_file(
-                        complete_filename, self.cluster.info, [cmd], result
-                    )
-            except Exception as e:
-                util.write_to_file(complete_filename, str(e))
+                    self._write_func_output_to_file(complete_filename, [cmd], result)
+                except Exception as e:
+                    util.write_to_file(complete_filename, str(e))
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
             logger.warning("Failed to generate %s file.", complete_filename)
@@ -860,7 +874,15 @@ class CollectinfoController(LiveClusterCommandController):
             util.write_to_file(complete_filename, fileHeader)
 
             summary_params = ["summary"]
-            summary_info_params = ["network", "namespace", "set", "xdr", "dc", "sindex"]
+            summary_info_params = [
+                "network",
+                "memory",
+                "namespace",
+                "set",
+                "xdr",
+                "dc",
+                "sindex",
+            ]
 
             try:
                 await self._collectinfo_capture_and_write_to_file(
@@ -873,24 +895,28 @@ class CollectinfoController(LiveClusterCommandController):
                 logger.critical("Collectinfo root controller is not initialized.")
                 return
 
-            try:
-                for summary_param in summary_params:
+            for summary_param in summary_params:
+                try:
                     await self._collectinfo_capture_and_write_to_file(
                         complete_filename,
                         self.collectinfo_root_controller.execute,
                         summary_param.split(),
                     )
-            except Exception as e:
-                util.write_to_file(complete_filename, str(e))
+                except Exception as e:
+                    util.write_to_file(complete_filename, str(e))
 
             try:
                 info_controller = InfoController()
-                for info_param in summary_info_params:
-                    await self._collectinfo_capture_and_write_to_file(
-                        complete_filename, info_controller, info_param.split()
-                    )
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
+            else:
+                for info_param in summary_info_params:
+                    try:
+                        await self._collectinfo_capture_and_write_to_file(
+                            complete_filename, info_controller, info_param.split()
+                        )
+                    except Exception as e:
+                        util.write_to_file(complete_filename, str(e))
 
         except Exception as e:
             util.write_to_file(complete_filename, str(e))

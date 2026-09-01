@@ -21,6 +21,7 @@ from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
     COLLECTINFO_NODE_TIMEOUT,
 )
+from lib.view.sheet.render import get_style_json, set_style_json
 
 LOGGER_NAME = "lib.live_cluster.collectinfo_controller"
 
@@ -467,6 +468,190 @@ class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
 
         calls = self.controller.cluster.set_timeout.call_args_list
         self.assertEqual(calls[-1], mock.call(1))
+
+
+class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
+    """Which commands reach ascollectinfo.log and summary.log, and that a
+    failing one does not take the rest of the bundle with it."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.controller.collectinfo_root_controller = MagicMock()
+
+        async def info(cmd, *args, **kwargs):
+            if cmd in self.fail_on:
+                raise Exception("boom: " + cmd)
+
+            if cmd == "build":
+                return {"A": "8.1.3.0"}
+
+            return {"A": "test"}
+
+        self.controller.cluster = MagicMock()
+        self.controller.cluster.info = info
+
+        self.captured = []
+        self.fail_on = set()
+
+        async def capture(filename, func, param=None):
+            name = " ".join(param or [])
+            self.captured.append(name)
+
+            if name in self.fail_on:
+                raise Exception("boom: " + name)
+
+        def write_output(filename, param, content):
+            self.captured.append(" ".join(param))
+
+        patch.object(
+            CollectinfoController,
+            "_collectinfo_capture_and_write_to_file",
+            AsyncMock(side_effect=capture),
+        ).start()
+        patch.object(
+            CollectinfoController, "_parse_namespace", MagicMock(return_value=[])
+        ).start()
+        patch.object(
+            CollectinfoController,
+            "_write_func_output_to_file",
+            MagicMock(side_effect=write_output),
+        ).start()
+        patch("lib.live_cluster.collectinfo_controller.util.write_to_file").start()
+        patch("lib.live_cluster.collectinfo_controller.InfoController").start()
+        patch("lib.live_cluster.collectinfo_controller.ShowController").start()
+        patch("lib.live_cluster.collectinfo_controller.FeaturesController").start()
+        self.addCleanup(patch.stopall)
+
+    async def test_ascollectinfo_captures_verbose_memory(self):
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertIn("memory -v", self.captured)
+
+    async def test_summary_captures_memory(self):
+        await self.controller._dump_collectinfo_summary("prefix_", "header\n")
+
+        self.assertIn("memory", self.captured)
+
+    async def test_one_failed_info_command_does_not_drop_the_rest(self):
+        self.fail_on = {"network"}
+
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertIn("network", self.captured)
+        self.assertIn("memory -v", self.captured)
+        self.assertIn("release", self.captured)
+
+    async def test_one_failed_show_command_does_not_drop_the_rest(self):
+        self.fail_on = {"config"}
+
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertIn("config", self.captured)
+        self.assertIn("statistics sindex", self.captured)
+        self.assertIn("features", self.captured)
+
+    async def test_one_failed_summary_command_does_not_drop_the_rest(self):
+        self.fail_on = {"memory"}
+
+        await self.controller._dump_collectinfo_summary("prefix_", "header\n")
+
+        self.assertIn("memory", self.captured)
+        self.assertIn("sindex", self.captured)
+
+    async def test_one_failed_features_command_does_not_drop_the_rest(self):
+        self.fail_on = {"features"}
+
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertIn("features", self.captured)
+        self.assertIn("connection", self.captured)
+
+    async def test_failed_features_controller_does_not_drop_the_rest(self):
+        with patch(
+            "lib.live_cluster.collectinfo_controller.FeaturesController",
+            MagicMock(side_effect=Exception("boom")),
+        ):
+            await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertNotIn("features", self.captured)
+        self.assertIn("connection", self.captured)
+
+    async def test_one_failed_asinfo_command_does_not_drop_the_rest(self):
+        self.fail_on = {"connection"}
+
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertNotIn("connection", self.captured)
+        self.assertIn("service-clear-std", self.captured)
+        self.assertIn("roster:", self.captured)
+
+
+class CaptureParamTest(unittest.IsolatedAsyncioTestCase):
+    async def test_default_param_does_not_accumulate_across_calls(self):
+        controller = CollectinfoController()
+        controller.nodes = ["1.1.1.1"]
+        recorded = []
+
+        def noop(line):
+            pass
+
+        with patch.object(
+            CollectinfoController,
+            "_write_func_output_to_file",
+            MagicMock(
+                side_effect=lambda filename, param, content: recorded.append(param)
+            ),
+        ):
+            await controller._collectinfo_capture_and_write_to_file("f", noop)
+            await controller._collectinfo_capture_and_write_to_file("f", noop)
+
+        self.assertEqual(recorded, [["with", "1.1.1.1"], ["with", "1.1.1.1"]])
+
+    async def test_caller_list_is_not_mutated(self):
+        controller = CollectinfoController()
+        controller.nodes = ["1.1.1.1"]
+        param = ["memory", "-v"]
+
+        def noop(line):
+            pass
+
+        with patch.object(CollectinfoController, "_write_func_output_to_file"):
+            await controller._collectinfo_capture_and_write_to_file("f", noop, param)
+
+        self.assertEqual(param, ["memory", "-v"])
+
+
+class CaptureStyleJsonTest(unittest.IsolatedAsyncioTestCase):
+    """The sheet json style is disabled around the render rather than around the
+    write, so a bundle captured under --json still carries tables."""
+
+    def setUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.addCleanup(set_style_json, get_style_json())
+        set_style_json(True)
+
+    async def test_render_sees_json_style_disabled(self):
+        seen = []
+
+        def render(line):
+            seen.append(get_style_json())
+
+        with patch.object(CollectinfoController, "_write_func_output_to_file"):
+            await self.controller._collectinfo_capture_and_write_to_file("f", render)
+
+        self.assertEqual(seen, [False])
+        self.assertTrue(get_style_json())
+
+    async def test_style_json_restored_when_render_raises(self):
+        def render(line):
+            raise Exception("boom")
+
+        with self.assertRaises(Exception):
+            await self.controller._collectinfo_capture_and_write_to_file("f", render)
+
+        self.assertTrue(get_style_json())
 
 
 if __name__ == "__main__":

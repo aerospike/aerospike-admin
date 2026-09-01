@@ -35,8 +35,8 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        # Use a release-capable server image so the release command is available.
-        lib.start(docker_tag="latest")
+        lib.start()
+        lib.create_sindex("info-sindex", "numeric", lib.NAMESPACE, "a")
 
     async def asyncSetUp(self):
         # Point the controller at the test cluster started by lib.start()
@@ -158,6 +158,102 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         )
         self.assertListEqual(actual_header, exp_header)
         self.assertTrue(exp_heading in actual_heading)
+
+    async def test_memory(self):
+        """
+        This test asserts <b> info memory </b> output heading, the headline
+        columns, and the allocation values. The fixture pins server 8.1.3+
+        (lib.SERVER_TAG), so the arena stats and every allocation column must
+        render; Capacity still needs the container to report a cgroup limit
+        with cgroup-mem-tracking enabled, so it is not asserted here.
+        """
+        exp_heading = "Memory Information"
+        always_present = [
+            "Node",
+            "Free%",
+            "Build",
+            "Allocated Total",
+            "Allocated Shmem",
+            "Allocated Heap",
+        ]
+
+        raw_output = await util.capture_stdout(self.rc.execute, ["info", "memory"])
+        separated = test_util.get_separate_output(raw_output)
+        self.assertTrue(separated, "info memory produced no tables")
+
+        (
+            actual_heading,
+            actual_description,
+            actual_header,
+            actual_data,
+            num_records,
+        ) = test_util.parse_output(separated[0])
+        self.assertTrue(exp_heading in actual_heading)
+        for column in always_present:
+            self.assertIn(column, actual_header)
+
+        self.assertEqual(num_records, len(self.rc.cluster.nodes))
+
+        for group in separated[0]["groups"]:
+            for record in group["records"]:
+                shmem = record["Allocated"]["Shmem"]["raw"]
+                total = record["Allocated"]["Total"]["raw"]
+
+                self.assertGreater(shmem, 0)
+                self.assertGreaterEqual(total, shmem)
+
+    async def test_memory_verbose(self):
+        """
+        This test asserts <b> info memory --verbose </b> renders the breakdown
+        sheets in addition to the headline sheet. Subgroup fields are flattened
+        by the parser to "<subgroup> <field>".
+        TODO: test for values as well
+        """
+        raw_output = await util.capture_stdout(
+            self.rc.execute, ["info", "memory", "--verbose"]
+        )
+        separated = test_util.get_separate_output(raw_output)
+
+        self.assertTrue(separated, "info memory --verbose produced no tables")
+
+        headers_by_heading = {}
+
+        for sheet in separated:
+            heading, _, header, _, _ = test_util.parse_output(sheet)
+            headers_by_heading[heading] = header
+
+        def header_for(heading_substr):
+            for heading, header in headers_by_heading.items():
+                if heading_substr in heading:
+                    return header
+            return None
+
+        host = header_for("Host and CGroup Memory")
+        self.assertIsNotNone(host)
+        for column in ["Node", "Free System", "Free Sys%", "CGroup Tracking"]:
+            self.assertIn(column, host)
+
+        allocation = header_for("Index and Data Memory")
+        self.assertIsNotNone(allocation)
+        for column in ["Node", "Total Alloc", "Total Used"]:
+            self.assertIn(column, allocation)
+
+        process = header_for("Process Heap")
+        self.assertIsNotNone(process)
+        for column in ["Node", "RSS", "Heap Alloc", "Heap Eff%"]:
+            self.assertIn(column, process)
+
+    async def test_namespace_usage_reports_index_allocation(self):
+        """
+        The 8.1.3 per-namespace arena stats must surface as allocation columns
+        in <b> info namespace usage </b>. setUpClass creates a secondary index
+        so si_alloc_bytes is present.
+        """
+        _, _, header, _, _ = await test_util.capture_separate_and_parse_output(
+            self.rc, ["info", "namespace", "usage"]
+        )
+        self.assertIn("Primary Index Alloc", header)
+        self.assertIn("Secondary Index Alloc", header)
 
     @pytest.mark.skip()
     async def test_namespace_object(self):

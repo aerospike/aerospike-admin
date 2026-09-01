@@ -14,7 +14,9 @@
 
 from collections.abc import Iterator
 import datetime
+import functools
 import locale
+import logging
 import math
 from os import path
 import sys
@@ -38,6 +40,8 @@ from lib.view import sheet, terminal, templates
 from lib.view.sheet import SheetStyle
 from lib.view.table import Orientation, Table, TitleFormats
 
+logger = logging.getLogger(__name__)
+
 H1_offset = 13
 H2_offset = 15
 H_width = 80
@@ -46,6 +50,7 @@ H_width = 80
 # Helper that adds a '_' to the end of reserved words that are also modifiers.
 # This code improves readability.
 def reserved_modifiers(func):
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if "with" in kwargs:
             kwargs["with_"] = kwargs["with"]
@@ -168,6 +173,173 @@ class CliView(object):
         CliView.print_result(
             sheet.render(templates.info_network_sheet, title, sources, common=common)
         )
+
+    @staticmethod
+    def _warn_memory_gaps(
+        node_names,
+        stats,
+        headline,
+        untracked_limits,
+        no_cgroup_limits,
+        missing_ns_stats,
+    ):
+        """
+        Name the source that did not arrive, per node.
+
+        The service half is read from stats, not from headline membership:
+        derive_memory_headline writes a row for an empty payload too, so a
+        membership test would miss that node.
+        """
+        total = len(node_names)
+        capacity_rendered = any(
+            "capacity_bytes" in row
+            for row in headline.values()
+            if isinstance(row, dict)
+        )
+
+        if untracked_limits:
+            logger.warning(
+                "%s: the cgroup limit is not tracked, so Free%% and Stop%% are "
+                "measured against the host rather than the cgroup. Enable "
+                "cgroup-mem-tracking so asadm can also report Capacity and "
+                "Alloc%%.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in untracked_limits), total
+                ),
+            )
+
+        if no_cgroup_limits and capacity_rendered:
+            logger.warning(
+                "Capacity is blank for %s: without a tracked cgroup limit asadm "
+                "has no total-memory figure to divide Alloc%% by.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in no_cgroup_limits), total
+                ),
+            )
+
+        missing_service_stats = [n for n in node_names if not stats.get(n)]
+
+        if missing_service_stats:
+            logger.warning(
+                "No service statistics for %s: Capacity, Free%%, Alloc%% and the "
+                "heap figures are blank for them.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in missing_service_stats), total
+                ),
+            )
+
+        if missing_ns_stats:
+            logger.warning(
+                "No namespace statistics for %s. Their allocation total is "
+                "omitted because index arenas are unknown.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in missing_ns_stats), total
+                ),
+            )
+
+    @staticmethod
+    def _collapse_duplicate_host_free(node_stats):
+        """
+        Drop the Host free pair when it repeats the System pair exactly.
+
+        Without cgroup tracking the server measures both against the host and
+        reports one figure twice, which is two columns of noise. With tracking
+        the two are measured against different capacities, so the byte counts
+        can coincide while the percentages do not: system_free_mem_pct nets out
+        inactive_file and clamps by host availability (SERVER-742), so equal
+        bytes alone do not make the Host pair redundant. Both halves have to
+        match before the Host context is discarded.
+        """
+        if "host_free_mem_bytes" not in node_stats:
+            return
+
+        if node_stats["host_free_mem_bytes"] != node_stats.get("system_free_mem_bytes"):
+            return
+
+        if node_stats.get("host_free_mem_pct") != node_stats.get("system_free_mem_pct"):
+            return
+
+        node_stats.pop("host_free_mem_bytes", None)
+        node_stats.pop("host_free_mem_pct", None)
+
+    @staticmethod
+    @reserved_modifiers
+    def info_memory(
+        stats,
+        configs,
+        ns_agg,
+        cluster,
+        builds=None,
+        verbose=False,
+        timestamp="",
+        with_=None,
+        **ignore,
+    ):
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+
+        if not node_names:
+            return
+
+        title_suffix = CliView._get_timestamp_suffix(timestamp)
+        stats = util.derive_memory_stats(stats)
+        headline, untracked_limits, no_cgroup_limits, missing_ns_stats = (
+            util.derive_memory_headline(
+                stats, configs, ns_agg, builds=builds, nodes=node_names
+            )
+        )
+
+        CliView._warn_memory_gaps(
+            node_names,
+            stats,
+            headline,
+            untracked_limits,
+            no_cgroup_limits,
+            missing_ns_stats,
+        )
+        common = CliView._common(cluster)
+        node_src = dict(node_names=node_names, node_ids=node_ids)
+        stats = {n: v for n, v in stats.items() if n in node_names}
+        configs = {n: v for n, v in configs.items() if n in node_names}
+        ns_agg = {n: v for n, v in ns_agg.items() if n in node_names}
+        builds = {n: v for n, v in (builds or {}).items() if n in node_names}
+
+        CliView.print_result(
+            sheet.render(
+                templates.info_memory_headline_sheet,
+                "Memory Information" + title_suffix,
+                dict(headline=headline, builds=builds, **node_src),
+                common=common,
+            )
+        )
+
+        if not verbose:
+            return
+
+        for node_stats in stats.values():
+            if isinstance(node_stats, dict):
+                CliView._collapse_duplicate_host_free(node_stats)
+
+        for template, title, sources in (
+            (
+                templates.info_memory_sheet,
+                "Host and CGroup Memory",
+                dict(stats=stats, configs=configs, ns_agg=ns_agg, **node_src),
+            ),
+            (
+                templates.info_memory_index_sheet,
+                "Index and Data Memory",
+                dict(ns_agg=ns_agg, **node_src),
+            ),
+            (
+                templates.info_memory_process_sheet,
+                "Process Heap",
+                dict(stats=stats, **node_src),
+            ),
+        ):
+            CliView.print_result(
+                sheet.render(template, title + title_suffix, sources, common=common)
+            )
 
     @staticmethod
     @reserved_modifiers

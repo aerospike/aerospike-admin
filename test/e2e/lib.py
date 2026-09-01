@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from lib.utils import version
 from test.e2e import util
 
 # the port to use for one of the cluster nodes
@@ -46,6 +47,12 @@ CLIENT_ATTEMPTS = 20
 # the number of server nodes to use
 NODE_CAPACITY = 3
 DEFAULT_N_NODES = 2
+
+IMAGE_REPO = os.environ.get(
+    "ASADM_E2E_IMAGE_REPO",
+    "artifact.aerospike.io/database-docker-test-local/aerospike-server-enterprise",
+)
+SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.1.3.0")
 
 WORK_DIRECTORY = "work"
 LUA_DIRECTORY = "work/lua"
@@ -480,7 +487,7 @@ def start_server(
     first_base,
     index,
     access_address="127.0.0.1",
-    docker_tag="latest",
+    docker_tag=SERVER_TAG,
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
@@ -531,14 +538,20 @@ def start_server(
     except:
         pass
 
-    image_name = f"aerospike/aerospike-server-enterprise:{docker_tag}"
+    image_name = f"{IMAGE_REPO}:{docker_tag}"
 
     try:
         print(f"Pulling latest image: {image_name}")
         DOCKER_CLIENT.images.pull(image_name)
         print(f"Pulled latest image: {image_name}")
-    except:
-        pass
+    except Exception as e:
+        if not DOCKER_CLIENT.images.list(name=image_name):
+            raise Exception(
+                f"Failed to pull {image_name}: {e}. This image comes from an "
+                f"authenticated registry; run 'docker login artifact.aerospike.io'."
+            ) from e
+
+        print(f"WARNING: pull of {image_name} failed ({e}); using the local copy")
 
     container = DOCKER_CLIENT.containers.run(
         image_name,
@@ -578,7 +591,7 @@ def start_server(
 def start(
     do_reset=True,
     num_nodes=DEFAULT_N_NODES,
-    docker_tag="8.1",  # Change this to the desired latest Docker tag
+    docker_tag=SERVER_TAG,
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
@@ -836,6 +849,17 @@ def create_sindex(name, type_, ns, bin, set_: str | None = None):
 
     time.sleep(1)  # TODO: Instead of sleep wait for sindex to exist
     print("Successfully created secondary index", name)
+
+
+def server_build():
+    global CLIENT
+    builds = set()
+
+    for response in CLIENT.info_all("build").values():
+        if response and response[1]:
+            builds.add(response[1].strip())
+
+    return min(builds, key=version.LooseVersion) if builds else "0"
 
 
 def create_xdr_filter(ns, dc, exp):
