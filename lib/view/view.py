@@ -176,8 +176,20 @@ class CliView(object):
 
     @staticmethod
     def _warn_memory_gaps(
-        node_names, headline, untracked_limits, no_cgroup_limits, missing_ns_stats
+        node_names,
+        stats,
+        headline,
+        untracked_limits,
+        no_cgroup_limits,
+        missing_ns_stats,
     ):
+        """
+        Name the source that did not arrive, per node.
+
+        The service half is read from stats, not from headline membership:
+        derive_memory_headline writes a row for an empty payload too, so a
+        membership test would miss that node.
+        """
         total = len(node_names)
         capacity_rendered = any(
             "capacity_bytes" in row
@@ -205,11 +217,12 @@ class CliView(object):
                 ),
             )
 
-        missing_service_stats = [n for n in node_names if n not in headline]
+        missing_service_stats = [n for n in node_names if not stats.get(n)]
 
         if missing_service_stats:
             logger.warning(
-                "No service statistics for %s. Their whole memory row is blank.",
+                "No service statistics for %s: Capacity, Free%%, Alloc%% and the "
+                "heap figures are blank for them.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in missing_service_stats), total
                 ),
@@ -277,7 +290,12 @@ class CliView(object):
         )
 
         CliView._warn_memory_gaps(
-            node_names, headline, untracked_limits, no_cgroup_limits, missing_ns_stats
+            node_names,
+            stats,
+            headline,
+            untracked_limits,
+            no_cgroup_limits,
+            missing_ns_stats,
         )
         common = CliView._common(cluster)
         node_src = dict(node_names=node_names, node_ids=node_ids)

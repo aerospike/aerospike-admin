@@ -1443,11 +1443,33 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
 
     def test_heap_pct_omitted_when_heap_stat_absent(self):
         headline, _, _, _ = self.headline(
-            {"node1": {}}, ns_agg={"node1": {"shmem_alloc_bytes": "500"}}
+            {"node1": {"system_free_mem_pct": "50"}},
+            ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
         )
         self.assertEqual(headline["node1"]["allocated_bytes"], "500")
         self.assertNotIn("allocated_heap_pct", headline["node1"])
         self.assertNotIn("allocated_heap_bytes", headline["node1"])
+
+    def test_empty_service_payload_yields_no_cgroup_bucket_and_no_total(self):
+        """A node that answered with {} observed neither a cgroup limit nor a
+        heap, so shmem alone must not render as its allocation total."""
+        headline, untracked, no_cgroup, _ = self.headline(
+            {"node1": {}},
+            ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
+            nodes=["node1"],
+        )
+        self.assertEqual(no_cgroup, [])
+        self.assertEqual(untracked, [])
+        self.assertNotIn("allocated_bytes", headline["node1"])
+        self.assertEqual(headline["node1"]["allocated_shmem_bytes"], "500")
+
+    def test_node_absent_from_stats_gets_no_row(self):
+        headline, untracked, no_cgroup, _ = self.headline(
+            {}, ns_agg={"node1": {"shmem_alloc_bytes": "500"}}, nodes=["node1"]
+        )
+        self.assertEqual(no_cgroup, [])
+        self.assertEqual(untracked, [])
+        self.assertNotIn("node1", headline)
 
     def test_negative_shmem_clamped(self):
         headline, _, _, _ = self.headline(

@@ -160,6 +160,11 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         call_args = await self._run_memory_line(["memory"])
         self.assertFalse(call_args.kwargs["verbose"])
 
+    async def test_do_memory_short_verbose_flag_parsed_from_line(self):
+        """collectinfo captures this exact argv, so the short form has to parse."""
+        call_args = await self._run_memory_line(["memory", "-v"])
+        self.assertTrue(call_args.kwargs["verbose"])
+
     async def _run_memory_with_edition(self, edition):
         node = "1.1.1.1"
         ns_stats = {

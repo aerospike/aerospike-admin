@@ -711,10 +711,14 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
     measured against the host rather than the cgroup that is actually
     squeezing the process.
 
+    A node whose service payload came back empty lands in no cgroup bucket and
+    carries no allocation total: neither its limit nor its heap was observed.
+
     The allocation total is omitted when the node's namespace stats never
     arrived or its build predates the allocation stats, since heap alone would
     render as an authoritative total that understates the node by whatever its
-    index arenas hold.
+    index arenas hold. Shmem alone understates it the same way, so an empty
+    service payload suppresses the total too.
 
     Shmem is gated with the total it belongs to. On a pre-8.1.3 memory-engine
     node the arenas are unknown but the folded data reservation is not, so a
@@ -761,7 +765,7 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         )
         capacity = cgroup_limit if cgroup_tracked else 0
 
-        if capacity <= 0:
+        if node_stats and capacity <= 0:
             if cgroup_limit > 0:
                 untracked_limits.append(node)
             elif alloc_known:
@@ -782,7 +786,7 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
             if shmem > 0:
                 row["allocated_shmem_bytes"] = str(shmem)
 
-            if allocated > 0:
+            if node_stats and allocated > 0:
                 row["allocated_bytes"] = str(allocated)
 
                 if heap > 0:

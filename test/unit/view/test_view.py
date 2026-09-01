@@ -2908,6 +2908,33 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertIn("No namespace statistics", warnings[0])
         self.assertIn("node1", warnings[0])
 
+    def test_info_memory_warns_when_service_payload_is_empty(self):
+        """A truncated statistics stanza parses to {}, and that node is in
+        headline, so a membership test cannot see it."""
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "500000",
+                    "cgroup_memory_limit_bytes": "10000",
+                },
+                "2.2.2.2": {},
+            },
+            {"1.1.1.1": {"cgroup-mem-tracking": "true"}},
+            {
+                "1.1.1.1": {"shmem_alloc_bytes": "500"},
+                "2.2.2.2": {"shmem_alloc_bytes": "500"},
+            },
+            self.cluster_mock,
+        )
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("No service statistics", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
+
     def test_info_memory_warns_when_service_stats_missing(self):
         self.set_nodes("1.1.1.1", "2.2.2.2")
 
