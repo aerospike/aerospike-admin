@@ -13,7 +13,7 @@ ply = "==3.11"
 toml = "==0.10.2"
 yappi = "==1.7.6"
 python-dateutil = "==2.9.0.post0"
-msgpack = "==1.2.1"
+msgpack = "==1.2.2"
 typing-extensions = "*"
 asyncssh = "*"
 
