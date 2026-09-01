@@ -36,7 +36,15 @@ from lib.live_cluster.ssh import (
 from lib.utils import common, constants, util, version, conf_parser
 from lib.utils.async_object import AsyncObject
 
-from .constants import ErrorsMsgs, MAX_SOCKET_POOL_SIZE
+from .constants import (
+    CHECKPOINT_PARKED_RESPONSE,
+    CHECKPOINT_SAVE_COMPLETE,
+    CHECKPOINT_SAVE_IN_PROGRESS,
+    CHECKPOINT_TIMEOUT_MAX,
+    CHECKPOINT_TIMEOUT_MIN,
+    ErrorsMsgs,
+    MAX_SOCKET_POOL_SIZE,
+)
 from .ctx import CDTContext
 from .msgpack import ASPacker
 from .assocket import ASSocket
@@ -44,6 +52,8 @@ from .config_handler import JsonDynamicConfigHandler
 from . import client_util
 from . import sys_cmd_parser
 from .types import (
+    ASInfoCheckpointError,
+    ASInfoCheckpointParkedError,
     ASInfoConfigError,
     ASInfoError,
     ASInfoResponseError,
@@ -434,7 +444,26 @@ class Node(AsyncObject):
             disable_cache=True,
         )
 
-        self.build = node_info_response.get(build_info_cmd)
+        build_response = node_info_response.get(build_info_cmd)
+
+        # A node parked by checkpoint-save refuses every command here, so the responses
+        # are error strings rather than a node id and a build. Bail out - caching the
+        # refusal as self.build would poison every later version comparison.
+        parked_response = next(
+            (
+                resp
+                for resp in (build_response, node_info_response.get(node_info_cmd))
+                if self._is_checkpoint_parked_response(resp)
+            ),
+            None,
+        )
+
+        if parked_response is not None:
+            raise ASInfoCheckpointParkedError(
+                "Node is parked by checkpoint-save", parked_response
+            )
+
+        self.build = build_response
         server_supports_admin_info_call = False
 
         try:
@@ -3522,11 +3551,22 @@ class Node(AsyncObject):
         Returns:
         string -- build version or Exception
         """
-        # Return cached version if available, not disabled, and not an exception
-        if not disable_cache and self.build and not isinstance(self.build, Exception):
+        # Return cached version if available, not disabled, and not an exception. An
+        # error string is not a version - never hand one to LooseVersion, which parses
+        # it into mixed str/int components that raise TypeError when compared.
+        if (
+            not disable_cache
+            and self.build
+            and not isinstance(self.build, Exception)
+            and not self.build.startswith(("ERROR", "error"))
+        ):
             return self.build
 
         resp = await self._info("build")
+
+        if self._is_checkpoint_parked_response(resp):
+            raise ASInfoCheckpointParkedError("Failed to get build", resp)
+
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get build", resp)
 
@@ -3770,6 +3810,103 @@ class Node(AsyncObject):
             raise ASInfoResponseError("Failed to undo quiesce", resp)
 
         return ASINFO_RESPONSE_OK
+
+    @staticmethod
+    def _is_checkpoint_parked_response(resp):
+        return isinstance(resp, str) and CHECKPOINT_PARKED_RESPONSE in resp
+
+    @async_return_exceptions
+    async def info_checkpoint_save(self, timeout=None):
+        """
+        Trigger an index checkpoint. The node copies its shared-memory segments to
+        durable storage, leaves the cluster, and then parks - serving only
+        checkpoint-status and a re-issued checkpoint-save - until it is stopped or the
+        park timeout elapses. There is no undo.
+
+        Re-issuing is idempotent: the server reports the in-flight state rather than
+        starting a second save, so the response is returned rather than
+        ASINFO_RESPONSE_OK.
+
+        Returns: the server's success response on success and ASInfoError on failure
+        """
+        req = "checkpoint-save"
+
+        if timeout is not None:
+            try:
+                timeout = int(timeout)
+            except ValueError:
+                raise ASInfoCheckpointError(
+                    ErrorsMsgs.CHECKPOINT_SAVE_FAIL,
+                    ErrorsMsgs.INVALID_CHECKPOINT_TIMEOUT,
+                )
+
+            if timeout < CHECKPOINT_TIMEOUT_MIN or timeout > CHECKPOINT_TIMEOUT_MAX:
+                raise ASInfoCheckpointError(
+                    ErrorsMsgs.CHECKPOINT_SAVE_FAIL,
+                    ErrorsMsgs.INVALID_CHECKPOINT_TIMEOUT,
+                )
+
+            req = "checkpoint-save:timeout={}".format(timeout)
+
+        resp = await self._info(req)
+
+        if self._is_checkpoint_parked_response(resp):
+            raise ASInfoCheckpointParkedError(ErrorsMsgs.CHECKPOINT_SAVE_FAIL, resp)
+
+        if resp.lower() not in {
+            ASINFO_RESPONSE_OK,
+            CHECKPOINT_SAVE_IN_PROGRESS,
+            CHECKPOINT_SAVE_COMPLETE,
+        }:
+            raise ASInfoCheckpointError(ErrorsMsgs.CHECKPOINT_SAVE_FAIL, resp)
+
+        return resp
+
+    @async_return_exceptions
+    async def info_checkpoint_status(self):
+        """
+        Get per-namespace index checkpoint progress. asinfo -v "checkpoint-status"
+
+        Returns:
+        dictionary -- namespace -> {state, files_done, files_total}
+        """
+        resp = await self._info("checkpoint-status")
+
+        if self._is_checkpoint_parked_response(resp):
+            raise ASInfoCheckpointParkedError(ErrorsMsgs.CHECKPOINT_STATUS_FAIL, resp)
+
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoCheckpointError(ErrorsMsgs.CHECKPOINT_STATUS_FAIL, resp)
+
+        result = {}
+
+        # Entries are "<ns>:state=<state>:files=<done>/<total>" joined by ";". The
+        # leading namespace has no "=", so info_to_dict_multi_level would drop it.
+        # The server chomps the trailing ";" but the empty check does not rely on that.
+        for entry in client_util.info_to_list(resp):
+            if not entry:
+                continue
+
+            ns, _, rest = entry.partition(":")
+            values = client_util.info_to_dict(rest, ":")
+            files_done, _, files_total = values.get("files", "").partition("/")
+
+            try:
+                files_done = int(files_done)
+                files_total = int(files_total)
+            except ValueError:
+                files_done = 0
+                files_total = 0
+
+            result[ns] = {
+                "state": values.get("state", ""),
+                "files_done": files_done,
+                "files_total": files_total,
+            }
+
+        logger.debug("info_checkpoint_status node=%s response=%s", self.ip, result)
+
+        return result
 
     # TODO: Deprecated but still needed to support reading old job type removed in
     # server 5.7.  Should be stripped out at some point.

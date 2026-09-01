@@ -17,12 +17,15 @@ import copy
 import inspect
 import os
 import logging
+import time
 from datetime import datetime, timezone
 import re
 from dateutil import parser as date_parser
 from typing import Optional
 from getpass import getpass
 from functools import reduce
+from lib.live_cluster.client import constants as client_constants
+from lib.live_cluster.client import client_util
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.ctx import ASValues, CTXItems
 
@@ -31,6 +34,7 @@ from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.utils.lookup_dict import PrefixDict
 from .client import (
+    ASInfoCheckpointParkedError,
     ASInfoResponseError,
     ASInfoError,
     ASProtocolError,
@@ -163,6 +167,7 @@ class ManageController(LiveClusterManageCommandController):
             "jobs": ManageJobsController,
             "recluster": ManageReclusterController,
             "quiesce": ManageQuiesceController,
+            "checkpoint": ManageCheckpointController,
             "revive": ManageReviveController,
             "roster": ManageRosterController,
             "truncate": ManageTruncateController,
@@ -172,6 +177,9 @@ class ManageController(LiveClusterManageCommandController):
             "acl": ManageACLController,
             "masking": ManageMaskingController,
         }
+        # "manage c" resolved to "config" before "checkpoint" was added. Pin it so the
+        # prefix keeps working rather than becoming ambiguous.
+        self.aliases = {"c": "config"}
 
 
 @CommandHelp("Configure users and roles")
@@ -2985,6 +2993,455 @@ class ManageQuiesceController(ManageLeafCommandController):
         self.view.print_result(
             'Run "manage recluster" for your changes to take effect.'
         )
+
+
+class ManageCheckpointLeafController(ManageLeafCommandController):
+    FEATURE = "index_checkpoint"
+
+    async def _check_version_support(self, lenient=False):
+        """
+        Every node in scope must be at SERVER_INDEX_CHECKPOINT_FIRST_VERSION or later.
+
+        A parked node refuses "build", so get_builds drops it and check_version_support
+        reports the feature as unsupported. Read-only commands pass lenient=True: they
+        must still work against the parked node they exist to poll.
+        """
+        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+
+        if lenient and not builds:
+            logger.warning(
+                "Could not read the build version of one or more nodes. They may be "
+                "parked by a checkpoint-save. Attempting the command anyway."
+            )
+            return
+
+        feature_support = await util.check_version_support(
+            feature_versions={
+                self.FEATURE: constants.SERVER_INDEX_CHECKPOINT_FIRST_VERSION,
+            },
+            builds=builds,
+        )
+
+        if not feature_support[self.FEATURE]:
+            raise ShellException(
+                "The index checkpoint is not supported on one or more servers.  Requires v. {} and later.".format(
+                    constants.SERVER_INDEX_CHECKPOINT_FIRST_VERSION
+                )
+            )
+
+    def _get_nodes(self):
+        """
+        Resolve the Node objects once, up front.
+
+        checkpoint-save makes the node leave the cluster, so every later call must go
+        straight to the Node. Going back through the Cluster would trip its refresh
+        (CLUSTER_REFRESH_INTERVAL) and re-connect to the parked node on every poll.
+        """
+        nodes = self.cluster.get_nodes(self.nodes)
+
+        if not nodes:
+            raise ShellException("Unable to find any Aerospike nodes")
+
+        return nodes
+
+    @staticmethod
+    async def _get_checkpoint_status(nodes):
+        statuses = await client_util.concurrent_map(
+            lambda node: node.info_checkpoint_status(), nodes
+        )
+
+        return dict(zip([node.key for node in nodes], statuses))
+
+    @staticmethod
+    def _split_statuses(statuses):
+        """
+        The sheet renders an errored node as a row of "~~", which hides why it failed.
+        Split so the caller can report the reason and tabulate only real data.
+        """
+        ok = {}
+        errors = {}
+
+        for key, status in statuses.items():
+            if isinstance(status, Exception):
+                errors[key] = status
+            else:
+                ok[key] = status
+
+        return ok, errors
+
+    @staticmethod
+    def _error_hint(error):
+        """
+        The server truncates every info error at 100 characters (MAX_FORMAT in
+        cf/src/dynbuf.c), which cuts this one mid-word. The prefix still identifies it,
+        so restore the actionable part.
+        """
+        if str(getattr(error, "response", "")).startswith(
+            "no namespace is checkpointing"
+        ):
+            return (
+                " No namespace is configured for checkpointing. Set the service-level "
+                "'index-checkpoint-path', start the server with "
+                "'--preview index-checkpoint', and make sure the namespace has volatile "
+                "state and does not set 'skip-checkpoint'."
+            )
+
+        return ""
+
+    def _log_status_errors(self, errors):
+        for key, error in errors.items():
+            logger.error("%s: %s%s", key, error, self._error_hint(error))
+
+
+@CommandHelp(
+    "Checkpoint a node's shared-memory segments to durable storage so it can warm",
+    "restart. The node then leaves the cluster and parks until it is stopped or the",
+    'park timeout elapses. This cannot be undone, so "--warn" is on by default.',
+    modifiers=(
+        ModifierHelp(
+            "--timeout",
+            "Seconds the node holds the post-save park waiting to be stopped. 1-3600.",
+            default=str(client_constants.CHECKPOINT_TIMEOUT_DEFAULT),
+        ),
+        ModifierHelp(
+            "--poll-interval",
+            "Seconds between checkpoint-status polls. Minimum 1.",
+            default="2",
+        ),
+        ModifierHelp(
+            "--no-wait",
+            "Issue the checkpoint and return without polling for completion.",
+            default="false",
+        ),
+        ModifierHelp(
+            "--no-warn",
+            "Turn off --warn mode. This is not advised.",
+        ),
+        ModifierHelp(
+            constants.Modifiers.WITH,
+            "The node(s) to checkpoint. Acceptable values are ip:port, node-id, or FQDN.",
+        ),
+    ),
+    usage=f"[--timeout <seconds>] [--poll-interval <seconds>] [--no-wait] [--no-warn] {constants.ModifierUsage.WITH}",
+    short_msg="Checkpoint a node's shared-memory segments so it can warm restart",
+)
+class ManageCheckpointController(ManageCheckpointLeafController):
+    POLL_INTERVAL_DEFAULT = 2
+    POLL_INTERVAL_MIN = 1
+    # Stop polling before the node's park window closes - once it elapses the node
+    # exits on its own and the poll would be talking to a dead process.
+    POLL_MARGIN_SEC = 5
+    TERMINAL_STATES = {"done", "failed"}
+
+    def __init__(self):
+        self.required_modifiers = {"with"}
+        self.modifiers = set()
+        self.meta_getter = GetClusterMetadataController(self.cluster)
+        self.controller_map = {"status": ManageCheckpointStatusController}
+
+    def _parse_int_arg(self, line, arg, default, minimum, maximum=None):
+        """
+        get_arg_and_delete_from_mods with return_type=int silently falls back to the
+        default on a bad cast. These bounds are worth reporting, so parse as str.
+        """
+        # "line" so the flag and its value are cleared from self.mods too - the leftover
+        # check below relies on mods["line"] holding only genuinely unrecognized input.
+        value = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg=arg,
+            return_type=str,
+            default=None,
+            modifiers={"line"},
+            mods=self.mods,
+        )
+
+        if value is None:
+            return default
+
+        try:
+            value = int(value)
+        except ValueError:
+            raise ShellException("{} must be an integer.".format(arg))
+
+        if value < minimum or (maximum is not None and value > maximum):
+            if maximum is None:
+                raise ShellException("{} must be {} or greater.".format(arg, minimum))
+
+            raise ShellException(
+                "{} must be between {} and {}.".format(arg, minimum, maximum)
+            )
+
+        return value
+
+    def _prompt_message(self, timeout):
+        if self.nodes == constants.NodeSelection.ALL:
+            target = "EVERY node in the cluster"
+        else:
+            target = "node(s): {}".format(", ".join(self.nodes))
+
+        return (
+            "You are about to checkpoint {} - each copies its shared-memory segments "
+            "(the primary index; the secondary index if it is in shmem; the data "
+            "stripes for a shadowless memory namespace) to durable storage, then "
+            "departs the cluster and parks, serving only checkpoint-status, until it "
+            "is stopped ('systemctl stop aerospike') or the park timeout elapses "
+            "({}s). This cannot be undone. A node that is not quiesced will trigger "
+            "migrations.".format(target, timeout)
+        )
+
+    async def _warn_if_not_quiesced(self, nodes):
+        stats = await client_util.concurrent_map(
+            lambda node: node.info_all_namespace_statistics(), nodes
+        )
+
+        not_quiesced = []
+
+        for node, ns_stats in zip(nodes, stats):
+            if isinstance(ns_stats, Exception):
+                continue
+
+            for ns, stat in ns_stats.items():
+                if isinstance(stat, Exception):
+                    continue
+
+                if stat.get("effective_is_quiesced", "false") != "true":
+                    not_quiesced.append("{} {}".format(node.key, ns))
+
+        if not_quiesced:
+            logger.warning(
+                "The following are not quiesced and will trigger migrations when the "
+                "node departs: %s. Consider 'manage quiesce' followed by 'manage "
+                "recluster' first.",
+                ", ".join(not_quiesced),
+            )
+
+    @CommandHelp(
+        "Checkpoint the node(s) and poll until every namespace is done or failed",
+    )
+    async def _do_default(self, line):
+        no_warn = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--no-warn",
+            default=False,
+            modifiers={"line"},
+            mods=self.mods,
+        )
+        no_wait = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--no-wait",
+            default=False,
+            modifiers={"line"},
+            mods=self.mods,
+        )
+        timeout = self._parse_int_arg(
+            line,
+            "--timeout",
+            client_constants.CHECKPOINT_TIMEOUT_DEFAULT,
+            client_constants.CHECKPOINT_TIMEOUT_MIN,
+            client_constants.CHECKPOINT_TIMEOUT_MAX,
+        )
+        poll_interval = self._parse_int_arg(
+            line,
+            "--poll-interval",
+            self.POLL_INTERVAL_DEFAULT,
+            self.POLL_INTERVAL_MIN,
+        )
+
+        # parse_modifiers sweeps every token after 'with' into the node list, so a flag
+        # typed there would silently become a node name. "with all" collapses the whole
+        # group to the string "all", which holds no tokens to check.
+        with_tokens = self.mods[constants.Modifiers.WITH]
+
+        if isinstance(with_tokens, str):
+            with_tokens = []
+
+        stray = [
+            token for token in self.mods["line"] + with_tokens if token.startswith("-")
+        ]
+
+        if stray:
+            raise ShellException(
+                "Unrecognized input: {}. Flags must come before '{}'.".format(
+                    " ".join(stray), constants.Modifiers.WITH
+                )
+            )
+
+        if self.mods["line"]:
+            raise ShellException(
+                "Unrecognized input: {}".format(" ".join(self.mods["line"]))
+            )
+
+        await self._check_version_support()
+
+        nodes = self._get_nodes()
+
+        await self._warn_if_not_quiesced(nodes)
+
+        if not no_warn and not self.prompt_challenge(self._prompt_message(timeout)):
+            return
+
+        resp = await self.cluster.info_checkpoint_save(
+            timeout=timeout, nodes=self.nodes
+        )
+
+        self.view.print_info_responses(
+            "Checkpoint Save", resp, self.cluster, **self.mods
+        )
+
+        # The response table colours a failure red but does not set the exit code. A
+        # script chaining 'manage checkpoint && systemctl stop aerospike' would stop a
+        # node that never checkpointed, so a failed save must exit non-zero.
+        _, errors = self._split_statuses(resp)
+
+        self._log_status_errors(errors)
+
+        started = [node for node in nodes if node.key not in errors]
+
+        if not started:
+            logger.error("Checkpoint was not started on any node.")
+            return
+
+        if no_wait:
+            return
+
+        await self._poll(started, timeout, poll_interval)
+
+    async def _poll(self, nodes, timeout, poll_interval):
+        deadline = time.time() + max(timeout - self.POLL_MARGIN_SEC, poll_interval)
+        pending = list(nodes)
+        last_seen = {}
+        last_error = {}
+
+        try:
+            while pending:
+                statuses = await self._get_checkpoint_status(pending)
+                ok, errors = self._split_statuses(statuses)
+                last_seen.update(ok)
+                last_error.update(errors)
+
+                # Errors are expected mid-poll (a parked node refuses, a reaped one
+                # stops answering) so they are reported once by _report, not per tick.
+                if ok:
+                    self.view.show_checkpoint_status(ok, self.cluster, **self.mods)
+
+                pending = [
+                    node
+                    for node in pending
+                    if not self._is_terminal(node, statuses[node.key])
+                ]
+
+                if not pending:
+                    break
+
+                if time.time() >= deadline:
+                    logger.warning(
+                        "Stopped polling after %s seconds - the park window has "
+                        "elapsed. Nodes still in progress: %s",
+                        timeout,
+                        ", ".join(node.key for node in pending),
+                    )
+                    break
+
+                await asyncio.sleep(poll_interval)
+        except asyncio.CancelledError:
+            return
+
+        self._report(nodes, last_seen, last_error)
+
+    def _is_terminal(self, node, status):
+        if isinstance(status, ASInfoCheckpointParkedError):
+            # The node is parked but refused checkpoint-status. Keep polling.
+            return False
+
+        if isinstance(status, Exception):
+            # The node stopped answering. The park window closed, or an operator
+            # stopped it. Either way there is nothing left to poll.
+            return True
+
+        return all(
+            ns_status["state"] in self.TERMINAL_STATES for ns_status in status.values()
+        )
+
+    def _report(self, nodes, last_seen, last_error=None):
+        last_error = last_error or {}
+
+        for node in nodes:
+            status = last_seen.get(node.key)
+
+            if not status:
+                error = last_error.get(node.key)
+
+                if error is not None:
+                    logger.error(
+                        "Never read a checkpoint status from %s: %s%s",
+                        node.key,
+                        error,
+                        self._error_hint(error),
+                    )
+                else:
+                    logger.error(
+                        "Never read a checkpoint status from %s. Its checkpoint state "
+                        "is unknown - check the server log before restarting it.",
+                        node.key,
+                    )
+
+                continue
+
+            failed = [ns for ns, s in status.items() if s["state"] == "failed"]
+            unfinished = [ns for ns, s in status.items() if s["state"] == "copying"]
+
+            if failed:
+                logger.error(
+                    "Checkpoint FAILED on %s for namespace(s): %s. Retention is "
+                    "single-copy, so no checkpoint exists and this node will "
+                    "cold-start.",
+                    node.key,
+                    ", ".join(failed),
+                )
+            elif unfinished:
+                logger.error(
+                    "%s stopped answering while namespace(s) %s were still copying. "
+                    "No usable checkpoint - this node will cold-start.",
+                    node.key,
+                    ", ".join(unfinished),
+                )
+            else:
+                self.view.print_result(
+                    "Checkpoint complete on {}. Stop it safely with 'systemctl stop "
+                    "aerospike' (or let the park time out), then perform "
+                    "maintenance.".format(node.key)
+                )
+
+
+@CommandHelp(
+    "Display the per-namespace progress of an index checkpoint. Works against a node",
+    "that has already departed the cluster and parked.",
+    modifiers=(
+        ModifierHelp(
+            constants.Modifiers.WITH,
+            "The node(s) to query. Acceptable values are ip:port, node-id, or FQDN.",
+            default="all",
+        ),
+    ),
+    usage=f"[{constants.ModifierUsage.WITH}]",
+    short_msg="Display the per-namespace progress of an index checkpoint",
+)
+class ManageCheckpointStatusController(ManageCheckpointLeafController):
+    def __init__(self):
+        self.modifiers = {"with"}
+        self.meta_getter = GetClusterMetadataController(self.cluster)
+
+    async def _do_default(self, line):
+        await self._check_version_support(lenient=True)
+
+        nodes = self._get_nodes()
+        statuses = await self._get_checkpoint_status(nodes)
+        ok, errors = self._split_statuses(statuses)
+
+        self._log_status_errors(errors)
+
+        if ok:
+            self.view.show_checkpoint_status(ok, self.cluster, **self.mods)
 
 
 @CommandHelp(

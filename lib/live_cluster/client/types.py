@@ -333,6 +333,39 @@ class ASInfoNotAuthenticatedError(ASInfoResponseError):
     pass
 
 
+class ASInfoCheckpointError(ASInfoResponseError):
+    def __init__(self, message: str, server_resp: str):
+        self.raw_response = server_resp
+
+        if server_resp.lower() in {ASINFO_RESPONSE_OK, ""}:
+            raise ValueError('info() returned value "ok" which is not an error.')
+
+        # Strip only the "ERROR:<code>:" prefix. ASInfoResponseError splits on "=" first,
+        # which mangles the checkpoint-save parameter error - its text echoes the rejected
+        # parameter, so it contains an "=" of its own.
+        clean_resp = server_resp
+
+        if server_resp.startswith("error") or server_resp.startswith("ERROR"):
+            parts = server_resp.split(":", 2)
+
+            if len(parts) == 3:
+                clean_resp = parts[2]
+
+        clean_resp = clean_resp.strip(" .")
+
+        if not clean_resp:
+            clean_resp = GENERIC_ERROR_MSG
+
+        ASInfoError.__init__(self, message, clean_resp)
+
+
+class ASInfoCheckpointParkedError(ASInfoCheckpointError):
+    """The node is parked by checkpoint-save. It is intentionally refusing this
+    command, not down."""
+
+    pass
+
+
 class ASInfoClusterStableError(ASInfoResponseError):
     def __init__(self, server_resp: str):
         super().__init__("Cluster is unstable", server_resp)
