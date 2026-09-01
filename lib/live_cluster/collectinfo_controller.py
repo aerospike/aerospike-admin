@@ -23,6 +23,7 @@ import socket
 import time
 import traceback
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Callable, NamedTuple
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.client.types import (
@@ -75,6 +76,14 @@ logger = logging.getLogger(__name__)
 COLLECTINFO_NODE_TIMEOUT = 5
 
 SNAPSHOT_TIMESTAMP_RETRIES = 3
+
+
+class SnapshotTimestamp(NamedTuple):
+    """observed is the clock value when the key was allocated; the two differ
+    only when the key is synthetic because the clock stopped advancing."""
+
+    timestamp: str
+    observed: str
 
 
 NodeErrorEntry = dict[str, Any]
@@ -1576,8 +1585,16 @@ class CollectinfoController(LiveClusterCommandController):
         snapshot_meta["discrepancies"] = discrepancies
 
         try:
-            cluster_down_nodes = await self.cluster.get_down_nodes()
             visibility_error_nodes = self.cluster.get_visibility_error_nodes()
+            discrepancies["visibility_error_nodes"] = sorted(
+                visibility_error_nodes or []
+            )
+        except Exception as e:
+            logger.warning("Failed to detect peer visibility errors: %s", e)
+            logger.debug(traceback.format_exc())
+
+        try:
+            down_result = await self.cluster.get_down_nodes_detailed()
         except Exception as e:
             logger.warning("Failed to detect collectinfo node discrepancies: %s", e)
             logger.debug(traceback.format_exc())
@@ -1585,15 +1602,19 @@ class CollectinfoController(LiveClusterCommandController):
 
             return snapshot_meta
 
-        discrepancies["cluster_down_nodes"] = sorted(cluster_down_nodes or [])
-        discrepancies["visibility_error_nodes"] = sorted(visibility_error_nodes or [])
+        discrepancies["cluster_down_nodes"] = sorted(down_result.down_nodes)
+
+        if down_result.failed_nodes:
+            discrepancies["down_detection_failed_nodes"] = sorted(
+                down_result.failed_nodes
+            )
 
         if self.cluster.only_connect_seed:
             discrepancies["missing_from_collection"] = []
 
             return snapshot_meta
 
-        down = set(cluster_down_nodes or [])
+        down = set(down_result.down_nodes)
         discrepancies["missing_from_collection"] = [
             entry
             for entry in self._detect_missing_from_collection(
@@ -1790,7 +1811,9 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             for i in range(context.snp_count):
-                snp_timestamp = await self._next_snapshot_timestamp(snpshots)
+                snp_timestamp, observed_timestamp = await self._next_snapshot_timestamp(
+                    snpshots
+                )
                 logger.info(
                     "Data collection for Snapshot: " + str(i + 1) + " in progress..."
                 )
@@ -1799,6 +1822,11 @@ class CollectinfoController(LiveClusterCommandController):
                     await self._get_collectinfo_data_json(context)
                 )
                 snapshot_meta["timestamp"] = snp_timestamp
+
+                if observed_timestamp != snp_timestamp:
+                    snapshot_meta["timestamp_adjusted"] = True
+                    snapshot_meta["observed_timestamp"] = observed_timestamp
+
                 snapshot_metas[snp_timestamp] = snapshot_meta
 
                 logger.info("Data collection for Snapshot " + str(i + 1) + " finished.")
@@ -1820,7 +1848,9 @@ class CollectinfoController(LiveClusterCommandController):
                 aborted=aborted,
             )
 
-    async def _next_snapshot_timestamp(self, snpshots: dict[str, Any]) -> str:
+    async def _next_snapshot_timestamp(
+        self, snpshots: dict[str, Any]
+    ) -> "SnapshotTimestamp":
         """A snapshot timestamp no earlier snapshot in this run is using.
 
         The timestamp is the key of both the snapshot data and its meta, and it
@@ -1831,14 +1861,17 @@ class CollectinfoController(LiveClusterCommandController):
 
         Bounded, and never blocks the collection: a clock that does not advance
         (frozen, or stepped backwards mid-run) would otherwise hold the run here
-        forever. Colliding is the lesser fault, and the analyzer reports the
-        snapshot count it finds.
+        forever. After the retries a synthetic timestamp one second past the
+        newest existing snapshot is allocated instead: overwriting an earlier
+        snapshot would silently lose it while the metadata still described the
+        collection as complete. The observed clock value is kept alongside so the
+        synthetic key is disclosed in the meta.
         """
         timestamp = time.strftime(constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime())
 
         for _ in range(SNAPSHOT_TIMESTAMP_RETRIES):
             if timestamp not in snpshots:
-                return timestamp
+                return SnapshotTimestamp(timestamp, timestamp)
 
             await asyncio.sleep(1)
             timestamp = time.strftime(
@@ -1846,13 +1879,23 @@ class CollectinfoController(LiveClusterCommandController):
             )
 
         if timestamp in snpshots:
-            logger.debug(
-                "Snapshot timestamp %s is still in use after waiting; this "
-                "snapshot will overwrite it.",
+            newest = max(
+                datetime.strptime(ts, constants.COLLECTINFO_TIMESTAMP_FORMAT)
+                for ts in snpshots
+            )
+            allocated = (newest + timedelta(seconds=1)).strftime(
+                constants.COLLECTINFO_TIMESTAMP_FORMAT
+            )
+            logger.warning(
+                "Snapshot timestamp %s is still in use after waiting; recording "
+                "this snapshot as %s instead.",
                 timestamp,
+                allocated,
             )
 
-        return timestamp
+            return SnapshotTimestamp(allocated, timestamp)
+
+        return SnapshotTimestamp(timestamp, timestamp)
 
     def _dump_collectinfo_meta(
         self,
@@ -2324,6 +2367,13 @@ class CollectinfoController(LiveClusterCommandController):
             file_header = time.strftime("%Y-%m-%d %H:%M:%S UTC\n", timestamp)
             self.failed_cmds = []
 
+            # A failed collection still reaches the archive step: the json dump
+            # preserves every collected snapshot and the aborted meta in its
+            # finally, and evidence left only in the working directory never
+            # reaches the operator. Only the derived outputs are skipped, since
+            # they would be built from data known to be incomplete.
+            collection_aborted = False
+
             try:
                 await self._dump_collectinfo_json(
                     individual_file_prefix,
@@ -2346,70 +2396,76 @@ class CollectinfoController(LiveClusterCommandController):
             except FileNotFoundError as e:
                 logger.error(ShellException(_describe_exception(e)))
                 logger.error(
-                    "Failed to open a local file needed by the collection. Stopping creation of the collectinfo."
+                    "Failed to open a local file needed by the collection. Archiving what was collected."
                 )
-                return
+                collection_aborted = True
             except Exception as e:
                 logger.error(_describe_exception(e))
                 logger.debug(traceback.format_exc())
                 if not ignore_errors:
                     logger.error(ignore_errors_msg)
-                    return
+                    collection_aborted = True
 
-            # Must happen after json dump and before summary and health. The json data is used
-            # to generate the summary and health output.
-            live_version = BaseController.asadm_version
-            live_build = BaseController.asadm_build
+            if not collection_aborted:
+                # Must happen after json dump and before summary and health. The json data is used
+                # to generate the summary and health output.
+                live_version = BaseController.asadm_version
+                live_build = BaseController.asadm_build
 
-            try:
-                self.collectinfo_root_controller = CollectinfoRootController(
-                    asadm_version=self.asadm_version,
-                    clinfo_path=cf_path_info.cf_dir,
-                    asadm_build=self.asadm_build,
-                )
+                try:
+                    self.collectinfo_root_controller = CollectinfoRootController(
+                        asadm_version=self.asadm_version,
+                        clinfo_path=cf_path_info.cf_dir,
+                        asadm_build=self.asadm_build,
+                    )
 
-                coroutines = [
-                    self._dump_collectinfo_ascollectinfo(
-                        individual_file_prefix, file_header
-                    ),
-                    self._dump_collectinfo_summary(individual_file_prefix, file_header),
-                    self._dump_collectinfo_health(individual_file_prefix, file_header),
-                ]
-
-                if self.cluster.is_localhost_a_node():
-                    coroutines.append(
-                        self._dump_collectinfo_sysinfo(
+                    coroutines = [
+                        self._dump_collectinfo_ascollectinfo(
                             individual_file_prefix, file_header
-                        )
-                    )
-                    coroutines.append(
-                        self._dump_collectinfo_aerospike_conf(
-                            individual_file_prefix, config_path
-                        )
-                    )
-                else:
-                    logger.info(
-                        "Localhost is not an Aerospike node. Skipping sysinfo.log and aerospike.conf collection."
-                    )
+                        ),
+                        self._dump_collectinfo_summary(
+                            individual_file_prefix, file_header
+                        ),
+                        self._dump_collectinfo_health(
+                            individual_file_prefix, file_header
+                        ),
+                    ]
 
-                for c in coroutines:
-                    try:
-                        await c
-                    except:
-                        # close remaining coroutines.  An error will be raised if they are not
-                        # awaited.
-                        for c in coroutines:
-                            c.close()
+                    if self.cluster.is_localhost_a_node():
+                        coroutines.append(
+                            self._dump_collectinfo_sysinfo(
+                                individual_file_prefix, file_header
+                            )
+                        )
+                        coroutines.append(
+                            self._dump_collectinfo_aerospike_conf(
+                                individual_file_prefix, config_path
+                            )
+                        )
+                    else:
+                        logger.info(
+                            "Localhost is not an Aerospike node. Skipping sysinfo.log and aerospike.conf collection."
+                        )
 
-                        if not ignore_errors:
-                            logger.error(ignore_errors_msg)
-                            return
-            finally:
-                # CollectinfoRootController stores the version and build on
-                # BaseController, so building one mid-session overwrites the live
-                # session's.
-                BaseController.asadm_version = live_version
-                BaseController.asadm_build = live_build
+                    for c in coroutines:
+                        try:
+                            await c
+                        except:
+                            # close remaining coroutines.  An error will be raised if they are not
+                            # awaited.
+                            for c in coroutines:
+                                c.close()
+
+                            if not ignore_errors:
+                                logger.error(ignore_errors_msg)
+                                collection_aborted = True
+                                break
+                finally:
+                    # CollectinfoRootController stores the version and build on
+                    # BaseController, so building one mid-session overwrites the live
+                    # session's.
+                    BaseController.asadm_version = live_version
+                    BaseController.asadm_build = live_build
 
             common.print_collectinfo_failed_cmds(self.failed_cmds)
 
@@ -2417,6 +2473,12 @@ class CollectinfoController(LiveClusterCommandController):
             cf_archive_path, success = common.archive_dir(cf_path_info.cf_dir)
 
             if success:
+                if collection_aborted:
+                    logger.warning(
+                        "The collection did not complete. The archive holds the "
+                        "snapshots collected before the failure, and its metadata "
+                        "records the collection as aborted."
+                    )
                 common.print_collect_summary(
                     cf_archive_path,
                 )

@@ -707,6 +707,9 @@ class CollectinfoDiagnostics:
                 for node_key in _sorted_nodes(snapshot_meta.get("no_data_nodes") or [])
             ]
         missing = _dict_entries(discrepancies.get("missing_from_collection"))
+        peer_query_failed = _sorted_nodes(
+            discrepancies.get("down_detection_failed_nodes") or []
+        )
         expected = snapshot_meta.get("expected_nodes") or []
         responded = snapshot_meta.get("responded_nodes") or []
 
@@ -715,7 +718,12 @@ class CollectinfoDiagnostics:
         ):
             missing = []
 
-        if not dropped and not missing and not detection_error:
+        if (
+            not dropped
+            and not missing
+            and not detection_error
+            and not peer_query_failed
+        ):
             return None
 
         if detection_error:
@@ -723,6 +731,18 @@ class CollectinfoDiagnostics:
                 "Node reconciliation did not complete during collection (%s), so "
                 "nodes advertised by the cluster but never collected cannot be "
                 "confirmed for this bundle." % (detection_error,)
+            )
+
+        if peer_query_failed:
+            lines.append(
+                "Peer queries failed on %d %s during collection (%s), so the "
+                "down-node reconciliation is incomplete: the recorded down-node "
+                "list may miss nodes those nodes knew about."
+                % (
+                    len(peer_query_failed),
+                    _plural(len(peer_query_failed), "node"),
+                    _summarize(peer_query_failed),
+                )
             )
 
         if expected and responded:
@@ -1262,6 +1282,9 @@ class CollectinfoDiagnostics:
 
         rows: dict[str, dict[str, str]] = {}
         recovered = 0
+        has_subsection_failures = False
+        has_empty_sections = False
+        has_partial_sections = False
 
         for node_key, node_meta in sorted(nodes_meta.items()):
             node_errors = (
@@ -1282,7 +1305,26 @@ class CollectinfoDiagnostics:
             if not unrecovered:
                 continue
 
-            sections = sorted({str(error.get("section", "?")) for error in unrecovered})
+            # The ledger keys entries by (section, error_class, detail) precisely
+            # so one failed sub-call stays distinguishable from a whole section:
+            # collapsing to the section here would claim "statistics is empty"
+            # over a bundle that plainly holds service statistics.
+            labels = set()
+
+            for error in unrecovered:
+                section = str(error.get("section", "?"))
+                detail = str(error.get("detail") or "")
+
+                if detail:
+                    has_subsection_failures = True
+                    labels.add("%s/%s" % (section, detail))
+                elif util.has_content(self._data(section).get(node_key)):
+                    has_partial_sections = True
+                    labels.add("%s (partial)" % (section,))
+                else:
+                    has_empty_sections = True
+                    labels.add(section)
+
             reasons = sorted(
                 {
                     constants.COLLECTINFO_ERROR_CLASS_REASON.get(
@@ -1293,7 +1335,7 @@ class CollectinfoDiagnostics:
                 }
             )
             rows[node_key] = {
-                "sections": ", ".join(sections),
+                "sections": ", ".join(sorted(labels)),
                 "reason": ", ".join(reasons),
             }
 
@@ -1317,10 +1359,25 @@ class CollectinfoDiagnostics:
             "  %s: %s (%s)" % (node_key, row["sections"], row["reason"])
             for node_key, row in shown.items()
         ]
-        lines = [
-            "Those sections are empty for those nodes, so commands reading them show "
-            "no rows rather than reporting an error."
-        ]
+        lines = []
+
+        if has_empty_sections:
+            lines.append(
+                "Sections named alone are empty for those nodes: commands reading "
+                "them show no rows rather than reporting an error."
+            )
+
+        if has_partial_sections:
+            lines.append(
+                "Sections marked (partial) still hold data for those nodes, so "
+                "treat them as incomplete rather than empty."
+            )
+
+        if has_subsection_failures:
+            lines.append(
+                "An entry like statistics/namespace means only that subsection is "
+                "missing or incomplete; the rest of its section was collected."
+            )
 
         if recovered:
             lines.append(

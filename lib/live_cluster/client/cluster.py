@@ -19,7 +19,7 @@ import re
 import logging
 import inspect
 from OpenSSL import SSL
-from typing import Any, Callable, Coroutine, Union
+from typing import Any, Callable, Coroutine, NamedTuple, Union
 from time import time
 from lib.live_cluster.client import ASInfoNotAuthenticatedError, ASProtocolError
 from lib.live_cluster.client.types import Addr_Port_TLSName
@@ -35,7 +35,20 @@ from .node import Node
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
 
+# Cap on concurrent per-node peer queries in get_down_nodes: each node costs four
+# in-flight info calls, so an unbounded gather over a large cluster multiplies
+# open sockets by four.
+DOWN_NODE_QUERY_CONCURRENCY = 16
+
 logger = logging.getLogger(__name__)
+
+
+class DownNodesResult(NamedTuple):
+    """failed_nodes holds live nodes whose peer queries failed: their alumni
+    view is unknown, so down_nodes may be incomplete."""
+
+    down_nodes: list[str]
+    failed_nodes: list[str]
 
 
 class Cluster(AsyncObject):
@@ -269,37 +282,70 @@ class Cluster(AsyncObject):
     async def get_down_nodes(self) -> list[str]:
         """Nodes the cluster's alumni lists name but its live peer lists do not.
 
+        Best-effort: a node whose peer queries failed is simply skipped, which is
+        what interactive startup wants. Callers that must know the result is
+        incomplete (collectinfo) use get_down_nodes_detailed instead.
+        """
+        return (await self.get_down_nodes_detailed()).down_nodes
+
+    async def get_down_nodes_detailed(self) -> DownNodesResult:
+        """Down nodes plus the nodes whose peer queries failed.
+
         Every node is queried concurrently. Serially, a hung node costs its whole
         per-node timeout before the next one is asked, so ten unresponsive nodes
         held the caller for ten timeouts - and collectinfo, which raises the
         timeout and calls this once per snapshot, paid that repeatedly.
+
+        A failed peer query is returned, not swallowed: "could not ask node B"
+        must stay distinguishable from "node B reported no down peers", or an
+        incomplete reconciliation looks complete.
         """
         nodes = [node for node in self.nodes.values() if node.alive]
+        semaphore = asyncio.Semaphore(DOWN_NODE_QUERY_CONCURRENCY)
+
+        async def query(node) -> list[str]:
+            async with semaphore:
+                return await self._node_down_peers(node)
+
         results = await asyncio.gather(
-            *(self._node_down_peers(node) for node in nodes),
+            *(query(node) for node in nodes),
             return_exceptions=True,
         )
-        cluster_down_nodes = []
+        down_nodes: list[str] = []
+        seen: set[str] = set()
+        failed_nodes: list[str] = []
 
-        for result in results:
+        for node, result in zip(nodes, results):
             if isinstance(result, BaseException):
                 logger.debug(result, exc_info=True)
+                failed_nodes.append(node.key)
                 continue
 
             for key in result:
-                if key not in cluster_down_nodes:
-                    cluster_down_nodes.append(key)
+                if key not in seen:
+                    seen.add(key)
+                    down_nodes.append(key)
 
-        return cluster_down_nodes
+        return DownNodesResult(down_nodes, failed_nodes)
 
     async def _node_down_peers(self, node) -> list[str]:
-        """Peer keys this node's alumni lists name but its live peer lists do not."""
+        """Peer keys this node's alumni lists name but its live peer lists do not.
+
+        The info calls return exceptions as values, and flatten() turns an
+        exception value into an empty list, which would count a failed query as
+        "no peers". Raising instead makes the node land in failed_nodes.
+        """
         alumni_peers, alumni_alt_peers, peers, alt_peers = await asyncio.gather(
             node.info_peers_alumni(),
             node.info_peers_alumni_alt(),
             node.info_peers(),
             node.info_peers_alt(),
         )
+
+        for result in (alumni_peers, alumni_alt_peers, peers, alt_peers):
+            if isinstance(result, Exception):
+                raise result
+
         not_visible = (
             set(client_util.flatten(alumni_peers)).union(
                 set(client_util.flatten(alumni_alt_peers))

@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import tarfile
+import tempfile
 import zipfile
 
 from lib.utils import common, log_util, util, constants
@@ -698,6 +699,12 @@ class CollectinfoLogHandler(object):
         files and directories, so nothing legitimate is lost; a non-asadm archive
         carrying symlinks is now rejected, which is the intended trade.
 
+        Extraction is staged: members land in a private directory that becomes
+        visible under dest_dir only after every member extracted. extractall
+        writes sequentially, so a rejected or truncated member partway through
+        would otherwise leave the earlier members in dest_dir, and a rejected
+        archive's data would then be analyzed as if it were accepted.
+
         A refusal is reported rather than swallowed: silently extracting nothing
         surfaces later as "no valid Aerospike collectinfo log available", which
         sends the reader after the wrong problem.
@@ -720,22 +727,45 @@ class CollectinfoLogHandler(object):
         except Exception:
             return False
 
-        file_extracted = False
         try:
-            if is_tar:
-                compressed_file.extractall(path=dest_dir, filter="data")
-            else:
-                compressed_file.extractall(path=dest_dir)
-
-            file_extracted = True
+            stage_dir = tempfile.mkdtemp(prefix=".extracting-", dir=dest_dir)
         except Exception as e:
             logger.warning("Could not extract %s: %s", file, e)
             logger.debug("Extraction of %s failed", file, exc_info=True)
-            file_extracted = False
+            compressed_file.close()
+            return False
+
+        try:
+            if is_tar:
+                compressed_file.extractall(path=stage_dir, filter="data")
+            else:
+                compressed_file.extractall(path=stage_dir)
+        except Exception as e:
+            logger.warning("Could not extract %s: %s", file, e)
+            logger.debug("Extraction of %s failed", file, exc_info=True)
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            return False
         finally:
             compressed_file.close()
 
-        return file_extracted
+        final_dir = os.path.join(dest_dir, os.path.basename(file) + "-extracted")
+        suffix = 0
+
+        while os.path.exists(final_dir):
+            suffix += 1
+            final_dir = os.path.join(
+                dest_dir, "%s-extracted-%d" % (os.path.basename(file), suffix)
+            )
+
+        try:
+            os.rename(stage_dir, final_dir)
+        except Exception as e:
+            logger.warning("Could not extract %s: %s", file, e)
+            logger.debug("Extraction of %s failed", file, exc_info=True)
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            return False
+
+        return True
 
     def _validate_and_extract_compressed_files(self, cinfo_path, dest_dir=None):
         if not cinfo_path or not os.path.exists(cinfo_path):
