@@ -63,6 +63,11 @@ LICENSE = "Apache License 2.0"
 URL = "https://github.com/aerospike/$(PACKAGE_NAME)"
 VENDOR = "Aerospike, Inc."
 ARCH = $(shell uname -m)
+# dpkg and rpm spell architectures differently: dpkg wants amd64/arm64/all
+# where uname and rpm say x86_64/aarch64/noarch. macOS uname -m already
+# reports arm64 -- the dpkg spelling, but not rpm's.
+DEB_ARCH = $(patsubst noarch,all,$(patsubst aarch64,arm64,$(patsubst x86_64,amd64,$(ARCH))))
+RPM_ARCH = $(patsubst arm64,aarch64,$(ARCH))
 
 
 .PHONY: all
@@ -74,6 +79,7 @@ deb: prep
 		--config-files $(CONFIG_DIR) \
 		--input-type dir \
 		--output-type deb \
+		--architecture $(DEB_ARCH) \
 		--chdir $(BUILD_DIR)/ \
 		--name $(NAME) \
 		--version $(PKG_VERSION) \
@@ -85,7 +91,7 @@ deb: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--package $(TARGET_DIR)/$(NAME)_$(PKG_VERSION)-$(DEB_ITERATION)_$(ARCH).deb
+		--package $(TARGET_DIR)/$(NAME)_$(PKG_VERSION)-$(DEB_ITERATION)_$(DEB_ARCH).deb
 
 .PHONY: rpm
 rpm: prep
@@ -107,7 +113,7 @@ rpm: prep
 		--vendor $(VENDOR) \
 		--after-install $(PKG_DIR)/postinst.sh \
 		--after-upgrade $(PKG_DIR)/postinst.sh \
-		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION)-$(ITERATION).$(BUILD_DISTRO).$(ARCH).rpm
+		--package $(TARGET_DIR)/$(NAME)-$(RPM_VERSION)-$(ITERATION).$(BUILD_DISTRO).$(RPM_ARCH).rpm
 
 .PHONY: tar
 tar: prep

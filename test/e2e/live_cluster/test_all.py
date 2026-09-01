@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import time
 from typing import Any, Callable
 import unittest
@@ -92,6 +93,8 @@ class Cmd:
 
 CMDS = [
     Cmd("info network"),
+    Cmd("info memory"),
+    Cmd("info memory --verbose"),
     Cmd("info namespace object"),
     Cmd("info namespace usage"),
     Cmd("info set"),
@@ -167,10 +170,38 @@ class TableRenderTestCase(unittest.TestCase):
         if "traceback" in cp.stderr:
             self.fail("Traceback found in stderr")
 
+    def check_cmd_stdout_is_json(self, cmd: Cmd, cp: util.CompletedProcess):
+        """
+        Every table asadm renders under --json must parse.
+
+        A command that renders more than one sheet prints one JSON document per
+        sheet, back to back, so stdout is a stream of documents rather than a
+        single one. Decode them in sequence: that still catches a malformed
+        table or a warning leaking onto stdout, without asserting a shape asadm
+        has never emitted.
+        """
+        if not cmd.cmd.startswith("info memory"):
+            return
+
+        decoder = json.JSONDecoder()
+        text = cp.stdout.strip()
+        sheets = 0
+
+        while text:
+            try:
+                _, end = decoder.raw_decode(text)
+            except ValueError as e:
+                self.fail(f"'{cmd.cmd}' --json stdout is not JSON: {e}\n{cp.stdout}")
+
+            sheets += 1
+            text = text[end:].strip()
+
+        self.assertGreater(sheets, 0, f"'{cmd.cmd}' --json produced no output")
+
 
 @parameterized_class(
     [
-        {"template_file": "aerospike_latest.conf", "docker_tag": "latest"},
+        {"template_file": "aerospike_latest.conf", "docker_tag": lib.SERVER_TAG},
         # {"template_file": "aerospike_6.x.conf", "docker_tag": "6.4.0.7"}, # Add this
         # to all tests once we create multiple test workflows. I am thinking one for
         # unittest, one for e2e against latest, and another that is e2e against all
@@ -208,6 +239,7 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd.cmd}' --json -Uadmin -Padmin"
         o = util.run_asadm(args)
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)
 
     @parameterized.expand(list(set(CMDS).difference(NOT_IN_CI_MODE)))
     def test_collectinfo_cmds_for_errors(self, cmd: Cmd):
@@ -221,6 +253,7 @@ class TableRenderNoErrorTests(TableRenderTestCase):
         print(o.stderr)
 
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)
 
     def test_a_privileged_command_without_enable_exits_nonzero(self):
         """The error is logged by lib.base_controller's own module logger, which
@@ -254,7 +287,7 @@ class TableRenderNoErrorTests(TableRenderTestCase):
 
 @parameterized_class(
     [
-        {"template_file": "aerospike_latest.conf", "docker_tag": "latest"},
+        {"template_file": "aerospike_latest.conf", "docker_tag": lib.SERVER_TAG},
         # {"template_file": "aerospike_6.x.conf", "docker_tag": "6.4.0.7"}, # Add this
         # to all tests once we create multiple test workflows. I am thinking one for
         # unittest, one for e2e against latest, and another that is e2e against all
@@ -293,6 +326,7 @@ class TableRenderNodeUnreachableTests(TableRenderTestCase):
         args = f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmd.cmd}' --json -Uadmin -Padmin"
         o = util.run_asadm(args)
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)
 
     @parameterized.expand(list(set(CMDS).difference(NOT_IN_CI_MODE)))
     def test_collectinfo_cmds_for_errors(self, cmd: Cmd):
@@ -306,3 +340,4 @@ class TableRenderNodeUnreachableTests(TableRenderTestCase):
         print(o.stderr)
 
         self.check_cmd_for_errors(o)
+        self.check_cmd_stdout_is_json(cmd, o)
