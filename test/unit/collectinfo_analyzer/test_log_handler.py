@@ -205,17 +205,77 @@ class BundleExtractionTest(unittest.TestCase):
 
         self.assertFalse(os.path.exists(outside), outside)
 
+    def _extracted_files(self):
+        return [
+            os.path.join(root, name)
+            for root, _, names in os.walk(self.dest_dir)
+            for name in names
+        ]
+
     def test_an_ordinary_bundle_still_extracts(self):
         """asadm's own bundles hold regular files only, so the filter must not
-        cost the product anything."""
+        cost the product anything. The file lands in a per-archive directory
+        under the destination; discovery walks recursively, so the exact
+        directory is not part of the contract."""
         archive = self._tar_with("20260720_100000_ascinfo.json", b"{}")
 
         extracted = self._handler()._extract_to(archive, self.dest_dir)
 
         self.assertTrue(extracted)
-        self.assertTrue(
-            os.path.exists(os.path.join(self.dest_dir, "20260720_100000_ascinfo.json"))
-        )
+        names = [os.path.basename(path) for path in self._extracted_files()]
+        self.assertEqual(names, ["20260720_100000_ascinfo.json"])
+
+    def test_a_rejected_archive_leaves_no_partial_extraction(self):
+        """extractall writes members sequentially, so rejecting a later member
+        used to leave the earlier ones in the destination, where the bundle scan
+        would analyze data from an archive that was refused."""
+        content = os.path.join(self.work_dir, "content")
+
+        with open(content, "wb") as content_file:
+            content_file.write(b"{}")
+
+        archive = os.path.join(self.work_dir, "bundle.tgz")
+
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(content, arcname="20260720_100000_ascinfo.json")
+            tar.add(content, arcname="../outside.txt")
+
+        with self.assertLogs(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler", level="WARNING"
+        ):
+            extracted = self._handler()._extract_to(archive, self.dest_dir)
+
+        self.assertFalse(extracted)
+        self.assertEqual(self._extracted_files(), [])
+        self.assertFalse(os.path.exists(os.path.join(self.work_dir, "outside.txt")))
+
+    def test_a_truncated_archive_leaves_no_partial_extraction(self):
+        """A bundle cut short in transit fails mid-extraction the same way a
+        rejected member does; nothing it managed to write may be analyzed."""
+        content = os.path.join(self.work_dir, "content")
+
+        with open(content, "wb") as content_file:
+            content_file.write(b"x" * 65536)
+
+        archive = os.path.join(self.work_dir, "bundle.tgz")
+
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(content, arcname="20260720_100000_ascinfo.json")
+            tar.add(content, arcname="second.json")
+
+        with open(archive, "rb") as whole:
+            data = whole.read()
+
+        with open(archive, "wb") as truncated:
+            truncated.write(data[: len(data) // 2])
+
+        with self.assertLogs(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler", level="WARNING"
+        ):
+            extracted = self._handler()._extract_to(archive, self.dest_dir)
+
+        self.assertFalse(extracted)
+        self.assertEqual(self._extracted_files(), [])
 
 
 class NoSnapshotReasonTest(unittest.TestCase):

@@ -342,6 +342,29 @@ class DroppedAndMissingNodesTest(unittest.TestCase):
         self.assertIsNotNone(warning)
         self.assertIn("no route to host", " ".join(warning.lines))
 
+    def test_failed_peer_queries_are_reported_as_incomplete_reconciliation(self):
+        """A node whose peer queries failed is recorded rather than skipped:
+        without it, "could not ask node B" is indistinguishable from "node B
+        reported no down peers" and an incomplete reconciliation looks complete."""
+        meta = meta_with(
+            discrepancies={
+                "missing_from_collection": [],
+                "dropped_during_collection": [],
+                "cluster_down_nodes": [],
+                "visibility_error_nodes": [],
+                "down_detection_failed_nodes": ["2.2.2.2:3000"],
+            }
+        )
+
+        warning = find(
+            diagnostics(meta=meta).analyze(), "node-discrepancy-detection-failed"
+        )
+
+        self.assertIsNotNone(warning)
+        joined = " ".join(warning.lines)
+        self.assertIn("2.2.2.2:3000", joined)
+        self.assertIn("incomplete", joined)
+
     def test_old_bundle_cluster_size_heuristic(self):
         node = copy.deepcopy(HEALTHY_NODE)
         node["as_stat"]["statistics"]["service"]["cluster_size"] = "3"
@@ -831,6 +854,117 @@ class NodeCollectionErrorsTest(unittest.TestCase):
         warnings = diagnostics().analyze()
 
         self.assertIsNone(find(warnings, "node-collection-errors"))
+
+    def test_a_failed_subsection_is_not_reported_as_a_whole_empty_section(self):
+        """Service statistics were collected and only the namespace subsection
+        failed. Claiming the whole statistics section is empty contradicts the
+        bundle, which plainly holds service statistics."""
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "statistics",
+                            "detail": "namespace",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        }
+                    ]
+                }
+            }
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "node-collection-errors")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("statistics/namespace", warning.table)
+        joined = " ".join(warning.lines)
+        self.assertIn("subsection", joined)
+        self.assertNotIn("empty for those nodes", joined)
+
+    def test_a_whole_section_error_beside_surviving_data_is_reported_partial(self):
+        """A detail-less statistics error on a node whose statistics stanza still
+        holds content may only claim the section is incomplete, not empty."""
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "statistics",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        }
+                    ]
+                }
+            }
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "node-collection-errors")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("statistics (partial)", warning.table)
+        joined = " ".join(warning.lines)
+        self.assertIn("incomplete", joined)
+        self.assertNotIn("empty for those nodes", joined)
+
+    def test_a_whole_section_error_with_no_surviving_data_is_reported_empty(self):
+        """HEALTHY_NODE carries no latency stanza, so the empty claim is
+        confirmed against the data before it is made."""
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "latency",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        }
+                    ]
+                }
+            }
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "node-collection-errors")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("latency", warning.table)
+        self.assertNotIn("latency (partial)", warning.table)
+        self.assertIn("empty for those nodes", " ".join(warning.lines))
+
+    def test_mixed_detailed_and_detail_less_errors_are_each_explained(self):
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "statistics",
+                            "detail": "namespace",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        },
+                        {
+                            "section": "latency",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        },
+                    ]
+                }
+            }
+        )
+
+        warning = find(diagnostics(meta=meta).analyze(), "node-collection-errors")
+
+        self.assertIsNotNone(warning)
+        self.assertIn("latency", warning.table)
+        self.assertIn("statistics/namespace", warning.table)
+        joined = " ".join(warning.lines)
+        self.assertIn("empty for those nodes", joined)
+        self.assertIn("subsection", joined)
 
     def test_unsupported_sections_are_not_reported_as_failures(self):
         """ACL on a security-disabled cluster, and user-agents or masking on an older

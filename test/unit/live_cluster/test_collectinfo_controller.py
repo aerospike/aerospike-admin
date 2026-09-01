@@ -16,6 +16,9 @@ import asyncio
 import copy
 import json
 import logging
+import os
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -32,6 +35,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
     CollectinfoDiagnostics,
 )
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
+from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
@@ -263,7 +267,9 @@ class GetCollectinfoDataJsonTest(unittest.IsolatedAsyncioTestCase):
         self.controller.cluster = MagicMock()
         self.controller.cluster.get_nodes.return_value = [node_a, node_b]
         self.controller.cluster.aliases = {}
-        self.controller.cluster.get_down_nodes = AsyncMock(return_value=[])
+        self.controller.cluster.get_down_nodes_detailed = AsyncMock(
+            return_value=DownNodesResult([], [])
+        )
         self.controller.cluster.get_visibility_error_nodes = MagicMock(return_value=[])
         self.controller.cluster.info_system_statistics = AsyncMock(
             return_value={"A": {"sys": 1}}
@@ -471,7 +477,9 @@ class NoDataWarningProductionShapeTest(unittest.IsolatedAsyncioTestCase):
         cluster = MagicMock()
         cluster.get_nodes.return_value = [node_a, node_b]
         cluster.aliases = {}
-        cluster.get_down_nodes = AsyncMock(return_value=[])
+        cluster.get_down_nodes_detailed = AsyncMock(
+            return_value=DownNodesResult([], [])
+        )
         cluster.get_visibility_error_nodes = MagicMock(return_value=[])
         cluster.get_node_names.return_value = {"A": "A-name", "B": "B-name"}
         cluster.info_system_statistics = AsyncMock(return_value={"A": {"sys": 1}})
@@ -776,6 +784,155 @@ class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
 
         calls = self.controller.cluster.set_timeout.call_args_list
         self.assertEqual(calls[-1], mock.call(1))
+
+
+class RunCollectinfoArchivesPartialBundleTest(unittest.IsolatedAsyncioTestCase):
+    """A failed collection must still hand the operator whatever was preserved.
+
+    The json dump writes every collected snapshot and the aborted meta in its
+    finally, but evidence left only in the working directory reaches nobody:
+    the run has to continue to the archive step, skipping only the derived
+    outputs that would be built from data known to be incomplete."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.controller.asadm_version = "test-version"
+        self.controller.cluster = MagicMock()
+        self.controller.cluster._timeout = 1
+        self.controller.cluster.is_localhost_a_node.return_value = False
+
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+
+        patch.object(CollectinfoController, "setup_loggers").start()
+        self.teardown_mock = patch.object(
+            CollectinfoController, "teardown_loggers"
+        ).start()
+        self.ascollectinfo_mock = patch.object(
+            CollectinfoController, "_dump_collectinfo_ascollectinfo", AsyncMock()
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_summary", AsyncMock()
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_health", AsyncMock()
+        ).start()
+
+        cf_info = MagicMock()
+        cf_info.cf_dir = self.work_dir
+        cf_info.files_prefix = "prefix_"
+
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.get_collectinfo_path",
+            return_value=cf_info,
+        ).start()
+        self.archive_mock = patch(
+            "lib.live_cluster.collectinfo_controller.common.archive_dir",
+            return_value=(self.work_dir + ".tgz", True),
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.print_collectinfo_failed_cmds"
+        ).start()
+        self.summary_print_mock = patch(
+            "lib.live_cluster.collectinfo_controller.common.print_collect_summary"
+        ).start()
+        patch("lib.live_cluster.collectinfo_controller.terminal").start()
+        self.root_controller_mock = patch(
+            "lib.live_cluster.collectinfo_controller.CollectinfoRootController"
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.asyncio.sleep", AsyncMock()
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def _run(self, snp_count=1, ignore_errors=False):
+        await self.controller._run_collectinfo(
+            ssh_user=None,
+            ssh_pwd=None,
+            ssh_port=None,
+            ssh_key=None,
+            ssh_key_pwd=None,
+            snp_count=snp_count,
+            wait_time=0,
+            ignore_errors=ignore_errors,
+        )
+
+    async def test_a_failed_later_snapshot_still_archives_the_partial_bundle(self):
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(
+                side_effect=[
+                    ({"cluster": {"A": 1}}, {"no_data_nodes": []}),
+                    OSError("cluster went away"),
+                ]
+            ),
+        ).start()
+        logger_util.set_exit_code(0)
+        self.addCleanup(logger_util.set_exit_code, 0)
+
+        await self._run(snp_count=2)
+
+        with open(os.path.join(self.work_dir, "prefix_ascinfo.json")) as ascinfo_file:
+            ascinfo = json.load(ascinfo_file)
+
+        self.assertEqual(list(ascinfo.values()), [{"cluster": {"A": 1}}])
+
+        meta_path = os.path.join(
+            self.work_dir, "prefix_" + constants.COLLECTINFO_META_FILENAME
+        )
+
+        with open(meta_path) as meta_file:
+            meta = json.load(meta_file)
+
+        self.assertIs(meta["collection"]["aborted"], True)
+        self.assertEqual(len(meta["snapshots"]), 1)
+        self.archive_mock.assert_called_once_with(self.work_dir)
+        self.root_controller_mock.assert_not_called()
+        self.ascollectinfo_mock.assert_not_awaited()
+        self.summary_print_mock.assert_called_once()
+        self.teardown_mock.assert_called_once()
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
+    async def test_a_missing_local_file_still_archives_what_was_preserved(self):
+        patch.object(
+            CollectinfoController,
+            "_dump_collectinfo_json",
+            AsyncMock(side_effect=FileNotFoundError("asconfig.conf")),
+        ).start()
+
+        await self._run()
+
+        self.archive_mock.assert_called_once_with(self.work_dir)
+        self.root_controller_mock.assert_not_called()
+        self.ascollectinfo_mock.assert_not_awaited()
+
+    async def test_a_failed_derived_output_still_archives(self):
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_json", AsyncMock()
+        ).start()
+        self.ascollectinfo_mock.side_effect = OSError("disk full")
+
+        await self._run()
+
+        self.archive_mock.assert_called_once_with(self.work_dir)
+        self.summary_print_mock.assert_called_once()
+
+    async def test_ignored_errors_still_build_the_derived_outputs(self):
+        """--ignore-errors keeps today's behavior: the collection failure is
+        logged and everything else still runs."""
+        patch.object(
+            CollectinfoController,
+            "_dump_collectinfo_json",
+            AsyncMock(side_effect=OSError("cluster went away")),
+        ).start()
+
+        await self._run(ignore_errors=True)
+
+        self.root_controller_mock.assert_called_once()
+        self.ascollectinfo_mock.assert_awaited_once()
+        self.archive_mock.assert_called_once_with(self.work_dir)
 
 
 class ClassifyExceptionTest(unittest.TestCase):
@@ -1344,7 +1501,13 @@ class LedgerPlumbingTest(unittest.TestCase):
 
 
 class DetectNodeDiscrepanciesTest(unittest.IsolatedAsyncioTestCase):
-    def _controller(self, aliases=None, down_nodes=None, only_connect_seed=False):
+    def _controller(
+        self,
+        aliases=None,
+        down_nodes=None,
+        failed_peer_nodes=None,
+        only_connect_seed=False,
+    ):
         controller = CollectinfoController()
         controller.nodes = "all"
         controller.cluster = MagicMock()
@@ -1352,8 +1515,11 @@ class DetectNodeDiscrepanciesTest(unittest.IsolatedAsyncioTestCase):
         controller.cluster.only_connect_seed = only_connect_seed
         controller.cluster.use_services_alumni = False
         controller.cluster.use_services_alt = False
-        controller.cluster.get_down_nodes = AsyncMock(
-            return_value=["9.9.9.9:3000"] if down_nodes is None else down_nodes
+        controller.cluster.get_down_nodes_detailed = AsyncMock(
+            return_value=DownNodesResult(
+                ["9.9.9.9:3000"] if down_nodes is None else down_nodes,
+                failed_peer_nodes or [],
+            )
         )
         controller.cluster.get_visibility_error_nodes = MagicMock(
             return_value=["1.1.1.1:3000"]
@@ -1377,7 +1543,7 @@ class DetectNodeDiscrepanciesTest(unittest.IsolatedAsyncioTestCase):
             [node], dump_map, {}, enable_ssh=False
         )
 
-        controller.cluster.get_down_nodes.assert_awaited_once()
+        controller.cluster.get_down_nodes_detailed.assert_awaited_once()
         controller.cluster.get_visibility_error_nodes.assert_called_once_with()
         self.assertEqual(meta["discrepancies"]["cluster_down_nodes"], ["9.9.9.9:3000"])
         self.assertEqual(
@@ -1611,7 +1777,9 @@ class DetectNodeDiscrepanciesTest(unittest.IsolatedAsyncioTestCase):
         live call must not discard the findings computed from the collected data:
         which nodes returned nothing, and why, needs no cluster call."""
         controller = self._controller()
-        controller.cluster.get_down_nodes = AsyncMock(side_effect=OSError("no route"))
+        controller.cluster.get_down_nodes_detailed = AsyncMock(
+            side_effect=OSError("no route")
+        )
         nodes = [self._node("A"), self._node("B")]
         dump_map = {
             "A": {"as_stat": {"statistics": {"s": 1}}},
@@ -2462,9 +2630,12 @@ class CollectinfoMetaTest(unittest.IsolatedAsyncioTestCase):
         meta = dumps["/tmp/prefix_" + constants.COLLECTINFO_META_FILENAME]
         self.assertIs(meta["collection"]["aborted"], False)
 
-    async def test_a_clock_that_never_advances_does_not_hang_the_collection(self):
-        """A frozen or backwards-stepped clock must not hold the run forever.
-        Colliding is the lesser fault: the bundle still gets written."""
+    async def test_a_clock_that_never_advances_does_not_hang_or_overwrite(self):
+        """A frozen or backwards-stepped clock must not hold the run forever, and
+        exhausting the wait must not overwrite the earlier snapshot either: that
+        would silently lose it while the meta described the collection as
+        complete. A synthetic timestamp one second past the newest snapshot
+        keeps both, and the meta discloses the adjustment."""
         dumps = self._snapshot_dump_patches(
             timestamps=["2026-08-25 10:00:00 UTC"] * 12,
             snapshots=[
@@ -2477,12 +2648,23 @@ class CollectinfoMetaTest(unittest.IsolatedAsyncioTestCase):
             "/tmp/prefix_", CollectionContext(snp_count=2)
         )
 
+        ascinfo = dumps["/tmp/prefix_ascinfo.json"]
         meta = dumps["/tmp/prefix_" + constants.COLLECTINFO_META_FILENAME]
         self.assertEqual(
-            list(dumps["/tmp/prefix_ascinfo.json"]), ["2026-08-25 10:00:00 UTC"]
+            sorted(ascinfo), ["2026-08-25 10:00:00 UTC", "2026-08-25 10:00:01 UTC"]
         )
-        self.assertEqual(len(meta["snapshots"]), 1)
-        self.assertEqual(meta["snapshots"][0]["no_data_nodes"], [])
+        self.assertEqual(ascinfo["2026-08-25 10:00:00 UTC"], {"cluster": {"A": 1}})
+        self.assertEqual(ascinfo["2026-08-25 10:00:01 UTC"], {"cluster": {"A": 2}})
+        self.assertEqual(
+            [snapshot["timestamp"] for snapshot in meta["snapshots"]],
+            ["2026-08-25 10:00:00 UTC", "2026-08-25 10:00:01 UTC"],
+        )
+        self.assertNotIn("timestamp_adjusted", meta["snapshots"][0])
+        self.assertIs(meta["snapshots"][1]["timestamp_adjusted"], True)
+        self.assertEqual(
+            meta["snapshots"][1]["observed_timestamp"], "2026-08-25 10:00:00 UTC"
+        )
+        self.assertIs(meta["collection"]["aborted"], False)
 
 
 if __name__ == "__main__":
