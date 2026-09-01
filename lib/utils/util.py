@@ -720,7 +720,9 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
     index arenas hold. Shmem alone understates it the same way, so an empty
     service payload suppresses the total too.
 
-    Shmem is gated with the total it belongs to. On a pre-8.1.3 memory-engine
+    Shmem is gated with the total on the version axis only: an empty service
+    payload suppresses the total but keeps Shmem, which is measured from the
+    namespace stats rather than the payload. On a pre-8.1.3 memory-engine
     node the arenas are unknown but the folded data reservation is not, so a
     populated Shmem cell would render a partial figure as a complete one and
     let the operator reconstruct the suppressed total by addition. Heap stays

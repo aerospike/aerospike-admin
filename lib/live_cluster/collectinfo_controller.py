@@ -125,23 +125,23 @@ class CollectinfoController(LiveClusterCommandController):
         if self.nodes and isinstance(self.nodes, list):
             param += ["with"] + self.nodes
 
-        o = await util.capture_stdout(func, param[:])
+        old_style_json = get_style_json()
+        set_style_json(False)
+
+        try:
+            o = await util.capture_stdout(func, param[:])
+        finally:
+            set_style_json(old_style_json)
 
         self._write_func_output_to_file(filename, param, o)
 
     def _write_func_output_to_file(self, filename: str, param: list[str], content: str):
         sep = constants.COLLECTINFO_SEPERATOR
 
-        old_style_json = get_style_json()
-        set_style_json(False)
+        if param:
+            sep += " ".join(param) + "\n"
 
-        try:
-            if param:
-                sep += " ".join(param) + "\n"
-
-            util.write_to_file(filename, sep + str(content))
-        finally:
-            set_style_json(old_style_json)
+        util.write_to_file(filename, sep + str(content))
 
     def _write_version(self, line):
         print("asadm version " + str(self.asadm_version))
