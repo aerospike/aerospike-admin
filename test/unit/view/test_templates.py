@@ -326,3 +326,69 @@ class NodeHighlightingTest(unittest.TestCase):
         record = render["groups"][0]["records"][0]
 
         self.assertEqual(record["Node"]["converted"], "node1")
+
+
+class ShowCheckpointStatusSheetTest(unittest.TestCase):
+    """Covers the state alert tiers and the client-computed progress percentage of
+    'manage checkpoint'. The server reports only files=<done>/<total> (TOOLS-3976)."""
+
+    def render(self, ns_data):
+        node = "127.0.0.1:3000"
+        sources = dict(
+            node_names={node: "node-A"},
+            node_ids={node: "BB9040011AC4202"},
+            data={node: ns_data},
+        )
+        common = dict(principal="BB9040011AC4202")
+
+        render = sheet.render(
+            templates.show_checkpoint_status,
+            "Shared-Memory Checkpoint",
+            sources,
+            common=common,
+            style=SheetStyle.json,
+        )
+        return json.loads(render)
+
+    @parameterized.expand(
+        [
+            ("done", "green-alert"),
+            ("failed", "red-alert"),
+            ("copying", "yellow-alert"),
+            ("none", None),
+        ]
+    )
+    def test_state_alert_tiers(self, state, expected):
+        render = self.render(
+            {"test": {"state": state, "files_done": 3, "files_total": 11}}
+        )
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["State"].get("format"), expected)
+
+    @parameterized.expand(
+        [
+            (0, 11, "0.0 %"),
+            (3, 11, "27.27 %"),
+            (11, 11, "100.0 %"),
+            (0, 0, "0.0 %"),  # a namespace with nothing to copy must not divide by zero
+        ]
+    )
+    def test_progress_percent(self, done, total, expected):
+        render = self.render(
+            {"test": {"state": "copying", "files_done": done, "files_total": total}}
+        )
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["Progress"]["converted"], expected)
+        self.assertEqual(record["Files"]["converted"], "{}/{}".format(done, total))
+
+    def test_groups_by_namespace(self):
+        render = self.render(
+            {
+                "test": {"state": "done", "files_done": 11, "files_total": 11},
+                "bar": {"state": "copying", "files_done": 1, "files_total": 9},
+            }
+        )
+
+        self.assertEqual(len(render["groups"]), 2)
