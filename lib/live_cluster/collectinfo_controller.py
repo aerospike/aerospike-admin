@@ -2372,7 +2372,14 @@ class CollectinfoController(LiveClusterCommandController):
             # finally, and evidence left only in the working directory never
             # reaches the operator. Only the derived outputs are skipped, since
             # they would be built from data known to be incomplete.
+            #
+            # The two flags are not interchangeable. collection_aborted is what
+            # the dump's finally already wrote into collectinfo_meta.json;
+            # derived_outputs_failed happens after that write and never reaches
+            # the sidecar, so folding it into collection_aborted would make the
+            # archive warning contradict the metadata the analyzer reads.
             collection_aborted = False
+            derived_outputs_failed = False
 
             try:
                 await self._dump_collectinfo_json(
@@ -2458,7 +2465,7 @@ class CollectinfoController(LiveClusterCommandController):
 
                             if not ignore_errors:
                                 logger.error(ignore_errors_msg)
-                                collection_aborted = True
+                                derived_outputs_failed = True
                                 break
                 finally:
                     # CollectinfoRootController stores the version and build on
@@ -2478,6 +2485,13 @@ class CollectinfoController(LiveClusterCommandController):
                         "The collection did not complete. The archive holds the "
                         "snapshots collected before the failure, and its metadata "
                         "records the collection as aborted."
+                    )
+                elif derived_outputs_failed:
+                    logger.warning(
+                        "Every snapshot was collected and written, but building "
+                        "the derived output failed. ascollectinfo.log, summary.log "
+                        "and health.log may be missing or incomplete in the "
+                        "archive. The snapshot data itself is unaffected."
                     )
                 common.print_collect_summary(
                     cf_archive_path,

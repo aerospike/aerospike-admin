@@ -919,6 +919,39 @@ class RunCollectinfoArchivesPartialBundleTest(unittest.IsolatedAsyncioTestCase):
         self.archive_mock.assert_called_once_with(self.work_dir)
         self.summary_print_mock.assert_called_once()
 
+    async def test_a_failed_derived_output_does_not_claim_an_aborted_collection(self):
+        """The sidecar is written in the json dump's finally, before any derived
+        output runs, so a derived-output failure can never make it say aborted.
+        The archive warning may not tell the operator otherwise: the analyzer
+        reads the sidecar, and the two have to agree."""
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(return_value=({"cluster": {"A": 1}}, {"no_data_nodes": []})),
+        ).start()
+        self.ascollectinfo_mock.side_effect = OSError("disk full")
+        warning_mock = patch(
+            "lib.live_cluster.collectinfo_controller.logger.warning"
+        ).start()
+
+        await self._run()
+
+        meta_path = os.path.join(
+            self.work_dir, "prefix_" + constants.COLLECTINFO_META_FILENAME
+        )
+
+        with open(meta_path) as meta_file:
+            meta = json.load(meta_file)
+
+        self.assertIs(meta["collection"]["aborted"], False)
+        self.assertEqual(len(meta["snapshots"]), 1)
+        self.archive_mock.assert_called_once_with(self.work_dir)
+
+        warnings = " ".join(str(call.args[0]) for call in warning_mock.call_args_list)
+
+        self.assertNotIn("records the collection as aborted", warnings)
+        self.assertIn("derived output", warnings)
+
     async def test_ignored_errors_still_build_the_derived_outputs(self):
         """--ignore-errors keeps today's behavior: the collection failure is
         logged and everything else still runs."""
@@ -1549,6 +1582,36 @@ class DetectNodeDiscrepanciesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             meta["discrepancies"]["visibility_error_nodes"], ["1.1.1.1:3000"]
         )
+
+    async def test_failed_peer_queries_are_recorded(self):
+        """The analyzer reports the reconciliation as incomplete off this key.
+        Without it a cluster_down_nodes list built from partial peer answers
+        reads as complete."""
+        controller = self._controller(down_nodes=[], failed_peer_nodes=["2.2.2.2:3000"])
+        node = self._node("1.1.1.1:3000")
+        dump_map = {"1.1.1.1:3000": {"as_stat": {"statistics": {"s": 1}}}}
+
+        meta = await controller._detect_node_discrepancies(
+            [node], dump_map, {}, enable_ssh=False
+        )
+
+        self.assertEqual(
+            meta["discrepancies"]["down_detection_failed_nodes"], ["2.2.2.2:3000"]
+        )
+
+    async def test_no_failed_peer_queries_leaves_the_key_out(self):
+        """An absent key is how the analyzer reads 'reconciliation was
+        complete', so an empty list here would be a false claim of the other
+        kind."""
+        controller = self._controller()
+        node = self._node("1.1.1.1:3000")
+        dump_map = {"1.1.1.1:3000": {"as_stat": {"statistics": {"s": 1}}}}
+
+        meta = await controller._detect_node_discrepancies(
+            [node], dump_map, {}, enable_ssh=False
+        )
+
+        self.assertNotIn("down_detection_failed_nodes", meta["discrepancies"])
 
     async def test_responded_and_dropped_nodes(self):
         controller = self._controller()

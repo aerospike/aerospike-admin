@@ -883,6 +883,48 @@ class NodeCollectionErrorsTest(unittest.TestCase):
         self.assertIn("subsection", joined)
         self.assertNotIn("empty for those nodes", joined)
 
+    def test_a_subsection_error_over_an_empty_section_is_reported_empty(self):
+        """Every statistics and config failure carries a detail, so a node that
+        lost all of its statistics sub-calls arrives here looking like a
+        subsection failure. The legend promising the rest of the section was
+        collected may not be printed over an empty stanza."""
+        node = copy.deepcopy(HEALTHY_NODE)
+        node["as_stat"]["statistics"] = {}
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "statistics",
+                            "detail": "service",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        },
+                        {
+                            "section": "statistics",
+                            "detail": "namespace",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        },
+                    ]
+                }
+            }
+        )
+
+        warning = find(
+            diagnostics(nodes={"1.1.1.1:3000": node}, meta=meta).analyze(),
+            "node-collection-errors",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("statistics", warning.table)
+        self.assertNotIn("statistics/service", warning.table)
+        joined = " ".join(warning.lines)
+        self.assertIn("empty for those nodes", joined)
+        self.assertNotIn("rest of its section was collected", joined)
+
     def test_a_whole_section_error_beside_surviving_data_is_reported_partial(self):
         """A detail-less statistics error on a node whose statistics stanza still
         holds content may only claim the section is incomplete, not empty."""

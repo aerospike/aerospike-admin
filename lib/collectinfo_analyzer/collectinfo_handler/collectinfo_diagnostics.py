@@ -1314,14 +1314,22 @@ class CollectinfoDiagnostics:
             for error in unrecovered:
                 section = str(error.get("section", "?"))
                 detail = str(error.get("detail") or "")
+                # A detail says which sub-call failed, not that anything else in
+                # the section survived. Statistics and config failures always
+                # carry one, so a node that lost every sub-call would otherwise
+                # be told the rest of its section was collected.
+                has_data = util.has_content(self._data(section).get(node_key))
 
-                if detail:
+                if detail and has_data:
                     has_subsection_failures = True
                     labels.add("%s/%s" % (section, detail))
-                elif util.has_content(self._data(section).get(node_key)):
+                elif has_data:
                     has_partial_sections = True
                     labels.add("%s (partial)" % (section,))
                 else:
+                    # Bare section name is the reader's cue for "empty", so the
+                    # detail is dropped rather than made ambiguous against the
+                    # subsection labels. It stays in collectinfo_meta.json.
                     has_empty_sections = True
                     labels.add(section)
 
