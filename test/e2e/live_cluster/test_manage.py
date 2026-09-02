@@ -14,6 +14,7 @@
 
 from lib.live_cluster.client.types import ASINFO_RESPONSE_OK
 from lib.utils import constants, version
+import base64
 import os
 import time
 import unittest
@@ -877,6 +878,98 @@ class ManageSindexTest(TestManage):
             self.get_args(
                 "manage sindex create string {} ns {} set {} bin {} in invalid".format(
                     self.exp_sindex, self.exp_ns, self.exp_set, self.exp_bin
+                )
+            )
+        )
+
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
+
+    def test_can_create_sindex_from_ael(self):
+        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
+            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
+        ):
+            self.skipTest("Server version doesn't support AEL")
+
+        ael_src = "$.a:INT + $.b:INT"
+        ael_b64 = base64.b64encode(bytes(ael_src, "utf-8")).decode("utf-8")
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage sindex create integer {} ns {} set {} ael_b64 {}".format(
+                    self.exp_sindex, self.exp_ns, self.exp_set, ael_b64
+                )
+            )
+        )
+
+        self.assertEqual(self.success_msg, actual.stdout)
+        self.assertStdErrEqual("", actual.stderr)
+
+        time.sleep(0.5)
+        actual = test_util.run_asadm(self.get_args("show sindex"))
+
+        # The AEL source round-trips rather than the compiled rendering.
+        self.assertIn(ael_src, actual.stdout)
+
+    def test_can_create_sindex_from_quoted_ael(self):
+        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
+            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
+        ):
+            self.skipTest("Server version doesn't support AEL")
+
+        ael_src = "$.a:INT + $.b:INT"
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                'manage sindex create integer {} ns {} set {} ael "{}"'.format(
+                    self.exp_sindex, self.exp_ns, self.exp_set, ael_src
+                )
+            )
+        )
+
+        self.assertEqual(self.success_msg, actual.stdout)
+        self.assertStdErrEqual("", actual.stderr)
+
+        time.sleep(0.5)
+        actual = test_util.run_asadm(self.get_args("show sindex"))
+
+        self.assertIn(ael_src, actual.stdout)
+
+    def test_fails_to_create_unquoted_ael(self):
+        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
+            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
+        ):
+            self.skipTest("Server version doesn't support AEL")
+
+        exp_stderr = (
+            "ERROR: The 'ael' modifier takes one quoted expression. Surround the "
+            "AEL source with single quotes, e.g. ael '$.a:INT + $.b:INT'."
+        )
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage sindex create integer {} ns {} set {} ael $.a:INT + $.b:INT".format(
+                    self.exp_sindex, self.exp_ns, self.exp_set
+                )
+            )
+        )
+
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
+
+    def test_fails_to_create_sindex_from_invalid_ael(self):
+        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
+            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
+        ):
+            self.skipTest("Server version doesn't support AEL")
+
+        ael_b64 = base64.b64encode(b"$.a +").decode("utf-8")
+        exp_stderr = "ERROR: Failed to create sindex {} : bad 'exp'.".format(
+            self.exp_sindex
+        )
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage sindex create integer {} ns {} set {} ael_b64 {}".format(
+                    self.exp_sindex, self.exp_ns, self.exp_set, ael_b64
                 )
             )
         )

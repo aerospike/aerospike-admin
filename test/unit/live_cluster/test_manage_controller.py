@@ -2053,11 +2053,13 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
             CDTContext([CTXItems.ListValue(ASValues.ASInt(1))]),
             None,
             None,
+            None,
             {
                 "cdt_indexing": True,
                 "expression_indexing": False,
                 "namespace_query_selector_support": False,
                 "integer_type_support": False,
+                "ael_indexing": False,
             },
             nodes="principal",
         )
@@ -2087,11 +2089,13 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
             None,
             None,
             None,
+            None,
             {
                 "cdt_indexing": True,
                 "expression_indexing": True,
                 "namespace_query_selector_support": True,
                 "integer_type_support": True,
+                "ael_indexing": True,
             },
             nodes="principal",
         )
@@ -2212,11 +2216,13 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
             None,
             None,
             "dGVzdA==",
+            None,
             {
                 "cdt_indexing": True,
                 "expression_indexing": True,
                 "namespace_query_selector_support": True,
                 "integer_type_support": False,
+                "ael_indexing": False,
             },
             nodes="principal",
         )
@@ -2243,17 +2249,221 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
             None,
             "dGVzdA==",
             None,
+            None,
             {
                 "cdt_indexing": True,
                 "expression_indexing": False,
                 "namespace_query_selector_support": False,
                 "integer_type_support": False,
+                "ael_indexing": False,
             },
             nodes="principal",
         )
         self.view_mock.print_result.assert_called_once_with(
             "Use 'show sindex' to confirm ctx-index was created successfully."
         )
+
+    async def test_create_successful_with_ael_b64(self):
+        # ael_b64 is base64 of "$.a:INT + $.b:INT"
+        line = "integer ael-index ns test set donor ael_b64 JC5hOklOVCArICQuYjpJTlQ=".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "ael-index",
+            "test",
+            "",
+            "integer",
+            None,
+            "donor",
+            None,
+            None,
+            None,
+            "$.a:INT + $.b:INT",
+            {
+                "cdt_indexing": True,
+                "expression_indexing": True,
+                "namespace_query_selector_support": True,
+                "integer_type_support": True,
+                "ael_indexing": True,
+            },
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm ael-index was created successfully."
+        )
+
+    async def test_create_successful_with_ael(self):
+        # asadm's lexer hands a single-quoted expression over as one word
+        line = [
+            "integer",
+            "ael-index",
+            "ns",
+            "test",
+            "set",
+            "donor",
+            "ael",
+            "$.a:INT + $.b:INT",
+        ]
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "ael-index",
+            "test",
+            "",
+            "integer",
+            None,
+            "donor",
+            None,
+            None,
+            None,
+            "$.a:INT + $.b:INT",
+            {
+                "cdt_indexing": True,
+                "expression_indexing": True,
+                "namespace_query_selector_support": True,
+                "integer_type_support": True,
+                "ael_indexing": True,
+            },
+            nodes="principal",
+        )
+        self.view_mock.print_result.assert_called_once_with(
+            "Use 'show sindex' to confirm ael-index was created successfully."
+        )
+
+    async def test_ael_without_quotes(self):
+        line = "integer ael-index ns test ael $.a:INT + $.b:INT".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "The 'ael' modifier takes one quoted expression"
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_ael_and_ael_b64_conflict(self):
+        line = ["string", "idx", "ns", "test", "ael", "$.a:INT", "ael_b64", "ICAg"]
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "Cannot use both 'ael' and 'ael_b64' modifiers together"
+        ):
+            await self.controller.execute(line)
+
+    async def test_ael_empty_source(self):
+        line = ["string", "idx", "ns", "test", "ael", "   "]
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "The 'ael' modifier is an empty AEL expression"
+        ):
+            await self.controller.execute(line)
+
+    async def test_ael_not_supported(self):
+        line = ["string", "idx", "ns", "test", "ael", "$.a:INT"]
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "The 'ael' modifier requires server v. {} or later".format(
+                constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
+            ),
+        ):
+            await self.controller.execute(line)
+
+    async def test_bin_and_ael_conflict(self):
+        line = ["string", "idx", "ns", "test", "bin", "mybin", "ael", "$.a:INT"]
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "Cannot use both 'bin' and 'ael' modifiers together"
+        ):
+            await self.controller.execute(line)
+
+    async def test_ael_b64_not_supported(self):
+        line = "string ael-index ns test ael_b64 JC5hOklOVCArICQuYjpJTlQ=".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "The 'ael_b64' modifier requires server v. {} or later".format(
+                constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
+            ),
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_ael_b64_invalid_base64(self):
+        line = "string ael-index ns test ael_b64 invalid_base64!".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "Unable to parse ael_b64 'invalid_base64!'"
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_ael_b64_empty_source(self):
+        # ael_b64 is base64 of "   "
+        line = "string ael-index ns test ael_b64 ICAg".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "'ael_b64' modifier is an empty AEL expression"
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
+    async def test_ael_b64_and_exp_base64_conflict(self):
+        line = "string idx ns test ael_b64 ICAg exp_base64 dGVzdA==".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "Cannot use both 'exp_base64' and 'ael_b64' modifiers together",
+        ):
+            await self.controller.execute(line)
+
+    async def test_ctx_and_ael_b64_conflict(self):
+        line = "string idx ns test ctx list_index(0) ael_b64 ICAg".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "Cannot use both 'ctx' and 'ael_b64' modifiers together"
+        ):
+            await self.controller.execute(line)
+
+    async def test_ctx_base64_and_ael_b64_conflict(self):
+        line = "string idx ns test ctx_base64 dGVzdA== ael_b64 ICAg".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "Cannot use both 'ctx_base64' and 'ael_b64' modifiers together",
+        ):
+            await self.controller.execute(line)
+
+    async def test_bin_and_ael_b64_conflict(self):
+        line = "string idx ns test bin mybin ael_b64 ICAg".split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "Cannot use both 'bin' and 'ael_b64' modifiers together"
+        ):
+            await self.controller.execute(line)
 
     async def test_exp_base64_not_supported(self):
         line = "string exp-index ns test exp_base64 dGVzdA==".split()
@@ -2321,7 +2531,8 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         self.meta_mock.get_builds.return_value = {"principal": "8.1.0.0"}
 
         with self.assertRaisesRegex(
-            ShellException, "Either 'bin' or 'exp_base64' modifier is required"
+            ShellException,
+            "Either 'bin', 'exp_base64', 'ael' or 'ael_b64' modifier is required",
         ):
             await self.controller.execute(line)
 
@@ -2440,6 +2651,7 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
             None,
             "set",
             "testset",
+            None,
             None,
             None,
             None,
