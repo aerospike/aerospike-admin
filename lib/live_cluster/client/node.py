@@ -38,7 +38,7 @@ from lib.utils.async_object import AsyncObject
 
 from .constants import ErrorsMsgs, MAX_SOCKET_POOL_SIZE
 from .ctx import CDTContext
-from .msgpack import ASPacker
+from .msgpack import ASPacker, pack_ael_expression, unpack_ael_expression
 from .assocket import ASSocket
 from .config_handler import JsonDynamicConfigHandler
 from . import client_util
@@ -3353,8 +3353,67 @@ class Node(AsyncObject):
             for v in client_util.info_to_list(resp)
             if v != ""
         ]
+
+        if (
+            self.build is not None
+            and not isinstance(self.build, Exception)
+            and version.LooseVersion(self.build)
+            >= version.LooseVersion(constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION)
+        ):
+            await self._merge_ael_expressions(command, result)
+
         logger.debug("info_sindex node=%s response=%s", self.ip, result)
         return result
+
+    async def _merge_ael_expressions(
+        self, command: str, sindexes: list[dict[str, str]]
+    ):
+        """
+        Move an index created from AEL out of the "exp" field and into an "ael"
+        field holding its source, so an index reports either AEL or a compiled
+        expression, never both. The default sindex-list renders the compiled
+        expression; only "b64=true" echoes back the payload the client sent, so
+        both forms are requested and joined per index.
+
+        Interim: SERVER-1401 returns AEL in the default output, after which this
+        second call and the join go away (TOOLS-4227).
+        """
+        b64_command = "{}{}b64=true".format(
+            command, "" if command.endswith(":") else ";"
+        )
+        resp = await self._info(b64_command)
+
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            logger.debug(
+                "info_sindex node=%s failed to get base64 sindex list: %s",
+                self.ip,
+                resp,
+            )
+            return
+
+        ael_sources = {}
+
+        for v in client_util.info_to_list(resp):
+            if v == "":
+                continue
+
+            sindex = client_util.info_to_dict(v, ":")
+            exp_base64 = sindex.get("exp")
+
+            if not exp_base64 or exp_base64 == "null":
+                continue
+
+            ael_src = unpack_ael_expression(exp_base64)
+
+            if ael_src is not None:
+                ael_sources[(sindex.get("ns"), sindex.get("indexname"))] = ael_src
+
+        for sindex in sindexes:
+            ael_src = ael_sources.get((sindex.get("ns"), sindex.get("indexname")))
+
+            if ael_src is not None:
+                sindex["ael"] = ael_src
+                sindex["exp"] = "null"
 
     @async_return_exceptions
     async def info_user_agents(self):
@@ -3411,6 +3470,7 @@ class Node(AsyncObject):
         ctx: Optional[CDTContext] = None,
         cdt_ctx_base64: Optional[str] = None,
         exp_base64: Optional[str] = None,
+        ael_src: Optional[str] = None,
         feature_support: dict[str, bool] = {},
     ):
         """
@@ -3418,6 +3478,9 @@ class Node(AsyncObject):
 
         For set-based indexes (index_type="set"), bin_name and bin_type should
         be None as no bin is indexed.
+
+        ael_src is AEL source the server compiles itself. It is sent on the same
+        "exp" parameter as exp_base64, wrapped in the server's AEL envelope.
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
@@ -3455,7 +3518,10 @@ class Node(AsyncObject):
             # Use pre-encoded base64 context string directly
             command += "context={};".format(cdt_ctx_base64)
 
-        if exp_base64:
+        if exp_base64 or ael_src:
+            if ael_src:
+                exp_base64 = pack_ael_expression(ael_src)
+
             command += "exp={};".format(exp_base64)
 
             # if expression is passed, use type instead of indexdata

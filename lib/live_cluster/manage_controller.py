@@ -1084,7 +1084,8 @@ class ManageSIndexController(LiveClusterManageCommandController):
     "Create a new secondary index",
     usage=(
         "<bin-type> <index-name> ns <ns> [set <set>] [bin <bin-name>] [in <index-type>]"
-        " [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]\n"
+        " [ctx <ctx-item> [. . .]] [ctx_base64 <context>] [exp_base64 <expression>]"
+        " [ael '<ael-expression>'] [ael_b64 <ael-expression>]\n"
         "        manage sindex create <index-name> ns <ns> set <set>"
     ),
     modifiers=(
@@ -1124,12 +1125,29 @@ class ManageSIndexController(LiveClusterManageCommandController):
             "exp_base64",
             "The base64 encoding of the expression. ctx, ctx_base64 and bin will not be allowed when exp_base64 is specified.",
         ),
+        ModifierHelp(
+            "ael",
+            "AEL (Aerospike Expression Language) source for the server to compile, e.g."
+            " ael '$.a:INT + $.b:INT'. Surround it with single quotes: without them the"
+            " expression is split on spaces and a ';' ends the command. bin, ctx,"
+            " ctx_base64, exp_base64 and ael_b64 will not be allowed when ael is specified."
+            f" Requires server >= {constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION}.",
+        ),
+        ModifierHelp(
+            "ael_b64",
+            "The base64 encoding of AEL source. Same as 'ael' but pre-encoded, so no"
+            " quoting is needed. bin, ctx, ctx_base64, exp_base64 and ael will not be"
+            " allowed when ael_b64 is specified."
+            f" Requires server >= {constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION}.",
+        ),
     ),
 )
 class ManageSIndexCreateController(ManageLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["line", "ns"])
-        self.modifiers = set(["bin", "set", "in", "ctx", "exp_base64", "ctx_base64"])
+        self.modifiers = set(
+            ["bin", "set", "in", "ctx", "exp_base64", "ctx_base64", "ael", "ael_b64"]
+        )
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
     def _format_sub_commands_help(self) -> list[str]:
@@ -1332,6 +1350,30 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
+        ael_b64 = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ael_b64",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        # AEL source contains spaces, so it only survives the shell as a single
+        # quoted argument. Anything else arrives as several words.
+        if len(self.mods["ael"]) > 1:
+            raise ShellException(
+                "The 'ael' modifier takes one quoted expression. Surround the AEL source with single quotes, e.g. ael '$.a:INT + $.b:INT'."
+            )
+
+        ael = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ael",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
 
         ctx_list = self.mods["ctx"]
         cdt_ctx = None
@@ -1345,6 +1387,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 "expression_indexing": constants.SERVER_SINDEX_ON_EXP_FIRST_VERSION,
                 "namespace_query_selector_support": constants.SERVER_INFO_NAMESPACE_SELECTOR_VERSION,
                 "integer_type_support": constants.SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION,
+                "ael_indexing": constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION,
             },
             builds=builds,
         )
@@ -1408,15 +1451,52 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                     "Cannot use both 'ctx_base64' and 'exp_base64' modifiers together. Use either 'ctx_base64' to specify how to index into a CDT, or 'exp_base64' to specify an expression to be evaluated."
                 )
 
-        # Validate required modifiers - exactly one of 'bin' or 'exp_base64' is required
-        if not exp_base64 and not bin_name:
+        # 'ael' and 'ael_b64' are the same feature, one plain and one pre-encoded
+        if ael is not None and ael_b64 is not None:
             raise ShellException(
-                "Either 'bin' or 'exp_base64' modifier is required. Use either 'bin' to specify a bin to index, or 'exp_base64' to specify an expression to be evaluated."
+                "Cannot use both 'ael' and 'ael_b64' modifiers together. Use either 'ael' to specify AEL source, or 'ael_b64' to specify the same source base64 encoded."
+            )
+
+        ael_mod = "ael" if ael is not None else "ael_b64"
+
+        # Validate mutually exclusive modifiers - AEL and every other way of
+        # defining what to index
+        if ael is not None or ael_b64 is not None:
+            if exp_base64 is not None:
+                raise ShellException(
+                    "Cannot use both 'exp_base64' and '{}' modifiers together. Use either 'exp_base64' to specify a compiled expression, or '{}' to specify AEL source for the server to compile.".format(
+                        ael_mod, ael_mod
+                    )
+                )
+            elif ctx_list:
+                raise ShellException(
+                    "Cannot use both 'ctx' and '{}' modifiers together. Use either 'ctx' to specify how to index into a CDT, or '{}' to specify AEL source for the server to compile.".format(
+                        ael_mod, ael_mod
+                    )
+                )
+            elif cdt_ctx_base64:
+                raise ShellException(
+                    "Cannot use both 'ctx_base64' and '{}' modifiers together. Use either 'ctx_base64' to specify how to index into a CDT, or '{}' to specify AEL source for the server to compile.".format(
+                        ael_mod, ael_mod
+                    )
+                )
+
+        # Validate required modifiers - exactly one of 'bin', 'exp_base64', 'ael' or 'ael_b64' is required
+        if not exp_base64 and not ael and not ael_b64 and not bin_name:
+            raise ShellException(
+                "Either 'bin', 'exp_base64', 'ael' or 'ael_b64' modifier is required. Use 'bin' to specify a bin to index, 'exp_base64' to specify an expression to be evaluated, or 'ael'/'ael_b64' to specify AEL source for the server to compile."
             )
 
         if exp_base64 and bin_name:
             raise ShellException(
                 "Cannot use both 'bin' and 'exp_base64' modifiers together. Use either 'bin' to specify a bin to index, or 'exp_base64' to specify an expression to be evaluated."
+            )
+
+        if (ael or ael_b64) and bin_name:
+            raise ShellException(
+                "Cannot use both 'bin' and '{}' modifiers together. Use either 'bin' to specify a bin to index, or '{}' to specify AEL source for the server to compile.".format(
+                    ael_mod, ael_mod
+                )
             )
 
         if exp_base64 is not None:
@@ -1431,6 +1511,34 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             except Exception as e:
                 raise ShellException(
                     "Unable to parse expression '{}': {}".format(exp_base64, e)
+                )
+
+        ael_src = None
+
+        if ael is not None or ael_b64 is not None:
+            if not feature_support["ael_indexing"]:
+                raise ShellException(
+                    "The '{}' modifier requires server v. {} or later.".format(
+                        ael_mod, constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
+                    )
+                )
+
+            if ael_b64 is not None:
+                try:
+                    util.is_valid_base64(ael_b64)
+                    ael_src = binascii.a2b_base64(bytes(ael_b64, "utf-8")).decode(
+                        "utf-8"
+                    )
+                except Exception as e:
+                    raise ShellException(
+                        "Unable to parse ael_b64 '{}': {}".format(ael_b64, e)
+                    )
+            else:
+                ael_src = ael
+
+            if not ael_src.strip():
+                raise ShellException(
+                    "The '{}' modifier is an empty AEL expression.".format(ael_mod)
                 )
 
         index_type = index_type.lower() if index_type else None
@@ -1451,6 +1559,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             cdt_ctx,
             cdt_ctx_base64,
             exp_base64,
+            ael_src,
             feature_support,
             nodes="principal",
         )
@@ -1577,6 +1686,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
             None,
             "set",
             set_,
+            None,
             None,
             None,
             None,
