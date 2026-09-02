@@ -1315,10 +1315,12 @@ class CollectinfoDiagnostics:
                 section = str(error.get("section", "?"))
                 detail = str(error.get("detail") or "")
                 # A detail says which sub-call failed, not that anything else in
-                # the section survived. Statistics and config failures always
-                # carry one, so a node that lost every sub-call would otherwise
-                # be told the rest of its section was collected.
-                has_data = util.has_content(self._data(section).get(node_key))
+                # the section survived. Statistics, config and meta_data failures
+                # always carry one, so a node that lost every sub-call would
+                # otherwise be told the rest of its section was collected.
+                has_data = util.stanza_has_server_data(
+                    section, self._data(section).get(node_key)
+                )
 
                 if detail and has_data:
                     has_subsection_failures = True

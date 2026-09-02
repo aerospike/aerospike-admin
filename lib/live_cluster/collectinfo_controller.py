@@ -2515,9 +2515,9 @@ class CollectinfoController(LiveClusterCommandController):
                 elif derived_outputs_failed:
                     logger.warning(
                         "Every snapshot was collected and written, but building "
-                        "the derived output failed. ascollectinfo.log, summary.log "
-                        "and health.log may be missing or incomplete in the "
-                        "archive. The snapshot data itself is unaffected."
+                        "the derived output failed. One or more of them may be "
+                        "missing or incomplete in the archive; the earlier error "
+                        "names the file. The snapshot data itself is unaffected."
                     )
                 common.print_collect_summary(
                     cf_archive_path,

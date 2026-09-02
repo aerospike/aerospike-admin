@@ -32,6 +32,37 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(value=full):
                 self.assertTrue(util.has_content(full))
 
+    def test_stanza_has_server_data(self):
+        self.assertTrue(
+            util.stanza_has_server_data(
+                constants.CollectinfoSection.STATISTICS, {"service": {"a": "1"}}
+            )
+        )
+        self.assertFalse(
+            util.stanza_has_server_data(constants.CollectinfoSection.STATISTICS, {})
+        )
+
+        self.assertFalse(
+            util.stanza_has_server_data(
+                constants.CollectinfoSection.METADATA,
+                {"node_names": "host1", "ip": "1.1.1.1:3000", "asd_build": ""},
+            )
+        )
+        self.assertTrue(
+            util.stanza_has_server_data(
+                constants.CollectinfoSection.METADATA,
+                {"node_names": "host1", "asd_build": "8.0.0.0"},
+            )
+        )
+
+        for malformed in [None, "meta_data", ["node_names"]]:
+            with self.subTest(value=malformed):
+                self.assertFalse(
+                    util.stanza_has_server_data(
+                        constants.CollectinfoSection.METADATA, malformed
+                    )
+                )
+
     def test_get_value_from_dict(self):
         value = {"a": 123, "b": "8.9", "c": "abc"}
 

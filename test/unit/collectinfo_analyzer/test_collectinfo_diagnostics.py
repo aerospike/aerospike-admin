@@ -925,6 +925,79 @@ class NodeCollectionErrorsTest(unittest.TestCase):
         self.assertIn("empty for those nodes", joined)
         self.assertNotIn("rest of its section was collected", joined)
 
+    def test_a_meta_data_error_over_only_locally_derived_keys_is_reported_empty(self):
+        """node_names and ip are filled from the node object without an info call,
+        so a meta_data stanza holding only those is empty as far as the server is
+        concerned. Counting them would put the subsection legend over a stanza
+        that kept nothing the cluster returned."""
+        node = copy.deepcopy(HEALTHY_NODE)
+        node["as_stat"]["meta_data"] = {
+            "node_names": "host1",
+            "ip": "1.1.1.1:3000",
+            "asd_build": "",
+            "edition": "",
+            "node_id": "",
+        }
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "meta_data",
+                            "detail": "asd_build",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        }
+                    ]
+                }
+            }
+        )
+
+        warning = find(
+            diagnostics(nodes={"1.1.1.1:3000": node}, meta=meta).analyze(),
+            "node-collection-errors",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("meta_data", warning.table)
+        self.assertNotIn("meta_data/asd_build", warning.table)
+        joined = " ".join(warning.lines)
+        self.assertIn("empty for those nodes", joined)
+        self.assertNotIn("rest of its section was collected", joined)
+
+    def test_a_meta_data_error_beside_surviving_keys_keeps_the_subsection_legend(self):
+        """Losing asd_build while edition and node_id survived is a real
+        subsection failure: the stanza still holds server-returned data."""
+        node = copy.deepcopy(HEALTHY_NODE)
+        node["as_stat"]["meta_data"]["asd_build"] = ""
+        meta = meta_with(
+            nodes={
+                "1.1.1.1:3000": {
+                    "errors": [
+                        {
+                            "section": "meta_data",
+                            "detail": "asd_build",
+                            "error_class": "timeout",
+                            "message": "late",
+                            "recovered_on_retry": False,
+                        }
+                    ]
+                }
+            }
+        )
+
+        warning = find(
+            diagnostics(nodes={"1.1.1.1:3000": node}, meta=meta).analyze(),
+            "node-collection-errors",
+        )
+
+        self.assertIsNotNone(warning)
+        self.assertIn("meta_data/asd_build", warning.table)
+        joined = " ".join(warning.lines)
+        self.assertIn("rest of its section was collected", joined)
+        self.assertNotIn("empty for those nodes", joined)
+
     def test_a_whole_section_error_beside_surviving_data_is_reported_partial(self):
         """A detail-less statistics error on a node whose statistics stanza still
         holds content may only claim the section is incomplete, not empty."""

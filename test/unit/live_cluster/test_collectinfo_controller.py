@@ -953,6 +953,43 @@ class RunCollectinfoArchivesPartialBundleTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("records the collection as aborted", warnings)
         self.assertIn("derived output", warnings)
 
+    async def test_the_derived_output_warning_does_not_name_files_that_were_written(
+        self,
+    ):
+        """On a localhost node sysinfo is awaited after ascollectinfo, summary and
+        health, and it re-raises. Naming those three as the missing files tells the
+        operator the opposite of what the archive holds."""
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(return_value=({"cluster": {"A": 1}}, {"no_data_nodes": []})),
+        ).start()
+        self.controller.cluster.is_localhost_a_node.return_value = True
+        sysinfo_mock = patch.object(
+            CollectinfoController,
+            "_dump_collectinfo_sysinfo",
+            AsyncMock(side_effect=OSError("no /proc")),
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_aerospike_conf", AsyncMock()
+        ).start()
+        warning_mock = patch(
+            "lib.live_cluster.collectinfo_controller.logger.warning"
+        ).start()
+
+        await self._run()
+
+        self.ascollectinfo_mock.assert_awaited_once()
+        sysinfo_mock.assert_awaited_once()
+        self.archive_mock.assert_called_once_with(self.work_dir)
+
+        warnings = " ".join(str(call.args[0]) for call in warning_mock.call_args_list)
+
+        self.assertIn("derived output", warnings)
+        self.assertNotIn("ascollectinfo.log", warnings)
+        self.assertNotIn("summary.log", warnings)
+        self.assertNotIn("health.log", warnings)
+
     async def test_ignored_errors_still_build_the_derived_outputs(self):
         """--ignore-errors keeps today's behavior: the collection failure is
         logged and everything else still runs."""
