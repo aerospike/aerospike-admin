@@ -18,7 +18,7 @@ import json
 import logging
 import os
 
-from lib.utils import conf_parser
+from lib.utils import conf_parser, constants
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
@@ -39,7 +39,7 @@ def parse_collectinfo_files(file_paths, parsed_map, ignore_exception=False):
     # IF a valid cinfo json is present in cinfo_paths then append
     # its data in parsed_map.
     for cinfo_path_name in file_paths:
-        if cinfo_path_name.endswith("ascinfo.json"):
+        if cinfo_path_name.endswith(constants.COLLECTINFO_DATA_FILENAME):
             cinfo_map = {}
             try:
                 with open(cinfo_path_name) as cinfo_json:
@@ -93,7 +93,7 @@ def _match_nodeip(sys_map, known_ips):
 
 
 def _is_valid_collectinfo_json(cinfo_map):
-    timestamp_format = "%Y-%m-%d %H:%M:%S UTC"
+    timestamp_format = constants.COLLECTINFO_TIMESTAMP_FORMAT
     if len(cinfo_map) == 0:
         return False
     for timestamp in cinfo_map:

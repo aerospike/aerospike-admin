@@ -31,6 +31,7 @@ from lib.live_cluster.get_controller import (
     _get_all_dcs,
     _get_all_namespaces,
 )
+from lib.utils import constants
 
 import unittest
 
@@ -170,6 +171,40 @@ class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.cluster_mock.info_latencies.assert_not_called()
 
+    async def test_get_all_scopes_the_build_query_to_the_requested_nodes(self):
+        """The mixed-version branch fans out to the node lists this call returns,
+        so an unscoped build query would make a single-node retry re-query the
+        whole cluster."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=([], ["2.2.2.2"])
+        )
+        self.cluster_mock.info_latency.return_value = self.latency_return_value
+
+        await self.controller.get_all(
+            nodes=["2.2.2.2"], buckets=5, exponent_increment=1, verbose=1
+        )
+
+        self.controller.get_latencies_and_latency_nodes.assert_awaited_once_with(
+            nodes=["2.2.2.2"]
+        )
+
+    async def test_get_all_keep_exceptions_preserves_per_node_failures(self):
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], [])
+        )
+        exc = Exception("late")
+        self.cluster_mock.info_latencies.return_value = {"1.1.1.1": exc}
+
+        kept = await self.controller.get_all(
+            nodes="all",
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            keep_exceptions=True,
+        )
+
+        self.assertIs(kept["1.1.1.1"], exc)
+
     async def test_get_all_latencies_only(self):
         self.controller.get_latencies_and_latency_nodes = AsyncMock()
         self.controller.get_latencies_and_latency_nodes.return_value = (
@@ -248,6 +283,68 @@ class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
             ns_set=None,
         )
 
+    async def test_get_all_mixed_versions_keeps_an_old_server_failure(self):
+        """The merge builds an entry for every old-server node from a new-server
+        template. Handing it the failure replaced that node's exception with a
+        fabricated all-N/A table, so collectinfo recorded no error for a node whose
+        latency call never answered."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], ["2.2.2.2"])
+        )
+        exc = Exception("latency timed out")
+        self.cluster_mock.info_latencies.return_value = copy.deepcopy(
+            self.latencies_return_value
+        )
+        self.cluster_mock.info_latency.return_value = {"2.2.2.2": exc}
+
+        kept = await self.controller.get_all(
+            "nodes",
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            keep_exceptions=True,
+        )
+
+        self.assertIs(kept["2.2.2.2"], exc)
+        self.assertIn("1.1.1.1", kept)
+
+    async def test_get_all_mixed_versions_keeps_a_new_server_failure(self):
+        """A new-server failure used to be picked as the merge template and then
+        iterated, aborting the whole latency collection with a TypeError."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], ["2.2.2.2"])
+        )
+        exc = Exception("latencies timed out")
+        self.cluster_mock.info_latencies.return_value = {"1.1.1.1": exc}
+        self.cluster_mock.info_latency.return_value = copy.deepcopy(
+            self.latency_return_value
+        )
+
+        kept = await self.controller.get_all(
+            "nodes",
+            buckets=5,
+            exponent_increment=1,
+            verbose=1,
+            keep_exceptions=True,
+        )
+
+        self.assertIs(kept["1.1.1.1"], exc)
+        self.assertEqual(kept["2.2.2.2"], self.latency_return_value["2.2.2.2"])
+
+    async def test_get_all_mixed_versions_drops_failures_by_default(self):
+        """The interactive `show` paths must still never see an Exception."""
+        self.controller.get_latencies_and_latency_nodes = AsyncMock(
+            return_value=(["1.1.1.1"], ["2.2.2.2"])
+        )
+        self.cluster_mock.info_latencies.return_value = {"1.1.1.1": Exception("nope")}
+        self.cluster_mock.info_latency.return_value = {"2.2.2.2": Exception("nope")}
+
+        actual = await self.controller.get_all(
+            "nodes", buckets=5, exponent_increment=1, verbose=1
+        )
+
+        self.assertDictEqual(actual, {})
+
 
 class GetControllerStaticHelpersTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -305,6 +402,77 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info = AsyncMock()
         self.cluster_mock.info.side_effect = self.mock_info_call
         self.controller = GetStatisticsController(self.cluster_mock)
+
+    async def test_get_service_keep_exceptions_preserves_per_node_failures(self):
+        """Without this the node whose statistics call failed is dropped from the
+        map, and the bundle's meta records errors: [] for a node that failed."""
+        exc = Exception("boom")
+        self.cluster_mock.info_statistics.return_value = {
+            "1.1.1.1": exc,
+            "2.2.2.2": {"uptime": "10"},
+        }
+
+        kept = await self.controller.get_service(keep_exceptions=True)
+
+        self.assertIs(kept["1.1.1.1"], exc)
+        self.assertEqual(kept["2.2.2.2"], {"uptime": "10"})
+
+    async def test_get_service_drops_failures_by_default(self):
+        """The interactive show paths must never see an Exception value."""
+        self.cluster_mock.info_statistics.return_value = {
+            "1.1.1.1": Exception("boom"),
+            "2.2.2.2": {"uptime": "10"},
+        }
+
+        dropped = await self.controller.get_service()
+
+        self.assertEqual(dropped, {"2.2.2.2": {"uptime": "10"}})
+
+    async def test_get_all_propagates_keep_exceptions_to_the_service_subsection(self):
+        """get_all is what collectinfo calls; a keep_exceptions that stops at
+        get_all's signature ships bundles whose meta records no error for a node
+        whose statistics call failed."""
+        exc = Exception("boom")
+        self.cluster_mock.info_statistics.return_value = {"1.1.1.1": exc}
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_bins",
+            "get_sindex",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+        ):
+            patch.object(
+                GetStatisticsController, name, AsyncMock(return_value={})
+            ).start()
+        self.addCleanup(patch.stopall)
+
+        stat_map = await self.controller.get_all(keep_exceptions=True)
+
+        self.assertIs(stat_map[constants.STAT_SERVICE]["1.1.1.1"], exc)
+
+    async def test_get_all_drops_failures_by_default(self):
+        self.cluster_mock.info_statistics.return_value = {"1.1.1.1": Exception("boom")}
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_bins",
+            "get_sindex",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+        ):
+            patch.object(
+                GetStatisticsController, name, AsyncMock(return_value={})
+            ).start()
+        self.addCleanup(patch.stopall)
+
+        stat_map = await self.controller.get_all()
+
+        self.assertEqual(stat_map[constants.STAT_SERVICE], {})
 
     async def test_get_namespace(self):
         self.cluster_mock.info_namespaces.return_value = {
@@ -695,6 +863,117 @@ class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.controller.get_logging()
 
         self.assertDictEqual(actual, expected)
+
+    async def test_get_service_keep_exceptions_preserves_per_node_failures(self):
+        exc = Exception("boom")
+        self.cluster_mock.info_get_config.return_value = {"1.1.1.1": exc}
+
+        kept = await self.controller.get_service(keep_exceptions=True)
+
+        self.assertIs(kept["1.1.1.1"], exc)
+
+    async def test_get_service_drops_failures_by_default(self):
+        self.cluster_mock.info_get_config.return_value = {
+            "1.1.1.1": Exception("boom"),
+            "2.2.2.2": {"proto-fd-max": "15000"},
+        }
+
+        dropped = await self.controller.get_service()
+
+        self.assertEqual(dropped["1.1.1.1"], {})
+
+    async def test_get_network_keep_exceptions_preserves_per_node_failures(self):
+        """network is served by every server, so a failure there is a real
+        collection failure and must reach the bundle's meta."""
+        exc = Exception("boom")
+        self.cluster_mock.info_get_config.return_value = {"1.1.1.1": exc}
+
+        kept = await self.controller.get_network(keep_exceptions=True)
+
+        self.assertIs(kept["1.1.1.1"], exc)
+
+    async def test_get_network_drops_failures_by_default(self):
+        self.cluster_mock.info_get_config.return_value = {"1.1.1.1": Exception("boom")}
+
+        dropped = await self.controller.get_network()
+
+        self.assertEqual(dropped["1.1.1.1"], {})
+
+    async def test_get_all_propagates_keep_exceptions_to_service_and_network(self):
+        """get_all is what collectinfo calls. Security keeps substituting {} on
+        the same run: it legitimately errors on a security-disabled or Community
+        Edition cluster, and recording that as a failure would report a healthy
+        cluster as a failed collection."""
+        service_exc = Exception("service boom")
+        network_exc = Exception("network boom")
+
+        async def by_stanza(nodes="all", stanza=None, **kwargs):
+            if stanza == "service":
+                return {"1.1.1.1": service_exc}
+            if stanza == "network":
+                return {"1.1.1.1": network_exc}
+            if stanza == "security":
+                return {"1.1.1.1": Exception("security not supported")}
+            return {}
+
+        self.cluster_mock.info_get_config.side_effect = by_stanza
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+            "get_xdr_filters",
+            "get_roster",
+            "get_racks",
+            "get_rack_ids",
+            "get_logging",
+        ):
+            patch.object(GetConfigController, name, AsyncMock(return_value={})).start()
+
+        config_map = await self.controller.get_all(keep_exceptions=True)
+
+        self.assertIs(config_map[constants.CONFIG_SERVICE]["1.1.1.1"], service_exc)
+        self.assertIs(config_map[constants.CONFIG_NETWORK]["1.1.1.1"], network_exc)
+        self.assertEqual(config_map[constants.CONFIG_SECURITY]["1.1.1.1"], {})
+
+    async def test_get_all_drops_failures_by_default(self):
+        async def by_stanza(nodes="all", stanza=None, **kwargs):
+            return {"1.1.1.1": Exception("boom")}
+
+        self.cluster_mock.info_get_config.side_effect = by_stanza
+
+        for name in (
+            "get_namespace",
+            "get_sets",
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+            "get_xdr_filters",
+            "get_roster",
+            "get_racks",
+            "get_rack_ids",
+            "get_logging",
+        ):
+            patch.object(GetConfigController, name, AsyncMock(return_value={})).start()
+
+        config_map = await self.controller.get_all()
+
+        self.assertEqual(config_map[constants.CONFIG_SERVICE]["1.1.1.1"], {})
+        self.assertEqual(config_map[constants.CONFIG_NETWORK]["1.1.1.1"], {})
+
+    async def test_get_security_always_substitutes_failures(self):
+        """Security legitimately errors on a security-disabled or Community
+        Edition cluster; preserving the exception would let collectinfo record a
+        healthy cluster as a failed collection on every such bundle."""
+        self.cluster_mock.info_get_config.return_value = {
+            "1.1.1.1": Exception("security not supported")
+        }
+
+        actual = await self.controller.get_security()
+
+        self.assertDictEqual(actual, {"1.1.1.1": {}})
 
     async def test_get_namespace(self):
         self.cluster_mock.info_namespaces.return_value = {

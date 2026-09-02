@@ -70,9 +70,11 @@ class LiveClusterRootController(BaseController, AsyncObject):
         only_connect_seed=False,
         timeout=5,
         asadm_version="",
+        asadm_build="",
         user_agent=f"{constants.USER_AGENT_FORMAT_VERSION},asadm_{constants.DEFAULT_ASADM_VERSION},{constants.ASADM_APP_ID}",
     ):
         BaseController.asadm_version = asadm_version
+        BaseController.asadm_build = asadm_build
 
         # Create static instance of cluster
         LiveClusterRootController.cluster = await Cluster(

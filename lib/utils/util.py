@@ -1100,6 +1100,47 @@ def has_content(value: Any) -> bool:
     return value is not None
 
 
+def stanza_has_server_data(section, stanza) -> bool:
+    """Whether one bundle stanza holds data the server returned.
+
+    node_names and ip are derived locally from the node object without an info
+    call, so they are populated even when every meta_data call failed; counting
+    them would make a fully-failed node read as having data (TOOLS-3596). Every
+    reader that decides whether a stanza is empty goes through here so the whole
+    tool agrees on what empty means.
+    """
+    if section == constants.CollectinfoSection.METADATA:
+        if not isinstance(stanza, dict):
+            return False
+
+        return any(
+            has_content(value)
+            for meta_key, value in stanza.items()
+            if meta_key not in constants.COLLECTINFO_LOCALLY_DERIVED_META_KEYS
+        )
+
+    return has_content(stanza)
+
+
+def as_stat_has_aerospike_data(as_stat) -> bool:
+    """Whether a bundle node's as_stat holds any server-returned data.
+
+    Shared by the collector, which decides from it which nodes returned nothing,
+    and the analyzer, which decides from it which nodes are empty. Two copies had
+    already drifted in their guards, and a node counted as empty by one and not
+    the other produces contradictory findings about the same bundle.
+    """
+    if not as_stat:
+        return False
+
+    try:
+        return any(
+            stanza_has_server_data(key, section) for key, section in as_stat.items()
+        )
+    except Exception:
+        return False
+
+
 def pct_to_value(data, d_pct):
     """
     Function takes dictionary with base value, and dictionary with percentage and converts percentage to value.

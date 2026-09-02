@@ -86,6 +86,59 @@ COLLECTINFO_SEPERATOR = "\n====ASCOLLECTINFO====\n"
 COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress..."
 COLLECTINFO_LOCALLY_DERIVED_META_KEYS = frozenset(("node_names", "ip"))
 
+COLLECTINFO_DATA_FILENAME = "ascinfo.json"
+COLLECTINFO_META_FILENAME = "collectinfo_meta.json"
+COLLECTINFO_META_FORMAT_VERSION = 1
+COLLECTINFO_GENERATED_BY = "asadm collectinfo"
+
+COLLECTINFO_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
+
+COLLECTINFO_RETRY_TIMED_OUT_SECTIONS = True
+
+
+class CollectinfoErrorClass:
+    TIMEOUT = "timeout"
+    UNREACHABLE = "unreachable"
+    AUTH = "auth"
+    CORRUPT = "corrupt"
+    OTHER = "other"
+    UNSUPPORTED = "unsupported"
+
+
+COLLECTINFO_ERROR_CLASS_REASON = {
+    CollectinfoErrorClass.UNREACHABLE: "unreachable",
+    CollectinfoErrorClass.AUTH: "authentication failed",
+    CollectinfoErrorClass.TIMEOUT: "timed out",
+    CollectinfoErrorClass.CORRUPT: "returned an unusable response",
+    CollectinfoErrorClass.OTHER: "failed",
+}
+
+
+class CollectinfoSection:
+    """The bundle stanza a failed collection call would have written to.
+
+    One value per stanza in the snapshot, so a reader can enumerate them. A call
+    whose command the cluster does not have is recorded under the stanza it
+    belongs to with error_class 'unsupported', not under a section named after
+    the feature."""
+
+    STATISTICS = "statistics"
+    CONFIG = "config"
+    METADATA = "meta_data"
+    HISTOGRAM = "histogram"
+    LATENCY = "latency"
+    ACL = "acl"
+    USER_AGENTS = "user_agents"
+    MASKING = "masking"
+    SYSINFO = "sys_stat"
+
+
+class SysinfoSource:
+    LOCAL = "local"
+    SSH = "ssh"
+    NONE = "none"
+
+
 MRT_SET = "<ERO~MRT"
 
 

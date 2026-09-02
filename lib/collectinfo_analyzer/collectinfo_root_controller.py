@@ -30,12 +30,22 @@ class CollectinfoRootController(BaseController):
     log_handler = None
     command = None
 
-    def __init__(self, asadm_version="", clinfo_path=""):
+    def __init__(self, asadm_version="", clinfo_path="", asadm_build=""):
+        """Build the analyzer's controller tree for one bundle.
+
+        The version and build are stored on BaseController, so constructing this
+        overwrites them for every controller in the process, the live session's
+        included. Callers that build one mid-session (collectinfo, which analyzes
+        the bundle it just wrote) save and restore them around this.
+        """
         BaseController.asadm_version = asadm_version
+        BaseController.asadm_build = asadm_build
 
         # Create Static Instance of Loghdlr
         try:
-            CollectinfoRootController.log_handler = CollectinfoLogHandler(clinfo_path)
+            CollectinfoRootController.log_handler = CollectinfoLogHandler(
+                clinfo_path, asadm_version=asadm_version
+            )
         except LogHandlerException as e:
             raise ShellException(e)
 

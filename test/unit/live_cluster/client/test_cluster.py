@@ -495,6 +495,74 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
             "get_down_nodes did not return the expected result",
         )
 
+    async def test_get_down_nodes_queries_nodes_concurrently(self):
+        """Serially, one hung node costs its whole per-node timeout before the
+        next is asked, and collectinfo calls this once per snapshot at a raised
+        timeout."""
+        cl = await self.get_cluster_mock(3)
+        in_flight = 0
+        peak = 0
+
+        async def slow_peers():
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return []
+
+        for node in cl.nodes.values():
+            node.alive = True
+            node.info_peers_alumni = slow_peers
+
+        await cl.get_down_nodes()
+
+        self.assertGreater(peak, 1)
+
+    async def test_get_down_nodes_survives_one_failing_node(self):
+        cl = await self.get_cluster_mock(3)
+        nodes = list(cl.nodes.values())
+
+        for node in nodes:
+            node.alive = True
+
+        nodes[0].info_peers_alumni = AsyncMock(side_effect=OSError("gone"))
+
+        self.assertIsInstance(await cl.get_down_nodes(), list)
+
+    async def test_get_down_nodes_detailed_reports_failed_peer_queries(self):
+        """ "Could not ask node A" must stay distinguishable from "node A
+        reported no down peers", or an incomplete reconciliation looks
+        complete to collectinfo."""
+        cl = await self.get_cluster_mock(3)
+        nodes = list(cl.nodes.values())
+
+        for node in nodes:
+            node.alive = True
+
+        nodes[0].info_peers_alumni = AsyncMock(side_effect=OSError("gone"))
+
+        result = await cl.get_down_nodes_detailed()
+
+        self.assertEqual(result.failed_nodes, [nodes[0].key])
+        self.assertIsInstance(result.down_nodes, list)
+
+    async def test_an_exception_value_from_a_peer_call_counts_as_failed(self):
+        """The node info calls return exceptions as values, and flatten() turns
+        an exception value into an empty peer list, which would count a failed
+        query as 'no down peers'."""
+        cl = await self.get_cluster_mock(3)
+        nodes = list(cl.nodes.values())
+
+        for node in nodes:
+            node.alive = True
+
+        nodes[0].info_peers = AsyncMock(return_value=OSError("gone"))
+
+        result = await cl.get_down_nodes_detailed()
+
+        self.assertEqual(result.failed_nodes, [nodes[0].key])
+
     async def test_update_aliases(self):
         cl = await self.get_cluster_mock(3)
         aliases = {}
