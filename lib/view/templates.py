@@ -2781,6 +2781,58 @@ node_info_responses = Sheet(
     default_style=SheetStyle.columns,
 )
 
+
+def _checkpoint_files(files_done, files_total):
+    return "{}/{}".format(files_done, files_total)
+
+
+def _checkpoint_progress(files_done, files_total):
+    if not files_total:
+        return 0.0
+
+    return (files_done / files_total) * 100.0
+
+
+show_checkpoint_status = Sheet(
+    (
+        Field("Namespace", Projectors.String("data", None, for_each_key=True)),
+        node_field,
+        hidden_node_id_field,
+        Field(
+            "State",
+            Projectors.String("data", "state"),
+            formatters=(
+                Formatters.red_alert(lambda edata: edata.value == "failed"),
+                Formatters.green_alert(lambda edata: edata.value == "done"),
+                Formatters.yellow_alert(lambda edata: edata.value == "copying"),
+            ),
+        ),
+        Field(
+            "Files",
+            Projectors.Func(
+                FieldType.string,
+                _checkpoint_files,
+                Projectors.Number("data", "files_done"),
+                Projectors.Number("data", "files_total"),
+            ),
+        ),
+        Field(
+            "Progress",
+            Projectors.Func(
+                FieldType.number,
+                _checkpoint_progress,
+                Projectors.Number("data", "files_done"),
+                Projectors.Number("data", "files_total"),
+            ),
+            converter=Converters.pct,
+        ),
+    ),
+    from_source=("data", "node_names", "node_ids"),
+    for_each="data",
+    group_by=("Namespace"),
+    order_by=FieldSorter("Node"),
+)
+
 # TODO
 # grep_diff_sheet = Sheet(
 #     (TitleField('Node', Projectors.String('node_ids', 'node')),

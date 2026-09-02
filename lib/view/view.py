@@ -1813,6 +1813,31 @@ class CliView(object):
             sheet.render(templates.node_info_responses, title, sources, common=common)
         )
 
+    @staticmethod
+    @reserved_modifiers
+    def show_checkpoint_status(
+        checkpoint_data, cluster, timestamp="", with_=None, **ignore
+    ):
+        if not checkpoint_data:
+            return
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Shared-Memory Checkpoint{}".format(title_timestamp)
+        sources = dict(
+            node_names=node_names,
+            node_ids=node_ids,
+            data=checkpoint_data,
+        )
+        common = CliView._common(cluster)
+
+        CliView.print_result(
+            sheet.render(
+                templates.show_checkpoint_status, title, sources, common=common
+            )
+        )
+
     # ##########################
     # ## Health Print functions
     # ##########################
