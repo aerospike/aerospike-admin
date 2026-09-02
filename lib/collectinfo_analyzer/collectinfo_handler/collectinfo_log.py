@@ -26,6 +26,47 @@ from lib.utils.lookup_dict import LookupDict
 from .collectinfo_parser import collectinfo_parser
 
 
+def _endpoint_keys(value) -> list[str]:
+    """Normalize a meta_data services/endpoints value into ip:port keys.
+
+    Newer bundles store a flat list of [ip, port, tls_name] triples; older ones
+    stored a ';' separated string.
+    """
+    keys: list[str] = []
+
+    if not value:
+        return keys
+
+    if isinstance(value, str):
+        return [entry.strip() for entry in value.split(";") if entry.strip()]
+
+    try:
+        entries = list(value)
+    except Exception:
+        return keys
+
+    for entry in entries:
+        if isinstance(entry, str):
+            if entry.strip():
+                keys.append(entry.strip())
+            continue
+
+        try:
+            addr, port = entry[0], entry[1]
+        except Exception:
+            continue
+
+        if not addr:
+            continue
+
+        if ":" in str(addr):
+            keys.append("[%s]:%s" % (addr, port))
+        else:
+            keys.append("%s:%s" % (addr, port))
+
+    return keys
+
+
 class _CollectinfoNode(object):
     def __init__(self, timestamp, node_name, node_id="N/E"):
         self.timestamp = timestamp
@@ -401,6 +442,49 @@ class _CollectinfoSnapshot:
             pass
 
         return data
+
+    def has_sys_data(self, node_key: str) -> bool:
+        """Whether any system statistics were captured for this node.
+
+        Reads the raw sys_stat blob rather than get_sys_data, which is
+        stanza-scoped and so cannot distinguish "no sysinfo at all" from "this one
+        stanza is absent".
+        """
+        try:
+            return util.has_content(self.cinfo_data[node_key]["sys_stat"])
+        except Exception:
+            return False
+
+    def nodes_without_as_stat(self) -> list[str]:
+        empty_nodes = []
+
+        for node_key, node_data in (self.cinfo_data or {}).items():
+            if not node_key:
+                continue
+
+            as_stat = (node_data or {}).get("as_stat") or {}
+
+            if not util.as_stat_has_aerospike_data(as_stat):
+                empty_nodes.append(node_key)
+
+        return sorted(empty_nodes)
+
+    def get_advertised_peers(self) -> dict[str, list[str]]:
+        return self._get_endpoint_keys("services")
+
+    def get_own_endpoints(self) -> dict[str, list[str]]:
+        return self._get_endpoint_keys("endpoints")
+
+    def _get_endpoint_keys(self, stanza: str) -> dict[str, list[str]]:
+        result = {}
+
+        for node_key, value in self.get_data(type="meta_data", stanza=stanza).items():
+            keys = _endpoint_keys(value)
+
+            if keys:
+                result[node_key] = keys
+
+        return result
 
     def get_node(self, node_key):
         if node_key in self.nodes:

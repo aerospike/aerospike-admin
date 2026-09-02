@@ -90,6 +90,88 @@ class InfoController(CollectinfoCommandController):
             stats[key_tuple] = stats[key]
             del stats[key]
 
+    @CommandHelp(
+        "Displays node memory: Capacity (the cgroup limit, shown only when",
+        "cgroup-mem-tracking is enabled) vs Allocated (the shmem index and",
+        "sindex arenas plus the process heap). Memory-engine data is in the arenas",
+        "on Enterprise and Federal, and in the heap on Community. The verbose",
+        "tables are not additive with each other: set index, and memory-engine",
+        "data on Community, are heap-allocated and appear in both Index and Data",
+        "Memory and Process Heap. Allocation figures require server",
+        f"{constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION} or later.",
+        short_msg="Displays node memory availability vs allocation",
+        usage="[-v]",
+        modifiers=(
+            ModifierHelp(
+                "-v, --verbose",
+                "Show the per-node host, index/data, and heap breakdown",
+                default="off",
+            ),
+        ),
+    )
+    def do_memory(self, line):
+        verbose = util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="--verbose",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        ) or util.check_arg_and_delete_from_mods(
+            line=line,
+            arg="-v",
+            default=False,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+        if self.mods.get("for"):
+            raise ShellException(
+                "info memory: the 'for' modifier is not supported. Host, cgroup, and "
+                "heap values are per-node and cannot be filtered by namespace."
+            )
+
+        service_stats = self.stats_getter.get_service()
+        service_configs = self.config_getter.get_service()
+        ns_stats = self.stats_getter.get_namespace()
+
+        missing_alloc_stats = set()
+        all_nodes = set()
+
+        for timestamp in sorted(service_stats.keys()):
+            if not service_stats[timestamp]:
+                continue
+
+            cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
+            builds = cinfo_log.get_asd_build()
+            node_names = cinfo_log.get_node_names()
+            all_nodes.update(node_names.values())
+            missing_alloc_stats.update(
+                node_names.get(n, n)
+                for n in util.nodes_missing_memory_alloc_stats(builds)
+            )
+
+            ns_agg = util.aggregate_ns_memory_stats(
+                ns_stats.get(timestamp, {}), editions=cinfo_log.get_asd_version()
+            )
+            self.view.info_memory(
+                service_stats[timestamp],
+                service_configs.get(timestamp, {}),
+                ns_agg,
+                cluster=cinfo_log,
+                builds=builds,
+                timestamp=timestamp,
+                verbose=verbose,
+                **self.mods,
+            )
+
+        if missing_alloc_stats:
+            logger.warning(
+                "Allocation figures require server %s or later; allocation totals "
+                "are empty for %s, whose build is older or unreadable. See the "
+                "Build column.",
+                constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION,
+                util.summarize_nodes(missing_alloc_stats, len(all_nodes)),
+            )
+
     @CommandHelp("Displays summary information for each set")
     def do_set(self, line):
         set_stats = self.stats_getter.get_sets()

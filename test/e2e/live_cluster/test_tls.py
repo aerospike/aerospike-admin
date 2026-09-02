@@ -28,7 +28,6 @@ class TestTLS(unittest.TestCase):
     def setUpClass(cls):
         lib.start(
             num_nodes=1,
-            docker_tag="latest",
             template_file="aerospike_tls.conf",
         )
         cls.host = f"{lib.SERVER_IP}:{lib.TLS_PORT}"

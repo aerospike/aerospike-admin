@@ -103,6 +103,12 @@ Asadm has unit, integration, and e2e tests. Tests also support code coverage rep
 ### Dependencies
 - The e2e tests depend on docker. 
 - The e2e tests depend on a aerospike features.conf file to run Aerospike Enterprise Edition. 
+- The e2e tests pull their server image from `artifact.aerospike.io`, which requires a login:
+  ```
+  docker login artifact.aerospike.io
+  ```
+  Override the image with `ASADM_E2E_IMAGE_REPO` / `ASADM_E2E_SERVER_TAG` if you are using a
+  different registry or server version.
 - Run `pipenv install --dev`.
 
 ### Running Unit Tests

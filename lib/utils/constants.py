@@ -61,6 +61,11 @@ METADATA_PRACTICES = "best_practices"
 METADATA_UDF = "udf"
 METADATA_UDF_CONTENT = "udf_content"
 
+EDITION_ENTERPRISE = "Enterprise"
+EDITION_COMMUNITY = "Community"
+EDITION_FEDERAL = "Federal"
+EDITION_UNKNOWN = "N/E"
+
 ADMIN_ROLES = "roles"
 ADMIN_USERS = "users"
 
@@ -80,6 +85,59 @@ JSON_FILE = 3
 COLLECTINFO_SEPERATOR = "\n====ASCOLLECTINFO====\n"
 COLLECTINFO_PROGRESS_MSG = "Data collection for %s%s  in progress..."
 COLLECTINFO_LOCALLY_DERIVED_META_KEYS = frozenset(("node_names", "ip"))
+
+COLLECTINFO_DATA_FILENAME = "ascinfo.json"
+COLLECTINFO_META_FILENAME = "collectinfo_meta.json"
+COLLECTINFO_META_FORMAT_VERSION = 1
+COLLECTINFO_GENERATED_BY = "asadm collectinfo"
+
+COLLECTINFO_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S UTC"
+
+COLLECTINFO_RETRY_TIMED_OUT_SECTIONS = True
+
+
+class CollectinfoErrorClass:
+    TIMEOUT = "timeout"
+    UNREACHABLE = "unreachable"
+    AUTH = "auth"
+    CORRUPT = "corrupt"
+    OTHER = "other"
+    UNSUPPORTED = "unsupported"
+
+
+COLLECTINFO_ERROR_CLASS_REASON = {
+    CollectinfoErrorClass.UNREACHABLE: "unreachable",
+    CollectinfoErrorClass.AUTH: "authentication failed",
+    CollectinfoErrorClass.TIMEOUT: "timed out",
+    CollectinfoErrorClass.CORRUPT: "returned an unusable response",
+    CollectinfoErrorClass.OTHER: "failed",
+}
+
+
+class CollectinfoSection:
+    """The bundle stanza a failed collection call would have written to.
+
+    One value per stanza in the snapshot, so a reader can enumerate them. A call
+    whose command the cluster does not have is recorded under the stanza it
+    belongs to with error_class 'unsupported', not under a section named after
+    the feature."""
+
+    STATISTICS = "statistics"
+    CONFIG = "config"
+    METADATA = "meta_data"
+    HISTOGRAM = "histogram"
+    LATENCY = "latency"
+    ACL = "acl"
+    USER_AGENTS = "user_agents"
+    MASKING = "masking"
+    SYSINFO = "sys_stat"
+
+
+class SysinfoSource:
+    LOCAL = "local"
+    SSH = "ssh"
+    NONE = "none"
+
 
 MRT_SET = "<ERO~MRT"
 
@@ -175,6 +233,7 @@ SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION = "8.1.3"  # "numeric" type renamed "in
 SERVER_INDEX_CHECKPOINT_FIRST_VERSION = (
     "8.1.3"  # EE only, and preview-gated on the server
 )
+SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION = "8.1.3"  # index/sindex alloc + cgroup stats
 SERVER_DATA_MASKING_FIRST_VERSION = "8.1.1"
 SERVER_RELEASE_INFO_FIRST_VERSION = "8.1.1"
 SERVER_INFO_NAMESPACE_SELECTOR_VERSION = "7.2"  # before this namespace can be id/ns
@@ -192,6 +251,8 @@ SERVER_NEW_XDR5_VERSION = "5.0"
 SERVER_NEW_HISTOGRAM_FIRST_VERSION = "4.2"
 SERVER_JOBS_REMOVAL_VERSION = "6.3"
 SERVER_SCAN_SHOW_REMOVAL_VERSION = "6.4"
+
+SERVER_DEFAULT_STOP_WRITES_SYS_MEMORY_PCT = 90  # namespace.c as_namespace_create
 
 # [inclusive, exclusive)
 SERVER_TRUNCATE_NAMESPACE_CMD_FIRST_VERSIONS = [

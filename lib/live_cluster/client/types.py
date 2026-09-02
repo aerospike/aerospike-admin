@@ -174,6 +174,8 @@ class ASResponse(IntEnum):
 
 
 class ASProtocolError(Exception):
+    carries_its_own_message = True
+
     def __init__(self, as_response, message):
         self.message = message + " : " + str(ASResponse(as_response)) + "."
         self.as_response = as_response
@@ -218,6 +220,8 @@ GENERIC_ERROR_MSG = "Unknown error occurred"
 
 
 class ASInfoError(Exception):
+    carries_its_own_message = True
+
     def __init__(self, message: str, response: str | None = None):
         self.message = message
         self.response = response

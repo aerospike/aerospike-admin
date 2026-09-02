@@ -15,17 +15,19 @@
 import asyncio
 from asyncio.subprocess import Process
 import base64
+from collections import defaultdict
 import copy
 import functools
 import inspect
 import io
+import math
 import re
 import shlex
 import socket
 import subprocess
 import sys
 import logging
-from lib.utils import version
+from lib.utils import constants, version
 from time import time
 from typing import (
     Any,
@@ -420,6 +422,435 @@ def flip_keys(orig_data):
     return new_data
 
 
+MAX_STAT_BYTES = 1 << 70
+CGROUP_MEMORY_NO_LIMIT_THRESHOLD = 1 << 62
+
+
+def int_or_zero(value):
+    """
+    Coerce a raw server value to a bounded int, zero when it is not usable.
+
+    Hex-looking strings such as '9E0123456789' parse as scientific notation and
+    overflow to inf, and CPython accepts integer literals up to its digit limit,
+    so a result outside +/-MAX_STAT_BYTES is rejected as unusable and returns
+    zero, which every caller already treats as stat absent.
+    """
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return 0
+
+        if math.isinf(parsed) or math.isnan(parsed):
+            return 0
+
+        parsed = int(parsed)
+
+    if not -MAX_STAT_BYTES <= parsed <= MAX_STAT_BYTES:
+        return 0
+
+    return parsed
+
+
+def summarize_nodes(names, total, limit=3):
+    """
+    Render a node list for a warning without spilling a paragraph.
+
+    A cluster-wide problem only needs its shape stated: on a 14 node cluster
+    every FQDN comes to about 1.2 KB of one-line warning to say 'all of them'.
+    The per-node answer is already visible in the table itself, so the
+    warning names nodes only while the list is short enough to act on.
+    """
+    names = sorted(names)
+
+    if len(names) <= limit:
+        return ", ".join(names)
+
+    if total and len(names) >= total:
+        return "all %d nodes" % total
+
+    return "%s and %d more" % (", ".join(names[:limit]), len(names) - limit)
+
+
+def cgroup_limit_or_zero(value):
+    """
+    Normalize cgroup_memory_limit_bytes to a usable limit, else zero.
+
+    An uncapped cgroup reports either 'max' (v2), a negative value, or a
+    near-int64 sentinel (v1), and CGROUP_MEMORY_NO_LIMIT_THRESHOLD catches every
+    one of those without reference to anything else. Any other value the kernel
+    reports is a measurement and is reported as given, even when it exceeds host
+    RAM: that is a real misconfiguration the operator needs to see, and asadm
+    has no total-memory figure of its own to check it against.
+    """
+    limit = int_or_zero(value)
+
+    if not 0 < limit < CGROUP_MEMORY_NO_LIMIT_THRESHOLD:
+        return 0
+
+    return limit
+
+
+_DEVICE_BACKINGS = ("pmem", "flash")
+_NS_MEMORY_USED_KEYS = {
+    "index_used_bytes": "index-type",
+    "sindex_used_bytes": "sindex-type",
+    "set_index_used_bytes": None,
+}
+_NS_MEMORY_ALLOC_KEYS = {
+    "shmem_alloc_bytes": ("index_shmem_alloc_bytes", "sindex_shmem_alloc_bytes"),
+    "pi_alloc_bytes": ("index_shmem_alloc_bytes",),
+    "si_alloc_bytes": ("sindex_shmem_alloc_bytes",),
+    "set_alloc_bytes": ("set_index_alloc_bytes",),
+}
+_NS_MEMORY_ALLOC_ARENA_SOURCES = (
+    "pi_alloc_bytes",
+    "si_alloc_bytes",
+    "set_alloc_bytes",
+)
+_NS_MEMORY_ALLOC_TOTAL_SOURCES = _NS_MEMORY_ALLOC_ARENA_SOURCES + ("data_alloc_bytes",)
+_NS_MEMORY_USED_TOTAL_SOURCES = tuple(_NS_MEMORY_USED_KEYS) + (
+    "data_in_memory_used_bytes",
+)
+
+
+def _accumulate_ns_memory(totals, ns_data, fold_data_into_shmem):
+    """
+    Add one namespace's RAM-backed memory stats into a node's running totals.
+
+    _NS_MEMORY_USED_KEYS maps each used stat to the config key naming its
+    backing, or None when the stat is always RAM backed. index_used_bytes and
+    sindex_used_bytes were consolidated across backings in 7.0, so a flash or
+    pmem arena reports through the same stat and has to be skipped by backing.
+    _NS_MEMORY_ALLOC_KEYS maps each aggregated key to the stats summed into it.
+    """
+    for key, backing_key in _NS_MEMORY_USED_KEYS.items():
+        if key not in ns_data:
+            continue
+
+        if backing_key and ns_data.get(backing_key, "shmem") in _DEVICE_BACKINGS:
+            continue
+
+        totals[key] += int_or_zero(ns_data[key])
+
+    for out_key, src_keys in _NS_MEMORY_ALLOC_KEYS.items():
+        for src_key in src_keys:
+            if src_key in ns_data:
+                totals[out_key] += int_or_zero(ns_data[src_key])
+
+    if ns_data.get("storage-engine") != "memory":
+        return
+
+    if "data_total_bytes" in ns_data:
+        data_total = int_or_zero(ns_data["data_total_bytes"])
+        totals["data_alloc_bytes"] += data_total
+
+        if fold_data_into_shmem:
+            totals["shmem_alloc_bytes"] += data_total
+
+    if "data_used_bytes" in ns_data:
+        totals["data_in_memory_used_bytes"] += int_or_zero(ns_data["data_used_bytes"])
+
+
+def _accumulate_stop_writes_threshold(totals, ns_data):
+    """
+    Track the lowest stop-writes-sys-memory-pct across a node's namespaces.
+
+    The server evaluates the threshold per namespace against one node-wide
+    system memory pct (nsup.c eval_stop_writes), so the namespace configured
+    lowest is the first to refuse writes and is the node-level threshold.
+    """
+    if "stop-writes-sys-memory-pct" not in ns_data:
+        return
+
+    pct = int_or_zero(ns_data["stop-writes-sys-memory-pct"])
+
+    if not 0 < pct <= 100:
+        return
+
+    current = totals.get("stop_writes_sys_memory_pct")
+    totals["stop_writes_sys_memory_pct"] = pct if current is None else min(current, pct)
+
+
+def aggregate_ns_memory_stats(ns_stats, editions=None):
+    """
+    Aggregate namespace-level memory stats into per-node totals.
+
+    Only keys the server actually reported for a node are emitted, so columns
+    collapse on server versions that predate a stat rather than showing a
+    misleading zero.
+
+    Args:
+        ns_stats: {node: {namespace: {stat_name: value}}}
+        editions: {node: shortform edition} from convert_edition_to_shortform.
+            Enterprise and Federal reserve storage-engine=memory data in shmem
+            upfront, so data_total_bytes is folded into shmem_alloc_bytes.
+            Community allocates that data from the process heap, where
+            heap_allocated_bytes already counts it, so folding it would double
+            count. An unknown edition does not fold: silently overstating
+            allocation is the failure an operator cannot detect.
+
+    Only RAM-backed allocations are aggregated, on both the alloc and the used
+    side. index-type and sindex-type pmem and flash arenas live on devices, not
+    in memory, and are reported by 'info namespace' against their own capacity.
+
+    The component keys are not additive with the process heap: set index stages
+    are always heap allocated, and so is memory-engine data on Community.
+
+    total_alloc_bytes needs at least one 8.1.3 arena stat behind it.
+    data_alloc_bytes comes from data_total_bytes, which exists since 7.0, so
+    publishing a total from it alone renders a memory-engine node's Total Alloc
+    below its Total Used in the same row.
+
+    Returns:
+        {node: {stat_name: str}}. Possible keys: index_used_bytes,
+        sindex_used_bytes, set_index_used_bytes, data_in_memory_used_bytes,
+        shmem_alloc_bytes, pi_alloc_bytes, si_alloc_bytes, set_alloc_bytes,
+        data_alloc_bytes, total_alloc_bytes, total_used_bytes,
+        stop_writes_sys_memory_pct.
+    """
+    editions = editions or {}
+    result = {}
+
+    for node, namespaces in ns_stats.items():
+        if not isinstance(namespaces, dict):
+            continue
+
+        fold_data_into_shmem = editions.get(node) in (
+            constants.EDITION_ENTERPRISE,
+            constants.EDITION_FEDERAL,
+        )
+        totals = defaultdict(int)
+
+        for ns_data in namespaces.values():
+            if not isinstance(ns_data, dict):
+                continue
+
+            _accumulate_ns_memory(totals, ns_data, fold_data_into_shmem)
+            _accumulate_stop_writes_threshold(totals, ns_data)
+
+        for total_key, source_keys, required_keys in (
+            (
+                "total_alloc_bytes",
+                _NS_MEMORY_ALLOC_TOTAL_SOURCES,
+                _NS_MEMORY_ALLOC_ARENA_SOURCES,
+            ),
+            ("total_used_bytes", _NS_MEMORY_USED_TOTAL_SOURCES, None),
+        ):
+            present = [key for key in source_keys if key in totals]
+
+            if not present:
+                continue
+
+            if required_keys and not any(key in totals for key in required_keys):
+                continue
+
+            totals[total_key] = sum(totals[key] for key in present)
+
+        result[node] = {key: str(value) for key, value in totals.items()}
+
+    return result
+
+
+def node_reports_memory_alloc_stats(build):
+    """
+    Whether a build reports the 8.1.3 memory allocation statistics.
+
+    An unreadable build counts as not reporting: publishing an allocation total
+    for a node whose arenas are unknown overstates what asadm actually knows.
+    """
+    if not build or isinstance(build, Exception):
+        return False
+
+    try:
+        return version.LooseVersion(str(build)) >= version.LooseVersion(
+            constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION
+        )
+    except Exception:
+        return False
+
+
+def nodes_missing_memory_alloc_stats(builds):
+    """
+    The nodes in a build map that do not report the 8.1.3 allocation stats.
+
+    One predicate for the headline gate, the verbose gate, and the warning, so
+    a node whose Allocated Total is suppressed is always a node the warning
+    names. An unreadable build lands here too: it is a node asadm cannot vouch
+    for, not a node it knows is old.
+    """
+    return [
+        node
+        for node, build in (builds or {}).items()
+        if not node_reports_memory_alloc_stats(build)
+    ]
+
+
+def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
+    """
+    Build the per-node rows behind the 'info memory' headline table.
+
+    Args:
+        stats: per-node service stats, already through derive_memory_stats
+        configs: per-node service configs
+        ns_agg: output of aggregate_ns_memory_stats
+        builds: {node: build}, used to decide which nodes report allocation
+            stats at all. Omit to treat every node as reporting them.
+        nodes: restrict to these nodes, defaults to every node in stats
+
+    A row only carries a value its inputs support. capacity_bytes is the
+    tracked cgroup limit, an exact figure the kernel measured. The server
+    publishes no total-memory stat (SERVER-1546 tracks exposing one), and
+    asadm does not estimate one, so a node without a tracked limit renders
+    no Capacity or Alloc% and is reported to the caller instead.
+
+    A cgroup limit that exists but is not tracked is reported separately:
+    there the fix is enabling cgroup-mem-tracking, and free memory is
+    measured against the host rather than the cgroup that is actually
+    squeezing the process.
+
+    A node whose service payload came back empty lands in no cgroup bucket and
+    carries no allocation total: neither its limit nor its heap was observed.
+
+    The allocation total is omitted when the node's namespace stats never
+    arrived or its build predates the allocation stats, since heap alone would
+    render as an authoritative total that understates the node by whatever its
+    index arenas hold. Shmem alone understates it the same way, so an empty
+    service payload suppresses the total too.
+
+    Shmem is gated with the total on the version axis only: an empty service
+    payload suppresses the total but keeps Shmem, which is measured from the
+    namespace stats rather than the payload. On a pre-8.1.3 memory-engine
+    node the arenas are unknown but the folded data reservation is not, so a
+    populated Shmem cell would render a partial figure as a complete one and
+    let the operator reconstruct the suppressed total by addition. Heap stays
+    visible: it is real information on any version.
+
+    Returns:
+        (headline rows, nodes capped by an untracked cgroup, nodes with no
+        cgroup limit at all, nodes whose namespace stats are missing)
+    """
+    headline = {}
+    untracked_limits = []
+    no_cgroup_limits = []
+    missing_ns_stats = []
+
+    for node in stats if nodes is None else nodes:
+        node_stats = stats.get(node)
+
+        if not isinstance(node_stats, dict):
+            continue
+
+        node_configs = configs.get(node)
+
+        if not isinstance(node_configs, dict):
+            node_configs = {}
+
+        agg = ns_agg.get(node)
+        ns_known = isinstance(agg, dict)
+
+        if not ns_known:
+            missing_ns_stats.append(node)
+            agg = {}
+
+        alloc_known = builds is None or node_reports_memory_alloc_stats(
+            builds.get(node)
+        )
+
+        cgroup_tracked = (
+            str(node_configs.get("cgroup-mem-tracking", "")).lower() == "true"
+        )
+        cgroup_limit = int_or_zero(
+            node_stats.get("cgroup_memory_limit_effective_bytes")
+        )
+        capacity = cgroup_limit if cgroup_tracked else 0
+
+        if node_stats and capacity <= 0:
+            if cgroup_limit > 0:
+                untracked_limits.append(node)
+            elif alloc_known:
+                no_cgroup_limits.append(node)
+
+        shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
+        heap = max(0, int_or_zero(node_stats.get("heap_allocated_bytes")))
+        allocated = shmem + heap
+        row = {}
+
+        if capacity > 0:
+            row["capacity_bytes"] = str(capacity)
+
+        if heap > 0:
+            row["allocated_heap_bytes"] = str(heap)
+
+        if ns_known and alloc_known:
+            if shmem > 0:
+                row["allocated_shmem_bytes"] = str(shmem)
+
+            if node_stats and allocated > 0:
+                row["allocated_bytes"] = str(allocated)
+
+                if heap > 0:
+                    row["allocated_heap_pct"] = str(heap * 100 / allocated)
+
+                if capacity > 0:
+                    row["alloc_pct"] = str(allocated * 100 / capacity)
+
+        if "system_free_mem_pct" in node_stats:
+            row["free_pct"] = node_stats["system_free_mem_pct"]
+
+        if "stop_writes_sys_memory_pct" in agg:
+            row["stop_writes_sys_memory_pct"] = agg["stop_writes_sys_memory_pct"]
+
+        headline[node] = row
+
+    return headline, untracked_limits, no_cgroup_limits, missing_ns_stats
+
+
+def derive_memory_stats(stats):
+    """
+    Add derived memory keys to per-node service stats (mutates and returns).
+
+    Converts kbyte stats to bytes so byte converters render the right
+    magnitude, normalizes the cgroup limit, and divides the two cgroup byte
+    counts the server reports into a pct. A derived key is only added when its
+    inputs are present and valid, so absent columns collapse on older servers.
+
+    Nothing is estimated: total memory is never inferred from the free stats.
+    """
+    kb_to_bytes = {
+        "system_free_mem_kbytes": "system_free_mem_bytes",
+        "host_free_mem_kbytes": "host_free_mem_bytes",
+        "heap_allocated_kbytes": "heap_allocated_bytes",
+        "heap_active_kbytes": "heap_active_bytes",
+        "heap_mapped_kbytes": "heap_mapped_bytes",
+        "system_thp_mem_kbytes": "system_thp_mem_bytes",
+    }
+
+    for node_stats in stats.values():
+        if not isinstance(node_stats, dict):
+            continue
+
+        for src, dst in kb_to_bytes.items():
+            if src in node_stats:
+                node_stats[dst] = str(int_or_zero(node_stats[src]) * 1024)
+
+        if "cgroup_memory_limit_bytes" in node_stats:
+            limit = cgroup_limit_or_zero(node_stats["cgroup_memory_limit_bytes"])
+
+            if limit > 0:
+                node_stats["cgroup_memory_limit_effective_bytes"] = str(limit)
+
+                if "cgroup_memory_used_bytes" in node_stats:
+                    used = int_or_zero(node_stats["cgroup_memory_used_bytes"])
+
+                    if used > 0:
+                        node_stats["cgroup_memory_used_pct"] = str(used * 100 / limit)
+
+    return stats
+
+
 def first_key_to_upper(data):
     if not data or not isinstance(data, dict):
         return data
@@ -669,6 +1100,47 @@ def has_content(value: Any) -> bool:
     return value is not None
 
 
+def stanza_has_server_data(section, stanza) -> bool:
+    """Whether one bundle stanza holds data the server returned.
+
+    node_names and ip are derived locally from the node object without an info
+    call, so they are populated even when every meta_data call failed; counting
+    them would make a fully-failed node read as having data (TOOLS-3596). Every
+    reader that decides whether a stanza is empty goes through here so the whole
+    tool agrees on what empty means.
+    """
+    if section == constants.CollectinfoSection.METADATA:
+        if not isinstance(stanza, dict):
+            return False
+
+        return any(
+            has_content(value)
+            for meta_key, value in stanza.items()
+            if meta_key not in constants.COLLECTINFO_LOCALLY_DERIVED_META_KEYS
+        )
+
+    return has_content(stanza)
+
+
+def as_stat_has_aerospike_data(as_stat) -> bool:
+    """Whether a bundle node's as_stat holds any server-returned data.
+
+    Shared by the collector, which decides from it which nodes returned nothing,
+    and the analyzer, which decides from it which nodes are empty. Two copies had
+    already drifted in their guards, and a node counted as empty by one and not
+    the other produces contradictory findings about the same bundle.
+    """
+    if not as_stat:
+        return False
+
+    try:
+        return any(
+            stanza_has_server_data(key, section) for key, section in as_stat.items()
+        )
+    except Exception:
+        return False
+
+
 def pct_to_value(data, d_pct):
     """
     Function takes dictionary with base value, and dictionary with percentage and converts percentage to value.
@@ -717,13 +1189,13 @@ def convert_edition_to_shortform(edition: str) -> str:
     edition_lower = edition.lower()
 
     if "enterprise" in edition_lower:
-        return "Enterprise"
+        return constants.EDITION_ENTERPRISE
     elif "community" in edition_lower:
-        return "Community"
+        return constants.EDITION_COMMUNITY
     elif "federal" in edition_lower:
-        return "Federal"
+        return constants.EDITION_FEDERAL
 
-    return "N/E"
+    return constants.EDITION_UNKNOWN
 
 
 def write_to_file(file, data):

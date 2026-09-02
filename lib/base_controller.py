@@ -252,6 +252,8 @@ def create_disabled_controller(controller, command_):
 
 
 class ShellException(Exception):
+    carries_its_own_message = True
+
     def __call__(self, *ignore):
         # act as a callable and raise self
         raise self
@@ -261,7 +263,8 @@ class BaseController(object):
     # Create static instances of view / health_checker / asadm_version / logger
     view = view.CliView()
     health_checker = HealthChecker()
-    asadm_version: str | None
+    asadm_version: str = ""
+    asadm_build: str = ""
 
     def _init_commands(self):
         command_re = re.compile("^(do_(.*))$")

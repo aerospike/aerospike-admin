@@ -105,6 +105,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
         self,
         admin_version: str,
         seeds: list[Addr_Port_TLSName],
+        admin_build: str = "",
         user: str | None = None,
         password: str | None = None,
         auth_mode=AuthMode.INTERNAL,
@@ -163,11 +164,13 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     return
 
                 self.ctrl = CollectinfoRootController(
-                    admin_version, clinfo_path=log_path
+                    admin_version, clinfo_path=log_path, asadm_build=admin_build
                 )
 
                 if not execute_only_mode:
                     self.intro = str(self.ctrl.log_handler)
+                else:
+                    self.ctrl.log_handler.print_diagnostics_banner()
 
             else:
                 if user is not None:
@@ -194,6 +197,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     only_connect_seed,
                     timeout=timeout,
                     asadm_version=admin_version,
+                    asadm_build=admin_build,
                     user_agent=user_agent,
                 )
 
@@ -849,6 +853,7 @@ async def main():
     shell: AerospikeShell = await AerospikeShell(
         admin_version,
         seeds,
+        admin_build=asadm_build,
         user=cli_args.user,
         password=cli_args.password,
         auth_mode=cli_args.auth,
