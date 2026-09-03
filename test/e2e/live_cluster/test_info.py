@@ -164,8 +164,9 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         This test asserts <b> info memory </b> output heading, the headline
         columns, and the allocation values. The fixture pins server 8.1.3+
         (lib.SERVER_TAG), so the arena stats and every allocation column must
-        render; Capacity still needs the container to report a cgroup limit
-        with cgroup-mem-tracking enabled, so it is not asserted here.
+        render; Capacity still needs the container's server to report
+        host_total_mem_kbytes (SERVER-1546) or a tracked cgroup limit, so it is
+        not asserted here.
         """
         exp_heading = "Memory Information"
         always_present = [

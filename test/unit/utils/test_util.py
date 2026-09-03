@@ -1259,11 +1259,12 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         )
 
     def test_capacity_is_the_tracked_cgroup_limit(self):
-        headline, untracked, no_cgroup, missing = self.headline(
+        headline, untracked, no_capacity, missing = self.headline(
             {
                 "node1": {
                     "host_free_mem_kbytes": "8000000",
                     "host_free_mem_pct": "50",
+                    "host_total_mem_kbytes": "16000000",
                     "cgroup_memory_limit_bytes": "10000",
                 }
             },
@@ -1272,34 +1273,52 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         )
         self.assertEqual(headline["node1"]["capacity_bytes"], "10000")
         self.assertEqual(untracked, [])
-        self.assertEqual(no_cgroup, [])
+        self.assertEqual(no_capacity, [])
         self.assertEqual(missing, [])
 
-    def test_untracked_cgroup_limit_omits_capacity_and_warns(self):
-        headline, untracked, no_cgroup, _ = self.headline(
+    def test_capacity_is_the_host_total_without_a_cgroup_limit(self):
+        headline, untracked, no_capacity, _ = self.headline(
+            {"node1": {"host_total_mem_kbytes": "16000000"}},
+            configs={"node1": {}},
+            ns_agg={"node1": {}},
+        )
+        self.assertEqual(headline["node1"]["capacity_bytes"], str(16000000 * 1024))
+        self.assertEqual(untracked, [])
+        self.assertEqual(no_capacity, [])
+
+    def test_untracked_cgroup_limit_falls_back_to_host_total_and_warns(self):
+        """
+        An untracked limit still caps the node, but asadm has no measurement
+        of it, so Capacity reports what the server did measure - the host
+        total - and the node is named so the caller can say which figure it
+        got.
+        """
+        headline, untracked, no_capacity, _ = self.headline(
             {
                 "node1": {
                     "host_free_mem_kbytes": "8000000",
                     "host_free_mem_pct": "50",
+                    "host_total_mem_kbytes": "16000000",
                     "cgroup_memory_limit_bytes": "10000",
                 }
             },
             configs={"node1": {"cgroup-mem-tracking": "false"}},
             ns_agg={"node1": {}},
         )
-        self.assertNotIn("capacity_bytes", headline["node1"])
+        self.assertEqual(headline["node1"]["capacity_bytes"], str(16000000 * 1024))
         self.assertEqual(untracked, ["node1"])
-        self.assertEqual(no_cgroup, [])
+        self.assertEqual(no_capacity, [])
 
     def test_capacity_is_never_estimated_from_free_stats(self):
         """
-        The server reports no total-memory stat, and asadm must not invent
-        one from the free pair: a node without a tracked cgroup limit gets
-        no Capacity and no Alloc%, and is reported so the caller can say why.
+        Capacity comes from a reported total (host_total_mem_kbytes) or a
+        tracked cgroup limit, never from the free pair: a node reporting only
+        free memory gets no Capacity and no Alloc%, and is reported so the
+        caller can say why.
         """
         for prefix in ("host", "system"):
             with self.subTest(prefix=prefix):
-                headline, untracked, no_cgroup, _ = self.headline(
+                headline, untracked, no_capacity, _ = self.headline(
                     {
                         "node1": {
                             f"{prefix}_free_mem_kbytes": "8000000",
@@ -1313,13 +1332,13 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
                 self.assertNotIn("capacity_bytes", headline["node1"])
                 self.assertNotIn("alloc_pct", headline["node1"])
                 self.assertEqual(untracked, [])
-                self.assertEqual(no_cgroup, ["node1"])
+                self.assertEqual(no_capacity, ["node1"])
                 self.assertEqual(
                     headline["node1"]["allocated_bytes"], str(1000 * 1024 + 500)
                 )
 
     def test_tracked_cgroup_limit_is_used_despite_free_stats(self):
-        headline, _, no_cgroup, _ = self.headline(
+        headline, _, no_capacity, _ = self.headline(
             {
                 "node1": {
                     "system_free_mem_kbytes": "8000000",
@@ -1333,21 +1352,22 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         )
         self.assertEqual(headline["node1"]["capacity_bytes"], "10000")
         self.assertEqual(float(headline["node1"]["alloc_pct"]), 25.0)
-        self.assertEqual(no_cgroup, [])
+        self.assertEqual(no_capacity, [])
 
-    def test_untracked_warning_covers_every_suppressed_capacity(self):
+    def test_untracked_warning_covers_every_unreadable_tracking_config(self):
         """
-        Whatever suppresses Capacity must also name the node, in exactly one
-        list. An unreadable tracking config is still an untracked limit, and
-        staying silent there would leave a blank Capacity with nothing
-        explaining it.
+        A limit asadm cannot attribute to the cgroup must name the node, in
+        exactly one list. An unreadable tracking config is still an untracked
+        limit, and staying silent there would leave a host-wide Capacity next
+        to a cgroup-capped node with nothing explaining it.
         """
         for configs in ({"node1": {}}, {"node1": {"cgroup-mem-tracking": "false"}}, {}):
             with self.subTest(configs=configs):
-                headline, untracked, no_cgroup, _ = self.headline(
+                headline, untracked, no_capacity, _ = self.headline(
                     {
                         "node1": {
                             "cgroup_memory_limit_bytes": "10000",
+                            "host_total_mem_kbytes": "16000000",
                             "system_free_mem_kbytes": "8000000",
                             "system_free_mem_pct": "50",
                         }
@@ -1356,11 +1376,31 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
                     ns_agg={"node1": {}},
                 )
                 self.assertEqual(untracked, ["node1"])
-                self.assertEqual(no_cgroup, [])
-                self.assertNotIn("capacity_bytes", headline["node1"])
+                self.assertEqual(no_capacity, [])
+                self.assertEqual(
+                    headline["node1"]["capacity_bytes"], str(16000000 * 1024)
+                )
 
-    def test_cgroup_sentinel_does_not_become_capacity(self):
-        headline, untracked, no_cgroup, _ = self.headline(
+    def test_cgroup_sentinel_falls_back_to_host_total(self):
+        """
+        An uncapped cgroup is not a capacity, but the host total still is.
+        """
+        headline, untracked, no_capacity, _ = self.headline(
+            {
+                "node1": {
+                    "cgroup_memory_limit_bytes": "9223372036854771712",
+                    "host_total_mem_kbytes": "16000000",
+                }
+            },
+            configs={"node1": {"cgroup-mem-tracking": "true"}},
+            ns_agg={"node1": {}},
+        )
+        self.assertEqual(headline["node1"]["capacity_bytes"], str(16000000 * 1024))
+        self.assertEqual(untracked, [])
+        self.assertEqual(no_capacity, [])
+
+    def test_cgroup_sentinel_without_host_total_leaves_capacity_blank(self):
+        headline, untracked, no_capacity, _ = self.headline(
             {"node1": {"cgroup_memory_limit_bytes": "9223372036854771712"}},
             configs={"node1": {"cgroup-mem-tracking": "true"}},
             ns_agg={"node1": {}},
@@ -1368,23 +1408,23 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertNotIn("capacity_bytes", headline["node1"])
         self.assertNotIn("alloc_pct", headline["node1"])
         self.assertEqual(untracked, [])
-        self.assertEqual(no_cgroup, ["node1"])
+        self.assertEqual(no_capacity, ["node1"])
 
-    def test_old_build_without_cgroup_stats_is_not_reported_as_limitless(self):
+    def test_old_build_is_not_reported_as_limitless(self):
         """
-        A pre-8.1.3 node cannot report cgroup_memory_limit_bytes at all, so
-        its absence is no evidence about the node's cgroup. The build warning
-        already names the node; a no-limit warning on top would assert a fact
-        asadm never observed.
+        A pre-8.1.3 node reports neither cgroup_memory_limit_bytes nor
+        host_total_mem_kbytes, so Capacity is blank and the node is named for
+        that reason alone. Its cgroup is unobserved, so it is never called
+        untracked.
         """
-        headline, untracked, no_cgroup, _ = util.derive_memory_headline(
+        headline, untracked, no_capacity, _ = util.derive_memory_headline(
             util.derive_memory_stats({"n1": {"heap_allocated_kbytes": "1000"}}),
             {},
             {"n1": {"shmem_alloc_bytes": "500"}},
             builds={"n1": "8.1.2.0"},
         )
         self.assertEqual(untracked, [])
-        self.assertEqual(no_cgroup, [])
+        self.assertEqual(no_capacity, ["n1"])
         self.assertNotIn("capacity_bytes", headline["n1"])
 
     def test_allocated_is_shmem_plus_heap(self):
@@ -1481,24 +1521,24 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertNotIn("allocated_heap_pct", headline["node1"])
         self.assertNotIn("allocated_heap_bytes", headline["node1"])
 
-    def test_empty_service_payload_yields_no_cgroup_bucket_and_no_total(self):
+    def test_empty_service_payload_yields_no_capacity_bucket_and_no_total(self):
         """A node that answered with {} observed neither a cgroup limit nor a
         heap, so shmem alone must not render as its allocation total."""
-        headline, untracked, no_cgroup, _ = self.headline(
+        headline, untracked, no_capacity, _ = self.headline(
             {"node1": {}},
             ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
             nodes=["node1"],
         )
-        self.assertEqual(no_cgroup, [])
+        self.assertEqual(no_capacity, [])
         self.assertEqual(untracked, [])
         self.assertNotIn("allocated_bytes", headline["node1"])
         self.assertEqual(headline["node1"]["allocated_shmem_bytes"], "500")
 
     def test_node_absent_from_stats_gets_no_row(self):
-        headline, untracked, no_cgroup, _ = self.headline(
+        headline, untracked, no_capacity, _ = self.headline(
             {}, ns_agg={"node1": {"shmem_alloc_bytes": "500"}}, nodes=["node1"]
         )
-        self.assertEqual(no_cgroup, [])
+        self.assertEqual(no_capacity, [])
         self.assertEqual(untracked, [])
         self.assertNotIn("node1", headline)
 

@@ -2811,6 +2811,7 @@ class InfoMemoryViewTest(unittest.TestCase):
             "1.1.1.1": {
                 "host_free_mem_kbytes": "8000000",
                 "host_free_mem_pct": "50",
+                "host_total_mem_kbytes": "16000000",
                 "heap_allocated_kbytes": "0",
                 "cgroup_memory_limit_bytes": "10000",
             }
@@ -2831,7 +2832,7 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertEqual(row["allocated_bytes"], "2500")
         self.assertEqual(float(row["alloc_pct"]), 25.0)
 
-    def test_info_memory_capacity_ignores_cgroup_limit_when_untracked(self):
+    def test_info_memory_capacity_is_host_total_when_untracked(self):
         self.set_nodes("1.1.1.1")
 
         CliView.info_memory(
@@ -2841,14 +2842,34 @@ class InfoMemoryViewTest(unittest.TestCase):
             self.cluster_mock,
         )
 
+        host_total = 16000000 * 1024
         row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
-        self.assertNotIn("capacity_bytes", row)
-        self.assertNotIn("alloc_pct", row)
+        self.assertEqual(row["capacity_bytes"], str(host_total))
+        self.assertEqual(float(row["alloc_pct"]), 2500 * 100 / host_total)
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("cgroup limit is not tracked", warnings[0])
+        self.assertIn("cgroup-mem-tracking is off", warnings[0])
         self.assertIn("node1", warnings[0])
+
+    def test_info_memory_capacity_is_host_total_without_a_cgroup_limit(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "host_total_mem_kbytes": "16000000",
+                    "heap_allocated_kbytes": "0",
+                }
+            },
+            {"1.1.1.1": {}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "2500"}},
+            self.cluster_mock,
+        )
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertEqual(row["capacity_bytes"], str(16000000 * 1024))
+        self.assertEqual(self.warnings(), [])
 
     def test_info_memory_warnings_never_reach_stdout(self):
         self._stop_patches(self.print_result_patcher, self.render_patcher)
