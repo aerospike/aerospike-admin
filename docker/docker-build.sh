@@ -81,6 +81,8 @@ OPTIONS:
     -s, --compute-sha       Download each .deb from the resolved URL to compute SHA256
                             (only meaningful without --packages-dir; otherwise SHA is
                             computed from the local file).
+    -L, --latest            Also tag latest, <major> and <major>.<minor>. GA versions only,
+                            and only with -p (multi-arch) or -M.
     -n, --no-cache          Disable Docker build cache
     -N, --dry-run           Resolve URLs/SHAs and print, then exit (no bake, no build).
     -h, --help              Show this help message
@@ -178,6 +180,13 @@ find_package() {
 # stale ARGs into the bake file.
 function _emit_args() {
   local pairs=("$@")
+  # OCI label values are the same for every target, so they are appended here
+  # instead of being repeated at each call site.
+  pairs+=(
+    IMAGE_VERSION  "${IMAGE_VERSION}"
+    IMAGE_REVISION "${IMAGE_REVISION}"
+    IMAGE_CREATED  "${IMAGE_CREATED}"
+  )
   local i n=${#pairs[@]}
   local emitted=()
   for ((i = 0; i < n; i += 2)); do
@@ -192,6 +201,16 @@ function _emit_args() {
     echo "    ${emitted[$i]} = \"${emitted[$((i + 1))]}\""
   done
   echo "  }"
+}
+
+# _emit_attestations: provenance + SBOM, for push targets only. The docker
+# exporter (`bake --load`, used by the test targets) cannot carry attestations,
+# so emitting them there would fail the build.
+function _emit_attestations() {
+  echo "  attest = ["
+  echo "    \"type=provenance,mode=max\","
+  echo "    \"type=sbom\""
+  echo "  ]"
 }
 
 # _emit_tags TAG [TAG ...]
@@ -252,6 +271,7 @@ function _emit_push_target() {
     ASADM_ARM64_SHA256 "${ASADM_ARM64_SHA256}" \
     ASADM_LOCAL_PKG_AMD64 "${local_pkg_amd64}" \
     ASADM_LOCAL_PKG_ARM64 "${local_pkg_arm64}"
+  _emit_attestations
   _emit_tags "${tags[@]}"
   echo "}"
   echo ""
@@ -278,6 +298,7 @@ function _emit_single_arch_push_target() {
       ASADM_ARM64_SHA256 "${ASADM_ARM64_SHA256}" \
       ASADM_LOCAL_PKG_ARM64 "${local_pkg}"
   fi
+  _emit_attestations
   _emit_tags "${tags[@]}"
   echo "}"
   echo ""
@@ -296,6 +317,18 @@ function _emit_group() {
 }
 
 # ---------------------------------------------------------------------------
+# moving_tags: the rolling tags a GA release publishes alongside its exact
+# version -- latest, <major>, <major>.<minor>. Guarded by --latest, which
+# refuses an rcN version, so a pre-release can never move `latest`.
+function moving_tags() {
+  local major minor
+  major="${PKG_VERSION%%.*}"
+  minor="${PKG_VERSION#*.}"
+  minor="${minor%%.*}"
+  echo "latest ${major} ${major}.${minor}"
+}
+
+# ---------------------------------------------------------------------------
 # run_manifest_mode: stitch per-arch tags into multi-arch manifest(s)
 # Requires global VERSION, REGISTRY_PREFIXES
 # ---------------------------------------------------------------------------
@@ -307,8 +340,12 @@ function run_manifest_mode() {
     src_arm64="${reg}/aerospike-asadm:${IMAGE_TAG}-arm64"
     target_tag="${reg}/aerospike-asadm:${IMAGE_TAG}"
     log_info "imagetools create ${target_tag}"
+    local create_args=(-t "${target_tag}")
+    if [[ "${MOVING_TAGS}" == true ]]; then
+      for mt in $(moving_tags); do create_args+=(-t "${reg}/aerospike-asadm:${mt}"); done
+    fi
     docker buildx imagetools create \
-      -t "${target_tag}" \
+      "${create_args[@]}" \
       "${src_amd64}" \
       "${src_arm64}"
     docker buildx imagetools inspect "${target_tag}"
@@ -364,6 +401,9 @@ function generate_bake() {
         tags+=("${reg}/aerospike-asadm:${IMAGE_TAG}")
         if [[ -n "${TIMESTAMP}" ]]; then
           tags+=("${reg}/aerospike-asadm:${IMAGE_TAG}-${TIMESTAMP}")
+        fi
+        if [[ "${MOVING_TAGS}" == true ]]; then
+          for mt in $(moving_tags); do tags+=("${reg}/aerospike-asadm:${mt}"); done
         fi
       done
       _emit_push_target "push" "${LOCAL_PKG_AMD64}" "${LOCAL_PKG_ARM64}" "${tags[@]}"
@@ -481,6 +521,10 @@ TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
 REGISTRY_PREFIXES=()
 ACTIVE_ARCHES=()
 PUSH_SINGLE_ARCH=false
+MOVING_TAGS=false
+IMAGE_VERSION=""
+IMAGE_REVISION="${IMAGE_REVISION:-}"
+IMAGE_CREATED="${IMAGE_CREATED:-}"
 
 PACKAGES_DIR=""
 DEB_BASE_URL="${DEFAULT_DEB_BASE_URL}"
@@ -521,6 +565,7 @@ function main() {
     --deb-base-url)       DEB_BASE_URL="$2"        ; shift 2 ;;
     -T | --timestamp)     TIMESTAMP="$2"           ; shift 2 ;;
     -s | --compute-sha)   COMPUTE_SHA=true         ; shift ;;
+    -L | --latest)        MOVING_TAGS=true         ; shift ;;
     -n | --no-cache)      no_cache=true            ; shift ;;
     -N | --dry-run)       dry_run=true             ; shift ;;
     -h | --help)      usage ; exit 0 ;;
@@ -550,6 +595,16 @@ function main() {
     ITERATION=$("${pkg_release_sh}" "${VERSION}" iteration)
   fi
   IMAGE_TAG="${PKG_VERSION}-${ITERATION}"
+
+  # OCI label values. Overridable from the environment so a rebuild of the same
+  # commit can reproduce the same labels.
+  IMAGE_VERSION="${IMAGE_TAG}"
+  if [[ -z "${IMAGE_REVISION}" ]]; then
+    IMAGE_REVISION="$(git -C "${SCRIPT_DIR}" rev-parse HEAD 2>/dev/null || true)"
+  fi
+  if [[ -z "${IMAGE_CREATED}" ]]; then
+    IMAGE_CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
 
   # Default registry
   if [[ ${#REGISTRY_PREFIXES[@]} -eq 0 ]]; then REGISTRY_PREFIXES=("aerospike"); fi
@@ -587,6 +642,23 @@ function main() {
     exit 1
   fi
 
+  # `latest` and the rolling major/minor tags mean "the current GA release", so
+  # a pre-release must never move them.
+  if [[ "${MOVING_TAGS}" == true ]]; then
+    if [[ "${VERSION}" == *-rc* ]]; then
+      log_error "--latest refuses a pre-release version (${VERSION}); rolling tags are GA-only."
+      exit 1
+    fi
+    if [[ "${mode}" == "test" ]]; then
+      log_error "--latest applies to push (-p) and manifest (-M) modes only."
+      exit 1
+    fi
+    if [[ "${mode}" == "push" && ${#ACTIVE_ARCHES[@]} -eq 1 ]]; then
+      log_error "--latest refuses a single-arch push; rolling tags belong on the multi-arch manifest (-M)."
+      exit 1
+    fi
+  fi
+
   if [[ "${mode}" == "manifest" ]]; then
     run_manifest_mode
     exit 0
@@ -613,7 +685,9 @@ function main() {
   fi
 
   if [[ "${dry_run}" == true ]]; then
-    log_info "Dry run: skipping bake generation and Docker build."
+    log_info "Dry run: generating ${BAKE_FILE}, skipping the build."
+    generate_bake
+    cat "${BAKE_FILE}"
     exit 0
   fi
 

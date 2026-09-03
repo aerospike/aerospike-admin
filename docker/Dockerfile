@@ -68,11 +68,55 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
     if [ -n "${PKG_SHA}" ] && [ "${PKG_SHA}" != "PLACEHOLDER" ]; then \
         echo "${PKG_SHA}  /tmp/asadm.deb" | sha256sum -c -; \
     fi && \
-    apt-get install -y --no-install-recommends /tmp/asadm.deb && \
+    apt-get install -y --no-install-recommends ca-certificates tini /tmp/asadm.deb && \
+    PKG_NAME="$(dpkg-deb -f /tmp/asadm.deb Package)" && \
+    PKG_VERSION="$(dpkg-query -W -f='${Version}' "${PKG_NAME}")" && \
+    mkdir -p /usr/local/share/aerospike && \
+    dpkg-query -L "${PKG_NAME}" \
+      | { grep -E '^/usr/(local/)?bin/.' || true; } \
+      | while read -r f; do \
+            if [ -f "${f}" ] && [ -x "${f}" ]; then basename "${f}"; fi; \
+        done \
+      | sort -u > /usr/local/share/aerospike/tools && \
+    if [ ! -s /usr/local/share/aerospike/tools ]; then \
+        echo "no tool binaries found in ${PKG_NAME}" >&2; exit 1; \
+    fi && \
+    printf '%s image (%s %s)\n' "${PKG_NAME}" "${PKG_NAME}" "${PKG_VERSION}" \
+      > /usr/local/share/aerospike/image-info && \
+    groupadd --system --gid 10001 aerospike && \
+    useradd --system --uid 10001 --gid 10001 --create-home \
+      --home-dir /home/aerospike --shell /bin/bash aerospike && \
     rm -f /tmp/asadm.deb && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # .deb installs /usr/bin/asadm and /usr/bin/asinfo symlinks → the bundle.
 # Both are on PATH; default to asadm, swap with `docker run IMAGE asinfo …`.
-CMD ["asadm"]
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# tini is PID 1 so the tool runs as a child, where the kernel's default signal
+# dispositions apply: `docker stop` on a tool that installs no SIGTERM handler
+# (asbench, aql, asadm) exits at once instead of waiting out the timeout and
+# being SIGKILLed. It also reaps orphans.
+#
+# The entrypoint script is the help entrypoint: it runs the binary named as the
+# first argument, and prints usage listing the binaries this image ships when
+# the caller names none or names something else. `--entrypoint bash` still gives
+# a shell. No CMD: a default binary would hide the usage message, and images
+# that ship several binaries have no correct default.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+
+# The image runs as root so writes into bind-mounted directories keep working.
+# An unprivileged `aerospike` user (uid/gid 10001) is present for callers that
+# need one: `docker run --user 10001:10001 ...`, or runAsUser in a pod spec.
+
+# Dynamic labels last: they change every build, so anything after them would
+# have to rebuild with them.
+ARG IMAGE_VERSION=""
+ARG IMAGE_REVISION=""
+ARG IMAGE_CREATED=""
+
+LABEL org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.created="${IMAGE_CREATED}"

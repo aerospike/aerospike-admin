@@ -943,6 +943,36 @@ jobs:
           docker run --rm --entrypoint sh "${IMAGE}" -c 'test -f /etc/aerospike/astools.conf' \
             || { echo "ERROR: /etc/aerospike/astools.conf missing in image" >&2; exit 1; }
 
+          # Entrypoint contract (TOOLS-4360): naming the binary is the convention,
+          # so an image invoked without one has to say so rather than fail with
+          # runc's "executable file not found in $PATH".
+          usage=$(docker run --rm "${IMAGE}")
+          for bin in asadm asinfo; do
+            grep -qE "^  docker run --rm <image> ${bin}( |\[)" <<<"${usage}" \
+              || { echo "ERROR: the usage message does not list ${bin}" >&2; exit 1; }
+          done
+          if docker run --rm "${IMAGE}" --version >/dev/null 2>&1; then
+            echo "ERROR: an unrecognised first argument must exit non-zero" >&2
+            exit 1
+          fi
+          docker run --rm --entrypoint bash "${IMAGE}" -c 'true' \
+            || { echo "ERROR: --entrypoint bash no longer gives a shell" >&2; exit 1; }
+
+          # tini as PID 1 is what makes `docker stop` exit 143 rather than being
+          # SIGKILLed at the timeout, for tools that install no SIGTERM handler.
+          [[ "$(docker inspect -f '{{index .Config.Entrypoint 0}}' "${IMAGE}")" == "/usr/bin/tini" ]] \
+            || { echo "ERROR: tini is not PID 1" >&2; exit 1; }
+
+          # debian:trixie-slim ships no CA bundle, and asbackup's cloud storage
+          # (and any HTTPS from inside the image) needs one.
+          docker run --rm --entrypoint sh "${IMAGE}" -c 'test -s /etc/ssl/certs/ca-certificates.crt' \
+            || { echo "ERROR: the image has no CA certificate bundle" >&2; exit 1; }
+
+          # Unprivileged uid for `--user` / runAsUser callers. The image still
+          # defaults to root so bind-mounted writes keep working.
+          docker run --rm --user 10001:10001 --entrypoint id "${IMAGE}" -un | grep -qx aerospike \
+            || { echo "ERROR: uid 10001 is not the aerospike user" >&2; exit 1; }
+
           if [[ -n "${SNYK_TOKEN:-}" ]]; then
             snyk container test "${IMAGE}" \
               --platform=linux/${{ matrix.arch }} \
