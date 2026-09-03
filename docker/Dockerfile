@@ -40,6 +40,15 @@ LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Aerospike"
 
+# Restores the UTF-8 ctype the pre-13.0.3 entrypoint wrapper exported, so asadm
+# renders µ in micro-benchmark output. ENV also covers docker exec and
+# --entrypoint overrides, which the wrapper never did. C.UTF-8 is built into
+# glibc, so no locales package is needed; LC_CTYPE is pinned alongside LANG
+# because it is the only locale the image has, so a LANG override to an
+# ungenerated one would otherwise drop back to ASCII.
+ENV LANG=C.UTF-8 \
+    LC_CTYPE=C.UTF-8
+
 SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 # Fetch (or copy) → verify SHA → apt-install the .deb. apt resolves any
