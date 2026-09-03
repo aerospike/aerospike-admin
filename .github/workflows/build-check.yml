@@ -179,3 +179,47 @@ jobs:
           fi
           echo "Installer build succeeded:"
           find pkg/target -maxdepth 2 -name "*.${{ matrix.pkg }}" -type f
+
+  docker-lint:
+    name: Docker image lint (hadolint, shellcheck, tag policy)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Lint the Dockerfile
+        run: |
+          set -euo pipefail
+          docker run --rm -i hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e hadolint - < docker/Dockerfile
+
+      - name: Lint the docker shell scripts
+        run: shellcheck docker/docker-entrypoint.sh docker/docker-build.sh
+
+      # The rolling tags mean "the current GA release", so the guard that keeps
+      # a pre-release from moving them is asserted here rather than discovered
+      # during a release.
+      - name: Assert the rolling-tag policy
+        run: |
+          set -euo pipefail
+          if docker/docker-build.sh -p -v 9.9.9-rc1 -N -L >/dev/null 2>&1; then
+            echo "::error::--latest accepted a pre-release version" >&2
+            exit 1
+          fi
+          ga=$(docker/docker-build.sh -p -v 9.9.9 -N -L)
+          for want in "aerospike-asadm:latest" "aerospike-asadm:9" "aerospike-asadm:9.9"; do
+            grep -qF -- "${want}" <<<"${ga}" \
+              || { echo "::error::GA bake file is missing tag ${want}" >&2; exit 1; }
+          done
+          rc=$(docker/docker-build.sh -p -v 9.9.9-rc1 -N)
+          if grep -qF -- "aerospike-asadm:latest" <<<"${rc}"; then
+            echo "::error::a pre-release bake file carries the latest tag" >&2
+            exit 1
+          fi
+          echo "OK: latest / major / major.minor are GA-only"
