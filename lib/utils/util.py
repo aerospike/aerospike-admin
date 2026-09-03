@@ -481,9 +481,9 @@ def cgroup_limit_or_zero(value):
     An uncapped cgroup reports either 'max' (v2), a negative value, or a
     near-int64 sentinel (v1), and CGROUP_MEMORY_NO_LIMIT_THRESHOLD catches every
     one of those without reference to anything else. Any other value the kernel
-    reports is a measurement and is reported as given, even when it exceeds host
-    RAM: that is a real misconfiguration the operator needs to see, and asadm
-    has no total-memory figure of its own to check it against.
+    reports is a measurement and is reported as given, even when it exceeds the
+    host total the server reports: that is a real misconfiguration the operator
+    needs to see, not something to clamp away.
     """
     limit = int_or_zero(value)
 
@@ -701,18 +701,18 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         nodes: restrict to these nodes, defaults to every node in stats
 
     A row only carries a value its inputs support. capacity_bytes is the
-    tracked cgroup limit, an exact figure the kernel measured. The server
-    publishes no total-memory stat (SERVER-1546 tracks exposing one), and
-    asadm does not estimate one, so a node without a tracked limit renders
-    no Capacity or Alloc% and is reported to the caller instead.
+    tracked cgroup limit when the kernel measured one, else host_total_mem_bytes,
+    the MemTotal the server reports (SERVER-1546). Both are measurements, not
+    estimates: a node that reports neither renders no Capacity or Alloc% and is
+    reported to the caller instead.
 
-    A cgroup limit that exists but is not tracked is reported separately:
-    there the fix is enabling cgroup-mem-tracking, and free memory is
-    measured against the host rather than the cgroup that is actually
-    squeezing the process.
+    A cgroup limit that exists but is not tracked is reported separately: there
+    Capacity falls back to the host total, which is larger than the limit
+    actually squeezing the process, and free memory is measured against the host
+    for the same reason. The fix is enabling cgroup-mem-tracking.
 
-    A node whose service payload came back empty lands in no cgroup bucket and
-    carries no allocation total: neither its limit nor its heap was observed.
+    A node whose service payload came back empty carries no capacity and no
+    allocation total: neither its limit nor its heap was observed.
 
     The allocation total is omitted when the node's namespace stats never
     arrived or its build predates the allocation stats, since heap alone would
@@ -730,11 +730,11 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
 
     Returns:
         (headline rows, nodes capped by an untracked cgroup, nodes with no
-        cgroup limit at all, nodes whose namespace stats are missing)
+        capacity figure at all, nodes whose namespace stats are missing)
     """
     headline = {}
     untracked_limits = []
-    no_cgroup_limits = []
+    no_capacity = []
     missing_ns_stats = []
 
     for node in stats if nodes is None else nodes:
@@ -765,13 +765,15 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         cgroup_limit = int_or_zero(
             node_stats.get("cgroup_memory_limit_effective_bytes")
         )
-        capacity = cgroup_limit if cgroup_tracked else 0
+        host_total = max(0, int_or_zero(node_stats.get("host_total_mem_bytes")))
+        capacity = cgroup_limit if cgroup_tracked and cgroup_limit > 0 else host_total
 
-        if node_stats and capacity <= 0:
-            if cgroup_limit > 0:
+        if node_stats:
+            if cgroup_limit > 0 and not cgroup_tracked:
                 untracked_limits.append(node)
-            elif alloc_known:
-                no_cgroup_limits.append(node)
+
+            if capacity <= 0:
+                no_capacity.append(node)
 
         shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
         heap = max(0, int_or_zero(node_stats.get("heap_allocated_bytes")))
@@ -805,7 +807,7 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
 
         headline[node] = row
 
-    return headline, untracked_limits, no_cgroup_limits, missing_ns_stats
+    return headline, untracked_limits, no_capacity, missing_ns_stats
 
 
 def derive_memory_stats(stats):
@@ -817,11 +819,13 @@ def derive_memory_stats(stats):
     counts the server reports into a pct. A derived key is only added when its
     inputs are present and valid, so absent columns collapse on older servers.
 
-    Nothing is estimated: total memory is never inferred from the free stats.
+    Nothing is estimated: host_total_mem_bytes is the server's own MemTotal
+    reading, never inferred from the free stats.
     """
     kb_to_bytes = {
         "system_free_mem_kbytes": "system_free_mem_bytes",
         "host_free_mem_kbytes": "host_free_mem_bytes",
+        "host_total_mem_kbytes": "host_total_mem_bytes",
         "heap_allocated_kbytes": "heap_allocated_bytes",
         "heap_active_kbytes": "heap_active_bytes",
         "heap_mapped_kbytes": "heap_mapped_bytes",

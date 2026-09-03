@@ -97,8 +97,9 @@ class InfoController(LiveClusterCommandController):
         )
 
     @CommandHelp(
-        "Displays node memory: Capacity (the cgroup limit, shown only when",
-        "cgroup-mem-tracking is enabled) vs Allocated (the shmem index and",
+        "Displays node memory: Capacity (the cgroup limit when",
+        "cgroup-mem-tracking is enabled, else the host total) vs Allocated",
+        "(the shmem index and",
         "sindex arenas plus the process heap). Memory-engine data is in the arenas",
         "on Enterprise and Federal, and in the heap on Community. The verbose",
         "tables are not additive with each other: set index, and memory-engine",

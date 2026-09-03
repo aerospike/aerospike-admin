@@ -180,7 +180,7 @@ class CliView(object):
         stats,
         headline,
         untracked_limits,
-        no_cgroup_limits,
+        no_capacity,
         missing_ns_stats,
     ):
         """
@@ -199,21 +199,19 @@ class CliView(object):
 
         if untracked_limits:
             logger.warning(
-                "%s: the cgroup limit is not tracked, so Free%% and Stop%% are "
-                "measured against the host rather than the cgroup. Enable "
-                "cgroup-mem-tracking so asadm can also report Capacity and "
-                "Alloc%%.",
+                "%s: cgroup-mem-tracking is off, so Capacity, Free%% and Stop%% "
+                "are host-wide, not cgroup-scoped.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in untracked_limits), total
                 ),
             )
 
-        if no_cgroup_limits and capacity_rendered:
+        if no_capacity and capacity_rendered:
             logger.warning(
-                "Capacity is blank for %s: without a tracked cgroup limit asadm "
-                "has no total-memory figure to divide Alloc%% by.",
+                "Capacity is blank for %s: no tracked cgroup limit and no host "
+                "total reported.",
                 util.summarize_nodes(
-                    (node_names.get(n, n) for n in no_cgroup_limits), total
+                    (node_names.get(n, n) for n in no_capacity), total
                 ),
             )
 
@@ -283,7 +281,7 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         stats = util.derive_memory_stats(stats)
-        headline, untracked_limits, no_cgroup_limits, missing_ns_stats = (
+        headline, untracked_limits, no_capacity, missing_ns_stats = (
             util.derive_memory_headline(
                 stats, configs, ns_agg, builds=builds, nodes=node_names
             )
@@ -294,7 +292,7 @@ class CliView(object):
             stats,
             headline,
             untracked_limits,
-            no_cgroup_limits,
+            no_capacity,
             missing_ns_stats,
         )
         common = CliView._common(cluster)
