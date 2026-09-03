@@ -2017,8 +2017,6 @@ class CollectinfoController(LiveClusterCommandController):
         logger.info(f"Capturing pretty print output for {file} . . .")
 
         try:
-            # memory is verbose here so the bundle carries the host/index/heap
-            # breakdown behind the headline sheet, not just the headline.
             dignostic_info_params = [
                 "network",
                 "memory -v",
@@ -2118,8 +2116,6 @@ class CollectinfoController(LiveClusterCommandController):
             except Exception as e:
                 util.write_to_file(complete_filename, str(e))
 
-            # Every command is isolated: one that raises must not take the rest
-            # of the bundle with it.
             try:
                 info_controller = InfoController()
             except Exception as e:

@@ -2842,15 +2842,77 @@ class InfoMemoryViewTest(unittest.TestCase):
             self.cluster_mock,
         )
 
-        host_total = 16000000 * 1024
         row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
-        self.assertEqual(row["capacity_bytes"], str(host_total))
-        self.assertEqual(float(row["alloc_pct"]), 2500 * 100 / host_total)
+        self.assertEqual(row["capacity_bytes"], str(16000000 * 1024))
+        self.assertEqual(row["allocated_bytes"], "2500")
+        self.assertNotIn("alloc_pct", row)
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
         self.assertIn("cgroup-mem-tracking is off", warnings[0])
         self.assertIn("node1", warnings[0])
+
+    def test_info_memory_untracked_limit_without_host_total_is_silent(self):
+        """
+        The shape every released server produces: a cgroup limit and no
+        host_total_mem_kbytes. Capacity is blank and the column collapses, so
+        no warning may claim Capacity shows anything.
+        """
+        self.set_nodes("1.1.1.1")
+        stats = self._cgroup_limit_stats()
+        del stats["1.1.1.1"]["host_total_mem_kbytes"]
+
+        CliView.info_memory(
+            stats,
+            {"1.1.1.1": {"cgroup-mem-tracking": "false"}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "2500"}},
+            self.cluster_mock,
+        )
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertNotIn("capacity_bytes", row)
+        self.assertNotIn("alloc_pct", row)
+        self.assertEqual(self.warnings(), [])
+
+    def test_info_memory_untracked_limit_without_host_total_in_a_mixed_cluster(self):
+        """
+        Next to a node that did render Capacity, the blank cell gets its own
+        explanation and nothing else: the untracked warning would claim a
+        host-wide Capacity the node does not have.
+        """
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "0",
+                    "cgroup_memory_limit_bytes": "10000",
+                },
+                "2.2.2.2": {
+                    "heap_allocated_kbytes": "0",
+                    "cgroup_memory_limit_bytes": "10000",
+                },
+            },
+            {
+                "1.1.1.1": {"cgroup-mem-tracking": "true"},
+                "2.2.2.2": {"cgroup-mem-tracking": "false"},
+            },
+            {
+                "1.1.1.1": {"shmem_alloc_bytes": "2500"},
+                "2.2.2.2": {"shmem_alloc_bytes": "2500"},
+            },
+            self.cluster_mock,
+        )
+
+        headline = self.render_mock.call_args[0][2]["headline"]
+        self.assertEqual(headline["1.1.1.1"]["capacity_bytes"], "10000")
+        self.assertNotIn("capacity_bytes", headline["2.2.2.2"])
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Capacity is blank", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
 
     def test_info_memory_capacity_is_host_total_without_a_cgroup_limit(self):
         self.set_nodes("1.1.1.1")
@@ -2886,11 +2948,14 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         printed = stdout.getvalue()
 
-        self.assertTrue(self.warnings())
+        warnings = self.warnings()
+        self.assertTrue(any("cgroup-mem-tracking is off" in w for w in warnings))
+        self.assertTrue(any("No namespace statistics" in w for w in warnings))
         self.assertIn("Memory Information", printed)
         self.assertNotIn("WARNING", printed)
-        self.assertNotIn("cgroup limit is not tracked", printed)
-        self.assertNotIn("No namespace statistics", printed)
+
+        for warning in warnings:
+            self.assertNotIn(warning, printed)
 
     def test_info_memory_no_untracked_warning_without_cgroup_limit(self):
         self.set_nodes("1.1.1.1")

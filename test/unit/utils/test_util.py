@@ -1291,7 +1291,8 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         An untracked limit still caps the node, but asadm has no measurement
         of it, so Capacity reports what the server did measure - the host
         total - and the node is named so the caller can say which figure it
-        got.
+        got. Alloc% is withheld: allocation over the host total would read as
+        headroom the cgroup does not have.
         """
         headline, untracked, no_capacity, _ = self.headline(
             {
@@ -1299,15 +1300,43 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
                     "host_free_mem_kbytes": "8000000",
                     "host_free_mem_pct": "50",
                     "host_total_mem_kbytes": "16000000",
+                    "heap_allocated_kbytes": "1000",
                     "cgroup_memory_limit_bytes": "10000",
                 }
             },
             configs={"node1": {"cgroup-mem-tracking": "false"}},
-            ns_agg={"node1": {}},
+            ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
         )
         self.assertEqual(headline["node1"]["capacity_bytes"], str(16000000 * 1024))
+        self.assertEqual(headline["node1"]["allocated_bytes"], str(1000 * 1024 + 500))
+        self.assertNotIn("alloc_pct", headline["node1"])
         self.assertEqual(untracked, ["node1"])
         self.assertEqual(no_capacity, [])
+
+    def test_untracked_cgroup_limit_without_host_total_is_only_no_capacity(self):
+        """
+        Every released server reports cgroup_memory_limit_bytes without
+        host_total_mem_kbytes, so this is the live shape of an untracked node.
+        Capacity is blank, so the node must not be named by the untracked
+        warning, which says Capacity is host-wide.
+        """
+        headline, untracked, no_capacity, _ = self.headline(
+            {
+                "node1": {
+                    "system_free_mem_kbytes": "8000000",
+                    "system_free_mem_pct": "50",
+                    "heap_allocated_kbytes": "1000",
+                    "cgroup_memory_limit_bytes": "10000",
+                }
+            },
+            configs={"node1": {"cgroup-mem-tracking": "false"}},
+            ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
+        )
+        self.assertNotIn("capacity_bytes", headline["node1"])
+        self.assertNotIn("alloc_pct", headline["node1"])
+        self.assertEqual(headline["node1"]["allocated_bytes"], str(1000 * 1024 + 500))
+        self.assertEqual(untracked, [])
+        self.assertEqual(no_capacity, ["node1"])
 
     def test_capacity_is_never_estimated_from_free_stats(self):
         """
@@ -1410,12 +1439,12 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertEqual(untracked, [])
         self.assertEqual(no_capacity, ["node1"])
 
-    def test_old_build_is_not_reported_as_limitless(self):
+    def test_old_build_without_capacity_stats_is_not_reported_as_capacityless(self):
         """
-        A pre-8.1.3 node reports neither cgroup_memory_limit_bytes nor
-        host_total_mem_kbytes, so Capacity is blank and the node is named for
-        that reason alone. Its cgroup is unobserved, so it is never called
-        untracked.
+        A pre-8.1.3 node cannot report cgroup_memory_limit_bytes or
+        host_total_mem_kbytes at all, so their absence is no evidence about the
+        node's cgroup or host. The build warning already names the node; a
+        no-capacity warning on top would assert a fact asadm never observed.
         """
         headline, untracked, no_capacity, _ = util.derive_memory_headline(
             util.derive_memory_stats({"n1": {"heap_allocated_kbytes": "1000"}}),
@@ -1424,7 +1453,7 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
             builds={"n1": "8.1.2.0"},
         )
         self.assertEqual(untracked, [])
-        self.assertEqual(no_capacity, ["n1"])
+        self.assertEqual(no_capacity, [])
         self.assertNotIn("capacity_bytes", headline["n1"])
 
     def test_allocated_is_shmem_plus_heap(self):

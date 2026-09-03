@@ -690,47 +690,12 @@ def nodes_missing_memory_alloc_stats(builds):
 
 def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
     """
-    Build the per-node rows behind the 'info memory' headline table.
+    Build the per-node rows behind the 'info memory' headline table: Capacity is
+    the tracked cgroup limit, else the reported host total, and Alloc% is
+    withheld when a cgroup limit exists but is not tracked.
 
-    Args:
-        stats: per-node service stats, already through derive_memory_stats
-        configs: per-node service configs
-        ns_agg: output of aggregate_ns_memory_stats
-        builds: {node: build}, used to decide which nodes report allocation
-            stats at all. Omit to treat every node as reporting them.
-        nodes: restrict to these nodes, defaults to every node in stats
-
-    A row only carries a value its inputs support. capacity_bytes is the
-    tracked cgroup limit when the kernel measured one, else host_total_mem_bytes,
-    the MemTotal the server reports (SERVER-1546). Both are measurements, not
-    estimates: a node that reports neither renders no Capacity or Alloc% and is
-    reported to the caller instead.
-
-    A cgroup limit that exists but is not tracked is reported separately: there
-    Capacity falls back to the host total, which is larger than the limit
-    actually squeezing the process, and free memory is measured against the host
-    for the same reason. The fix is enabling cgroup-mem-tracking.
-
-    A node whose service payload came back empty carries no capacity and no
-    allocation total: neither its limit nor its heap was observed.
-
-    The allocation total is omitted when the node's namespace stats never
-    arrived or its build predates the allocation stats, since heap alone would
-    render as an authoritative total that understates the node by whatever its
-    index arenas hold. Shmem alone understates it the same way, so an empty
-    service payload suppresses the total too.
-
-    Shmem is gated with the total on the version axis only: an empty service
-    payload suppresses the total but keeps Shmem, which is measured from the
-    namespace stats rather than the payload. On a pre-8.1.3 memory-engine
-    node the arenas are unknown but the folded data reservation is not, so a
-    populated Shmem cell would render a partial figure as a complete one and
-    let the operator reconstruct the suppressed total by addition. Heap stays
-    visible: it is real information on any version.
-
-    Returns:
-        (headline rows, nodes capped by an untracked cgroup, nodes with no
-        capacity figure at all, nodes whose namespace stats are missing)
+    Returns (headline, untracked_limits, no_capacity, missing_ns_stats); a node
+    is in at most one of the two capacity lists.
     """
     headline = {}
     untracked_limits = []
@@ -765,15 +730,16 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         cgroup_limit = int_or_zero(
             node_stats.get("cgroup_memory_limit_effective_bytes")
         )
+        cgroup_untracked = cgroup_limit > 0 and not cgroup_tracked
         host_total = max(0, int_or_zero(node_stats.get("host_total_mem_bytes")))
         capacity = cgroup_limit if cgroup_tracked and cgroup_limit > 0 else host_total
 
         if node_stats:
-            if cgroup_limit > 0 and not cgroup_tracked:
-                untracked_limits.append(node)
-
             if capacity <= 0:
-                no_capacity.append(node)
+                if alloc_known:
+                    no_capacity.append(node)
+            elif cgroup_untracked:
+                untracked_limits.append(node)
 
         shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
         heap = max(0, int_or_zero(node_stats.get("heap_allocated_bytes")))
@@ -796,7 +762,7 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
                 if heap > 0:
                     row["allocated_heap_pct"] = str(heap * 100 / allocated)
 
-                if capacity > 0:
+                if capacity > 0 and not cgroup_untracked:
                     row["alloc_pct"] = str(allocated * 100 / capacity)
 
         if "system_free_mem_pct" in node_stats:

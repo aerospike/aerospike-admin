@@ -91,14 +91,14 @@ class InfoController(CollectinfoCommandController):
             del stats[key]
 
     @CommandHelp(
-        "Displays node memory: Capacity (the cgroup limit when",
-        "cgroup-mem-tracking is enabled, else the host total) vs Allocated",
-        "(the shmem index and",
-        "sindex arenas plus the process heap). Memory-engine data is in the arenas",
-        "on Enterprise and Federal, and in the heap on Community. The verbose",
-        "tables are not additive with each other: set index, and memory-engine",
-        "data on Community, are heap-allocated and appear in both Index and Data",
-        "Memory and Process Heap. Allocation figures require server",
+        "Displays node memory: Capacity (the tracked cgroup limit, else the host",
+        "total the server reports) vs Allocated (the shmem index and sindex arenas",
+        "plus the process heap). When a cgroup limit exists but is not tracked,",
+        "Capacity is the host total and Alloc% is withheld. Memory-engine data is",
+        "in the arenas on Enterprise and Federal, and in the heap on Community.",
+        "The verbose tables are not additive with each other: set index, and",
+        "memory-engine data on Community, are heap-allocated and appear in both",
+        "Index and Data Memory and Process Heap. Allocation figures require server",
         f"{constants.SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION} or later.",
         short_msg="Displays node memory availability vs allocation",
         usage="[-v]",
