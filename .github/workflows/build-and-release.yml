@@ -1058,6 +1058,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      attestations: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -1101,6 +1102,7 @@ jobs:
       # `jf rbp` would promote the packages to TEST and leave the images in
       # dev-local forever.
       - name: Publish docker build-info
+        id: docker-info
         env:
           VERSION: ${{ needs.get-version.outputs.VERSION }}
           RELEASE: ${{ needs.get-version.outputs.RELEASE }}
@@ -1114,6 +1116,12 @@ jobs:
             digest=$(docker buildx imagetools inspect "${IMAGE}:${tag}" --format '{{json .Manifest}}' | jq -r '.digest')
             [[ -n "${digest}" && "${digest}" != "null" ]] \
               || { echo "::error::no digest for ${IMAGE}:${tag}" >&2; exit 1; }
+            # Resolved once, here: the attestation steps below read these back
+            # rather than inspecting the registry a second time.
+            case "${tag}" in
+              "${RELEASE}") echo "digest-index=${digest}" >> "$GITHUB_OUTPUT" ;;
+              *)            echo "digest-${tag##*-}=${digest}" >> "$GITHUB_OUTPUT" ;;
+            esac
             # build-docker-create takes exactly one image ref per invocation.
             printf '%s:%s@%s\n' "${IMAGE}" "${tag}" "${digest}" > image.txt
             cat image.txt
@@ -1124,6 +1132,34 @@ jobs:
               --project database
           done
           jf rt build-publish "${BUILD_NAME}" "${VERSION}" --project database
+
+      # Image provenance, on the same gate as the packages: docker-manifest is
+      # a dependency of create-release-bundle, so an unattested image never
+      # reaches the promotion unit. Attestations are recorded with GitHub
+      # rather than pushed as OCI referrers -- `gh attestation verify oci://`
+      # resolves them either way, and push-to-registry would make a release
+      # depend on Artifactory's referrers support.
+      #
+      # subject-name is the dev-local path the images are pushed to. Promotion
+      # moves them without rebuilding, so a promoted image verifies on the
+      # digest recorded here even though its repository path has changed.
+      - name: Attest multi-arch index provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
+          subject-digest: ${{ steps.docker-info.outputs.digest-index }}
+
+      - name: Attest amd64 image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
+          subject-digest: ${{ steps.docker-info.outputs.digest-amd64 }}
+
+      - name: Attest arm64 image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
+          subject-digest: ${{ steps.docker-info.outputs.digest-arm64 }}
 
   # Release bundles are JFrog's promotion unit; produced on every publish
   # regardless of branch or skip_tagging.
