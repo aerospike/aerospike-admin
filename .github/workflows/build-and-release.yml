@@ -943,6 +943,12 @@ jobs:
           docker run --rm --entrypoint sh "${IMAGE}" -c 'test -f /etc/aerospike/astools.conf' \
             || { echo "ERROR: /etc/aerospike/astools.conf missing in image" >&2; exit 1; }
 
+          # The pre-13.0.3 wrapper exported LC_CTYPE=C.UTF-8; the Dockerfile now
+          # sets it as ENV. Assert glibc resolves a UTF-8 charmap in the image.
+          CHARMAP=$(docker run --rm --entrypoint sh "${IMAGE}" -c 'locale charmap')
+          [[ "${CHARMAP}" == "UTF-8" ]] \
+            || { echo "ERROR: image locale charmap is ${CHARMAP}, expected UTF-8" >&2; exit 1; }
+
           if [[ -n "${SNYK_TOKEN:-}" ]]; then
             snyk container test "${IMAGE}" \
               --platform=linux/${{ matrix.arch }} \
