@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import unittest
 from lib.live_cluster.client.ctx import ASValues, CDTContext, CTXItems
 
 from lib.live_cluster.client.msgpack import (
     AS_BYTES_BLOB,
     AS_BYTES_STRING,
+    EXP_AEL_COMPILE,
     ASPacker,
     CTXItemWireType,
+    pack_ael_expression,
+    unpack_ael_expression,
 )
 
 
@@ -97,3 +101,40 @@ class MsgPackTest(unittest.TestCase):
         actual = self.pack(ctx)
 
         self.assertEqual(expected, actual)
+
+
+class AELExpressionTest(unittest.TestCase):
+    def test_pack_ael_expression(self):
+        ael_src = "$.campaign1:INT + $.campaign2:INT"
+        expected = base64.b64encode(
+            bytes([0x92, 0xCC, EXP_AEL_COMPILE, 0xD9, len(ael_src)])
+            + bytes(ael_src, encoding="utf-8")
+        ).decode("utf-8")
+
+        actual = pack_ael_expression(ael_src)
+
+        self.assertEqual(expected, actual)
+
+    def test_unpack_ael_expression(self):
+        ael_src = "$.campaign1:INT + $.campaign2:INT"
+
+        actual = unpack_ael_expression(pack_ael_expression(ael_src))
+
+        self.assertEqual(ael_src, actual)
+
+    def test_unpack_ael_expression_returns_none_for_non_envelope(self):
+        # A compiled expression tree, an empty AEL source, an envelope whose
+        # source is not a string, a non-base64 value, and base64 that is not
+        # msgpack all fall back to the server's rendering.
+        compiled_exp = "lBSTUQKpY2FtcGFpZ24xk1ECqWNhbXBhaWduMpNRAqljYW1wYWlnbjM="
+        for exp_base64 in [
+            compiled_exp,
+            pack_ael_expression(""),
+            base64.b64encode(bytes([0x92, 0xCC, EXP_AEL_COMPILE, 0x01])).decode(
+                "utf-8"
+            ),
+            "not base64!",
+            base64.b64encode(b"not msgpack at all").decode("utf-8"),
+            "null",
+        ]:
+            self.assertIsNone(unpack_ael_expression(exp_base64), exp_base64)
