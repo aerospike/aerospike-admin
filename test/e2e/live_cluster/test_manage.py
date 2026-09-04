@@ -885,11 +885,6 @@ class ManageSindexTest(TestManage):
         self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_can_create_sindex_from_ael(self):
-        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
-            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
-        ):
-            self.skipTest("Server version doesn't support AEL")
-
         ael_src = "$.a:INT + $.b:INT"
         ael_b64 = base64.b64encode(bytes(ael_src, "utf-8")).decode("utf-8")
 
@@ -911,11 +906,6 @@ class ManageSindexTest(TestManage):
         self.assertIn(ael_src, actual.stdout)
 
     def test_can_create_sindex_from_quoted_ael(self):
-        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
-            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
-        ):
-            self.skipTest("Server version doesn't support AEL")
-
         ael_src = "$.a:INT + $.b:INT"
 
         actual = test_util.run_asadm(
@@ -935,11 +925,6 @@ class ManageSindexTest(TestManage):
         self.assertIn(ael_src, actual.stdout)
 
     def test_fails_to_create_unquoted_ael(self):
-        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
-            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
-        ):
-            self.skipTest("Server version doesn't support AEL")
-
         exp_stderr = (
             "ERROR: The 'ael' modifier takes one quoted expression. Surround the "
             "AEL source with single quotes, e.g. ael '$.a:INT + $.b:INT'."
@@ -956,11 +941,6 @@ class ManageSindexTest(TestManage):
         self.assertStdErrEqual(exp_stderr, actual.stderr)
 
     def test_fails_to_create_sindex_from_invalid_ael(self):
-        if version.LooseVersion(lib.server_build()) < version.LooseVersion(
-            constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION
-        ):
-            self.skipTest("Server version doesn't support AEL")
-
         ael_b64 = base64.b64encode(b"$.a +").decode("utf-8")
         exp_stderr = "ERROR: Failed to create sindex {} : bad 'exp'.".format(
             self.exp_sindex
@@ -970,6 +950,69 @@ class ManageSindexTest(TestManage):
             self.get_args(
                 "manage sindex create integer {} ns {} set {} ael_b64 {}".format(
                     self.exp_sindex, self.exp_ns, self.exp_set, ael_b64
+                )
+            )
+        )
+
+        self.assertStdErrEqual(exp_stderr, actual.stderr)
+
+    def _get_ael_column(self, cmd, index_names):
+        """Run cmd and return the AEL cell of each index in index_names."""
+        actual = test_util.run_asadm(self.get_args(cmd))
+        output = test_util.get_separate_output(actual.stdout)
+        _, _, names, values, _ = test_util.parse_output(output[0])
+
+        self.assertIn("AEL", names)
+
+        rows = {row[names.index("Index Name")]: row for row in values}
+
+        return [rows[name][names.index("AEL")] for name in index_names]
+
+    @parameterized.expand([("show sindex",), ("info sindex",)])
+    def test_ael_column_is_rendered(self, cmd):
+        """An index created from AEL reports its source in the AEL column while
+        an index on a bin leaves the column empty."""
+        ael_src = "$.a:INT + $.b:INT"
+
+        test_util.run_asadm(
+            self.get_args(
+                'manage sindex create integer {} ns {} set {} ael "{}"'.format(
+                    self.exp_sindex, self.exp_ns, self.exp_set, ael_src
+                )
+            )
+        )
+        test_util.run_asadm(
+            self.get_args(
+                "manage sindex create string bin-sindex ns {} set {} bin {}".format(
+                    self.exp_ns, self.exp_set, self.exp_bin
+                )
+            )
+        )
+
+        time.sleep(0.5)
+
+        self.assertEqual(
+            [ael_src, "--"], self._get_ael_column(cmd, [self.exp_sindex, "bin-sindex"])
+        )
+
+    @parameterized.expand(
+        [
+            ("ael", "ael $.a:INT", "ael"),
+            ("ael_b64", "ael_b64 JC5hOklOVA==", "ael_b64"),
+        ]
+    )
+    def test_set_index_rejects_ael(self, _, ael_mod, modifier):
+        """AEL defines what to index, so a set-based index must reject it rather
+        than silently create a plain set index."""
+        exp_stderr = (
+            "ERROR: Set type secondary index does not support: {}. "
+            "Only 'ns' and 'set' modifiers are valid.".format(modifier)
+        )
+
+        actual = test_util.run_asadm(
+            self.get_args(
+                "manage sindex create {} ns {} set {} {}".format(
+                    self.exp_sindex, self.exp_ns, self.exp_set, ael_mod
                 )
             )
         )
