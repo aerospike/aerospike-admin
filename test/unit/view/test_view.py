@@ -2811,6 +2811,7 @@ class InfoMemoryViewTest(unittest.TestCase):
             "1.1.1.1": {
                 "host_free_mem_kbytes": "8000000",
                 "host_free_mem_pct": "50",
+                "host_total_mem_kbytes": "16000000",
                 "heap_allocated_kbytes": "0",
                 "cgroup_memory_limit_bytes": "10000",
             }
@@ -2831,11 +2832,40 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertEqual(row["allocated_bytes"], "2500")
         self.assertEqual(float(row["alloc_pct"]), 25.0)
 
-    def test_info_memory_capacity_ignores_cgroup_limit_when_untracked(self):
+    def test_info_memory_capacity_is_host_total_when_untracked(self):
         self.set_nodes("1.1.1.1")
 
         CliView.info_memory(
             self._cgroup_limit_stats(),
+            {"1.1.1.1": {"cgroup-mem-tracking": "false"}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "2500"}},
+            self.cluster_mock,
+        )
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertEqual(row["capacity_bytes"], str(16000000 * 1024))
+        self.assertEqual(row["allocated_bytes"], "2500")
+        self.assertNotIn("alloc_pct", row)
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("cgroup-mem-tracking is off", warnings[0])
+        self.assertIn("Alloc% is withheld", warnings[0])
+        self.assertIn("node1", warnings[0])
+
+    def test_info_memory_untracked_limit_without_host_total_says_enable_it(self):
+        """
+        A cgroup limit with no host_total_mem_kbytes: a build cut between the
+        two server commits, or an unreadable /proc/meminfo. Capacity is blank
+        and the column collapses, so the warning must not claim Capacity is
+        host-wide, but it must still tell the operator what fills it.
+        """
+        self.set_nodes("1.1.1.1")
+        stats = self._cgroup_limit_stats()
+        del stats["1.1.1.1"]["host_total_mem_kbytes"]
+
+        CliView.info_memory(
+            stats,
             {"1.1.1.1": {"cgroup-mem-tracking": "false"}},
             {"1.1.1.1": {"shmem_alloc_bytes": "2500"}},
             self.cluster_mock,
@@ -2847,8 +2877,71 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("cgroup limit is not tracked", warnings[0])
+        self.assertIn("cgroup-mem-tracking is off", warnings[0])
+        self.assertIn("Enable it to report Capacity and Alloc%", warnings[0])
+        self.assertNotIn("Capacity, Free%", warnings[0])
         self.assertIn("node1", warnings[0])
+
+    def test_info_memory_untracked_limit_without_host_total_in_a_mixed_cluster(self):
+        """
+        Next to a node that did render Capacity, the untracked node gets the
+        enable-tracking message alone: not the host-wide one, which would claim
+        a Capacity it does not have, and not the no-limit one, which would deny
+        the limit it does have.
+        """
+        self.set_nodes("1.1.1.1", "2.2.2.2")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "heap_allocated_kbytes": "0",
+                    "cgroup_memory_limit_bytes": "10000",
+                },
+                "2.2.2.2": {
+                    "heap_allocated_kbytes": "0",
+                    "cgroup_memory_limit_bytes": "10000",
+                },
+            },
+            {
+                "1.1.1.1": {"cgroup-mem-tracking": "true"},
+                "2.2.2.2": {"cgroup-mem-tracking": "false"},
+            },
+            {
+                "1.1.1.1": {"shmem_alloc_bytes": "2500"},
+                "2.2.2.2": {"shmem_alloc_bytes": "2500"},
+            },
+            self.cluster_mock,
+        )
+
+        headline = self.render_mock.call_args[0][2]["headline"]
+        self.assertEqual(headline["1.1.1.1"]["capacity_bytes"], "10000")
+        self.assertNotIn("capacity_bytes", headline["2.2.2.2"])
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Enable it to report Capacity and Alloc%", warnings[0])
+        self.assertNotIn("Capacity is blank", warnings[0])
+        self.assertIn("node2", warnings[0])
+        self.assertNotIn("node1", warnings[0])
+
+    def test_info_memory_capacity_is_host_total_without_a_cgroup_limit(self):
+        self.set_nodes("1.1.1.1")
+
+        CliView.info_memory(
+            {
+                "1.1.1.1": {
+                    "host_total_mem_kbytes": "16000000",
+                    "heap_allocated_kbytes": "0",
+                }
+            },
+            {"1.1.1.1": {}},
+            {"1.1.1.1": {"shmem_alloc_bytes": "2500"}},
+            self.cluster_mock,
+        )
+
+        row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
+        self.assertEqual(row["capacity_bytes"], str(16000000 * 1024))
+        self.assertEqual(self.warnings(), [])
 
     def test_info_memory_warnings_never_reach_stdout(self):
         self._stop_patches(self.print_result_patcher, self.render_patcher)
@@ -2865,11 +2958,16 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         printed = stdout.getvalue()
 
-        self.assertTrue(self.warnings())
+        warnings = self.warnings()
+        self.assertTrue(any("cgroup-mem-tracking is off" in w for w in warnings))
+        self.assertTrue(any("No namespace statistics" in w for w in warnings))
         self.assertIn("Memory Information", printed)
         self.assertNotIn("WARNING", printed)
-        self.assertNotIn("cgroup limit is not tracked", printed)
+        self.assertNotIn("cgroup-mem-tracking is off", printed)
         self.assertNotIn("No namespace statistics", printed)
+
+        for warning in warnings:
+            self.assertNotIn(warning, printed)
 
     def test_info_memory_no_untracked_warning_without_cgroup_limit(self):
         self.set_nodes("1.1.1.1")
@@ -3090,7 +3188,13 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertNotIn("ns_agg", process_sources)
         self.assertNotIn("configs", process_sources)
 
-    def test_info_memory_collapses_host_free_when_same_as_system(self):
+    def test_info_memory_verbose_keeps_host_free_even_when_same_as_system(self):
+        """
+        Without cgroup tracking the server reports the host pair twice. The
+        Host columns still render: a pair that vanishes with no warning reads
+        as a missing stat, and the repetition is itself the signal that Free
+        is host-scoped.
+        """
         stats = {
             "1.1.1.1": {
                 "system_free_mem_kbytes": "8000000",
@@ -3105,36 +3209,10 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
         self.assertEqual(derived["system_free_mem_bytes"], str(8000000 * 1024))
-        self.assertNotIn("host_free_mem_bytes", derived)
-        self.assertNotIn("host_free_mem_pct", derived)
-
-    def test_info_memory_keeps_host_free_when_only_bytes_match(self):
-        """
-        Under cgroup tracking the two free counts are measured against
-        different capacities, so equal bytes with unequal percentages is real
-        host context, not a duplicate row.
-        """
-        stats = {
-            "1.1.1.1": {
-                "system_free_mem_kbytes": "8000000",
-                "system_free_mem_pct": "20",
-                "host_free_mem_kbytes": "8000000",
-                "host_free_mem_pct": "50",
-            }
-        }
-        self.set_nodes("1.1.1.1")
-
-        CliView.info_memory(stats, {}, {}, self.cluster_mock, verbose=True)
-
-        derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
         self.assertEqual(derived["host_free_mem_bytes"], str(8000000 * 1024))
         self.assertEqual(derived["host_free_mem_pct"], "50")
 
     def test_info_memory_verbose_keeps_lone_host_pct(self):
-        """
-        With neither free-bytes stat present the dedup has nothing to compare;
-        it must not treat the two absences as equal and blank the Host% cell.
-        """
         stats = {"1.1.1.1": {"host_free_mem_pct": "50"}}
         self.set_nodes("1.1.1.1")
 

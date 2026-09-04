@@ -180,7 +180,7 @@ class CliView(object):
         stats,
         headline,
         untracked_limits,
-        no_cgroup_limits,
+        no_capacity,
         missing_ns_stats,
     ):
         """
@@ -197,23 +197,36 @@ class CliView(object):
             if isinstance(row, dict)
         )
 
-        if untracked_limits:
+        untracked_host_wide = [
+            n for n in untracked_limits if "capacity_bytes" in headline.get(n, {})
+        ]
+        untracked_blank = [n for n in untracked_limits if n not in untracked_host_wide]
+
+        if untracked_host_wide:
             logger.warning(
-                "%s: the cgroup limit is not tracked, so Free%% and Stop%% are "
-                "measured against the host rather than the cgroup. Enable "
-                "cgroup-mem-tracking so asadm can also report Capacity and "
-                "Alloc%%.",
+                "%s: cgroup-mem-tracking is off, so Capacity, Free%% and Stop%% "
+                "are host-wide, not cgroup-scoped, and Alloc%% is withheld.",
                 util.summarize_nodes(
-                    (node_names.get(n, n) for n in untracked_limits), total
+                    (node_names.get(n, n) for n in untracked_host_wide), total
                 ),
             )
 
-        if no_cgroup_limits and capacity_rendered:
+        if untracked_blank:
             logger.warning(
-                "Capacity is blank for %s: without a tracked cgroup limit asadm "
-                "has no total-memory figure to divide Alloc%% by.",
+                "%s: cgroup-mem-tracking is off, so Free%% and Stop%% are "
+                "host-wide, not cgroup-scoped. Enable it to report Capacity and "
+                "Alloc%%.",
                 util.summarize_nodes(
-                    (node_names.get(n, n) for n in no_cgroup_limits), total
+                    (node_names.get(n, n) for n in untracked_blank), total
+                ),
+            )
+
+        if no_capacity and capacity_rendered:
+            logger.warning(
+                "Capacity is blank for %s: the server reported no cgroup limit "
+                "and no host total.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in no_capacity), total
                 ),
             )
 
@@ -238,31 +251,6 @@ class CliView(object):
             )
 
     @staticmethod
-    def _collapse_duplicate_host_free(node_stats):
-        """
-        Drop the Host free pair when it repeats the System pair exactly.
-
-        Without cgroup tracking the server measures both against the host and
-        reports one figure twice, which is two columns of noise. With tracking
-        the two are measured against different capacities, so the byte counts
-        can coincide while the percentages do not: system_free_mem_pct nets out
-        inactive_file and clamps by host availability (SERVER-742), so equal
-        bytes alone do not make the Host pair redundant. Both halves have to
-        match before the Host context is discarded.
-        """
-        if "host_free_mem_bytes" not in node_stats:
-            return
-
-        if node_stats["host_free_mem_bytes"] != node_stats.get("system_free_mem_bytes"):
-            return
-
-        if node_stats.get("host_free_mem_pct") != node_stats.get("system_free_mem_pct"):
-            return
-
-        node_stats.pop("host_free_mem_bytes", None)
-        node_stats.pop("host_free_mem_pct", None)
-
-    @staticmethod
     @reserved_modifiers
     def info_memory(
         stats,
@@ -283,7 +271,7 @@ class CliView(object):
 
         title_suffix = CliView._get_timestamp_suffix(timestamp)
         stats = util.derive_memory_stats(stats)
-        headline, untracked_limits, no_cgroup_limits, missing_ns_stats = (
+        headline, untracked_limits, no_capacity, missing_ns_stats = (
             util.derive_memory_headline(
                 stats, configs, ns_agg, builds=builds, nodes=node_names
             )
@@ -294,7 +282,7 @@ class CliView(object):
             stats,
             headline,
             untracked_limits,
-            no_cgroup_limits,
+            no_capacity,
             missing_ns_stats,
         )
         common = CliView._common(cluster)
@@ -315,10 +303,6 @@ class CliView(object):
 
         if not verbose:
             return
-
-        for node_stats in stats.values():
-            if isinstance(node_stats, dict):
-                CliView._collapse_duplicate_host_free(node_stats)
 
         for template, title, sources in (
             (
