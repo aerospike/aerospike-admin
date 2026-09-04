@@ -1315,28 +1315,34 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
 
     def test_untracked_cgroup_limit_without_host_total_is_untracked_only(self):
         """
-        Every released server reports cgroup_memory_limit_bytes without
-        host_total_mem_kbytes, so this is the live shape of an untracked node.
-        It is named as untracked, not as capacity-less: the blank Capacity has
-        the same cause, and the caller must still say to enable tracking.
+        A build that reports cgroup_memory_limit_bytes but not
+        host_total_mem_kbytes (cut between the two server commits), or one whose
+        /proc/meminfo was unreadable and reports a zero total. The node is named
+        as untracked, not as capacity-less: the blank Capacity has the same
+        cause, and the caller must still say to enable tracking.
         """
-        headline, untracked, no_capacity, _ = self.headline(
-            {
-                "node1": {
-                    "system_free_mem_kbytes": "8000000",
-                    "system_free_mem_pct": "50",
-                    "heap_allocated_kbytes": "1000",
-                    "cgroup_memory_limit_bytes": "10000",
-                }
-            },
-            configs={"node1": {"cgroup-mem-tracking": "false"}},
-            ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
-        )
-        self.assertNotIn("capacity_bytes", headline["node1"])
-        self.assertNotIn("alloc_pct", headline["node1"])
-        self.assertEqual(headline["node1"]["allocated_bytes"], str(1000 * 1024 + 500))
-        self.assertEqual(untracked, ["node1"])
-        self.assertEqual(no_capacity, [])
+        for host_total in ({}, {"host_total_mem_kbytes": "0"}):
+            with self.subTest(host_total=host_total):
+                headline, untracked, no_capacity, _ = self.headline(
+                    {
+                        "node1": {
+                            "system_free_mem_kbytes": "8000000",
+                            "system_free_mem_pct": "50",
+                            "heap_allocated_kbytes": "1000",
+                            "cgroup_memory_limit_bytes": "10000",
+                            **host_total,
+                        }
+                    },
+                    configs={"node1": {"cgroup-mem-tracking": "false"}},
+                    ns_agg={"node1": {"shmem_alloc_bytes": "500"}},
+                )
+                self.assertNotIn("capacity_bytes", headline["node1"])
+                self.assertNotIn("alloc_pct", headline["node1"])
+                self.assertEqual(
+                    headline["node1"]["allocated_bytes"], str(1000 * 1024 + 500)
+                )
+                self.assertEqual(untracked, ["node1"])
+                self.assertEqual(no_capacity, [])
 
     def test_capacity_is_never_estimated_from_free_stats(self):
         """

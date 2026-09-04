@@ -481,9 +481,8 @@ def cgroup_limit_or_zero(value):
     An uncapped cgroup reports either 'max' (v2), a negative value, or a
     near-int64 sentinel (v1), and CGROUP_MEMORY_NO_LIMIT_THRESHOLD catches every
     one of those without reference to anything else. Any other value the kernel
-    reports is a measurement and is reported as given, even when it exceeds the
-    host total the server reports: that is a real misconfiguration the operator
-    needs to see, not something to clamp away.
+    reports is a measurement and is reported as given, even above the host total
+    the server reports; asadm does not cross-check the two.
     """
     limit = int_or_zero(value)
 
@@ -694,8 +693,10 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
     the tracked cgroup limit, else the reported host total, and Alloc% is
     withheld when a cgroup limit exists but is not tracked.
 
-    Returns (headline, untracked_limits, no_capacity, missing_ns_stats); a node
-    is in at most one of the two capacity lists.
+    builds=None treats every node as reporting the allocation stats; nodes=None
+    covers every node in stats. Returns (headline, untracked_limits,
+    no_capacity, missing_ns_stats); a node is in at most one of the two
+    capacity lists.
     """
     headline = {}
     untracked_limits = []

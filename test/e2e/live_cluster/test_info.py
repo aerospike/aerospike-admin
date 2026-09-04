@@ -162,17 +162,17 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
     async def test_memory(self):
         """
         This test asserts <b> info memory </b> output heading, the headline
-        columns, and the allocation values. The fixture pins server 8.1.3+
-        (lib.SERVER_TAG), so the arena stats and every allocation column must
-        render; Capacity still needs the container's server to report
-        host_total_mem_kbytes (SERVER-1546) or a tracked cgroup limit, so it is
-        not asserted here.
+        columns, and the allocation and capacity values. The fixture pins
+        server 8.1.3+ (lib.SERVER_TAG), whose image must report the arena stats
+        and host_total_mem_kbytes (SERVER-1546); the container has no tracked
+        cgroup limit, so Capacity is the host total.
         """
         exp_heading = "Memory Information"
         always_present = [
             "Node",
             "Free%",
             "Build",
+            "Capacity",
             "Allocated Total",
             "Allocated Shmem",
             "Allocated Heap",
@@ -199,9 +199,11 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
             for record in group["records"]:
                 shmem = record["Allocated"]["Shmem"]["raw"]
                 total = record["Allocated"]["Total"]["raw"]
+                capacity = record["Capacity"]["raw"]
 
                 self.assertGreater(shmem, 0)
                 self.assertGreaterEqual(total, shmem)
+                self.assertGreater(capacity, total)
 
     async def test_memory_verbose(self):
         """
@@ -231,7 +233,13 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
 
         host = header_for("Host and CGroup Memory")
         self.assertIsNotNone(host)
-        for column in ["Node", "Free System", "Free Sys%", "CGroup Tracking"]:
+        for column in [
+            "Node",
+            "Host Total",
+            "Free System",
+            "Free Sys%",
+            "CGroup Tracking",
+        ]:
             self.assertIn(column, host)
 
         allocation = header_for("Index and Data Memory")

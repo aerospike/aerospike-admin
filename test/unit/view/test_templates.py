@@ -574,6 +574,18 @@ class InfoMemoryHostSheetTest(unittest.TestCase):
         self.assertEqual(record["Free"]["Host"]["raw"], 200)
         self.assertEqual(record["Free"]["Host%"]["raw"], 60)
 
+    def test_host_total_renders_the_reported_stat_and_collapses_without_it(self):
+        """
+        Host Total is the server's MemTotal (SERVER-1546), never derived: the
+        column exists only when the stat arrived, so an older server collapses
+        it rather than showing an estimate.
+        """
+        record = self.render({"host_total_mem_bytes": "4096"})
+        self.assertEqual(record["Host Total"]["raw"], 4096)
+
+        record = self.render({"system_free_mem_pct": "50"})
+        self.assertNotIn("Host Total", record)
+
 
 class InfoMemoryProcessSheetTest(unittest.TestCase):
     def render(self, **stats):

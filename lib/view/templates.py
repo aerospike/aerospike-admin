@@ -3056,6 +3056,11 @@ info_memory_sheet = Sheet(
     (
         node_field,
         hidden_node_id_field,
+        Field(
+            "Host Total",
+            Projectors.Number("stats", "host_total_mem_bytes"),
+            converter=Converters.byte,
+        ),
         Subgroup(
             "Free",
             (

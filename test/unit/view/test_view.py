@@ -2850,14 +2850,15 @@ class InfoMemoryViewTest(unittest.TestCase):
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
         self.assertIn("cgroup-mem-tracking is off", warnings[0])
+        self.assertIn("Alloc% is withheld", warnings[0])
         self.assertIn("node1", warnings[0])
 
     def test_info_memory_untracked_limit_without_host_total_says_enable_it(self):
         """
-        The shape every released server produces: a cgroup limit and no
-        host_total_mem_kbytes. Capacity is blank and the column collapses, so
-        the warning must not claim Capacity is host-wide, but it must still
-        tell the operator what fills it.
+        A cgroup limit with no host_total_mem_kbytes: a build cut between the
+        two server commits, or an unreadable /proc/meminfo. Capacity is blank
+        and the column collapses, so the warning must not claim Capacity is
+        host-wide, but it must still tell the operator what fills it.
         """
         self.set_nodes("1.1.1.1")
         stats = self._cgroup_limit_stats()
@@ -2962,6 +2963,8 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertTrue(any("No namespace statistics" in w for w in warnings))
         self.assertIn("Memory Information", printed)
         self.assertNotIn("WARNING", printed)
+        self.assertNotIn("cgroup-mem-tracking is off", printed)
+        self.assertNotIn("No namespace statistics", printed)
 
         for warning in warnings:
             self.assertNotIn(warning, printed)
@@ -3185,7 +3188,13 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertNotIn("ns_agg", process_sources)
         self.assertNotIn("configs", process_sources)
 
-    def test_info_memory_collapses_host_free_when_same_as_system(self):
+    def test_info_memory_verbose_keeps_host_free_even_when_same_as_system(self):
+        """
+        Without cgroup tracking the server reports the host pair twice. The
+        Host columns still render: a pair that vanishes with no warning reads
+        as a missing stat, and the repetition is itself the signal that Free
+        is host-scoped.
+        """
         stats = {
             "1.1.1.1": {
                 "system_free_mem_kbytes": "8000000",
@@ -3200,36 +3209,10 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
         self.assertEqual(derived["system_free_mem_bytes"], str(8000000 * 1024))
-        self.assertNotIn("host_free_mem_bytes", derived)
-        self.assertNotIn("host_free_mem_pct", derived)
-
-    def test_info_memory_keeps_host_free_when_only_bytes_match(self):
-        """
-        Under cgroup tracking the two free counts are measured against
-        different capacities, so equal bytes with unequal percentages is real
-        host context, not a duplicate row.
-        """
-        stats = {
-            "1.1.1.1": {
-                "system_free_mem_kbytes": "8000000",
-                "system_free_mem_pct": "20",
-                "host_free_mem_kbytes": "8000000",
-                "host_free_mem_pct": "50",
-            }
-        }
-        self.set_nodes("1.1.1.1")
-
-        CliView.info_memory(stats, {}, {}, self.cluster_mock, verbose=True)
-
-        derived = self.render_mock.call_args_list[1][0][2]["stats"]["1.1.1.1"]
         self.assertEqual(derived["host_free_mem_bytes"], str(8000000 * 1024))
         self.assertEqual(derived["host_free_mem_pct"], "50")
 
     def test_info_memory_verbose_keeps_lone_host_pct(self):
-        """
-        With neither free-bytes stat present the dedup has nothing to compare;
-        it must not treat the two absences as equal and blank the Host% cell.
-        """
         stats = {"1.1.1.1": {"host_free_mem_pct": "50"}}
         self.set_nodes("1.1.1.1")
 
