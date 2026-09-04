@@ -295,7 +295,7 @@ jobs:
       - name: Install JFrog CLI
         if: inputs.release == true
         continue-on-error: true
-        uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
+        uses: step-security/setup-jfrog-cli@53aeacb709fce45d0baf69a13ec3342f7e2d71a9 # v5.1.0
         env:
           JF_URL: https://artifact.aerospike.io
           JF_PROJECT: database
@@ -981,7 +981,7 @@ jobs:
       - name: Install JFrog CLI
         if: inputs.release == true
         id: jf
-        uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
+        uses: step-security/setup-jfrog-cli@53aeacb709fce45d0baf69a13ec3342f7e2d71a9 # v5.1.0
         env:
           JF_URL: https://artifact.aerospike.io
           JF_PROJECT: database
@@ -1070,7 +1070,7 @@ jobs:
 
       - name: Install JFrog CLI
         id: jf
-        uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
+        uses: step-security/setup-jfrog-cli@53aeacb709fce45d0baf69a13ec3342f7e2d71a9 # v5.1.0
         env:
           JF_URL: https://artifact.aerospike.io
           JF_PROJECT: database
@@ -1244,7 +1244,7 @@ jobs:
           egress-policy: audit
 
       - name: Setup JFrog CLI
-        uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
+        uses: step-security/setup-jfrog-cli@53aeacb709fce45d0baf69a13ec3342f7e2d71a9 # v5.1.0
         env:
           JF_URL: https://artifact.aerospike.io
           JF_PROJECT: database
