@@ -1313,12 +1313,12 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertEqual(untracked, ["node1"])
         self.assertEqual(no_capacity, [])
 
-    def test_untracked_cgroup_limit_without_host_total_is_only_no_capacity(self):
+    def test_untracked_cgroup_limit_without_host_total_is_untracked_only(self):
         """
         Every released server reports cgroup_memory_limit_bytes without
         host_total_mem_kbytes, so this is the live shape of an untracked node.
-        Capacity is blank, so the node must not be named by the untracked
-        warning, which says Capacity is host-wide.
+        It is named as untracked, not as capacity-less: the blank Capacity has
+        the same cause, and the caller must still say to enable tracking.
         """
         headline, untracked, no_capacity, _ = self.headline(
             {
@@ -1335,8 +1335,8 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
         self.assertNotIn("capacity_bytes", headline["node1"])
         self.assertNotIn("alloc_pct", headline["node1"])
         self.assertEqual(headline["node1"]["allocated_bytes"], str(1000 * 1024 + 500))
-        self.assertEqual(untracked, [])
-        self.assertEqual(no_capacity, ["node1"])
+        self.assertEqual(untracked, ["node1"])
+        self.assertEqual(no_capacity, [])
 
     def test_capacity_is_never_estimated_from_free_stats(self):
         """

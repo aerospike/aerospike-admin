@@ -197,19 +197,34 @@ class CliView(object):
             if isinstance(row, dict)
         )
 
-        if untracked_limits:
+        untracked_host_wide = [
+            n for n in untracked_limits if "capacity_bytes" in headline.get(n, {})
+        ]
+        untracked_blank = [n for n in untracked_limits if n not in untracked_host_wide]
+
+        if untracked_host_wide:
             logger.warning(
                 "%s: cgroup-mem-tracking is off, so Capacity, Free%% and Stop%% "
                 "are host-wide, not cgroup-scoped.",
                 util.summarize_nodes(
-                    (node_names.get(n, n) for n in untracked_limits), total
+                    (node_names.get(n, n) for n in untracked_host_wide), total
+                ),
+            )
+
+        if untracked_blank:
+            logger.warning(
+                "%s: cgroup-mem-tracking is off, so Free%% and Stop%% are "
+                "host-wide, not cgroup-scoped. Enable it to report Capacity and "
+                "Alloc%%.",
+                util.summarize_nodes(
+                    (node_names.get(n, n) for n in untracked_blank), total
                 ),
             )
 
         if no_capacity and capacity_rendered:
             logger.warning(
-                "Capacity is blank for %s: no tracked cgroup limit and no host "
-                "total reported.",
+                "Capacity is blank for %s: the server reported no cgroup limit "
+                "and no host total.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in no_capacity), total
                 ),

@@ -735,11 +735,10 @@ def derive_memory_headline(stats, configs, ns_agg, builds=None, nodes=None):
         capacity = cgroup_limit if cgroup_tracked and cgroup_limit > 0 else host_total
 
         if node_stats:
-            if capacity <= 0:
-                if alloc_known:
-                    no_capacity.append(node)
-            elif cgroup_untracked:
+            if cgroup_untracked:
                 untracked_limits.append(node)
+            elif capacity <= 0 and alloc_known:
+                no_capacity.append(node)
 
         shmem = max(0, int_or_zero(agg.get("shmem_alloc_bytes")))
         heap = max(0, int_or_zero(node_stats.get("heap_allocated_bytes")))

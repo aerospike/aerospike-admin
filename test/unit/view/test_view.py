@@ -2852,11 +2852,12 @@ class InfoMemoryViewTest(unittest.TestCase):
         self.assertIn("cgroup-mem-tracking is off", warnings[0])
         self.assertIn("node1", warnings[0])
 
-    def test_info_memory_untracked_limit_without_host_total_is_silent(self):
+    def test_info_memory_untracked_limit_without_host_total_says_enable_it(self):
         """
         The shape every released server produces: a cgroup limit and no
         host_total_mem_kbytes. Capacity is blank and the column collapses, so
-        no warning may claim Capacity shows anything.
+        the warning must not claim Capacity is host-wide, but it must still
+        tell the operator what fills it.
         """
         self.set_nodes("1.1.1.1")
         stats = self._cgroup_limit_stats()
@@ -2872,13 +2873,20 @@ class InfoMemoryViewTest(unittest.TestCase):
         row = self.render_mock.call_args[0][2]["headline"]["1.1.1.1"]
         self.assertNotIn("capacity_bytes", row)
         self.assertNotIn("alloc_pct", row)
-        self.assertEqual(self.warnings(), [])
+
+        warnings = self.warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("cgroup-mem-tracking is off", warnings[0])
+        self.assertIn("Enable it to report Capacity and Alloc%", warnings[0])
+        self.assertNotIn("Capacity, Free%", warnings[0])
+        self.assertIn("node1", warnings[0])
 
     def test_info_memory_untracked_limit_without_host_total_in_a_mixed_cluster(self):
         """
-        Next to a node that did render Capacity, the blank cell gets its own
-        explanation and nothing else: the untracked warning would claim a
-        host-wide Capacity the node does not have.
+        Next to a node that did render Capacity, the untracked node gets the
+        enable-tracking message alone: not the host-wide one, which would claim
+        a Capacity it does not have, and not the no-limit one, which would deny
+        the limit it does have.
         """
         self.set_nodes("1.1.1.1", "2.2.2.2")
 
@@ -2910,7 +2918,8 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("Capacity is blank", warnings[0])
+        self.assertIn("Enable it to report Capacity and Alloc%", warnings[0])
+        self.assertNotIn("Capacity is blank", warnings[0])
         self.assertIn("node2", warnings[0])
         self.assertNotIn("node1", warnings[0])
 
