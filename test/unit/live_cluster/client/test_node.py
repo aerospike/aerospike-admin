@@ -22,6 +22,8 @@ from ctypes import ArgumentError
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
+from parameterized import parameterized
+
 import lib
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
@@ -3930,6 +3932,29 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_sindex()
 
         self.assertEqual(actual[0]["exp"], compiled_exp)
+
+    @parameterized.expand(
+        [
+            ("as_info_error", ASInfoError("Invalid command")),
+            ("os_error", OSError("connection reset")),
+            ("timeout", asyncio.TimeoutError()),
+        ]
+    )
+    async def test_info_sindex_ael_ignores_raised_base64_list(self, _, exc):
+        """A raised b64 call must not cost the caller the sindex list already
+        fetched, nor mark the node dead."""
+        self.node.build = "8.1.3.0"
+        self.node.alive = True
+        compiled_exp = 'add(bin_int("a"), bin_int("b"))'
+        self.info_mock.side_effect = [
+            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
+            exc,
+        ]
+
+        actual = await self.node.info_sindex()
+
+        self.assertEqual(actual[0]["exp"], compiled_exp)
+        self.assertTrue(self.node.alive)
 
     async def test_info_sindex_statistics(self):
         self.info_mock.return_value = "a=b;c=d;e=f"

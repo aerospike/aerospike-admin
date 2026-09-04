@@ -2465,6 +2465,26 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         ):
             await self.controller.execute(line)
 
+    @parameterized.expand(
+        [
+            ("exp_base64", "exp_base64 dGVzdA==", "exp_base64"),
+            ("ctx", "ctx list_index(0)", "ctx"),
+            ("ctx_base64", "ctx_base64 dGVzdA==", "ctx_base64"),
+            ("bin", "bin mybin", "bin"),
+        ]
+    )
+    async def test_ael_conflicts(self, _, other_mod, modifier):
+        line = "string idx ns test {} ael $.a:INT".format(other_mod).split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException,
+            "Cannot use both '{}' and 'ael' modifiers together".format(modifier),
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
     async def test_exp_base64_not_supported(self):
         line = "string exp-index ns test exp_base64 dGVzdA==".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.0.0.0"}
@@ -2713,6 +2733,12 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
                 "ctx_base64",
                 "mysetindex ns test set testset ctx_base64 dGVzdA==",
                 "ctx_base64",
+            ),
+            ("ael", "mysetindex ns test set testset ael $.a:INT", "ael"),
+            (
+                "ael_b64",
+                "mysetindex ns test set testset ael_b64 JC5hOklOVA==",
+                "ael_b64",
             ),
         ]
     )

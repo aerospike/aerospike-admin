@@ -3381,13 +3381,18 @@ class Node(AsyncObject):
         b64_command = "{}{}b64=true".format(
             command, "" if command.endswith(":") else ";"
         )
-        resp = await self._info(b64_command)
+        # A failure here must not cost the caller the sindex list already in
+        # hand, so it degrades to the server's compiled-expression rendering.
+        try:
+            resp = await self._info(b64_command)
 
-        if resp.startswith("ERROR") or resp.startswith("error"):
+            if resp.startswith("ERROR") or resp.startswith("error"):
+                raise ASInfoResponseError("Failed to get base64 sindex list", resp)
+        except Exception as e:
             logger.debug(
                 "info_sindex node=%s failed to get base64 sindex list: %s",
                 self.ip,
-                resp,
+                e,
             )
             return
 

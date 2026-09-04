@@ -1129,15 +1129,17 @@ class ManageSIndexController(LiveClusterManageCommandController):
             "ael",
             "AEL (Aerospike Expression Language) source for the server to compile, e.g."
             " ael '$.a:INT + $.b:INT'. Surround it with single quotes: without them the"
-            " expression is split on spaces and a ';' ends the command. bin, ctx,"
+            " expression is split on spaces, a '#' truncates it and a ';' ends the"
+            " command. Even inside quotes a backslash escapes the character after it,"
+            " so use 'ael_b64' for source containing backslashes. bin, ctx,"
             " ctx_base64, exp_base64 and ael_b64 will not be allowed when ael is specified."
             f" Requires server >= {constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION}.",
         ),
         ModifierHelp(
             "ael_b64",
-            "The base64 encoding of AEL source. Same as 'ael' but pre-encoded, so no"
-            " quoting is needed. bin, ctx, ctx_base64, exp_base64 and ael will not be"
-            " allowed when ael_b64 is specified."
+            "The base64 encoding of AEL source. Same as 'ael' but pre-encoded, so the"
+            " command parser cannot alter it. bin, ctx, ctx_base64, exp_base64 and ael"
+            " will not be allowed when ael_b64 is specified."
             f" Requires server >= {constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION}.",
         ),
     ),
@@ -1482,7 +1484,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 )
 
         # Validate required modifiers - exactly one of 'bin', 'exp_base64', 'ael' or 'ael_b64' is required
-        if not exp_base64 and not ael and not ael_b64 and not bin_name:
+        if not exp_base64 and ael is None and ael_b64 is None and not bin_name:
             raise ShellException(
                 "Either 'bin', 'exp_base64', 'ael' or 'ael_b64' modifier is required. Use 'bin' to specify a bin to index, 'exp_base64' to specify an expression to be evaluated, or 'ael'/'ael_b64' to specify AEL source for the server to compile."
             )
@@ -1641,7 +1643,7 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
         unsupported = [
             m
-            for m in ("bin", "in", "ctx", "exp_base64", "ctx_base64")
+            for m in ("bin", "in", "ctx", "exp_base64", "ctx_base64", "ael", "ael_b64")
             if self.mods.get(m)
         ]
         if unsupported:
