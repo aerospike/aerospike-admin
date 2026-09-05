@@ -1,0 +1,161 @@
+name: Copy aerospike-asadm images to Docker Hub
+
+# Copies already-published aerospike-asadm tags from JFrog to Docker Hub.
+# Does not build images and does not write anything back to Artifactory.
+# Tags: 5.0.3-5 (multi-arch index), 5.0.3-5-amd64 (linux/amd64),
+# 5.0.3-5-arm64 (linux/arm64).
+
+on:
+  workflow_dispatch:
+    inputs:
+      source-image:
+        description: Source image without tag
+        required: true
+        default: artifact.aerospike.io/docker/aerospike-asadm
+      dest-image:
+        description: Destination Docker Hub image without tag
+        required: true
+        default: aerospike/aerospike-asadm
+      tags:
+        description: Comma-separated tags to copy unchanged (index, linux/amd64, linux/arm64)
+        required: true
+        default: 5.0.3-5,5.0.3-5-amd64,5.0.3-5-arm64
+      dry-run:
+        description: Inspect JFrog tags only; do not push to Docker Hub
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  copy:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Install JFrog CLI
+        id: jf
+        uses: step-security/setup-jfrog-cli@893a92f96c7727242adf0e603c77b1f2a22390e1 # v4.9.1
+        env:
+          JF_URL: https://artifact.aerospike.io
+          JF_PROJECT: database
+        with:
+          version: 2.78.8
+          oidc-provider-name: database-gh-aerospike
+          oidc-audience: database-gh-aerospike
+
+      - name: Docker login to Artifactory (pull only)
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: artifact.aerospike.io
+          username: ${{ steps.jf.outputs.oidc-user }}
+          password: ${{ steps.jf.outputs.oidc-token }}
+
+      - name: Docker login to Docker Hub
+        if: ${{ !inputs.dry-run }}
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          username: ${{ vars.AEROSPIKE_DOCKER_ORG_NAME || 'aerospike' }}
+          password: ${{ secrets.AEROSPIKE_DOCKER_ORG_RW_TOKEN }}
+
+      - uses: step-security/setup-buildx-action@f931205d68723ad9589fd2a7e2ece238bf9de341 # v4.0.0
+
+      - name: Copy existing tags to Docker Hub
+        id: copy
+        shell: bash
+        env:
+          SOURCE_IMAGE: ${{ inputs.source-image }}
+          DEST_IMAGE: ${{ inputs.dest-image }}
+          TAGS: ${{ inputs.tags }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+
+          # Registry-to-registry copy of already-published tags.
+          # Do not docker build, do not docker push to Artifactory.
+          copy_tag() {
+            local src="$1"
+            local dest="$2"
+            docker buildx imagetools create --tag "$dest" "$src"
+          }
+
+          inspect_digest() {
+            docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r '.digest'
+          }
+
+          tags_array=()
+          IFS=',' read -ra raw_tags <<< "$TAGS"
+          for tag in "${raw_tags[@]}"; do
+            tag="${tag#"${tag%%[![:space:]]*}"}"
+            tag="${tag%"${tag##*[![:space:]]}"}"
+            [ -z "$tag" ] && continue
+            tags_array+=("$tag")
+          done
+
+          if [ "${#tags_array[@]}" -eq 0 ]; then
+            echo "::error::no tags parsed from input '$TAGS'"
+            exit 1
+          fi
+
+          copied=()
+          source_digests=()
+
+          {
+            echo "## Docker copy"
+            echo ""
+            echo "- Source: \`$SOURCE_IMAGE\`"
+            echo "- Destination: \`$DEST_IMAGE\`"
+            echo "- Dry run: \`$DRY_RUN\`"
+            echo ""
+            echo "| Tag | Source digest | Destination digest |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for tag in "${tags_array[@]}"; do
+            src="${SOURCE_IMAGE}:${tag}"
+            dest="${DEST_IMAGE}:${tag}"
+
+            echo "::group::Inspect source ${src}"
+            docker buildx imagetools inspect "$src"
+            src_digest="$(inspect_digest "$src")"
+            if [ -z "$src_digest" ] || [ "$src_digest" = "null" ]; then
+              echo "::error::could not read digest for $src"
+              exit 1
+            fi
+            echo "source digest: $src_digest"
+            echo "::endgroup::"
+            source_digests+=("${tag}@${src_digest}")
+
+            dest_digest=""
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "dry-run: skipping copy of $src -> $dest"
+              dest_digest="(skipped)"
+            else
+              echo "::group::Copy ${src} -> ${dest}"
+              copy_tag "$src" "$dest"
+              dest_digest="$(inspect_digest "$dest")"
+              echo "destination digest: $dest_digest"
+              echo "::endgroup::"
+
+              if [ "$src_digest" != "$dest_digest" ]; then
+                echo "::error::digest mismatch for tag ${tag}: source=${src_digest} dest=${dest_digest}"
+                exit 1
+              fi
+              copied+=("${dest}@${dest_digest}")
+            fi
+
+            echo "| \`${tag}\` | \`${src_digest}\` | \`${dest_digest}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          IFS=','
+          echo "copied-tags=${copied[*]}" >> "$GITHUB_OUTPUT"
+          echo "source-digests=${source_digests[*]}" >> "$GITHUB_OUTPUT"
