@@ -389,9 +389,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             if command:
                 commands.append(command)
         except ValueError as e:
-            raise ShellException(
-                "{} in '{}'. Check that quotes are balanced.".format(e, line)
-            )
+            raise ShellException("{}. Check that quotes are balanced.".format(e))
 
         return commands
 

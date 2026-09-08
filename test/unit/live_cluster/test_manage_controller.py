@@ -2485,6 +2485,26 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.cluster_mock.info_sindex_create.assert_not_called()
 
+    @parameterized.expand(
+        [
+            ("ael_with_bin", "integer idx ns test bin mybin ael", "ael"),
+            ("ael_alone", "integer idx ns test ael", "ael"),
+            ("ael_b64_with_bin", "integer idx ns test bin mybin ael_b64", "ael_b64"),
+            ("ael_b64_alone", "integer idx ns test ael_b64", "ael_b64"),
+        ]
+    )
+    async def test_ael_without_value(self, _, line_str, modifier):
+        """A bare modifier must error, never fall through to a plain bin index."""
+        line = line_str.split()
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+
+        with self.assertRaisesRegex(
+            ShellException, "The '{}' modifier requires".format(modifier)
+        ):
+            await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_not_called()
+
     async def test_exp_base64_not_supported(self):
         line = "string exp-index ns test exp_base64 dGVzdA==".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.0.0.0"}
@@ -2740,6 +2760,10 @@ class ManageSIndexCreateSetControllerTest(unittest.IsolatedAsyncioTestCase):
                 "mysetindex ns test set testset ael_b64 JC5hOklOVA==",
                 "ael_b64",
             ),
+            ("bare_ael", "mysetindex ns test set testset ael", "ael"),
+            ("bare_ael_b64", "mysetindex ns test set testset ael_b64", "ael_b64"),
+            ("bare_bin", "mysetindex ns test set testset bin", "bin"),
+            ("bare_in", "mysetindex ns test set testset in", "in"),
         ]
     )
     async def test_create_set_with_unsupported_modifier(self, _, line_str, modifier):

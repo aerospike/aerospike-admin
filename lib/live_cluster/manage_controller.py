@@ -1302,8 +1302,22 @@ class ManageSIndexCreateController(ManageLeafCommandController):
 
         return cdt_ctx
 
+    def _check_ael_has_value(self, line):
+        """parse_modifiers leaves a bare keyword as an empty list, indistinguishable
+        from an absent one, so presence is read off the raw line."""
+        if "ael" in line and not self.mods["ael"]:
+            raise ShellException(
+                "The 'ael' modifier requires an AEL expression, e.g. ael '$.a:INT + $.b:INT'."
+            )
+
+        if "ael_b64" in line and not self.mods["ael_b64"]:
+            raise ShellException(
+                "The 'ael_b64' modifier requires a base64 encoded AEL expression, e.g. ael_b64 JC5hOklOVCArICQuYjpJTlQ=."
+            )
+
     async def _do_create(self, line, bin_type: str):
         index_name = line.pop(0)
+        self._check_ael_has_value(line)
         namespace = util.get_arg_and_delete_from_mods(
             line=line,
             arg="ns",
@@ -1641,13 +1655,14 @@ class ManageSIndexCreateController(ManageLeafCommandController):
                 "Correct syntax: <index-name> ns <ns> set <set-name>"
             )
 
+        # Read off the raw line: a bare keyword leaves an empty modifier list.
         unsupported = [
             m
             for m in ("bin", "in", "ctx", "exp_base64", "ctx_base64", "ael", "ael_b64")
-            if self.mods.get(m)
+            if m in line
         ]
         if unsupported:
-            if unsupported == ["in"]:
+            if unsupported == ["in"] and self.mods["in"]:
                 in_type = self.mods["in"][0]
                 raise ShellException(
                     f"Set-based indexes do not support the 'in' modifier. "
