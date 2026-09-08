@@ -786,12 +786,14 @@ def derive_memory_stats(stats):
     inputs are present and valid, so absent columns collapse on older servers.
 
     Nothing is estimated: host_total_mem_bytes is the server's own MemTotal
-    reading, never inferred from the free stats.
+    reading, never inferred from the free stats. The server emits
+    host_total_mem_kbytes unconditionally and leaves it zeroed when
+    /proc/meminfo is unreadable, so a non-positive total is left out rather
+    than rendered as 0 B.
     """
     kb_to_bytes = {
         "system_free_mem_kbytes": "system_free_mem_bytes",
         "host_free_mem_kbytes": "host_free_mem_bytes",
-        "host_total_mem_kbytes": "host_total_mem_bytes",
         "heap_allocated_kbytes": "heap_allocated_bytes",
         "heap_active_kbytes": "heap_active_bytes",
         "heap_mapped_kbytes": "heap_mapped_bytes",
@@ -805,6 +807,12 @@ def derive_memory_stats(stats):
         for src, dst in kb_to_bytes.items():
             if src in node_stats:
                 node_stats[dst] = str(int_or_zero(node_stats[src]) * 1024)
+
+        host_total_kb = int_or_zero(node_stats.get("host_total_mem_kbytes"))
+        node_stats.pop("host_total_mem_bytes", None)
+
+        if host_total_kb > 0:
+            node_stats["host_total_mem_bytes"] = str(host_total_kb * 1024)
 
         if "cgroup_memory_limit_bytes" in node_stats:
             limit = cgroup_limit_or_zero(node_stats["cgroup_memory_limit_bytes"])

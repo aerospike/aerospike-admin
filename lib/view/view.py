@@ -204,8 +204,10 @@ class CliView(object):
 
         if untracked_host_wide:
             logger.warning(
-                "%s: cgroup-mem-tracking is off, so Capacity, Free%% and Stop%% "
-                "are host-wide, not cgroup-scoped, and Alloc%% is withheld.",
+                "%s: the cgroup limit is not tracked, so Capacity, Free%% and "
+                "Stop%% are host-wide, not cgroup-scoped, and Alloc%% is "
+                "withheld. Enable cgroup-mem-tracking to scope them to the "
+                "cgroup.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in untracked_host_wide), total
                 ),
@@ -213,9 +215,9 @@ class CliView(object):
 
         if untracked_blank:
             logger.warning(
-                "%s: cgroup-mem-tracking is off, so Free%% and Stop%% are "
-                "host-wide, not cgroup-scoped. Enable it to report Capacity and "
-                "Alloc%%.",
+                "%s: the cgroup limit is not tracked, so Free%% and Stop%% are "
+                "host-wide, not cgroup-scoped. Enable cgroup-mem-tracking to "
+                "report Capacity and Alloc%%.",
                 util.summarize_nodes(
                     (node_names.get(n, n) for n in untracked_blank), total
                 ),
