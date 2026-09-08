@@ -1246,6 +1246,14 @@ info_sindex_sheet = Sheet(
                 Projectors.String("sindex_stats", "exp"),
             ),
         ),
+        Field(
+            "AEL",
+            Projectors.Func(
+                FieldType.string,
+                _ignore_null,
+                Projectors.String("sindex_stats", "ael"),
+            ),
+        ),
         Subgroup(
             "Queries",
             (
@@ -2525,6 +2533,10 @@ show_sindex = Sheet(
         Field(
             "Expression",
             Projectors.Func("string", _ignore_null, Projectors.String("data", "exp")),
+        ),
+        Field(
+            "AEL",
+            Projectors.Func("string", _ignore_null, Projectors.String("data", "ael")),
         ),
     ),
     from_source=("data"),

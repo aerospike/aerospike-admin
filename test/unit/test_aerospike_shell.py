@@ -525,8 +525,17 @@ class CleanLineTest(unittest.TestCase):
         )
 
     def test_unterminated_quote_raises_shell_exception(self):
-        with self.assertRaises(ShellException):
+        with self.assertRaises(ShellException) as cm:
             self.clean("show 'unterminated")
+
+        self.assertIn("Check that quotes are balanced", str(cm.exception))
+
+    def test_unterminated_quote_error_omits_command(self):
+        """The raw line may carry a password, so it never reaches stderr."""
+        with self.assertRaises(ShellException) as cm:
+            self.clean("manage acl create user bob password 'hunter2")
+
+        self.assertNotIn("hunter2", str(cm.exception))
 
 
 class PrecmdDispatchTest(unittest.IsolatedAsyncioTestCase):
