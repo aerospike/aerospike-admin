@@ -1482,7 +1482,7 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
 
     def test_old_build_without_capacity_stats_is_not_reported_as_capacityless(self):
         """
-        A pre-8.2.0 node cannot report cgroup_memory_limit_bytes or
+        A pre-8.2 node cannot report cgroup_memory_limit_bytes or
         host_total_mem_kbytes at all, so their absence is no evidence about the
         node's cgroup or host. The build warning already names the node; a
         no-capacity warning on top would assert a fact asadm never observed.

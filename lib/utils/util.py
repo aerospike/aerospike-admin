@@ -598,7 +598,7 @@ def aggregate_ns_memory_stats(ns_stats, editions=None):
     The component keys are not additive with the process heap: set index stages
     are always heap allocated, and so is memory-engine data on Community.
 
-    total_alloc_bytes needs at least one 8.2.0 arena stat behind it.
+    total_alloc_bytes needs at least one 8.2 arena stat behind it.
     data_alloc_bytes comes from data_total_bytes, which exists since 7.0, so
     publishing a total from it alone renders a memory-engine node's Total Alloc
     below its Total Used in the same row.
@@ -655,7 +655,7 @@ def aggregate_ns_memory_stats(ns_stats, editions=None):
 
 def node_reports_memory_alloc_stats(build):
     """
-    Whether a build reports the 8.2.0 memory allocation statistics.
+    Whether a build reports the 8.2 memory allocation statistics.
 
     An unreadable build counts as not reporting: publishing an allocation total
     for a node whose arenas are unknown overstates what asadm actually knows.
@@ -673,7 +673,7 @@ def node_reports_memory_alloc_stats(build):
 
 def nodes_missing_memory_alloc_stats(builds):
     """
-    The nodes in a build map that do not report the 8.2.0 allocation stats.
+    The nodes in a build map that do not report the 8.2 allocation stats.
 
     One predicate for the headline gate, the verbose gate, and the warning, so
     a node whose Allocated Total is suppressed is always a node the warning

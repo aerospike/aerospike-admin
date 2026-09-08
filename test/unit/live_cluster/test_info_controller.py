@@ -249,7 +249,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
 
         warnings_logged = self.warnings()
         self.assertEqual(len(warnings_logged), 1)
-        self.assertIn("Allocation figures require server 8.2.0", warnings_logged[0])
+        self.assertIn("Allocation figures require server 8.2", warnings_logged[0])
 
         for node_name in expected_nodes:
             self.assertIn(node_name, warnings_logged[0])

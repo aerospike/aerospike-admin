@@ -2069,7 +2069,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand([("integer",), ("numeric",)])
     async def test_create_integer_type_on_new_server(self, bin_type):
-        """On server >= 8.2.0, both 'integer' and its deprecated 'numeric' alias
+        """On server >= 8.2, both 'integer' and its deprecated 'numeric' alias
         pass integer_type_support=True so node.py can emit the 'integer' wire type."""
         line = f"{bin_type} a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
@@ -2104,7 +2104,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_create_integer_not_supported_on_old_server(self):
-        """The 'integer' type requires server >= 8.2.0; older servers error out."""
+        """The 'integer' type requires server >= 8.2; older servers error out."""
         line = "integer a-index ns test bin a".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
 
@@ -2119,7 +2119,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_sindex_create.assert_not_called()
 
     async def test_create_numeric_warns_on_new_server(self):
-        """Typing the deprecated 'numeric' alias against a server >= 8.2.0 warns
+        """Typing the deprecated 'numeric' alias against a server >= 8.2 warns
         that it is replaced by 'integer'."""
         line = "numeric a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
@@ -2138,7 +2138,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_create_numeric_no_warning_on_old_server(self):
-        """On a server < 8.2.0 'numeric' is still the valid type, so no warning."""
+        """On a server < 8.2 'numeric' is still the valid type, so no warning."""
         line = "numeric a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
@@ -2150,7 +2150,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         self.logger_mock.warning.assert_not_called()
 
     async def test_create_integer_no_warning_on_new_server(self):
-        """Typing 'integer' directly on a server >= 8.2.0 produces no deprecation warning."""
+        """Typing 'integer' directly on a server >= 8.2 produces no deprecation warning."""
         line = "integer a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK

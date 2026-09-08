@@ -3332,7 +3332,7 @@ class Node(AsyncObject):
         command = "sindex-list:"
 
         # The "numeric" sindex type was renamed to "integer" in
-        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.2.0). The v2 list format
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.2). The v2 list format
         # reports the renamed "integer" type, so request it on servers that
         # support it. Older servers only understand the default (v1) format.
         if (
@@ -3492,7 +3492,7 @@ class Node(AsyncObject):
         command = "sindex-create:indexname={};".format(index_name)
 
         # The server renamed the "numeric" sindex type to "integer" starting with
-        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.2.0). Translate the deprecated
+        # SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION (8.2). Translate the deprecated
         # "numeric" alias forward on servers that support "integer". ("integer" against
         # an older server is rejected up front by the controller.)
         if bin_type == "numeric" and feature_support.get("integer_type_support"):

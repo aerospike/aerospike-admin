@@ -260,7 +260,7 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
         warnings_logged = self.warnings()
         self.assertEqual(self.view_mock.info_memory.call_count, 2)
         self.assertEqual(len(warnings_logged), 1)
-        self.assertIn("Allocation figures require server 8.2.0", warnings_logged[0])
+        self.assertIn("Allocation figures require server 8.2", warnings_logged[0])
         self.assertIn("node1", warnings_logged[0])
 
     @parameterized.expand(
