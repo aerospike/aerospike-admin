@@ -1117,6 +1117,41 @@ class DeriveMemoryStatsTest(unittest.TestCase):
         self.assertEqual(result["node1"]["host_free_mem_bytes"], str(8000000 * 1024))
         self.assertEqual(result["node1"]["host_free_mem_pct"], "50")
 
+    def test_host_total_converted_to_bytes(self):
+        stats = {"node1": {"host_total_mem_kbytes": "16000000"}}
+        result = util.derive_memory_stats(stats)
+        self.assertEqual(result["node1"]["host_total_mem_bytes"], str(16000000 * 1024))
+
+    def test_host_total_dropped_when_the_server_reports_no_reading(self):
+        """
+        sys_mem_info leaves total_mem_kbytes zeroed when /proc/meminfo is
+        unreadable and the server emits the stat anyway, so a non-positive
+        total is a missing reading, not a host with no memory. Deriving it
+        would put 0 B in the verbose Host Total cell.
+        """
+        for value in ("0", "-1", "notanumber"):
+            with self.subTest(value=value):
+                stats = {"node1": {"host_total_mem_kbytes": value}}
+                result = util.derive_memory_stats(stats)
+                self.assertNotIn("host_total_mem_bytes", result["node1"])
+
+    def test_host_total_is_recomputed_from_the_current_reading(self):
+        """
+        The other kbyte stats overwrite on every pass, so this one must not go
+        stale either: re-deriving a dict that already carries a total has to
+        reflect what the server reports now, not what it reported before.
+        """
+        stats = {"node1": {"host_total_mem_kbytes": "16000000"}}
+        util.derive_memory_stats(stats)
+
+        stats["node1"]["host_total_mem_kbytes"] = "0"
+        result = util.derive_memory_stats(stats)
+        self.assertNotIn("host_total_mem_bytes", result["node1"])
+
+        stats["node1"]["host_total_mem_kbytes"] = "8000000"
+        result = util.derive_memory_stats(stats)
+        self.assertEqual(result["node1"]["host_total_mem_bytes"], str(8000000 * 1024))
+
     def test_cgroup_used_pct_derived(self):
         stats = {
             "node1": {

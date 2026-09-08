@@ -2849,7 +2849,7 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("cgroup-mem-tracking is off", warnings[0])
+        self.assertIn("the cgroup limit is not tracked", warnings[0])
         self.assertIn("Alloc% is withheld", warnings[0])
         self.assertIn("node1", warnings[0])
 
@@ -2877,8 +2877,10 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("cgroup-mem-tracking is off", warnings[0])
-        self.assertIn("Enable it to report Capacity and Alloc%", warnings[0])
+        self.assertIn("the cgroup limit is not tracked", warnings[0])
+        self.assertIn(
+            "Enable cgroup-mem-tracking to report Capacity and Alloc%", warnings[0]
+        )
         self.assertNotIn("Capacity, Free%", warnings[0])
         self.assertIn("node1", warnings[0])
 
@@ -2919,7 +2921,9 @@ class InfoMemoryViewTest(unittest.TestCase):
 
         warnings = self.warnings()
         self.assertEqual(len(warnings), 1)
-        self.assertIn("Enable it to report Capacity and Alloc%", warnings[0])
+        self.assertIn(
+            "Enable cgroup-mem-tracking to report Capacity and Alloc%", warnings[0]
+        )
         self.assertNotIn("Capacity is blank", warnings[0])
         self.assertIn("node2", warnings[0])
         self.assertNotIn("node1", warnings[0])
@@ -2959,11 +2963,11 @@ class InfoMemoryViewTest(unittest.TestCase):
         printed = stdout.getvalue()
 
         warnings = self.warnings()
-        self.assertTrue(any("cgroup-mem-tracking is off" in w for w in warnings))
+        self.assertTrue(any("the cgroup limit is not tracked" in w for w in warnings))
         self.assertTrue(any("No namespace statistics" in w for w in warnings))
         self.assertIn("Memory Information", printed)
         self.assertNotIn("WARNING", printed)
-        self.assertNotIn("cgroup-mem-tracking is off", printed)
+        self.assertNotIn("the cgroup limit is not tracked", printed)
         self.assertNotIn("No namespace statistics", printed)
 
         for warning in warnings:

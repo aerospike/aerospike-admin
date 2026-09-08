@@ -16,6 +16,7 @@ import json
 import unittest
 from parameterized import parameterized
 
+from lib.utils import util
 from lib.view import sheet, templates
 from lib.view.sheet import SheetStyle
 from lib.view.sheet.decleration import EntryData
@@ -585,6 +586,18 @@ class InfoMemoryHostSheetTest(unittest.TestCase):
 
         record = self.render({"system_free_mem_pct": "50"})
         self.assertNotIn("Host Total", record)
+
+    def test_host_total_collapses_when_the_server_reports_zero(self):
+        """
+        A server whose /proc/meminfo is unreadable still emits
+        host_total_mem_kbytes, zeroed. The column has to collapse the same as
+        an absent stat rather than claim a 0 B host.
+        """
+        node = util.derive_memory_stats(
+            {MEMORY_NODE: {"host_total_mem_kbytes": "0", "system_free_mem_pct": "50"}}
+        )[MEMORY_NODE]
+
+        self.assertNotIn("Host Total", self.render(node))
 
 
 class InfoMemoryProcessSheetTest(unittest.TestCase):
