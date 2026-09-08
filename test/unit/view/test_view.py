@@ -3233,7 +3233,7 @@ class InfoMemoryViewTest(unittest.TestCase):
             {"1.1.1.1": {}, "2.2.2.2": {}},
             {"1.1.1.1": {"shmem_alloc_bytes": "10"}, "2.2.2.2": {}},
             self.cluster_mock,
-            builds={"1.1.1.1": "8.1.3", "2.2.2.2": "8.1.3"},
+            builds={"1.1.1.1": "8.2.0", "2.2.2.2": "8.2.0"},
             verbose=True,
             with_=["1.1.1.1"],
         )

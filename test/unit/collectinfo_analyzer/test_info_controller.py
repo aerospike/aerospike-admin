@@ -66,7 +66,7 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
 
     def set_snapshot(self, builds=None, editions=None, node_names=None):
         cinfo_log_mock = self._cinfo_log_mock(
-            builds if builds is not None else {NODE: "8.1.3"},
+            builds if builds is not None else {NODE: "8.2.0"},
             node_names if node_names is not None else {NODE: "node1"},
             editions=editions,
         )
@@ -163,7 +163,7 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
             {},
             {},
             cluster=cinfo_log_mock,
-            builds={NODE: "8.1.3"},
+            builds={NODE: "8.2.0"},
             timestamp=ts,
             verbose=False,
         )
@@ -260,12 +260,12 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
         warnings_logged = self.warnings()
         self.assertEqual(self.view_mock.info_memory.call_count, 2)
         self.assertEqual(len(warnings_logged), 1)
-        self.assertIn("Allocation figures require server 8.1.3", warnings_logged[0])
+        self.assertIn("Allocation figures require server 8.2.0", warnings_logged[0])
         self.assertIn("node1", warnings_logged[0])
 
     @parameterized.expand(
         [
-            ("supported", {NODE: "8.1.3"}),
+            ("supported", {NODE: "8.2.0"}),
             ("no_nodes", {}),
         ]
     )

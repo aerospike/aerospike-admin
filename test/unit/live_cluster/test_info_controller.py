@@ -94,7 +94,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
         self.stat_getter_mock.get_namespace.return_value = ns_stats
-        self.set_cluster({"1.1.1.1": "8.1.3"})
+        self.set_cluster({"1.1.1.1": "8.2.0"})
         self.controller.mods = {"with": [], "line": []}
 
         await self.controller.execute(["memory"])
@@ -115,7 +115,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns_agg["1.1.1.1"]["set_index_used_bytes"], "128")
         self.assertEqual(ns_agg["1.1.1.1"]["shmem_alloc_bytes"], "4096")
         self.assertEqual(ns_agg["1.1.1.1"]["data_in_memory_used_bytes"], "9000")
-        self.assertEqual(call_args.kwargs["builds"], {"1.1.1.1": "8.1.3"})
+        self.assertEqual(call_args.kwargs["builds"], {"1.1.1.1": "8.2.0"})
         self.assertEqual(self.warnings(), [])
 
     async def test_do_memory_with_node_filter(self):
@@ -126,7 +126,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.stat_getter_mock.get_service.return_value = stats
         self.config_getter_mock.get_service.return_value = configs
         self.stat_getter_mock.get_namespace.return_value = ns_stats
-        self.set_cluster({"1.2.3.4": "8.1.3"})
+        self.set_cluster({"1.2.3.4": "8.2.0"})
         self.controller.mods = {"with": [], "line": []}
 
         await self.controller.execute(["memory", "with", "1.2.3.4"])
@@ -145,7 +145,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.stat_getter_mock.get_service.return_value = {node: {}}
         self.config_getter_mock.get_service.return_value = {node: {}}
         self.stat_getter_mock.get_namespace.return_value = {node: {}}
-        self.set_cluster(builds if builds is not None else {node: "8.1.3"})
+        self.set_cluster(builds if builds is not None else {node: "8.2.0"})
         self.controller.mods = {"with": [], "for": [], "line": []}
 
         await self.controller.execute(line)
@@ -181,7 +181,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.config_getter_mock.get_service.return_value = {node: {}}
         self.stat_getter_mock.get_namespace.return_value = ns_stats
         self.set_cluster(
-            {node: "8.1.3"}, edition="Aerospike {} Edition".format(edition)
+            {node: "8.2.0"}, edition="Aerospike {} Edition".format(edition)
         )
         self.controller.mods = {"with": [], "for": [], "line": []}
 
@@ -214,7 +214,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
                 }
             }
         }
-        self.cluster_mock.info_build = AsyncMock(return_value={node: "8.1.3"})
+        self.cluster_mock.info_build = AsyncMock(return_value={node: "8.2.0"})
         self.cluster_mock.info = AsyncMock(return_value={node: Exception("timeout")})
         self.cluster_mock.get_node_names.return_value = {node: "node1"}
         self.controller.mods = {"with": [], "for": [], "line": []}
@@ -228,7 +228,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         [
             (
                 "mixed_cluster",
-                {"1.1.1.1": "8.1.3", "2.2.2.2": "8.1.2"},
+                {"1.1.1.1": "8.2.0", "2.2.2.2": "8.1.2"},
                 ["node-2.2.2.2"],
             ),
             ("all_old", {"1.1.1.1": "8.1.2"}, ["node-1.1.1.1"]),
@@ -249,7 +249,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
 
         warnings_logged = self.warnings()
         self.assertEqual(len(warnings_logged), 1)
-        self.assertIn("Allocation figures require server 8.1.3", warnings_logged[0])
+        self.assertIn("Allocation figures require server 8.2.0", warnings_logged[0])
 
         for node_name in expected_nodes:
             self.assertIn(node_name, warnings_logged[0])
@@ -275,7 +275,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(warning), 200, warning)
 
     async def test_do_memory_warning_names_the_stragglers_mid_upgrade(self):
-        builds = {"10.0.0.%d" % i: ("8.1.3" if i > 1 else "8.1.1") for i in range(14)}
+        builds = {"10.0.0.%d" % i: ("8.2.0" if i > 1 else "8.1.1") for i in range(14)}
         await self._run_memory_line(["memory"], builds=builds)
 
         warning = self.warnings()[0]
@@ -286,7 +286,7 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand(
         [
-            ("all_supported", {"1.1.1.1": "8.1.3", "2.2.2.2": "8.2.0"}),
+            ("all_supported", {"1.1.1.1": "8.2.0", "2.2.2.2": "8.3.0"}),
             ("no_nodes", {}),
         ]
     )
@@ -301,11 +301,11 @@ class InfoControllerMemoryTest(unittest.IsolatedAsyncioTestCase):
     async def test_do_memory_hands_the_view_unfiltered_builds(self):
         error = Exception("connection refused")
         call_args = await self._run_memory_line(
-            ["memory"], builds={"1.1.1.1": "8.1.3", "2.2.2.2": error}
+            ["memory"], builds={"1.1.1.1": "8.2.0", "2.2.2.2": error}
         )
 
         self.assertEqual(
-            call_args.kwargs["builds"], {"1.1.1.1": "8.1.3", "2.2.2.2": error}
+            call_args.kwargs["builds"], {"1.1.1.1": "8.2.0", "2.2.2.2": error}
         )
 
     async def test_do_memory_rejects_for_modifier(self):
