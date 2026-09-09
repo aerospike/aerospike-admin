@@ -163,7 +163,7 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
         """
         This test asserts <b> info memory </b> output heading, the headline
         columns, and the allocation and capacity values. The fixture pins
-        server 8.1.3+ (lib.SERVER_TAG), whose image must report the arena stats
+        server 8.2+ (lib.SERVER_TAG), whose image must report the arena stats
         and host_total_mem_kbytes (SERVER-1546); the container has no tracked
         cgroup limit, so Capacity is the host total.
         """
@@ -254,7 +254,7 @@ class TestInfo(unittest.IsolatedAsyncioTestCase):
 
     async def test_namespace_usage_reports_index_allocation(self):
         """
-        The 8.1.3 per-namespace arena stats must surface as allocation columns
+        The 8.2 per-namespace arena stats must surface as allocation columns
         in <b> info namespace usage </b>. setUpClass creates a secondary index
         so si_alloc_bytes is present.
         """

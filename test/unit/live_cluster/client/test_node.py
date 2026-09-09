@@ -3853,7 +3853,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with("hist-dump:ns=test;hist=objsz", self.ip)
 
     async def test_info_sindex(self):
-        """Server < 8.1.3: the default (v1) sindex-list format is requested."""
+        """Server < 8.2: the default (v1) sindex-list format is requested."""
         self.node.build = "8.1.2.0"
         self.info_mock.return_value = "a=1:b=2:c=3:d=4:e=5;a=6:b=7:c=8:d=9:e=10;"
         expected = [
@@ -3867,9 +3867,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertListEqual(actual, expected)
 
     async def test_info_sindex_v2_on_new_server(self):
-        """Server >= 8.1.3: the v2 sindex-list format is requested so the renamed
+        """Server >= 8.2: the v2 sindex-list format is requested so the renamed
         'integer' type is reported."""
-        self.node.build = "8.1.3.0"
+        self.node.build = "8.2.0.0"
         self.info_mock.side_effect = ["a=1:b=2;", "a=1:b=2;"]
         expected = [{"a": "1", "b": "2"}]
 
@@ -3888,10 +3888,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_once_with("sindex-list:", self.ip)
 
     async def test_info_sindex_shows_ael_source(self):
-        """Server >= 8.1.3: an index created from AEL reports its source in "ael"
+        """Server >= 8.2: an index created from AEL reports its source in "ael"
         and nothing in "exp"; indexes not created from AEL keep the server's
         rendering in "exp" and get no "ael" field."""
-        self.node.build = "8.1.3.0"
+        self.node.build = "8.2.0.0"
         ael_src = "$.campaign1:INT + $.campaign2:INT"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
         self.info_mock.side_effect = [
@@ -3922,7 +3922,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_info_sindex_ael_ignores_failed_base64_list(self):
         """A failed b64 call leaves the default response untouched."""
-        self.node.build = "8.1.3.0"
+        self.node.build = "8.2.0.0"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
         self.info_mock.side_effect = [
             "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
@@ -3943,7 +3943,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def test_info_sindex_ael_ignores_raised_base64_list(self, _, exc):
         """A raised b64 call must not cost the caller the sindex list already
         fetched, nor mark the node dead."""
-        self.node.build = "8.1.3.0"
+        self.node.build = "8.2.0.0"
         self.node.alive = True
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
         self.info_mock.side_effect = [
@@ -4149,7 +4149,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_numeric_mapped_to_integer(self):
-        """Server >= 8.1.3: the deprecated 'numeric' type is sent as 'integer'."""
+        """Server >= 8.2: the deprecated 'numeric' type is sent as 'integer'."""
         self.info_mock.return_value = "OK"
         expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
 
@@ -4169,7 +4169,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_integer_passthrough(self):
-        """Server >= 8.1.3: 'integer' is sent as-is."""
+        """Server >= 8.2: 'integer' is sent as-is."""
         self.info_mock.return_value = "OK"
         expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
 
@@ -4189,7 +4189,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_numeric_unchanged_on_old_server(self):
-        """Server < 8.1.3: the legacy 'numeric' type is sent as-is."""
+        """Server < 8.2: the legacy 'numeric' type is sent as-is."""
         self.info_mock.return_value = "OK"
         expected_call = (
             "sindex-create:indexname=num-idx;ns=test;indexdata=mybin,numeric"

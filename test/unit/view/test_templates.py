@@ -452,7 +452,7 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
 
     def test_allocated_subgroup_projects_each_component(self):
         record = self.render(
-            builds="8.1.3",
+            builds="8.2.0",
             capacity_bytes="1000",
             allocated_bytes="500",
             allocated_shmem_bytes="300",
@@ -462,7 +462,7 @@ class InfoMemoryHeadlineSheetTest(unittest.TestCase):
             free_pct="50",
         )
 
-        self.assertEqual(record["Build"]["raw"], "8.1.3")
+        self.assertEqual(record["Build"]["raw"], "8.2.0")
         self.assertEqual(record["Capacity"]["raw"], 1000)
         self.assertEqual(record["Allocated"]["Total"]["raw"], 500)
         self.assertEqual(record["Allocated"]["Shmem"]["raw"], 300)

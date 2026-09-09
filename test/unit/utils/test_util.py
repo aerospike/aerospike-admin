@@ -1482,7 +1482,7 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
 
     def test_old_build_without_capacity_stats_is_not_reported_as_capacityless(self):
         """
-        A pre-8.1.3 node cannot report cgroup_memory_limit_bytes or
+        A pre-8.2 node cannot report cgroup_memory_limit_bytes or
         host_total_mem_kbytes at all, so their absence is no evidence about the
         node's cgroup or host. The build warning already names the node; a
         no-capacity warning on top would assert a fact asadm never observed.
@@ -1565,7 +1565,7 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
             util.derive_memory_stats(stats),
             {},
             {node: {"shmem_alloc_bytes": "500"} for node in ("new", "old")},
-            builds={"new": "8.1.3", "old": "8.1.2"},
+            builds={"new": "8.2.0", "old": "8.1.2"},
         )
 
         self.assertEqual(headline["new"]["allocated_bytes"], str(1000 * 1024 + 500))
@@ -1578,7 +1578,7 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
             util.derive_memory_stats({"n1": {"heap_allocated_kbytes": "1000"}}),
             {},
             {"n1": {"shmem_alloc_bytes": "500"}},
-            builds={"n1": "8.1.3"},
+            builds={"n1": "8.2.0"},
         )
         self.assertEqual(headline["n1"]["allocated_bytes"], str(1000 * 1024 + 500))
 
@@ -1668,8 +1668,8 @@ class DeriveMemoryHeadlineTest(unittest.TestCase):
 class NodesMissingMemoryAllocStatsTest(unittest.TestCase):
     def test_unsupported_builds_are_named(self):
         builds = {
-            "new": "8.1.3",
-            "newer": "8.2.0",
+            "new": "8.2.0",
+            "newer": "8.3.0",
             "old": "8.1.2",
             "missing": None,
             "empty": "",
@@ -1688,7 +1688,7 @@ class NodesMissingMemoryAllocStatsTest(unittest.TestCase):
                 self.assertEqual(util.nodes_missing_memory_alloc_stats(builds), [])
 
     def test_does_not_mutate_its_input(self):
-        builds = {"errored": Exception("boom"), "new": "8.1.3"}
+        builds = {"errored": Exception("boom"), "new": "8.2.0"}
         util.nodes_missing_memory_alloc_stats(builds)
         self.assertEqual(sorted(builds), ["errored", "new"])
 
@@ -1699,7 +1699,7 @@ class MemoryTablesAgreeTest(unittest.TestCase):
     whether a node's allocation is knowable.
     """
 
-    def _pre_8_1_3_memory_engine_node(self):
+    def _memory_engine_node_without_arena_stats(self):
         return {
             "node1": {
                 "mem_ns": {
@@ -1712,7 +1712,7 @@ class MemoryTablesAgreeTest(unittest.TestCase):
         }
 
     def test_both_tables_suppress_their_total_on_an_old_build(self):
-        ns_stats = self._pre_8_1_3_memory_engine_node()
+        ns_stats = self._memory_engine_node_without_arena_stats()
         ns_agg = util.aggregate_ns_memory_stats(
             ns_stats, editions={"node1": constants.EDITION_ENTERPRISE}
         )
@@ -1731,7 +1731,7 @@ class MemoryTablesAgreeTest(unittest.TestCase):
         self.assertNotIn("allocated_shmem_bytes", headline["node1"])
 
     def test_both_tables_publish_their_total_on_a_supported_build(self):
-        ns_stats = self._pre_8_1_3_memory_engine_node()
+        ns_stats = self._memory_engine_node_without_arena_stats()
         ns_stats["node1"]["mem_ns"]["index_shmem_alloc_bytes"] = "300"
         ns_agg = util.aggregate_ns_memory_stats(
             ns_stats, editions={"node1": constants.EDITION_ENTERPRISE}
@@ -1743,7 +1743,7 @@ class MemoryTablesAgreeTest(unittest.TestCase):
             util.derive_memory_stats({"node1": {"heap_allocated_kbytes": "1000"}}),
             {},
             ns_agg,
-            builds={"node1": "8.1.3"},
+            builds={"node1": "8.2.0"},
         )
 
         self.assertEqual(headline["node1"]["allocated_shmem_bytes"], "800")

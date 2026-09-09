@@ -2069,13 +2069,13 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand([("integer",), ("numeric",)])
     async def test_create_integer_type_on_new_server(self, bin_type):
-        """On server >= 8.1.3, both 'integer' and its deprecated 'numeric' alias
+        """On server >= 8.2, both 'integer' and its deprecated 'numeric' alias
         pass integer_type_support=True so node.py can emit the 'integer' wire type."""
         line = f"{bin_type} a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         await self.controller.execute(line)
 
@@ -2104,7 +2104,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_create_integer_not_supported_on_old_server(self):
-        """The 'integer' type requires server >= 8.1.3; older servers error out."""
+        """The 'integer' type requires server >= 8.2; older servers error out."""
         line = "integer a-index ns test bin a".split()
         self.meta_mock.get_builds.return_value = {"principal": "8.1.2.0"}
 
@@ -2119,13 +2119,13 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_sindex_create.assert_not_called()
 
     async def test_create_numeric_warns_on_new_server(self):
-        """Typing the deprecated 'numeric' alias against a server >= 8.1.3 warns
+        """Typing the deprecated 'numeric' alias against a server >= 8.2 warns
         that it is replaced by 'integer'."""
         line = "numeric a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         await self.controller.execute(line)
 
@@ -2138,7 +2138,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_create_numeric_no_warning_on_old_server(self):
-        """On a server < 8.1.3 'numeric' is still the valid type, so no warning."""
+        """On a server < 8.2 'numeric' is still the valid type, so no warning."""
         line = "numeric a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
@@ -2150,12 +2150,12 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         self.logger_mock.warning.assert_not_called()
 
     async def test_create_integer_no_warning_on_new_server(self):
-        """Typing 'integer' directly on a server >= 8.1.3 produces no deprecation warning."""
+        """Typing 'integer' directly on a server >= 8.2 produces no deprecation warning."""
         line = "integer a-index ns test bin a".split()
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         await self.controller.execute(line)
 
@@ -2269,7 +2269,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         await self.controller.execute(line)
 
@@ -2312,7 +2312,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_sindex_create.return_value = {
             "1.1.1.1": ASINFO_RESPONSE_OK
         }
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         await self.controller.execute(line)
 
@@ -2342,7 +2342,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ael_without_quotes(self):
         line = "integer ael-index ns test ael $.a:INT + $.b:INT".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "The 'ael' modifier takes one quoted expression"
@@ -2353,7 +2353,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ael_and_ael_b64_conflict(self):
         line = ["string", "idx", "ns", "test", "ael", "$.a:INT", "ael_b64", "ICAg"]
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "Cannot use both 'ael' and 'ael_b64' modifiers together"
@@ -2362,7 +2362,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ael_empty_source(self):
         line = ["string", "idx", "ns", "test", "ael", "   "]
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "The 'ael' modifier is an empty AEL expression"
@@ -2383,7 +2383,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_bin_and_ael_conflict(self):
         line = ["string", "idx", "ns", "test", "bin", "mybin", "ael", "$.a:INT"]
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "Cannot use both 'bin' and 'ael' modifiers together"
@@ -2406,7 +2406,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ael_b64_invalid_base64(self):
         line = "string ael-index ns test ael_b64 invalid_base64!".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "Unable to parse ael_b64 'invalid_base64!'"
@@ -2418,7 +2418,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
     async def test_ael_b64_empty_source(self):
         # ael_b64 is base64 of "   "
         line = "string ael-index ns test ael_b64 ICAg".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "'ael_b64' modifier is an empty AEL expression"
@@ -2429,7 +2429,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ael_b64_and_exp_base64_conflict(self):
         line = "string idx ns test ael_b64 ICAg exp_base64 dGVzdA==".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException,
@@ -2439,7 +2439,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ctx_and_ael_b64_conflict(self):
         line = "string idx ns test ctx list_index(0) ael_b64 ICAg".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "Cannot use both 'ctx' and 'ael_b64' modifiers together"
@@ -2448,7 +2448,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ctx_base64_and_ael_b64_conflict(self):
         line = "string idx ns test ctx_base64 dGVzdA== ael_b64 ICAg".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException,
@@ -2458,7 +2458,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_bin_and_ael_b64_conflict(self):
         line = "string idx ns test bin mybin ael_b64 ICAg".split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "Cannot use both 'bin' and 'ael_b64' modifiers together"
@@ -2475,7 +2475,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
     )
     async def test_ael_conflicts(self, _, other_mod, modifier):
         line = "string idx ns test {} ael $.a:INT".format(other_mod).split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException,
@@ -2496,7 +2496,7 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
     async def test_ael_without_value(self, _, line_str, modifier):
         """A bare modifier must error, never fall through to a plain bin index."""
         line = line_str.split()
-        self.meta_mock.get_builds.return_value = {"principal": "8.1.3.0"}
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
 
         with self.assertRaisesRegex(
             ShellException, "The '{}' modifier requires".format(modifier)
