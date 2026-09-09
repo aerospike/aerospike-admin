@@ -305,8 +305,8 @@ jobs:
       # ID below must keep that prefix.
       #
       # Every part of this is best-effort, deliberately unlike the hard-failing
-      # publish in shared-workflows' execute-build entrypoint: it runs in ten
-      # distro containers on two arches, and metadata about a package that
+      # publish in shared-workflows' execute-build entrypoint: it runs once per
+      # distro container per arch, and metadata about a package that
       # built, signed and tested clean is not worth failing a release over.
       # A leg that fails here still ships; it just goes missing from the
       # aggregated build-info, and says so as a warning.
