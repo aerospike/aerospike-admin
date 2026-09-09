@@ -45,7 +45,9 @@
 # === Test (dry-run) ===
 #   Dispatch with `release=false` from any branch: builds run end-to-end,
 #   artifacts available on the GHA run page, no tag, no JFrog publish,
-#   no release bundle.
+#   no release bundle. The docker image is built for both platforms but not
+#   pushed, and so is NOT smoke-tested: docker-test pulls the published image,
+#   which a dry run never produces. Package tests are unaffected.
 #
 # === Tagging rules (summary) ===
 #   Tagging is master-only. A git tag is created ONLY when:
@@ -959,7 +961,13 @@ jobs:
       attestations: write
     uses: aerospike/shared-workflows/.github/workflows/reusable_docker-build-deploy.yaml@v4.1.0
     with:
-      app-version: ${{ needs.get-version.outputs.BUILD_VERSION }}
+      # RELEASE, not BUILD_VERSION: on a master release BUILD_VERSION is the
+      # raw VERSION file value, rcN included, and app-version feeds the
+      # immutable <app-version>_<timestamp> tag that is always emitted. Passing
+      # it would tag 5.0.3-rc3_<ts> and break the invariant stated at the top of
+      # this file and in pkg_release.sh -- rcN belongs in the package iteration,
+      # never in a file name or image tag.
+      app-version: ${{ needs.get-version.outputs.RELEASE }}
       app-name: Aerospike asadm
       image-name: aerospike-asadm
       jf-project: database
@@ -973,10 +981,9 @@ jobs:
       # Non-release runs still build both platforms -- that is the only thing
       # keeping the Dockerfile honest on a PR -- but publish nothing.
       push: ${{ inputs.release == true }}
-      # RELEASE is <pkg-version>-<iteration>, the tag this image has always
-      # carried; it keeps rcN out of the name. Overriding suppresses the
-      # workflow's stock "latest" and bare-major tags, which must not move on
-      # an rc build. The immutable <app-version>_<timestamp> tag is always added.
+      # Suppresses the workflow's stock "latest" and bare-major tags, which
+      # must not move on an rc build. Same value as app-version, so both the
+      # moving tag and the immutable one are <RELEASE>-based.
       versions-override: ${{ needs.get-version.outputs.RELEASE }}
       gh-context-artifacts-json: '[{"name": "deploy-artifacts-${{ needs.get-version.outputs.VERSION }}", "dest": "deploy-artifacts"}]'
       # The Dockerfile installs this path from the build context instead of

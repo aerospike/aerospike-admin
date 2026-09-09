@@ -58,7 +58,13 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
         LOCAL_PKG="${ASADM_LOCAL_PKG_ARM64:-${ASADM_LOCAL_PKG}}"; \
     fi && \
     apt-get update -y && \
-    if [ -n "${LOCAL_PKG}" ] && [ -f "/build-ctx/${LOCAL_PKG}" ]; then \
+    if [ -n "${LOCAL_PKG}" ]; then \
+        if [ ! -f "/build-ctx/${LOCAL_PKG}" ]; then \
+            echo "ERROR: ${LOCAL_PKG} not in the build context." >&2; \
+            echo "Available .deb: $(find /build-ctx -name '*.deb' -printf '%P ' 2>/dev/null)" >&2; \
+            echo "The name is derived by the caller from pkg_release.sh; fix the derivation rather than falling back to an unverified download." >&2; \
+            exit 1; \
+        fi; \
         cp "/build-ctx/${LOCAL_PKG}" /tmp/asadm.deb; \
     else \
         apt-get install -y --no-install-recommends curl ca-certificates && \
