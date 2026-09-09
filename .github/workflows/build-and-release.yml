@@ -944,9 +944,63 @@ jobs:
       jf-metadata-build-id: ${{ needs.get-version.outputs.VERSION }}-metadata
       gh-workflows-ref: "v3.7.0"
 
-  docker-build-arch:
-    name: Docker build, test & push (${{ matrix.arch }})
+  # Image build/publish/attest is delegated to shared-workflows: it builds each
+  # platform on a native runner, pushes by digest, stitches one manifest list,
+  # publishes the docker build-info and attests the index. docker-build.sh is
+  # still the local/manual path; CI no longer drives it.
+  #
+  # Pinned a minor ahead of the v3.7.0 used elsewhere in this file, because
+  # gh-context-artifacts-json -- which puts the signed .deb inside the build
+  # context -- only exists from v4.1.0. Without it the image could only install
+  # a package downloaded from a URL, i.e. not the artifact this run just signed.
+  docker-build:
+    name: Docker build & publish
     needs: [get-version, organize-signed-artifacts]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: aerospike/shared-workflows/.github/workflows/reusable_docker-build-deploy.yaml@820a34351047b830c64e64cd4b997adbcd688783 # v4.1.0
+    with:
+      app-version: ${{ needs.get-version.outputs.BUILD_VERSION }}
+      app-name: Aerospike asadm
+      image-name: aerospike-asadm
+      jf-project: database
+      jf-build-name: aerospike-asadm-docker
+      repo-scope: -docker-dev-local
+      oidc-provider-name: database-gh-aerospike
+      oidc-audience: database-gh-aerospike
+      context: .
+      file: docker/Dockerfile
+      platforms: linux/amd64,linux/arm64
+      # Non-release runs still build both platforms -- that is the only thing
+      # keeping the Dockerfile honest on a PR -- but publish nothing.
+      push: ${{ inputs.release == true }}
+      # RELEASE is <pkg-version>-<iteration>, the tag this image has always
+      # carried; it keeps rcN out of the name. Overriding suppresses the
+      # workflow's stock "latest" and bare-major tags, which must not move on
+      # an rc build. The immutable <app-version>_<timestamp> tag is always added.
+      versions-override: ${{ needs.get-version.outputs.RELEASE }}
+      gh-context-artifacts-json: '[{"name": "deploy-artifacts-${{ needs.get-version.outputs.VERSION }}", "dest": "deploy-artifacts"}]'
+      # The Dockerfile installs this path from the build context instead of
+      # downloading a release URL. Name is what pkg/Makefile emits:
+      # <name>_<pkg-version>-<iteration><distro>_<dpkg-arch>.deb. The image is
+      # debian trixie, whose glibc suits the ubuntu24.04 build of the .deb.
+      build-args-json: '{"ASADM_LOCAL_PKG_AMD64": "deploy-artifacts/aerospike-asadm_${{ needs.get-version.outputs.RELEASE }}ubuntu24.04_amd64.deb", "ASADM_LOCAL_PKG_ARM64": "deploy-artifacts/aerospike-asadm_${{ needs.get-version.outputs.RELEASE }}ubuntu24.04_arm64.deb"}'
+
+  # The shared workflow has no test hook and pushes by digest, so there is no
+  # local image to exercise: the image is tested after publish rather than
+  # before it. Nothing is promoted on a failure -- create-release-bundle needs
+  # this job -- so a bad image stays in dev-local and never reaches TEST.
+  #
+  # Each arch is pulled on its own native runner. The ref is the index digest,
+  # so the daemon picks the matching manifest and the test runs against exactly
+  # what was attested.
+  docker-test:
+    name: Docker smoke test (${{ matrix.arch }})
+    if: inputs.release == true
+    needs: [get-version, docker-build]
     strategy:
       fail-fast: false
       matrix:
@@ -966,20 +1020,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Download deploy artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: deploy-artifacts-${{ needs.get-version.outputs.VERSION }}
-          path: ./deploy-artifacts
-
-      - name: Set up Docker Buildx
-        uses: step-security/setup-buildx-action@f931205d68723ad9589fd2a7e2ece238bf9de341 # v4.0.0
-
-      - name: Install Snyk CLI
-        run: npm install -g snyk@1.1304.3
-
       - name: Install JFrog CLI
-        if: inputs.release == true
         id: jf
         uses: step-security/setup-jfrog-cli@53aeacb709fce45d0baf69a13ec3342f7e2d71a9 # v5.1.0
         env:
@@ -991,31 +1032,34 @@ jobs:
           oidc-audience: database-gh-aerospike
 
       - name: Docker login to Artifactory
-        if: inputs.release == true
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: artifact.aerospike.io
           username: ${{ steps.jf.outputs.oidc-user }}
           password: ${{ steps.jf.outputs.oidc-token }}
 
-      - name: Build (native) and smoke test
+      - name: Install Snyk CLI
+        run: npm install -g snyk@1.1304.3
+
+      - name: Smoke test the published image
         env:
+          IMAGE: ${{ needs.docker-build.outputs.image-ref }}
           BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
-          RELEASE: ${{ needs.get-version.outputs.RELEASE }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           set -euo pipefail
-          # docker-build.sh folds the rcN in BUILD_VERSION into the iteration,
-          # so image tags carry <version>-<iteration>, never "rc2".
-          docker/docker-build.sh -t \
-            -v "${BUILD_VERSION}" \
-            -a ${{ matrix.arch }} \
-            -u ../deploy-artifacts
+          [[ -n "${IMAGE}" ]] || { echo "ERROR: docker-build produced no image-ref" >&2; exit 1; }
+          docker pull "${IMAGE}"
 
-          # Reuse the linux-install bats smoke test against the loaded image
-          # by shimming `asadm` and `asinfo` to `docker run` calls.
+          # Confirm the index really resolved to this leg's arch, so an arm64
+          # failure can never be masked by silently testing the amd64 manifest.
+          got=$(docker image inspect "${IMAGE}" --format '{{.Architecture}}')
+          [[ "${got}" == "${{ matrix.arch }}" ]] \
+            || { echo "ERROR: pulled ${got} image on ${{ matrix.arch }} runner" >&2; exit 1; }
+
+          # Reuse the linux-install bats smoke test against the image by
+          # shimming `asadm` and `asinfo` to `docker run` calls.
           sudo apt-get update -qq && sudo apt-get install -y bats
-          IMAGE="aerospike/aerospike-asadm:${RELEASE}-${{ matrix.arch }}"
           SHIM_DIR=$(mktemp -d)
           cat > "${SHIM_DIR}/asadm" <<EOF
           #!/bin/sh
@@ -1037,130 +1081,6 @@ jobs:
               --platform=linux/${{ matrix.arch }} \
               --file=docker/Dockerfile || true
           fi
-
-      - name: Push native per-arch tag to JFrog
-        if: inputs.release == true
-        env:
-          BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
-        run: |
-          set -euo pipefail
-          docker/docker-build.sh -p \
-            -v "${BUILD_VERSION}" \
-            -a ${{ matrix.arch }} \
-            -r artifact.aerospike.io/database-docker-dev-local \
-            -u ../deploy-artifacts
-
-  docker-manifest:
-    name: Docker multi-arch manifest (stitch native tags)
-    if: inputs.release == true
-    needs: [get-version, docker-build-arch]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Install JFrog CLI
-        id: jf
-        uses: step-security/setup-jfrog-cli@53aeacb709fce45d0baf69a13ec3342f7e2d71a9 # v5.1.0
-        env:
-          JF_URL: https://artifact.aerospike.io
-          JF_PROJECT: database
-        with:
-          version: 2.78.8
-          oidc-provider-name: database-gh-aerospike
-          oidc-audience: database-gh-aerospike
-
-      - name: Docker login to Artifactory
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
-        with:
-          registry: artifact.aerospike.io
-          username: ${{ steps.jf.outputs.oidc-user }}
-          password: ${{ steps.jf.outputs.oidc-token }}
-
-      - name: Set up Docker Buildx
-        uses: step-security/setup-buildx-action@f931205d68723ad9589fd2a7e2ece238bf9de341 # v4.0.0
-
-      - name: Stitch per-arch tags into multi-arch manifest
-        env:
-          BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
-        run: |
-          set -euo pipefail
-          docker/docker-build.sh -M \
-            -v "${BUILD_VERSION}" \
-            -r artifact.aerospike.io/database-docker-dev-local
-
-      # Without build-info the images are invisible to the release bundle, so
-      # `jf rbp` would promote the packages to TEST and leave the images in
-      # dev-local forever.
-      - name: Publish docker build-info
-        id: docker-info
-        env:
-          VERSION: ${{ needs.get-version.outputs.VERSION }}
-          RELEASE: ${{ needs.get-version.outputs.RELEASE }}
-          IMAGE: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
-          BUILD_NAME: aerospike-asadm-docker
-        run: |
-          set -euo pipefail
-          # Image tags use RELEASE; the build-info build number stays VERSION so
-          # it keeps matching the release bundle's jf-build-names.
-          for tag in "${RELEASE}" "${RELEASE}-amd64" "${RELEASE}-arm64"; do
-            digest=$(docker buildx imagetools inspect "${IMAGE}:${tag}" --format '{{json .Manifest}}' | jq -r '.digest')
-            [[ -n "${digest}" && "${digest}" != "null" ]] \
-              || { echo "::error::no digest for ${IMAGE}:${tag}" >&2; exit 1; }
-            # Resolved once, here: the attestation steps below read these back
-            # rather than inspecting the registry a second time.
-            case "${tag}" in
-              "${RELEASE}") echo "digest-index=${digest}" >> "$GITHUB_OUTPUT" ;;
-              *)            echo "digest-${tag##*-}=${digest}" >> "$GITHUB_OUTPUT" ;;
-            esac
-            # build-docker-create takes exactly one image ref per invocation.
-            printf '%s:%s@%s\n' "${IMAGE}" "${tag}" "${digest}" > image.txt
-            cat image.txt
-            jf rt build-docker-create database-docker-dev-local \
-              --image-file image.txt \
-              --build-name "${BUILD_NAME}" \
-              --build-number "${VERSION}" \
-              --project database
-          done
-          jf rt build-publish "${BUILD_NAME}" "${VERSION}" --project database
-
-      # Image provenance, on the same gate as the packages: docker-manifest is
-      # a dependency of create-release-bundle, so an unattested image never
-      # reaches the promotion unit. Attestations are recorded with GitHub
-      # rather than pushed as OCI referrers -- `gh attestation verify oci://`
-      # resolves them either way, and push-to-registry would make a release
-      # depend on Artifactory's referrers support.
-      #
-      # subject-name is the dev-local path the images are pushed to. Promotion
-      # moves them without rebuilding, so a promoted image verifies on the
-      # digest recorded here even though its repository path has changed.
-      - name: Attest multi-arch index provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
-          subject-digest: ${{ steps.docker-info.outputs.digest-index }}
-
-      - name: Attest amd64 image provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
-          subject-digest: ${{ steps.docker-info.outputs.digest-amd64 }}
-
-      - name: Attest arm64 image provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: artifact.aerospike.io/database-docker-dev-local/aerospike-asadm
-          subject-digest: ${{ steps.docker-info.outputs.digest-arm64 }}
-
   # Release bundles are JFrog's promotion unit; produced on every publish
   # regardless of branch or skip_tagging.
   create-release-bundle:
@@ -1173,11 +1093,16 @@ jobs:
       - get-version
       - attest-artifacts
       - upload-artifacts-to-jfrog
-      - docker-manifest
+      - docker-build
+      - docker-test
     uses: aerospike/shared-workflows/.github/workflows/reusable_create-release-bundle.yaml@v3.7.0
     with:
       jf-project: "database"
-      jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }},aerospike-asadm-docker:${{ needs.get-version.outputs.VERSION }}"
+      # The package build-info is still published under VERSION by
+      # upload-artifacts-to-jfrog, but reusable_docker-build-deploy records the
+      # image build-info under the JFrog CLI default build number
+      # (github.run_number). The two names are versioned differently on purpose.
+      jf-build-names: "aerospike-asadm:${{ needs.get-version.outputs.VERSION }},aerospike-asadm-docker:${{ github.run_number }}"
       jf-bundle-name: "aerospike-asadm"
       oidc-provider-name: database-gh-aerospike
       oidc-audience: database-gh-aerospike
@@ -1196,7 +1121,8 @@ jobs:
       - validate-inputs
       - get-version
       - upload-artifacts-to-jfrog
-      - docker-manifest
+      - docker-build
+      - docker-test
       - create-release-bundle
     runs-on: ubuntu-24.04
     environment: deploy-to-master
