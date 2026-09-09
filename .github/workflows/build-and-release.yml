@@ -961,7 +961,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    uses: aerospike/shared-workflows/.github/workflows/reusable_docker-build-deploy.yaml@820a34351047b830c64e64cd4b997adbcd688783 # v4.1.0
+    uses: aerospike/shared-workflows/.github/workflows/reusable_docker-build-deploy.yaml@v4.1.0
     with:
       app-version: ${{ needs.get-version.outputs.BUILD_VERSION }}
       app-name: Aerospike asadm
