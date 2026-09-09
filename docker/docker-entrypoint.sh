@@ -17,11 +17,22 @@
 # ships. The list is generated at build time into ${TOOLS_FILE} from the
 # installed package, so it stays right as the packages change.
 #
+# AEROSPIKE_METADATA_DIR relocates that directory so this script can be unit-tested
+# against a fixture without building an image. Neither it nor the layout of
+# /usr/local/share/aerospike is part of the image's supported interface.
+#
 set -eu
 
 METADATA_DIR="${AEROSPIKE_METADATA_DIR:-/usr/local/share/aerospike}"
 TOOLS_FILE="${METADATA_DIR}/tools"
 IMAGE_INFO_FILE="${METADATA_DIR}/image-info"
+
+# The tool list is a build invariant. Without it is_tool rejects every binary the
+# image ships, so say the image is broken rather than blaming the caller.
+if [ ! -r "${TOOLS_FILE}" ]; then
+    echo "${0##*/}: ${TOOLS_FILE} is missing or unreadable; this image was built wrong" >&2
+    exit 1
+fi
 
 # One-line description per binary. A binary with no entry here still lists,
 # just without the trailing description, so a new tool never breaks usage.
@@ -39,7 +50,6 @@ describe() {
 }
 
 tools() {
-    [ -r "${TOOLS_FILE}" ] || return 0
     cat "${TOOLS_FILE}"
 }
 
