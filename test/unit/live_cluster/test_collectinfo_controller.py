@@ -2782,7 +2782,7 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
                 raise Exception("boom: " + cmd)
 
             if cmd == "build":
-                return {"A": "8.1.3.0"}
+                return {"A": "8.2.0.0"}
 
             return {"A": "test"}
 

@@ -6,7 +6,7 @@
 #   source .github/bin/install_deps.sh
 #   install_deps <distro>     # e.g. install_deps ubuntu24.04
 #
-# Supported distros: debian11, debian12, debian13,
+# Supported distros: debian12, debian13,
 #                    ubuntu20.04, ubuntu22.04, ubuntu24.04, ubuntu26.04,
 #                    el8, el9, el10, amzn2023
 #
@@ -23,7 +23,6 @@ export GOLANG_VERSION="${GOLANG_VERSION:-1.24.6}"
 
 export CURL_RETRY_OPTS=(--retry 5 --retry-delay 5)
 
-DEBIAN_11_DEPS='ca-certificates curl git rsync make gcc g++ build-essential xz-utils liblzma-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev libncursesw5-dev uuid-dev tk-dev libssl1.1 libssl-dev ruby-rubygems rpm less'
 DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils less"
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
@@ -41,7 +40,6 @@ AMZN2023_DEPS="readline-devel ruby rpmdevtools make git rsync gcc g++ make autom
 
 _pkg_list_for() {
   case "$1" in
-    debian11)    echo "$DEBIAN_11_DEPS" ;;
     debian12)    echo "$DEBIAN_12_DEPS" ;;
     debian13)    echo "$DEBIAN_13_DEPS" ;;
     ubuntu20.04) echo "$UBUNTU_2004_DEPS" ;;
@@ -214,11 +212,6 @@ install_deps() {
   local distro="${1:?install_deps requires a distro argument (e.g. ubuntu24.04)}"
 
   _install_distro_packages "$distro"
-
-  # debian11 ships stale CA bundle; refresh before Go/asdf curl calls.
-  if [[ "$distro" == "debian11" ]]; then
-    update-ca-certificates
-  fi
 
   _install_go
   _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")" "$distro"
