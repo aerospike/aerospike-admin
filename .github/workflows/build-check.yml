@@ -202,22 +202,41 @@ jobs:
       - name: Lint the docker shell scripts
         run: shellcheck docker/docker-entrypoint.sh docker/docker-build.sh
 
+      - name: Install bats
+        env:
+          BATS_VERSION: "1.11.0"
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" -o /tmp/bats.tgz
+          tar -xzf /tmp/bats.tgz -C /tmp
+          sudo "/tmp/bats-core-${BATS_VERSION}/install.sh" /usr/local
+          bats --version
+
+      - name: Test the docker entrypoint
+        run: bats .github/bin/test/test_entrypoint.bats
+
       # The rolling tags mean "the current GA release", so the guard that keeps
       # a pre-release from moving them is asserted here rather than discovered
       # during a release.
       - name: Assert the rolling-tag policy
         run: |
           set -euo pipefail
-          if docker/docker-build.sh -p -v 9.9.9-rc1 -N -L >/dev/null 2>&1; then
-            echo "::error::--latest accepted a pre-release version" >&2
-            exit 1
-          fi
-          ga=$(docker/docker-build.sh -p -v 9.9.9 -N -L)
-          for want in "aerospike-asadm:latest" "aerospike-asadm:9" "aerospike-asadm:9.9"; do
-            grep -qF -- "${want}" <<<"${ga}" \
+          for pre in 9.9.9-rc1 9.9.9-beta1; do
+            if docker/docker-build.sh -p -v "${pre}" -N -L >/dev/null 2>&1; then
+              echo "::error::--latest accepted a pre-release version (${pre})" >&2
+              exit 1
+            fi
+          done
+          ga=$(docker/docker-build.sh -p -v 9.9.9 -N -L) \
+            || { echo "::error::the GA dry run failed" >&2; exit 1; }
+          # Whole-line match: a substring match on aerospike-asadm:9 is satisfied by the
+          # version tag aerospike-asadm:9.9.9-1, so it would pass with no rolling tags at all.
+          for want in latest 9 9.9; do
+            grep -qE "^ *\"[^\"]*aerospike\-asadm:${want}\",?$" <<<"${ga}" \
               || { echo "::error::GA bake file is missing tag ${want}" >&2; exit 1; }
           done
-          rc=$(docker/docker-build.sh -p -v 9.9.9-rc1 -N)
+          rc=$(docker/docker-build.sh -p -v 9.9.9-rc1 -N) \
+            || { echo "::error::the rc dry run failed" >&2; exit 1; }
           if grep -qF -- "aerospike-asadm:latest" <<<"${rc}"; then
             echo "::error::a pre-release bake file carries the latest tag" >&2
             exit 1

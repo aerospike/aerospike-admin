@@ -84,7 +84,8 @@ OPTIONS:
     -L, --latest            Also tag latest, <major> and <major>.<minor>. GA versions only,
                             and only with -p (multi-arch) or -M.
     -n, --no-cache          Disable Docker build cache
-    -N, --dry-run           Resolve URLs/SHAs and print, then exit (no bake, no build).
+    -N, --dry-run           Resolve URLs/SHAs, write and print the bake file,
+                            then exit (no build).
     -h, --help              Show this help message
 
 TAGS PRODUCED:
@@ -645,8 +646,8 @@ function main() {
   # `latest` and the rolling major/minor tags mean "the current GA release", so
   # a pre-release must never move them.
   if [[ "${MOVING_TAGS}" == true ]]; then
-    if [[ "${VERSION}" == *-rc* ]]; then
-      log_error "--latest refuses a pre-release version (${VERSION}); rolling tags are GA-only."
+    if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      log_error "--latest refuses a non-GA version (${VERSION}); rolling tags are GA-only."
       exit 1
     fi
     if [[ "${mode}" == "test" ]]; then
