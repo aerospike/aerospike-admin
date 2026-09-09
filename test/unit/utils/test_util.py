@@ -1669,7 +1669,7 @@ class NodesMissingMemoryAllocStatsTest(unittest.TestCase):
     def test_unsupported_builds_are_named(self):
         builds = {
             "new": "8.2.0",
-            "newer": "8.2.0",
+            "newer": "8.3.0",
             "old": "8.1.2",
             "missing": None,
             "empty": "",
@@ -1699,7 +1699,7 @@ class MemoryTablesAgreeTest(unittest.TestCase):
     whether a node's allocation is knowable.
     """
 
-    def _pre_8_1_3_memory_engine_node(self):
+    def _memory_engine_node_without_arena_stats(self):
         return {
             "node1": {
                 "mem_ns": {
@@ -1712,7 +1712,7 @@ class MemoryTablesAgreeTest(unittest.TestCase):
         }
 
     def test_both_tables_suppress_their_total_on_an_old_build(self):
-        ns_stats = self._pre_8_1_3_memory_engine_node()
+        ns_stats = self._memory_engine_node_without_arena_stats()
         ns_agg = util.aggregate_ns_memory_stats(
             ns_stats, editions={"node1": constants.EDITION_ENTERPRISE}
         )
@@ -1731,7 +1731,7 @@ class MemoryTablesAgreeTest(unittest.TestCase):
         self.assertNotIn("allocated_shmem_bytes", headline["node1"])
 
     def test_both_tables_publish_their_total_on_a_supported_build(self):
-        ns_stats = self._pre_8_1_3_memory_engine_node()
+        ns_stats = self._memory_engine_node_without_arena_stats()
         ns_stats["node1"]["mem_ns"]["index_shmem_alloc_bytes"] = "300"
         ns_agg = util.aggregate_ns_memory_stats(
             ns_stats, editions={"node1": constants.EDITION_ENTERPRISE}
