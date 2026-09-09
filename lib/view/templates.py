@@ -383,7 +383,7 @@ info_namespace_usage_sheet = Sheet(
                     "Alloc",
                     Projectors.Number(
                         "ns_stats",
-                        "index_shmem_alloc_bytes",  # 8.1.3, per backing; no _pct shipped (SERVER-742)
+                        "index_shmem_alloc_bytes",  # 8.2, per backing; no _pct shipped (SERVER-742)
                         "index_pmem_alloc_bytes",
                         "index_flash_alloc_bytes",
                     ),
@@ -482,7 +482,7 @@ info_namespace_usage_sheet = Sheet(
                     "Alloc",
                     Projectors.Number(
                         "ns_stats",
-                        "sindex_shmem_alloc_bytes",  # 8.1.3, per backing; no _pct shipped (SERVER-742)
+                        "sindex_shmem_alloc_bytes",  # 8.2, per backing; no _pct shipped (SERVER-742)
                         "sindex_pmem_alloc_bytes",
                         "sindex_flash_alloc_bytes",
                     ),
@@ -1244,6 +1244,14 @@ info_sindex_sheet = Sheet(
                 FieldType.string,
                 _ignore_null,
                 Projectors.String("sindex_stats", "exp"),
+            ),
+        ),
+        Field(
+            "AEL",
+            Projectors.Func(
+                FieldType.string,
+                _ignore_null,
+                Projectors.String("sindex_stats", "ael"),
             ),
         ),
         Subgroup(
@@ -2526,6 +2534,10 @@ show_sindex = Sheet(
             "Expression",
             Projectors.Func("string", _ignore_null, Projectors.String("data", "exp")),
         ),
+        Field(
+            "AEL",
+            Projectors.Func("string", _ignore_null, Projectors.String("data", "ael")),
+        ),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),
@@ -3108,6 +3120,11 @@ info_memory_sheet = Sheet(
     (
         node_field,
         hidden_node_id_field,
+        Field(
+            "Host Total",
+            Projectors.Number("stats", "host_total_mem_bytes"),
+            converter=Converters.byte,
+        ),
         Subgroup(
             "Free",
             (

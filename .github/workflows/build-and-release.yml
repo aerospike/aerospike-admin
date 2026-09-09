@@ -212,7 +212,6 @@ jobs:
           - el9
           - el10
           - amzn2023
-          - debian11
           - debian12
           - debian13
           - ubuntu22.04
@@ -224,7 +223,6 @@ jobs:
         matrix.distro == 'el9' && 'redhat/ubi9:9.6' ||
         matrix.distro == 'el10' && 'redhat/ubi10:10.0' ||
         matrix.distro == 'amzn2023' && 'amazonlinux:2023.9.20251208.0' ||
-        matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
         matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||
@@ -476,7 +474,6 @@ jobs:
           - el9
           - el10
           - amzn2023
-          - debian11
           - debian12
           - debian13
           - ubuntu22.04
@@ -488,7 +485,6 @@ jobs:
         matrix.distro == 'el9' && 'redhat/ubi9:9.6' ||
         matrix.distro == 'el10' && 'redhat/ubi10:10.0' ||
         matrix.distro == 'amzn2023' && 'amazonlinux:2023.9.20251208.0' ||
-        matrix.distro == 'debian11' && 'debian:bullseye-20251208' ||
         matrix.distro == 'debian12' && 'debian:bookworm-20230411' ||
         matrix.distro == 'debian13' && 'debian:trixie-20251020' ||
         matrix.distro == 'ubuntu22.04' && 'ubuntu:jammy-20231004' ||

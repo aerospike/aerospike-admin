@@ -22,6 +22,8 @@ from ctypes import ArgumentError
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
+from parameterized import parameterized
+
 import lib
 from parameterized import parameterized
 from lib.live_cluster.client import (
@@ -35,6 +37,7 @@ from lib.live_cluster.client import (
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.ctx import CDTContext, CTXItems
+from lib.live_cluster.client.msgpack import pack_ael_expression
 from lib.live_cluster.client.node import _SysCmd, Node
 from lib.live_cluster.client.types import (
     ASProtocolError,
@@ -3856,7 +3859,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with("hist-dump:ns=test;hist=objsz", self.ip)
 
     async def test_info_sindex(self):
-        """Server < 8.1.3: the default (v1) sindex-list format is requested."""
+        """Server < 8.2: the default (v1) sindex-list format is requested."""
         self.node.build = "8.1.2.0"
         self.info_mock.return_value = "a=1:b=2:c=3:d=4:e=5;a=6:b=7:c=8:d=9:e=10;"
         expected = [
@@ -3866,19 +3869,19 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_called_with("sindex-list:", self.ip)
+        self.info_mock.assert_called_once_with("sindex-list:", self.ip)
         self.assertListEqual(actual, expected)
 
     async def test_info_sindex_v2_on_new_server(self):
-        """Server >= 8.1.3: the v2 sindex-list format is requested so the renamed
+        """Server >= 8.2: the v2 sindex-list format is requested so the renamed
         'integer' type is reported."""
-        self.node.build = "8.1.3.0"
-        self.info_mock.return_value = "a=1:b=2;"
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = ["a=1:b=2;", "a=1:b=2;"]
         expected = [{"a": "1", "b": "2"}]
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_called_with("sindex-list:v=v2", self.ip)
+        self.info_mock.assert_any_call("sindex-list:v=v2", self.ip)
         self.assertListEqual(actual, expected)
 
     async def test_info_sindex_v2_when_build_unavailable(self):
@@ -3888,7 +3891,76 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         await self.node.info_sindex()
 
-        self.info_mock.assert_called_with("sindex-list:", self.ip)
+        self.info_mock.assert_called_once_with("sindex-list:", self.ip)
+
+    async def test_info_sindex_shows_ael_source(self):
+        """Server >= 8.2: an index created from AEL reports its source in "ael"
+        and nothing in "exp"; indexes not created from AEL keep the server's
+        rendering in "exp" and get no "ael" field."""
+        self.node.build = "8.2.0.0"
+        ael_src = "$.campaign1:INT + $.campaign2:INT"
+        compiled_exp = 'add(bin_int("a"), bin_int("b"))'
+        self.info_mock.side_effect = [
+            'ns=test:indexname=ael-idx:exp=add(bin_int("campaign1"), bin_int("campaign2")):state=RW;'
+            "ns=test:indexname=exp-idx:exp={}:state=RW;".format(compiled_exp)
+            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+            "ns=test:indexname=ael-idx:exp={}:state=RW;".format(
+                pack_ael_expression(ael_src)
+            )
+            + "ns=test:indexname=exp-idx:exp=lBSTUQKpY2FtcGFpZ24x:state=RW;"
+            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+        ]
+
+        actual = await self.node.info_sindex()
+
+        self.info_mock.assert_has_calls(
+            [
+                call("sindex-list:v=v2", self.ip),
+                call("sindex-list:v=v2;b64=true", self.ip),
+            ]
+        )
+        self.assertEqual(actual[0]["ael"], ael_src)
+        self.assertEqual(actual[0]["exp"], "null")
+        self.assertEqual(actual[1]["exp"], compiled_exp)
+        self.assertNotIn("ael", actual[1])
+        self.assertEqual(actual[2]["exp"], "null")
+        self.assertNotIn("ael", actual[2])
+
+    async def test_info_sindex_ael_ignores_failed_base64_list(self):
+        """A failed b64 call leaves the default response untouched."""
+        self.node.build = "8.2.0.0"
+        compiled_exp = 'add(bin_int("a"), bin_int("b"))'
+        self.info_mock.side_effect = [
+            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
+            "ERROR::bad b64",
+        ]
+
+        actual = await self.node.info_sindex()
+
+        self.assertEqual(actual[0]["exp"], compiled_exp)
+
+    @parameterized.expand(
+        [
+            ("as_info_error", ASInfoError("Invalid command")),
+            ("os_error", OSError("connection reset")),
+            ("timeout", asyncio.TimeoutError()),
+        ]
+    )
+    async def test_info_sindex_ael_ignores_raised_base64_list(self, _, exc):
+        """A raised b64 call must not cost the caller the sindex list already
+        fetched, nor mark the node dead."""
+        self.node.build = "8.2.0.0"
+        self.node.alive = True
+        compiled_exp = 'add(bin_int("a"), bin_int("b"))'
+        self.info_mock.side_effect = [
+            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
+            exc,
+        ]
+
+        actual = await self.node.info_sindex()
+
+        self.assertEqual(actual[0]["exp"], compiled_exp)
+        self.assertTrue(self.node.alive)
 
     async def test_info_sindex_statistics(self):
         self.info_mock.return_value = "a=b;c=d;e=f"
@@ -3998,6 +4070,29 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(expected_call, self.ip)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
+    async def test_info_sindex_create_with_ael_src(self):
+        self.info_mock.return_value = "OK"
+        # base64 of msgpack [128, "$.campaign1:INT + $.campaign2:INT"]
+        expected_call = (
+            "sindex-create:indexname=ael-idx;ns=test;"
+            "exp=ksyA2SEkLmNhbXBhaWduMTpJTlQgKyAkLmNhbXBhaWduMjpJTlQ=;type=integer"
+        )
+
+        actual = await self.node.info_sindex_create(
+            "ael-idx",
+            "test",
+            None,
+            "integer",
+            ael_src="$.campaign1:INT + $.campaign2:INT",
+            feature_support={
+                "namespace_query_selector_support": False,
+                "expression_indexing": True,
+            },
+        )
+
+        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
     async def test_info_sindex_create_with_supports_sindex_type_syntax(self):
         self.info_mock.return_value = "OK"
         expected_call = "sindex-create:indexname=new-idx;ns=test;bin=mybin;type=string"
@@ -4060,7 +4155,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_numeric_mapped_to_integer(self):
-        """Server >= 8.1.3: the deprecated 'numeric' type is sent as 'integer'."""
+        """Server >= 8.2: the deprecated 'numeric' type is sent as 'integer'."""
         self.info_mock.return_value = "OK"
         expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
 
@@ -4080,7 +4175,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_integer_passthrough(self):
-        """Server >= 8.1.3: 'integer' is sent as-is."""
+        """Server >= 8.2: 'integer' is sent as-is."""
         self.info_mock.return_value = "OK"
         expected_call = "sindex-create:indexname=int-idx;ns=test;bin=mybin;type=integer"
 
@@ -4100,7 +4195,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_numeric_unchanged_on_old_server(self):
-        """Server < 8.1.3: the legacy 'numeric' type is sent as-is."""
+        """Server < 8.2: the legacy 'numeric' type is sent as-is."""
         self.info_mock.return_value = "OK"
         expected_call = (
             "sindex-create:indexname=num-idx;ns=test;indexdata=mybin,numeric"
@@ -4579,12 +4674,12 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.node.build = (
             "ERROR:22:checkpoint-save in progress - only checkpoint-status"
         )
-        self.info_mock.return_value = "8.1.3.0"
+        self.info_mock.return_value = "8.2.0.0"
 
         actual = await self.node.info_build()
 
         self.info_mock.assert_called_once_with("build", self.ip)
-        self.assertEqual(actual, "8.1.3.0")
+        self.assertEqual(actual, "8.2.0.0")
 
     async def test_info_build_parked_raises_parked_error(self):
         lib.live_cluster.client.node.Node.info_build = _REAL_INFO_BUILD

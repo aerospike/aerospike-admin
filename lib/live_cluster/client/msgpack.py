@@ -12,15 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from msgpack.fallback import Packer
+import base64
+import logging
+from typing import Optional
+
+from msgpack.fallback import Packer, unpackb
 
 from lib.live_cluster.client.ctx import ASValue, ASValues, CDTContext, CTXItem, CTXItems
+
+logger = logging.getLogger(__name__)
 
 AS_BYTES_STRING = 3
 AS_BYTES_BLOB = 4
 AS_BYTES_GEOJSON = 23
 ASVAL_CMP_EXT_TYPE = 0xFF
 ASVAL_CMP_WILDCARD = 0x00
+
+# aerospike-server as/include/exp/exp_wire.h. An expression payload of
+# [EXP_AEL_COMPILE, <ael-source>] tells the server to compile the AEL source
+# rather than parse a compiled expression tree.
+EXP_AEL_COMPILE = 128
 
 
 class CTXItemWireType:
@@ -116,3 +127,38 @@ class ASPacker(Packer):
 
         self.pack(obj.value)
         return
+
+
+def pack_ael_expression(ael_src: str) -> str:
+    """
+    Wrap AEL source in the server's [EXP_AEL_COMPILE, <ael-source>] envelope and
+    return it base64 encoded, ready to be sent as the "exp" info parameter.
+    """
+    packer = ASPacker()
+    packer.pack([EXP_AEL_COMPILE, ael_src])
+
+    return base64.b64encode(packer.bytes()).decode("utf-8")
+
+
+def unpack_ael_expression(exp_base64: str) -> Optional[str]:
+    """
+    Return the AEL source carried by a base64 encoded
+    [EXP_AEL_COMPILE, <ael-source>] envelope. Returns None for anything else,
+    including a compiled expression tree or an unparsable value. Never raises.
+    """
+    try:
+        envelope = unpackb(base64.b64decode(exp_base64, validate=True), raw=False)
+    except Exception as e:
+        logger.debug("Unable to unpack expression %s: %s", exp_base64, e)
+        return None
+
+    if (
+        isinstance(envelope, (list, tuple))
+        and len(envelope) == 2
+        and envelope[0] == EXP_AEL_COMPILE
+        and isinstance(envelope[1], str)
+        and envelope[1]
+    ):
+        return envelope[1]
+
+    return None

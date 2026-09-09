@@ -52,7 +52,7 @@ IMAGE_REPO = os.environ.get(
     "ASADM_E2E_IMAGE_REPO",
     "artifact.aerospike.io/database-docker-test-local/aerospike-server-enterprise",
 )
-SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.1.3.0")
+SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.2.0.0-20260908214755")
 
 WORK_DIRECTORY = "work"
 LUA_DIRECTORY = "work/lua"
