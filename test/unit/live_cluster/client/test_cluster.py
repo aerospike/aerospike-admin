@@ -1563,7 +1563,7 @@ class NoUsableNodesErrorTest(unittest.TestCase):
         self.assertIsInstance(error, IOError)
         self.assertIn("Parked by checkpoint-save: 1.1.1.1:3000", message)
         self.assertIn("manage checkpoint status", message)
-        self.assertIn("systemctl stop aerospike", message)
+        self.assertIn("until the node is stopped or its park timeout elapses", message)
 
     def test_every_parked_node_is_named(self):
         error = Cluster._no_usable_nodes_error(

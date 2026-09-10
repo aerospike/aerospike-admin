@@ -3265,6 +3265,8 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
     "Checkpoint a node's shared-memory segments to durable storage so it can warm",
     "restart. The node then leaves the cluster and parks until it is stopped or the",
     'park timeout elapses. This cannot be undone, so "--warn" is on by default.',
+    "Quiesce the node first ('manage quiesce', then 'manage recluster', wait for",
+    "migrations) so its departure does not trigger migrations.",
     modifiers=(
         ModifierHelp(
             "--timeout",
@@ -3362,8 +3364,8 @@ class ManageCheckpointController(ManageCheckpointLeafController):
             "(the primary index; the secondary index if it is in shmem; the data "
             "stripes for a shadowless memory namespace) to durable storage, then "
             "departs the cluster and parks, serving only checkpoint-status, until it "
-            "is stopped ('systemctl stop aerospike') or the park timeout elapses "
-            "({}s). This cannot be undone. A node that is not quiesced will trigger "
+            "is stopped or the park timeout elapses ({}s). This cannot be undone. A "
+            "node that is not quiesced will trigger "
             "migrations.".format(target, timeout)
         )
 
@@ -3372,7 +3374,7 @@ class ManageCheckpointController(ManageCheckpointLeafController):
             lambda node: node.info_all_namespace_statistics(), nodes
         )
 
-        not_quiesced = []
+        not_quiesced = {}
 
         for node, ns_stats in zip(nodes, stats):
             if isinstance(ns_stats, Exception):
@@ -3383,14 +3385,18 @@ class ManageCheckpointController(ManageCheckpointLeafController):
                     continue
 
                 if stat.get("effective_is_quiesced", "false") != "true":
-                    not_quiesced.append("{} {}".format(node.key, ns))
+                    not_quiesced.setdefault(node.key, []).append(ns)
 
         if not_quiesced:
             logger.warning(
-                "The following are not quiesced and will trigger migrations when the "
-                "node departs: %s. Consider 'manage quiesce' followed by 'manage "
-                "recluster' first.",
-                ", ".join(not_quiesced),
+                "Not quiesced: %s. Departure will trigger migrations. Recommended: "
+                "'manage quiesce with %s', then 'manage recluster', and checkpoint "
+                "once migrations finish.",
+                ", ".join(
+                    "{} ({})".format(key, ", ".join(namespaces))
+                    for key, namespaces in not_quiesced.items()
+                ),
+                " ".join(not_quiesced),
             )
 
     @CommandHelp(
@@ -3631,11 +3637,7 @@ class ManageCheckpointController(ManageCheckpointLeafController):
                     ", ".join(unfinished),
                 )
             else:
-                self.view.print_result(
-                    "Checkpoint complete on {}. Stop it safely with 'systemctl stop "
-                    "aerospike' (or let the park time out), then perform "
-                    "maintenance.".format(node.key)
-                )
+                self.view.print_result("Checkpoint complete on {}.".format(node.key))
 
 
 @CommandHelp(

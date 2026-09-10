@@ -5396,7 +5396,9 @@ class ManageCheckpointControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_warns_when_not_quiesced(self):
         self.node_mock.info_all_namespace_statistics.return_value = {
-            "test": {"effective_is_quiesced": "false"}
+            "test": {"effective_is_quiesced": "false"},
+            "bar": {"effective_is_quiesced": "true"},
+            "db-1": {"effective_is_quiesced": "false"},
         }
         self.node_mock.info_checkpoint_status.side_effect = self._responses(
             [self._status("done", 11, 11)]
@@ -5405,7 +5407,11 @@ class ManageCheckpointControllerTest(unittest.IsolatedAsyncioTestCase):
         await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
 
         self.logger_mock.warning.assert_called_once()
-        self.assertIn("not quiesced", self.logger_mock.warning.call_args[0][0])
+        args = self.logger_mock.warning.call_args[0]
+        rendered = args[0] % args[1:]
+        self.assertIn("Not quiesced: 1.1.1.1:3000 (test, db-1).", rendered)
+        self.assertIn("'manage quiesce with 1.1.1.1:3000'", rendered)
+        self.assertNotIn("bar", rendered)
 
     async def test_flag_after_with_is_rejected(self):
         # parse_modifiers sweeps everything after 'with' into the node list, so a

@@ -273,7 +273,7 @@ class Cluster(AsyncObject):
         return IOError(
             "No live nodes. Parked by checkpoint-save: {}. Only 'manage checkpoint "
             "status' and 'manage checkpoint' will answer until the node is stopped "
-            "('systemctl stop aerospike') or its park timeout elapses.".format(
+            "or its park timeout elapses.".format(
                 ", ".join(node.key for node in parked)
             )
         )
