@@ -1,0 +1,9 @@
+# docker/Dockerfile builds with the repo root as its context so CI can drop the
+# signed .deb at deploy-artifacts/ (see the docker-build job). The image reads
+# that one path and nothing else, so everything else is excluded -- otherwise
+# every build leg uploads the whole working tree, .git included.
+# Re-include here anything a future COPY or bind-mount read needs: an excluded
+# path is simply absent from the context, which the Dockerfile reports as
+# "not in the build context" for the .deb and would silently miss elsewhere.
+*
+!deploy-artifacts
