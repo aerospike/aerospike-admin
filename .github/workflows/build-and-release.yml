@@ -939,6 +939,21 @@ jobs:
           docker run --rm --entrypoint sh "${IMAGE}" -c 'test -f /etc/aerospike/astools.conf' \
             || { echo "ERROR: /etc/aerospike/astools.conf missing in image" >&2; exit 1; }
 
+          # The pre-13.0.3 wrapper exported LC_CTYPE=C.UTF-8; the Dockerfile now
+          # sets it as ENV. Assert glibc resolves a UTF-8 charmap in the image.
+          CHARMAP=$(docker run --rm --entrypoint sh "${IMAGE}" -c 'locale charmap') \
+            || { echo "ERROR: could not read the locale charmap from ${IMAGE}" >&2; exit 1; }
+          [[ "${CHARMAP}" == "UTF-8" ]] \
+            || { echo "ERROR: image locale charmap is '${CHARMAP//$'\n'/ }', expected UTF-8" >&2; exit 1; }
+
+          # LC_CTYPE is pinned so a LANG override to an ungenerated locale cannot
+          # drop the ctype back to ASCII. Without this the pin could be trimmed to
+          # LANG alone and the assertion above would stay green.
+          CHARMAP=$(docker run --rm -e LANG=en_US.UTF-8 --entrypoint sh "${IMAGE}" -c 'locale charmap') \
+            || { echo "ERROR: could not read the locale charmap from ${IMAGE} under a LANG override" >&2; exit 1; }
+          [[ "${CHARMAP}" == "UTF-8" ]] \
+            || { echo "ERROR: LANG override drops the charmap to '${CHARMAP//$'\n'/ }', expected UTF-8 (LC_CTYPE pin lost?)" >&2; exit 1; }
+
           if [[ -n "${SNYK_TOKEN:-}" ]]; then
             snyk container test "${IMAGE}" \
               --platform=linux/${{ matrix.arch }} \

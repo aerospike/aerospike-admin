@@ -40,6 +40,17 @@ LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Aerospike"
 
+# glibc otherwise resolves the POSIX locale, whose ANSI_X3.4-1968 charmap strips
+# non-ASCII from tool output. ENV rather than an entrypoint export, so docker exec,
+# --entrypoint overrides and K8s pod specs inherit it; the pre-13.0.3 wrapper only
+# covered its own process. C.utf8 is glibc-builtin on trixie: no locales package,
+# no size cost. LC_CTYPE is pinned alongside LANG deliberately -- C.utf8 is the
+# image's only UTF-8 locale, so -e LANG=<ungenerated> would fall back to ASCII.
+# Precedence is LC_ALL > LC_CTYPE > LANG, so override the ctype via LC_ALL or
+# LC_CTYPE. Deviates from python/postgres, which set LANG only and ship locales.
+ENV LANG=C.UTF-8 \
+    LC_CTYPE=C.UTF-8
+
 SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 # Fetch (or copy) → verify SHA → apt-install the .deb. apt resolves any
