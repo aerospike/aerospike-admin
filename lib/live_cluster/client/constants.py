@@ -30,3 +30,7 @@ CHECKPOINT_SAVE_COMPLETE = "checkpoint-save already complete"
 CHECKPOINT_TIMEOUT_MIN = 1
 CHECKPOINT_TIMEOUT_MAX = 3600
 CHECKPOINT_TIMEOUT_DEFAULT = 300
+# The poll interval cannot outlast the park it is measuring, so its ceiling is
+# whatever --timeout is set to - never more than the park maximum.
+CHECKPOINT_POLL_INTERVAL_MIN = 1
+CHECKPOINT_POLL_INTERVAL_DEFAULT = 2

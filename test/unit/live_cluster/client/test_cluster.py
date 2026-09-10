@@ -1527,3 +1527,48 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(node.build, "8.1.0.0")
             # Connection info should have been checked for 8.1+
             self.assertFalse(node.is_admin_node)  # admin=false in mock
+
+
+class NoUsableNodesErrorTest(unittest.TestCase):
+    """
+    TOOLS-3976 - "Unable to find any Aerospike nodes" is baffling when the node is
+    right there and merely parked. The wording only changes when a node is actually
+    parked; every pre-existing case must read exactly as it always did.
+    """
+
+    def _cluster(self, *parked_keys):
+        cluster = object.__new__(Cluster)
+        nodes = {}
+
+        for key in parked_keys:
+            node = MagicMock()
+            node.key = key
+            node.checkpoint_parked = True
+            nodes[key] = node
+
+        cluster.nodes = nodes
+
+        return cluster
+
+    def test_message_is_unchanged_when_nothing_is_parked(self):
+        error = Cluster._no_usable_nodes_error(self._cluster())
+
+        self.assertIsInstance(error, IOError)
+        self.assertEqual(str(error), "Unable to find any Aerospike nodes")
+
+    def test_parked_nodes_are_named_and_the_way_out_is_given(self):
+        error = Cluster._no_usable_nodes_error(self._cluster("1.1.1.1:3000"))
+        message = str(error)
+
+        self.assertIsInstance(error, IOError)
+        self.assertIn("Parked by checkpoint-save: 1.1.1.1:3000", message)
+        self.assertIn("manage checkpoint status", message)
+        self.assertIn("systemctl stop aerospike", message)
+
+    def test_every_parked_node_is_named(self):
+        error = Cluster._no_usable_nodes_error(
+            self._cluster("1.1.1.1:3000", "2.2.2.2:3000")
+        )
+
+        self.assertIn("1.1.1.1:3000", str(error))
+        self.assertIn("2.2.2.2:3000", str(error))

@@ -3268,13 +3268,23 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
     modifiers=(
         ModifierHelp(
             "--timeout",
-            "Seconds the node holds the post-save park waiting to be stopped. 1-3600.",
-            default=str(client_constants.CHECKPOINT_TIMEOUT_DEFAULT),
+            "Seconds the node holds the post-save park waiting to be stopped. "
+            "Range {}-{}.".format(
+                client_constants.CHECKPOINT_TIMEOUT_MIN,
+                client_constants.CHECKPOINT_TIMEOUT_MAX,
+            ),
+            default="{} seconds".format(client_constants.CHECKPOINT_TIMEOUT_DEFAULT),
         ),
         ModifierHelp(
             "--poll-interval",
-            "Seconds between checkpoint-status polls. 1 to --timeout.",
-            default="2",
+            "Seconds between checkpoint-status polls. Range {}-{}, and cannot "
+            "exceed --timeout.".format(
+                client_constants.CHECKPOINT_POLL_INTERVAL_MIN,
+                client_constants.CHECKPOINT_TIMEOUT_MAX,
+            ),
+            default="{} seconds".format(
+                client_constants.CHECKPOINT_POLL_INTERVAL_DEFAULT
+            ),
         ),
         ModifierHelp(
             "--no-wait",
@@ -3294,8 +3304,8 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
     short_msg="Checkpoint a node's shared-memory segments so it can warm restart",
 )
 class ManageCheckpointController(ManageCheckpointLeafController):
-    POLL_INTERVAL_DEFAULT = 2
-    POLL_INTERVAL_MIN = 1
+    POLL_INTERVAL_DEFAULT = client_constants.CHECKPOINT_POLL_INTERVAL_DEFAULT
+    POLL_INTERVAL_MIN = client_constants.CHECKPOINT_POLL_INTERVAL_MIN
     # Stop polling before the node's park window closes - once it elapses the node
     # exits on its own and the poll would be talking to a dead process.
     POLL_MARGIN_SEC = 5
