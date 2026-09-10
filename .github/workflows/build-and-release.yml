@@ -208,8 +208,8 @@ jobs:
       # once here because docker-verify builds the image and docker-build
       # publishes it -- deriving it twice is how the two drift apart. Format is
       # <name>_<pkg-version>-<iteration><distro>_<dpkg-arch>.deb. ubuntu24.04 of
-      # all the distro builds: the image is debian trixie, whose glibc 2.41
-      # satisfies the bundled libpython that build needs (docker/Dockerfile).
+      # all the distro builds: the image is based on ubuntu:24.04, the distro
+      # that build's bundled libpython was linked against (docker/Dockerfile).
       - name: Derive the .deb names the docker image installs
         id: deb-name
         env:
