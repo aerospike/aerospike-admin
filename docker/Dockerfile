@@ -8,12 +8,12 @@
 # SHA256s as build args (and optionally an in-context .deb via ASADM_LOCAL_PKG*).
 # Build directly only if you set those args yourself; otherwise use the script.
 #
-# Base: debian:trixie-slim. The .deb is built on Ubuntu 24.04 (glibc 2.39)
-# and its bundled libpython needs GLIBC_2.38; Trixie ships glibc 2.41,
-# Bookworm only 2.36 which is too old. Trixie-slim also ships the common
-# C libs the PyInstaller bundle dynamically links to (zlib1g, libcrypt1,
-# etc.) so no extra package curation is needed — apt installs the .deb and
-# anything it (transitively) needs.
+# Base: ubuntu:24.04, the distro the .deb is built on (glibc 2.39, which
+# satisfies the GLIBC_2.38 its bundled libpython needs). It is also the base the
+# legacy aerospike-tools image used and the one aerospike-server.docker
+# publishes. Noble ships the common C libs the PyInstaller bundle dynamically
+# links to (zlib1g, libcrypt1, etc.) so no extra package curation is needed —
+# apt installs the .deb and anything it (transitively) needs.
 #
 
 ARG ASADM_AMD64_URL=""
@@ -21,7 +21,7 @@ ARG ASADM_AMD64_SHA256=""
 ARG ASADM_ARM64_URL=""
 ARG ASADM_ARM64_SHA256=""
 
-FROM debian:trixie-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e51af8883bf8
+FROM ubuntu:24.04@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254
 
 ARG ASADM_AMD64_URL
 ARG ASADM_AMD64_SHA256
@@ -36,7 +36,7 @@ ARG ASADM_LOCAL_PKG_ARM64=""
 LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.description="asadm and asinfo, tools for managing Aerospike database." \
       org.opencontainers.image.source="https://github.com/aerospike/aerospike-admin" \
-      org.opencontainers.image.base.name="docker.io/library/debian:trixie-slim" \
+      org.opencontainers.image.base.name="docker.io/library/ubuntu:24.04" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Aerospike"
 
@@ -44,7 +44,7 @@ SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 # Fetch (or copy) → verify SHA → apt-install the .deb. apt resolves any
 # transitive Depends from the .deb (currently none declared) and the .deb's
-# PyInstaller bundle relies only on libs already present in trixie-slim.
+# PyInstaller bundle relies only on libs already present in ubuntu:24.04.
 # curl is installed only when we need to download, then purged.
 # hadolint ignore=DL3008
 RUN --mount=type=bind,source=.,target=/build-ctx \
