@@ -1039,6 +1039,13 @@ jobs:
           chmod +x "${SHIM_DIR}/asadm" "${SHIM_DIR}/asinfo"
           PATH="${SHIM_DIR}:${PATH}" EXPECTED_VERSION="${BUILD_VERSION}" bats .github/bin/test/test_execute.bats
 
+          # Catches a mis-tagged or stale-cached image that the shimmed bats
+          # run cannot see. Same assertion the bats suite uses -- the tool
+          # splits the version across "Version"/"Build" lines, so a substring
+          # match on BUILD_VERSION would never hold.
+          source .github/bin/test/version_lib.sh
+          assert_version_output "$(docker run --rm "${IMAGE}" asadm --version)" "${BUILD_VERSION}"
+
           # The postinst seeds astools.conf during image build.
           docker run --rm --entrypoint sh "${IMAGE}" -c 'test -f /etc/aerospike/astools.conf' \
             || { echo "ERROR: /etc/aerospike/astools.conf missing in image" >&2; exit 1; }
