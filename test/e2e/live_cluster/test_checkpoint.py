@@ -154,7 +154,9 @@ class TestCheckpoint(unittest.TestCase):
 
         for record in records:
             self.assertEqual(
-                record["State"], "done", "checkpoint did not complete: {}".format(record)
+                record["State"],
+                "done",
+                "checkpoint did not complete: {}".format(record),
             )
 
             done, _, total = record["Files"].partition("/")

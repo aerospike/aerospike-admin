@@ -3178,8 +3178,7 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
         """True if any node this command targets is parked by checkpoint-save."""
         try:
             return any(
-                node.checkpoint_parked
-                for node in self._get_nodes(include_parked=True)
+                node.checkpoint_parked for node in self._get_nodes(include_parked=True)
             )
         except ShellException:
             return False
