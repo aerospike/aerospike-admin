@@ -25,7 +25,6 @@ from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 from parameterized import parameterized
 
 import lib
-from parameterized import parameterized
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
     ASInfoCheckpointError,
@@ -4551,15 +4550,28 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             "durable or has 'skip-checkpoint'.",
         )
 
-    async def test_info_checkpoint_save_after_failed_save_is_an_error(self):
-        self.info_mock.return_value = (
-            "ERROR:1:checkpoint-save failed - see checkpoint-status"
-        )
+    @parameterized.expand(
+        [
+            ("checkpoint-save failed - see checkpoint-status",),
+            (
+                "checkpoint-save raced a shutdown already in progress - check "
+                "checkpoint-status",
+            ),
+        ]
+    )
+    async def test_info_checkpoint_save_reissue_errors(self, message):
+        # Both use AS_ERR_UNKNOWN, and info_respond_error_argp OMITS the code when it
+        # is AS_ERR_UNKNOWN - so the wire form is "ERROR::", not "ERROR:1:".
+        self.info_mock.return_value = "ERROR::{}".format(message)
 
         actual = await self.node.info_checkpoint_save()
 
         self.assertIsInstance(actual, ASInfoCheckpointError)
         self.assertNotIsInstance(actual, ASInfoCheckpointParkedError)
+        self.assertEqual(
+            str(actual),
+            "Failed to start checkpoint save : {}.".format(message),
+        )
 
     async def test_info_checkpoint_save_enterprise_only(self):
         self.info_mock.return_value = "ERROR:25:enterprise only"

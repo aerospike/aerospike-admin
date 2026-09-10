@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 import unittest
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
@@ -5124,6 +5125,8 @@ class ManageCheckpointControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.node_mock = self._make_node("1.1.1.1:3000")
         self.cluster_mock.get_nodes = MagicMock(return_value=[self.node_mock])
+        # Sync on the real Cluster; the AsyncMock would hand back a coroutine.
+        self.cluster_mock.get_parked_nodes = MagicMock(return_value=[])
         self.cluster_mock.info_checkpoint_save.return_value = {
             "1.1.1.1:3000": ASINFO_RESPONSE_OK
         }
@@ -5134,6 +5137,8 @@ class ManageCheckpointControllerTest(unittest.IsolatedAsyncioTestCase):
     def _make_node(key):
         node = MagicMock()
         node.key = key
+        # A real Node defaults to False; an unset MagicMock attribute is truthy.
+        node.checkpoint_parked = False
         node.info_all_namespace_statistics = AsyncMock(
             return_value={"test": {"effective_is_quiesced": "true"}}
         )
@@ -5156,6 +5161,14 @@ class ManageCheckpointControllerTest(unittest.IsolatedAsyncioTestCase):
             return next(iterator)
 
         return side_effect
+
+    @staticmethod
+    def _tick_clock():
+        """asyncio.sleep is mocked, so the poll deadline only moves if time does."""
+        patch(
+            "lib.live_cluster.manage_controller.time.time",
+            side_effect=itertools.count(0, 1),
+        ).start()
 
     async def test_success_polls_to_done(self):
         self.node_mock.info_checkpoint_status.side_effect = self._responses(
@@ -5232,6 +5245,59 @@ class ManageCheckpointControllerTest(unittest.IsolatedAsyncioTestCase):
         self.logger_mock.error.assert_called_once()
         self.assertIn("still copying", self.logger_mock.error.call_args[0][0])
 
+    async def test_copying_does_not_burn_the_park_window(self):
+        # The server's --timeout is the park hold and its clock only starts once the
+        # copy is done. A copy slower than the timeout must not end the poll.
+        self._tick_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("copying", n, 11) for n in range(1, 5)]
+            + [self._status("done", 11, 11)]
+        )
+
+        await self.controller.execute(
+            "--timeout 1 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.assertEqual(self.node_mock.info_checkpoint_status.await_count, 5)
+        self.logger_mock.error.assert_not_called()
+        self.logger_mock.warning.assert_not_called()
+        self.view_mock.print_result.assert_called_once()
+
+    async def test_giving_up_on_a_stalled_node_is_a_warning_not_a_cold_start_error(
+        self,
+    ):
+        # "none" never becomes terminal, so the deadline is the only way out. asadm
+        # stopped polling; the node did not stop working.
+        self._tick_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("none", 0, 0)] * 10
+        )
+
+        await self.controller.execute(
+            "--timeout 1 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.logger_mock.error.assert_not_called()
+        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
+        self.assertTrue(any("Stopped polling %s" in msg for msg in messages), messages)
+        self.assertFalse(any("cold-start" in msg for msg in messages), messages)
+
+    async def test_empty_status_is_not_reported_as_complete(self):
+        # all() over no namespaces is True, so an empty status used to read as
+        # terminal and print "Checkpoint complete" for a node that named nothing.
+        self._tick_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses([{}] * 10)
+
+        await self.controller.execute(
+            "--timeout 10 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        # It must keep polling rather than concluding on the first empty answer.
+        self.assertGreater(self.node_mock.info_checkpoint_status.await_count, 1)
+        self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_called_once()
+        self.assertIn("reported no namespaces", self.logger_mock.error.call_args[0][0])
+
     async def test_parked_error_keeps_polling(self):
         self.node_mock.info_checkpoint_status.side_effect = self._responses(
             [
@@ -5281,7 +5347,11 @@ class ManageCheckpointControllerTest(unittest.IsolatedAsyncioTestCase):
             ("--timeout 0", "--timeout must be between 1 and 3600."),
             ("--timeout 3601", "--timeout must be between 1 and 3600."),
             ("--timeout abc", "--timeout must be an integer."),
-            ("--poll-interval 0", "--poll-interval must be 1 or greater."),
+            ("--poll-interval 0", "--poll-interval must be between 1 and 300."),
+            (
+                "--timeout 60 --poll-interval 120",
+                "--poll-interval must be between 1 and 60.",
+            ),
         ]
     )
     async def test_rejects_bad_flag_values(self, flag, message):
@@ -5417,12 +5487,16 @@ class ManageCheckpointStatusControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.node_mock = MagicMock()
         self.node_mock.key = "1.1.1.1:3000"
+        # A real Node defaults to False; an unset MagicMock attribute is truthy.
+        self.node_mock.checkpoint_parked = False
         self.node_mock.info_checkpoint_status = AsyncMock(
             return_value={
                 "test": {"state": "done", "files_done": 11, "files_total": 11}
             }
         )
         self.cluster_mock.get_nodes = MagicMock(return_value=[self.node_mock])
+        # Sync on the real Cluster; the AsyncMock would hand back a coroutine.
+        self.cluster_mock.get_parked_nodes = MagicMock(return_value=[])
 
         self.addCleanup(patch.stopall)
 
@@ -5460,6 +5534,56 @@ class ManageCheckpointStatusControllerTest(unittest.IsolatedAsyncioTestCase):
             "with 1.1.1.1:3000".split(),
         )
 
+    def _add_parked_node(self, key="2.2.2.2:3000"):
+        """
+        A parked node refuses "build" and "node", so its reconnect fails and the
+        Cluster marks it not alive - and get_nodes filters the "all" scope on alive.
+        """
+        parked = MagicMock()
+        parked.key = key
+        parked.alive = False
+        parked.checkpoint_parked = True
+        parked.info_checkpoint_status = AsyncMock(
+            return_value={
+                "test": {"state": "copying", "files_done": 3, "files_total": 11}
+            }
+        )
+        self.node_mock.alive = True
+        self.node_mock.checkpoint_parked = False
+        self.cluster_mock.nodes = {"1.1.1.1:3000": self.node_mock, key: parked}
+        self.cluster_mock.get_nodes = MagicMock(
+            side_effect=lambda nodes: [
+                node for node in self.cluster_mock.nodes.values() if node.alive
+            ]
+        )
+        self.cluster_mock.get_parked_nodes = MagicMock(
+            side_effect=lambda: [
+                node
+                for node in self.cluster_mock.nodes.values()
+                if node.checkpoint_parked
+            ]
+        )
+
+        return parked
+
+    async def test_default_scope_still_finds_a_parked_node(self):
+        parked = self._add_parked_node()
+
+        await self.controller.execute([])
+
+        parked.info_checkpoint_status.assert_awaited_once()
+
+    async def test_named_scope_does_not_pull_in_unrelated_parked_nodes(self):
+        parked = self._add_parked_node()
+        self.cluster_mock.get_nodes = MagicMock(return_value=[self.node_mock])
+        # Sync on the real Cluster; the AsyncMock would hand back a coroutine.
+        self.cluster_mock.get_parked_nodes = MagicMock(return_value=[])
+
+        await self.controller.execute("with 1.1.1.1:3000".split())
+
+        self.node_mock.info_checkpoint_status.assert_awaited_once()
+        parked.info_checkpoint_status.assert_not_awaited()
+
 
 class ManageCheckpointErrorReportingTest(unittest.IsolatedAsyncioTestCase):
     """TOOLS-3976 - a node that returns an error must say why. The sheet renders an
@@ -5489,8 +5613,12 @@ class ManageCheckpointErrorReportingTest(unittest.IsolatedAsyncioTestCase):
 
         self.node_mock = MagicMock()
         self.node_mock.key = "1.1.1.1:3000"
+        # A real Node defaults to False; an unset MagicMock attribute is truthy.
+        self.node_mock.checkpoint_parked = False
         self.node_mock.info_checkpoint_status = AsyncMock()
         self.cluster_mock.get_nodes = MagicMock(return_value=[self.node_mock])
+        # Sync on the real Cluster; the AsyncMock would hand back a coroutine.
+        self.cluster_mock.get_parked_nodes = MagicMock(return_value=[])
 
         self.addCleanup(patch.stopall)
 
