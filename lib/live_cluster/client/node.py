@@ -193,6 +193,8 @@ class Node(AsyncObject):
     dns_cache = {}
     info_roster_list_fields = ["roster", "pending_roster", "observed_nodes"]
     security_disabled_warning = False  # We only want to warn the user once.
+    # Not alive because it is parked by checkpoint-save, as opposed to being down.
+    checkpoint_parked = False
 
     async def __init__(
         self,
@@ -552,6 +554,10 @@ class Node(AsyncObject):
         )
 
     async def connect(self, address, port):
+        # Cleared on every attempt so a node that is reaped and restarted stops being
+        # reported as parked.
+        self.checkpoint_parked = False
+
         try:
             if not await self.login():
                 raise IOError(
@@ -661,6 +667,11 @@ class Node(AsyncObject):
             raise
         except Exception as e:
             logger.debug(e, exc_info=True)  # type: ignore
+            # A node parked by checkpoint-save refuses "build" and "node", so it lands
+            # here and goes not-alive like any unreachable node. Record WHY: it is
+            # still serving checkpoint-status, and that is the one thing callers need
+            # to tell it apart from a node that is genuinely down.
+            self.checkpoint_parked = isinstance(e, ASInfoCheckpointParkedError)
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address

@@ -201,13 +201,27 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     user_agent=user_agent,
                 )
 
+                # A node parked by checkpoint-save is not alive - it refuses every
+                # command but checkpoint-status and checkpoint-save - yet it is the one
+                # node 'manage checkpoint status' exists to poll. Treating it as "no
+                # cluster" made that command impossible to run. Every other unreachable
+                # case still errors exactly as before.
                 if not self.ctrl.cluster.get_live_nodes():
-                    await self.do_exit("")
-                    self.connected = False
-                    logger.error(
-                        "Not able to connect any cluster with " + str(seeds) + "."
+                    parked_nodes = self.ctrl.cluster.get_parked_nodes()
+
+                    if not parked_nodes:
+                        await self.do_exit("")
+                        self.connected = False
+                        logger.error(
+                            "Not able to connect any cluster with " + str(seeds) + "."
+                        )
+                        return
+
+                    logger.warning(
+                        "Parked by checkpoint-save: %s. Only 'manage checkpoint "
+                        "status' and 'manage checkpoint' will answer.",
+                        ", ".join(node.key for node in parked_nodes),
                     )
-                    return
 
                 self.intro = ""
                 if execute_only_mode:

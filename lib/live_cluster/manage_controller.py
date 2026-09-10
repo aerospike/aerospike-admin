@@ -3133,7 +3133,25 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
         reports the feature as unsupported. Read-only commands pass lenient=True: they
         must still work against the parked node they exist to poll.
         """
-        builds = await self.meta_getter.get_builds(nodes=self.nodes)
+        parked_in_scope = self._parked_in_scope()
+
+        try:
+            builds = await self.meta_getter.get_builds(nodes=self.nodes)
+        except OSError:
+            # Every node in scope is parked, so the Cluster has no live node to ask
+            # and refuses the call outright. That is exactly the state a read-only
+            # checkpoint command has to keep working in.
+            if not lenient and not parked_in_scope:
+                raise
+
+            builds = {}
+
+        if not builds and parked_in_scope:
+            # A parked node cannot report 'build', but it is parked BECAUSE it ran
+            # checkpoint-save - proof enough that it supports the feature. Gating a
+            # re-issue on a version it refuses to report would reject the server's
+            # own idempotent retry path.
+            return
 
         if lenient and not builds:
             logger.warning(
@@ -3156,7 +3174,17 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
                 )
             )
 
-    def _get_nodes(self):
+    def _parked_in_scope(self):
+        """True if any node this command targets is parked by checkpoint-save."""
+        try:
+            return any(
+                node.checkpoint_parked
+                for node in self._get_nodes(include_parked=True)
+            )
+        except ShellException:
+            return False
+
+    def _get_nodes(self, include_parked=False):
         """
         Resolve the Node objects once, up front.
 
@@ -3165,6 +3193,20 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
         (CLUSTER_REFRESH_INTERVAL) and re-connect to the parked node on every poll.
         """
         nodes = self.cluster.get_nodes(self.nodes)
+
+        # A parked node refuses "build" and "node", so its next connect fails and the
+        # Cluster marks it not alive - which is exactly what get_nodes filters out of
+        # the "all" scope. Those are the nodes 'checkpoint status' exists to poll. A
+        # node named by key comes back either way, so only "all" needs them added.
+        # Keyed on checkpoint_parked, not "not alive", so a genuinely down node is not
+        # dragged in to produce a confusing per-node error.
+        if include_parked and self.nodes == constants.NodeSelection.ALL:
+            found = {node.key for node in nodes}
+            nodes = nodes + [
+                node
+                for node in self.cluster.get_parked_nodes()
+                if node.key not in found
+            ]
 
         if not nodes:
             raise ShellException("Unable to find any Aerospike nodes")
@@ -3232,7 +3274,7 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
         ),
         ModifierHelp(
             "--poll-interval",
-            "Seconds between checkpoint-status polls. Minimum 1.",
+            "Seconds between checkpoint-status polls. 1 to --timeout.",
             default="2",
         ),
         ModifierHelp(
@@ -3367,11 +3409,14 @@ class ManageCheckpointController(ManageCheckpointLeafController):
             client_constants.CHECKPOINT_TIMEOUT_MIN,
             client_constants.CHECKPOINT_TIMEOUT_MAX,
         )
+        # Bounded by --timeout: an interval longer than the park hold cannot observe
+        # the park, and it would stretch the poll deadline past the window it measures.
         poll_interval = self._parse_int_arg(
             line,
             "--poll-interval",
-            self.POLL_INTERVAL_DEFAULT,
+            min(self.POLL_INTERVAL_DEFAULT, timeout),
             self.POLL_INTERVAL_MIN,
+            timeout,
         )
 
         # parse_modifiers sweeps every token after 'with' into the node list, so a flag
@@ -3434,10 +3479,12 @@ class ManageCheckpointController(ManageCheckpointLeafController):
         await self._poll(started, timeout, poll_interval)
 
     async def _poll(self, nodes, timeout, poll_interval):
-        deadline = time.time() + max(timeout - self.POLL_MARGIN_SEC, poll_interval)
+        park_window = max(timeout - self.POLL_MARGIN_SEC, poll_interval)
+        deadline = time.time() + park_window
         pending = list(nodes)
         last_seen = {}
         last_error = {}
+        timed_out = set()
 
         try:
             while pending:
@@ -3460,10 +3507,15 @@ class ManageCheckpointController(ManageCheckpointLeafController):
                 if not pending:
                     break
 
-                if time.time() >= deadline:
+                # "timeout" is the park hold, and the server only starts its clock once
+                # the copy has finished. Copying is unbounded and I/O-bound, so the
+                # countdown restarts for as long as a node reports progress.
+                if self._any_copying(pending, statuses):
+                    deadline = time.time() + park_window
+                elif time.time() >= deadline:
+                    timed_out = {node.key for node in pending}
                     logger.warning(
-                        "Stopped polling after %s seconds - the park window has "
-                        "elapsed. Nodes still in progress: %s",
+                        "Stopped polling after %s seconds. Nodes still in progress: %s",
                         timeout,
                         ", ".join(node.key for node in pending),
                     )
@@ -3473,7 +3525,20 @@ class ManageCheckpointController(ManageCheckpointLeafController):
         except asyncio.CancelledError:
             return
 
-        self._report(nodes, last_seen, last_error)
+        self._report(nodes, last_seen, last_error, timed_out)
+
+    @staticmethod
+    def _any_copying(pending, statuses):
+        for node in pending:
+            status = statuses.get(node.key)
+
+            if isinstance(status, Exception) or not status:
+                continue
+
+            if any(ns_status["state"] == "copying" for ns_status in status.values()):
+                return True
+
+        return False
 
     def _is_terminal(self, node, status):
         if isinstance(status, ASInfoCheckpointParkedError):
@@ -3485,12 +3550,18 @@ class ManageCheckpointController(ManageCheckpointLeafController):
             # stopped it. Either way there is nothing left to poll.
             return True
 
+        if not status:
+            # No namespace reported. That says nothing about progress, and "all of
+            # nothing is terminal" would end the poll claiming the node is done.
+            return False
+
         return all(
             ns_status["state"] in self.TERMINAL_STATES for ns_status in status.values()
         )
 
-    def _report(self, nodes, last_seen, last_error=None):
+    def _report(self, nodes, last_seen, last_error=None, timed_out=None):
         last_error = last_error or {}
+        timed_out = timed_out or set()
 
         for node in nodes:
             status = last_seen.get(node.key)
@@ -3505,9 +3576,15 @@ class ManageCheckpointController(ManageCheckpointLeafController):
                         error,
                         self._error_hint(error),
                     )
-                else:
+                elif status is None:
                     logger.error(
                         "Never read a checkpoint status from %s. Its checkpoint state "
+                        "is unknown - check the server log before restarting it.",
+                        node.key,
+                    )
+                else:
+                    logger.error(
+                        "%s reported no namespaces to checkpoint. Its checkpoint state "
                         "is unknown - check the server log before restarting it.",
                         node.key,
                     )
@@ -3515,7 +3592,9 @@ class ManageCheckpointController(ManageCheckpointLeafController):
                 continue
 
             failed = [ns for ns, s in status.items() if s["state"] == "failed"]
-            unfinished = [ns for ns, s in status.items() if s["state"] == "copying"]
+            unfinished = [
+                ns for ns, s in status.items() if s["state"] not in self.TERMINAL_STATES
+            ]
 
             if failed:
                 logger.error(
@@ -3524,6 +3603,16 @@ class ManageCheckpointController(ManageCheckpointLeafController):
                     "cold-start.",
                     node.key,
                     ", ".join(failed),
+                )
+            elif node.key in timed_out:
+                # asadm gave up, the node did not. Saying "no usable checkpoint" here
+                # would push an operator into killing a node that is still copying.
+                logger.warning(
+                    "Stopped polling %s while namespace(s) %s were still in progress. "
+                    "The checkpoint is still running - follow it with 'manage "
+                    "checkpoint status'.",
+                    node.key,
+                    ", ".join(unfinished),
                 )
             elif unfinished:
                 logger.error(
@@ -3561,7 +3650,7 @@ class ManageCheckpointStatusController(ManageCheckpointLeafController):
     async def _do_default(self, line):
         await self._check_version_support(lenient=True)
 
-        nodes = self._get_nodes()
+        nodes = self._get_nodes(include_parked=True)
         statuses = await self._get_checkpoint_status(nodes)
         ok, errors = self._split_statuses(statuses)
 

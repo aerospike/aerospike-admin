@@ -260,6 +260,13 @@ class Cluster(AsyncObject):
         # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
 
+    def get_parked_nodes(self) -> list[Node]:
+        """
+        Nodes that are not alive because checkpoint-save parked them. They still serve
+        checkpoint-status, so "no live nodes" does not mean "no cluster to talk to".
+        """
+        return [node for node in self.nodes.values() if node.checkpoint_parked]
+
     def get_visibility_error_nodes(self) -> list[str]:
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
