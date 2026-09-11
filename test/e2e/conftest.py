@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Test modules that terminate a node rather than just reading from one. They run
-# last: 'manage checkpoint' departs the node it targets, and even with a clean
+# last: 'manage checkpoint save' departs the node it targets, and even with a clean
 # per-test stop()/start() the next module has come up with a strong-consistency
 # roster that still named the departed node ("Node not found for partition
 # test_sc:<pid>"). Nothing may depend on cluster state after these run.

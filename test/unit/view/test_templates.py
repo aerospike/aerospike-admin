@@ -475,6 +475,20 @@ class ShowCheckpointStatusSheetTest(unittest.TestCase):
         self.assertFalse(record["Parked"]["raw"])
         self.assertEqual(record["Park Time"]["converted"], "00:00:00")
 
+    def test_placeholder_row_keeps_a_namespaceless_parked_node_visible(self):
+        render = self.render(
+            {"": {"state": "", "files_completed": 0, "files_total": 0}},
+            parked=True,
+            park_ms=5000,
+        )
+
+        self.assertEqual(len(render["groups"]), 1)
+        record = render["groups"][0]["records"][0]
+
+        self.assertTrue(record["Parked"]["raw"])
+        self.assertEqual(record["Park Time"]["converted"], "00:00:05")
+        self.assertIsNone(record["State"].get("format"))
+
 
 MEMORY_NODE = "127.0.0.1:3000"
 

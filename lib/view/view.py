@@ -1815,7 +1815,10 @@ class CliView(object):
             node_names=node_names,
             node_ids=node_ids,
             data={
-                node: status["namespaces"] for node, status in checkpoint_data.items()
+                # Placeholder row so a node with no namespaces still shows its park state.
+                node: status["namespaces"]
+                or {"": {"state": "", "files_completed": 0, "files_total": 0}}
+                for node, status in checkpoint_data.items()
             },
             status=checkpoint_data,
         )

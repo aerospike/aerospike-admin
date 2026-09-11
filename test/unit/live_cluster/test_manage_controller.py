@@ -5566,8 +5566,6 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_save_failure_logs_an_error_so_the_exit_code_is_non_zero(self):
         # print_info_responses colours a failure red but does not set the exit code.
-        # Without a logger.error a script chaining 'manage checkpoint && systemctl stop
-        # aerospike' would stop a node that never checkpointed.
         self.cluster_mock.info_checkpoint_save.return_value = {
             "1.1.1.1:3000": ASInfoResponseError("Failed", "ERROR:25:enterprise only")
         }
@@ -5834,6 +5832,21 @@ class ManageCheckpointExitCodeTest(unittest.IsolatedAsyncioTestCase):
         }
         self.node_mock.info_checkpoint_status.return_value = _checkpoint_status(
             test={"state": "failed", "files_completed": 4, "files_total": 11}
+        )
+
+        with self.assertLogs(self.logger, level="ERROR"):
+            await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
+    async def test_failed_namespace_exits_2_even_if_the_node_parked(self):
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASINFO_RESPONSE_OK
+        }
+        self.node_mock.info_checkpoint_status.return_value = _checkpoint_status(
+            parked=True,
+            park_ms=500,
+            test={"state": "failed", "files_completed": 4, "files_total": 11},
         )
 
         with self.assertLogs(self.logger, level="ERROR"):
