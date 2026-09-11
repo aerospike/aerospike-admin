@@ -3238,27 +3238,49 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
         return ok, errors
 
     @staticmethod
-    def _error_hint(error):
-        """
-        The server truncates every info error at 100 characters (MAX_FORMAT in
-        cf/src/dynbuf.c), which cuts this one mid-word. The prefix still identifies it,
-        so restore the actionable part.
-        """
-        if str(getattr(error, "response", "")).startswith(
-            "no namespace is checkpointing"
-        ):
-            return (
-                " No namespace is configured for checkpointing. Set the service-level "
-                "'index-checkpoint-path', start the server with "
-                "'--preview index-checkpoint', and make sure the namespace has volatile "
-                "state and does not set 'skip-checkpoint'."
-            )
-
-        return ""
-
-    def _log_status_errors(self, errors):
+    def _log_status_errors(errors):
         for key, error in errors.items():
-            logger.error("%s: %s%s", key, error, self._error_hint(error))
+            logger.error("%s: %s", key, error)
+
+    async def _show_status(self):
+        await self._check_version_support(lenient=True)
+
+        nodes = self._get_nodes(include_parked=True)
+        statuses = await self._get_checkpoint_status(nodes)
+        ok, errors = self._split_statuses(statuses)
+
+        self._log_status_errors(errors)
+
+        if ok:
+            self.view.show_checkpoint_status(ok, self.cluster, **self.mods)
+
+
+@CommandHelp(
+    "Checkpoint a node's shared-memory segments to durable storage so it can warm",
+    "restart, and follow the progress. Without a subcommand this displays the",
+    "status, the same as 'manage checkpoint status'.",
+    modifiers=(
+        ModifierHelp(
+            constants.Modifiers.WITH,
+            "The node(s) to query. Acceptable values are ip:port, node-id, or FQDN.",
+            default="all",
+        ),
+    ),
+    usage=f"[{constants.ModifierUsage.WITH}]",
+    short_msg="Checkpoint a node's shared-memory segments or display checkpoint progress",
+)
+class ManageCheckpointController(ManageCheckpointLeafController):
+    def __init__(self):
+        self.modifiers = {"with"}
+        self.meta_getter = GetClusterMetadataController(self.cluster)
+        self.controller_map = {
+            "save": ManageCheckpointSaveController,
+            "status": ManageCheckpointStatusController,
+        }
+
+    @CommandHelp("Display the per-namespace progress of an index checkpoint")
+    async def _do_default(self, line):
+        await self._show_status()
 
 
 @CommandHelp(
@@ -3305,7 +3327,7 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
     usage=f"[--timeout <seconds>] [--poll-interval <seconds>] [--no-wait] [--no-warn] {constants.ModifierUsage.WITH}",
     short_msg="Checkpoint a node's shared-memory segments so it can warm restart",
 )
-class ManageCheckpointController(ManageCheckpointLeafController):
+class ManageCheckpointSaveController(ManageCheckpointLeafController):
     POLL_INTERVAL_DEFAULT = client_constants.CHECKPOINT_POLL_INTERVAL_DEFAULT
     POLL_INTERVAL_MIN = client_constants.CHECKPOINT_POLL_INTERVAL_MIN
     # Stop polling before the node's park window closes - once it elapses the node
@@ -3317,7 +3339,6 @@ class ManageCheckpointController(ManageCheckpointLeafController):
         self.required_modifiers = {"with"}
         self.modifiers = set()
         self.meta_getter = GetClusterMetadataController(self.cluster)
-        self.controller_map = {"status": ManageCheckpointStatusController}
 
     def _parse_int_arg(self, line, arg, default, minimum, maximum=None):
         """
@@ -3360,13 +3381,11 @@ class ManageCheckpointController(ManageCheckpointLeafController):
             target = "node(s): {}".format(", ".join(self.nodes))
 
         return (
-            "You are about to checkpoint {} - each copies its shared-memory segments "
-            "(the primary index; the secondary index if it is in shmem; the data "
-            "stripes for a shadowless memory namespace) to durable storage, then "
-            "departs the cluster and parks, serving only checkpoint-status, until it "
-            "is stopped or the park timeout elapses ({}s). This cannot be undone. A "
-            "node that is not quiesced will trigger "
-            "migrations.".format(target, timeout)
+            "You are about to checkpoint {}. Each saves its shared-memory segments to "
+            "durable storage, departs the cluster and parks until it is stopped or "
+            "the park timeout elapses ({}s). This cannot be undone.".format(
+                target, timeout
+            )
         )
 
     async def _warn_if_not_quiesced(self, nodes):
@@ -3399,9 +3418,6 @@ class ManageCheckpointController(ManageCheckpointLeafController):
                 " ".join(not_quiesced),
             )
 
-    @CommandHelp(
-        "Checkpoint the node(s) and poll until every namespace is done or failed",
-    )
     async def _do_default(self, line):
         no_warn = util.check_arg_and_delete_from_mods(
             line=line,
@@ -3476,7 +3492,7 @@ class ManageCheckpointController(ManageCheckpointLeafController):
         )
 
         # The response table colours a failure red but does not set the exit code. A
-        # script chaining 'manage checkpoint && systemctl stop aerospike' would stop a
+        # script chaining 'manage checkpoint save && systemctl stop aerospike' would stop a
         # node that never checkpointed, so a failed save must exit non-zero.
         _, errors = self._split_statuses(resp)
 
@@ -3547,10 +3563,13 @@ class ManageCheckpointController(ManageCheckpointLeafController):
         for node in pending:
             status = statuses.get(node.key)
 
-            if isinstance(status, Exception) or not status:
+            if isinstance(status, Exception):
                 continue
 
-            if any(ns_status["state"] == "copying" for ns_status in status.values()):
+            if any(
+                ns_status["state"] == "copying"
+                for ns_status in status["namespaces"].values()
+            ):
                 return True
 
         return False
@@ -3565,13 +3584,22 @@ class ManageCheckpointController(ManageCheckpointLeafController):
             # stopped it. Either way there is nothing left to poll.
             return True
 
-        if not status:
+        if status["is_parked"]:
+            # The park is entered only after every save has finished, so nothing
+            # will change from here. This is also the only terminal signal a node
+            # gives when no namespace is checkpointing.
+            return True
+
+        namespaces = status["namespaces"]
+
+        if not namespaces:
             # No namespace reported. That says nothing about progress, and "all of
             # nothing is terminal" would end the poll claiming the node is done.
             return False
 
         return all(
-            ns_status["state"] in self.TERMINAL_STATES for ns_status in status.values()
+            ns_status["state"] in self.TERMINAL_STATES
+            for ns_status in namespaces.values()
         )
 
     def _report(self, nodes, last_seen, last_error=None, timed_out=None):
@@ -3581,21 +3609,28 @@ class ManageCheckpointController(ManageCheckpointLeafController):
         for node in nodes:
             status = last_seen.get(node.key)
 
-            if not status:
+            if status is None:
                 error = last_error.get(node.key)
 
                 if error is not None:
                     logger.error(
-                        "Never read a checkpoint status from %s: %s%s",
-                        node.key,
-                        error,
-                        self._error_hint(error),
+                        "Never read a checkpoint status from %s: %s", node.key, error
                     )
-                elif status is None:
+                else:
                     logger.error(
                         "Never read a checkpoint status from %s. Its checkpoint state "
                         "is unknown - check the server log before restarting it.",
                         node.key,
+                    )
+
+                continue
+
+            namespaces = status["namespaces"]
+
+            if not namespaces:
+                if status["is_parked"]:
+                    logger.warning(
+                        "%s parked with no namespace checkpointing.", node.key
                     )
                 else:
                     logger.error(
@@ -3606,9 +3641,11 @@ class ManageCheckpointController(ManageCheckpointLeafController):
 
                 continue
 
-            failed = [ns for ns, s in status.items() if s["state"] == "failed"]
+            failed = [ns for ns, s in namespaces.items() if s["state"] == "failed"]
             unfinished = [
-                ns for ns, s in status.items() if s["state"] not in self.TERMINAL_STATES
+                ns
+                for ns, s in namespaces.items()
+                if s["state"] not in self.TERMINAL_STATES
             ]
 
             if failed:
@@ -3659,16 +3696,7 @@ class ManageCheckpointStatusController(ManageCheckpointLeafController):
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
     async def _do_default(self, line):
-        await self._check_version_support(lenient=True)
-
-        nodes = self._get_nodes(include_parked=True)
-        statuses = await self._get_checkpoint_status(nodes)
-        ok, errors = self._split_statuses(statuses)
-
-        self._log_status_errors(errors)
-
-        if ok:
-            self.view.show_checkpoint_status(ok, self.cluster, **self.mods)
+        await self._show_status()
 
 
 @CommandHelp(

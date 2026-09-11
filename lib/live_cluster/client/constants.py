@@ -24,9 +24,9 @@ MAX_SOCKET_POOL_SIZE = 16
 # A node parked by checkpoint-save refuses every info command except checkpoint-status
 # and a re-issued checkpoint-save. The error code is not a discriminator - the server
 # uses AS_ERR_FORBIDDEN (22) for its pre-startup refusal too - so match the message.
+# This is the one server string asadm interprets: it is what tells a parked node
+# apart from a dead one.
 CHECKPOINT_PARKED_RESPONSE = "checkpoint-save in progress"
-CHECKPOINT_SAVE_IN_PROGRESS = "checkpoint-save already in progress"
-CHECKPOINT_SAVE_COMPLETE = "checkpoint-save already complete"
 CHECKPOINT_TIMEOUT_MIN = 1
 CHECKPOINT_TIMEOUT_MAX = 3600
 CHECKPOINT_TIMEOUT_DEFAULT = 300

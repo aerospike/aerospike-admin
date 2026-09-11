@@ -2794,15 +2794,15 @@ node_info_responses = Sheet(
 )
 
 
-def _checkpoint_files(files_done, files_total):
-    return "{}/{}".format(files_done, files_total)
+def _checkpoint_files(files_completed, files_total):
+    return "{}/{}".format(files_completed, files_total)
 
 
-def _checkpoint_progress(files_done, files_total):
+def _checkpoint_progress(files_completed, files_total):
     if not files_total:
         return 0.0
 
-    return (files_done / files_total) * 100.0
+    return (files_completed / files_total) * 100.0
 
 
 show_checkpoint_status = Sheet(
@@ -2824,7 +2824,7 @@ show_checkpoint_status = Sheet(
             Projectors.Func(
                 FieldType.string,
                 _checkpoint_files,
-                Projectors.Number("data", "files_done"),
+                Projectors.Number("data", "files_completed"),
                 Projectors.Number("data", "files_total"),
             ),
         ),
@@ -2833,13 +2833,19 @@ show_checkpoint_status = Sheet(
             Projectors.Func(
                 FieldType.number,
                 _checkpoint_progress,
-                Projectors.Number("data", "files_done"),
+                Projectors.Number("data", "files_completed"),
                 Projectors.Number("data", "files_total"),
             ),
             converter=Converters.pct,
         ),
+        Field("Parked", Projectors.Boolean("status", "is_parked")),
+        Field(
+            "Park Time",
+            Projectors.Number("status", "park_ms"),
+            converter=Converters.time_milliseconds,
+        ),
     ),
-    from_source=("data", "node_names", "node_ids"),
+    from_source=("data", "status", "node_names", "node_ids"),
     for_each="data",
     group_by=("Namespace"),
     order_by=FieldSorter("Node"),

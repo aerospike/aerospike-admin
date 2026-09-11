@@ -1814,7 +1814,10 @@ class CliView(object):
         sources = dict(
             node_names=node_names,
             node_ids=node_ids,
-            data=checkpoint_data,
+            data={
+                node: status["namespaces"] for node, status in checkpoint_data.items()
+            },
+            status=checkpoint_data,
         )
         common = CliView._common(cluster)
 

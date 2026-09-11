@@ -38,8 +38,6 @@ from lib.utils.async_object import AsyncObject
 
 from .constants import (
     CHECKPOINT_PARKED_RESPONSE,
-    CHECKPOINT_SAVE_COMPLETE,
-    CHECKPOINT_SAVE_IN_PROGRESS,
     CHECKPOINT_TIMEOUT_MAX,
     CHECKPOINT_TIMEOUT_MIN,
     ErrorsMsgs,
@@ -3906,10 +3904,9 @@ class Node(AsyncObject):
         park timeout elapses. There is no undo.
 
         Re-issuing is idempotent: the server reports the in-flight state rather than
-        starting a second save, so the response is returned rather than
-        ASINFO_RESPONSE_OK.
+        starting a second save. Whatever it says is returned verbatim.
 
-        Returns: the server's success response on success and ASInfoError on failure
+        Returns: the server's response on success and ASInfoError on failure
         """
         req = "checkpoint-save"
 
@@ -3935,11 +3932,7 @@ class Node(AsyncObject):
         if self._is_checkpoint_parked_response(resp):
             raise ASInfoCheckpointParkedError(ErrorsMsgs.CHECKPOINT_SAVE_FAIL, resp)
 
-        if resp.lower() not in {
-            ASINFO_RESPONSE_OK,
-            CHECKPOINT_SAVE_IN_PROGRESS,
-            CHECKPOINT_SAVE_COMPLETE,
-        }:
+        if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoCheckpointError(ErrorsMsgs.CHECKPOINT_SAVE_FAIL, resp)
 
         return resp
@@ -3947,10 +3940,11 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_checkpoint_status(self):
         """
-        Get per-namespace index checkpoint progress. asinfo -v "checkpoint-status"
+        Get index checkpoint progress. asinfo -v "checkpoint-status"
 
         Returns:
-        dictionary -- namespace -> {state, files_done, files_total}
+        dictionary -- {is_parked, park_ms, namespaces: namespace -> {state,
+        files_completed, files_total}}
         """
         resp = await self._info("checkpoint-status")
 
@@ -3960,35 +3954,43 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoCheckpointError(ErrorsMsgs.CHECKPOINT_STATUS_FAIL, resp)
 
-        result = {}
+        result = {"is_parked": False, "park_ms": 0, "namespaces": {}}
 
-        # Entries are "<ns>:state=<state>:files=<done>/<total>" joined by ";". The
-        # leading namespace has no "=", so info_to_dict_multi_level would drop it.
-        # The server chomps the trailing ";" but the empty check does not rely on that.
+        # Entries are "<ns>:state=<state>:files_completed=<n>:files_total=<n>:
+        # is_parked=<bool>:park_ms=<ms>" joined by ";". The leading namespace has no
+        # "=", so info_to_dict_multi_level would drop it. When no namespace is
+        # checkpointing the server sends a single node-global "is_parked=..:park_ms=.."
+        # record with no namespace prefix. Park state is node-global either way; the
+        # server repeats it per namespace for the metrics exporter.
         for entry in client_util.info_to_list(resp):
             if not entry:
                 continue
 
-            ns, _, rest = entry.partition(":")
-            values = client_util.info_to_dict(rest, ":")
-            files_done, _, files_total = values.get("files", "").partition("/")
+            head, _, rest = entry.partition(":")
 
-            try:
-                files_done = int(files_done)
-                files_total = int(files_total)
-            except ValueError:
-                files_done = 0
-                files_total = 0
+            if "=" in head:
+                values = client_util.info_to_dict(entry, ":")
+            else:
+                values = client_util.info_to_dict(rest, ":")
+                result["namespaces"][head] = {
+                    "state": values.get("state", ""),
+                    "files_completed": self._checkpoint_int(values, "files_completed"),
+                    "files_total": self._checkpoint_int(values, "files_total"),
+                }
 
-            result[ns] = {
-                "state": values.get("state", ""),
-                "files_done": files_done,
-                "files_total": files_total,
-            }
+            result["is_parked"] = values.get("is_parked") == "true"
+            result["park_ms"] = self._checkpoint_int(values, "park_ms")
 
         logger.debug("info_checkpoint_status node=%s response=%s", self.ip, result)
 
         return result
+
+    @staticmethod
+    def _checkpoint_int(values, key):
+        try:
+            return int(values.get(key, ""))
+        except ValueError:
+            return 0
 
     # TODO: Deprecated but still needed to support reading old job type removed in
     # server 5.7.  Should be stripped out at some point.
