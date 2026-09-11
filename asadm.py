@@ -219,7 +219,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
                     logger.warning(
                         "Parked by checkpoint-save: %s. Only 'manage checkpoint "
-                        "status' and 'manage checkpoint' will answer.",
+                        "status' and 'manage checkpoint save' will answer.",
                         ", ".join(node.key for node in parked_nodes),
                     )
 
