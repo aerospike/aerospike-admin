@@ -73,15 +73,13 @@ class TestCheckpoint(unittest.TestCase):
 
         return test_util.run_asadm(args)
 
-    def status_records(self):
-        cp = self.run_asadm("manage checkpoint status", json=True)
+    def status_records(self, cmd="manage checkpoint status"):
+        cp = self.run_asadm(cmd, json=True)
         out = test_util.get_separate_output(cp.stdout)
 
         if not out:
             raise AssertionError(
-                "no sheet in 'manage checkpoint status' output:\n{}\n{}".format(
-                    cp.stdout, cp.stderr
-                )
+                "no sheet in '{}' output:\n{}\n{}".format(cmd, cp.stdout, cp.stderr)
             )
 
         _, _, names, values, _ = test_util.parse_output(out[0])
@@ -101,6 +99,13 @@ class TestCheckpoint(unittest.TestCase):
         for record in records:
             self.assertEqual(record["State"], "none")
             self.assertEqual(record["Files"], "0/0")
+            self.assertEqual(record["Parked"], "False")
+
+    def test_bare_command_is_status(self):
+        """'manage checkpoint' with no subcommand reads; it never saves."""
+        self.assertEqual(
+            self.status_records("manage checkpoint"), self.status_records()
+        )
 
     def test_status_rejects_a_parameter(self):
         # checkpoint-status takes no parameters; asadm must surface the refusal rather
@@ -114,8 +119,9 @@ class TestCheckpoint(unittest.TestCase):
     def require_checkpoint_configured(self):
         """
         Fail before parking anything if 'index-checkpoint-path' did not take. An
-        unconfigured server answers "no namespace is checkpointing" and a save would
-        still depart the node - a destructive no-op.
+        unconfigured server answers with an error and renders no sheet; a server
+        where every namespace opted out still parks on save - a destructive no-op -
+        and renders no namespace rows either.
         """
         records = self.status_records()
 
@@ -132,7 +138,7 @@ class TestCheckpoint(unittest.TestCase):
         self.require_checkpoint_configured()
 
         cp = self.run_asadm(
-            "manage checkpoint --no-warn --no-wait with {}".format(self.node)
+            "manage checkpoint save --no-warn --no-wait with {}".format(self.node)
         )
 
         self.assertNotIn("ERROR", cp.stderr, cp.stderr)
@@ -169,7 +175,7 @@ class TestCheckpoint(unittest.TestCase):
         self.require_checkpoint_configured()
 
         self.run_asadm(
-            "manage checkpoint --no-warn --no-wait with {}".format(self.node)
+            "manage checkpoint save --no-warn --no-wait with {}".format(self.node)
         )
 
         deadline = time.time() + 120
@@ -185,7 +191,7 @@ class TestCheckpoint(unittest.TestCase):
             time.sleep(2)
 
         cp = self.run_asadm(
-            "manage checkpoint --no-warn --no-wait with {}".format(self.node)
+            "manage checkpoint save --no-warn --no-wait with {}".format(self.node)
         )
         combined = cp.stdout + cp.stderr
 

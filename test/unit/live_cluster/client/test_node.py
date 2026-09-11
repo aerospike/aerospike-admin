@@ -4534,20 +4534,17 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             "'timeout' of 1..3600 seconds (got 'foo=1').",
         )
 
-    async def test_info_checkpoint_save_no_namespace_configured(self):
+    async def test_info_checkpoint_save_not_configured(self):
         self.info_mock.return_value = (
-            "ERROR:4:no namespace is checkpointing - the global "
-            "'index-checkpoint-path' is unset, or every namespace is fully durable or "
-            "has 'skip-checkpoint'"
+            "ERROR:4:'index-checkpoint-path' is not configured"
         )
 
         actual = await self.node.info_checkpoint_save()
 
         self.assertEqual(
             str(actual),
-            "Failed to start checkpoint save : no namespace is checkpointing - the "
-            "global 'index-checkpoint-path' is unset, or every namespace is fully "
-            "durable or has 'skip-checkpoint'.",
+            "Failed to start checkpoint save : 'index-checkpoint-path' is not "
+            "configured.",
         )
 
     @parameterized.expand(
@@ -4605,59 +4602,107 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
+    @staticmethod
+    def _checkpoint_status(**namespaces):
+        return {"is_parked": False, "park_ms": 0, "namespaces": namespaces}
+
     async def test_info_checkpoint_status_single_namespace(self):
         # The server chomps the trailing ";" - see cf_dyn_buf_chomp in
-        # index_checkpoint_ee.c. The ticket and PRD both show one; neither is right.
-        self.info_mock.return_value = "test:state=done:files=11/11"
+        # index_checkpoint_ee.c.
+        self.info_mock.return_value = "test:state=done:files_completed=11:files_total=11:is_parked=false:park_ms=0"
 
         actual = await self.node.info_checkpoint_status()
 
         self.info_mock.assert_called_once_with("checkpoint-status", self.ip)
         self.assertEqual(
             actual,
-            {"test": {"state": "done", "files_done": 11, "files_total": 11}},
+            self._checkpoint_status(
+                test={"state": "done", "files_completed": 11, "files_total": 11}
+            ),
         )
 
     async def test_info_checkpoint_status_tolerates_trailing_semicolon(self):
-        self.info_mock.return_value = "test:state=done:files=11/11;"
+        self.info_mock.return_value = "test:state=done:files_completed=11:files_total=11:is_parked=false:park_ms=0;"
 
         actual = await self.node.info_checkpoint_status()
 
         self.assertEqual(
             actual,
-            {"test": {"state": "done", "files_done": 11, "files_total": 11}},
+            self._checkpoint_status(
+                test={"state": "done", "files_completed": 11, "files_total": 11}
+            ),
         )
 
     async def test_info_checkpoint_status_multiple_namespaces(self):
         self.info_mock.return_value = (
-            "test:state=copying:files=3/11;bar:state=none:files=0/0"
+            "test:state=copying:files_completed=3:files_total=11:is_parked=false:park_ms=0;"
+            "bar:state=none:files_completed=0:files_total=0:is_parked=false:park_ms=0"
         )
 
         actual = await self.node.info_checkpoint_status()
 
         self.assertEqual(
             actual,
-            {
-                "test": {"state": "copying", "files_done": 3, "files_total": 11},
-                "bar": {"state": "none", "files_done": 0, "files_total": 0},
-            },
+            self._checkpoint_status(
+                test={"state": "copying", "files_completed": 3, "files_total": 11},
+                bar={"state": "none", "files_completed": 0, "files_total": 0},
+            ),
         )
 
     async def test_info_checkpoint_status_failed_state(self):
-        self.info_mock.return_value = "test:state=failed:files=4/11"
+        self.info_mock.return_value = "test:state=failed:files_completed=4:files_total=11:is_parked=true:park_ms=1500"
 
         actual = await self.node.info_checkpoint_status()
 
-        self.assertEqual(actual["test"]["state"], "failed")
+        self.assertEqual(actual["namespaces"]["test"]["state"], "failed")
+
+    async def test_info_checkpoint_status_parked_is_node_global(self):
+        # The server repeats the park state on every namespace record for the
+        # metrics exporter. asadm lifts it to the node once.
+        self.info_mock.return_value = (
+            "test:state=done:files_completed=11:files_total=11:is_parked=true:park_ms=4200;"
+            "bar:state=done:files_completed=2:files_total=2:is_parked=true:park_ms=4200"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertTrue(actual["is_parked"])
+        self.assertEqual(actual["park_ms"], 4200)
+        self.assertNotIn("is_parked", actual["namespaces"]["test"])
+
+    async def test_info_checkpoint_status_no_namespace_checkpointing(self):
+        # 'index-checkpoint-path' is set but every namespace opted out, so there is no
+        # per-namespace record - only the node-global park state a poller needs to see.
+        self.info_mock.return_value = "is_parked=true:park_ms=987"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(actual, {"is_parked": True, "park_ms": 987, "namespaces": {}})
 
     async def test_info_checkpoint_status_malformed_files(self):
-        self.info_mock.return_value = "test:state=copying:files=bogus"
+        self.info_mock.return_value = "test:state=copying:files_completed=bogus:files_total=:is_parked=false:park_ms=x"
 
         actual = await self.node.info_checkpoint_status()
 
         self.assertEqual(
             actual,
-            {"test": {"state": "copying", "files_done": 0, "files_total": 0}},
+            self._checkpoint_status(
+                test={"state": "copying", "files_completed": 0, "files_total": 0}
+            ),
+        )
+
+    async def test_info_checkpoint_status_not_configured(self):
+        self.info_mock.return_value = (
+            "ERROR:4:'index-checkpoint-path' is not configured"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertIsInstance(actual, ASInfoCheckpointError)
+        self.assertEqual(
+            str(actual),
+            "Failed to get checkpoint status : 'index-checkpoint-path' is not "
+            "configured.",
         )
 
     async def test_info_checkpoint_status_parked_raises_parked_error(self):

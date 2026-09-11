@@ -377,15 +377,16 @@ class NodeHighlightingTest(unittest.TestCase):
 
 
 class ShowCheckpointStatusSheetTest(unittest.TestCase):
-    """Covers the state alert tiers and the client-computed progress percentage of
-    'manage checkpoint'. The server reports only files=<done>/<total> (TOOLS-3976)."""
+    """Covers the state alert tiers, the client-computed progress percentage and the
+    node-global park columns of 'manage checkpoint' (TOOLS-3976)."""
 
-    def render(self, ns_data):
+    def render(self, ns_data, parked=False, park_ms=0):
         node = "127.0.0.1:3000"
         sources = dict(
             node_names={node: "node-A"},
             node_ids={node: "BB9040011AC4202"},
             data={node: ns_data},
+            status={node: {"is_parked": parked, "park_ms": park_ms}},
         )
         common = dict(principal="BB9040011AC4202")
 
@@ -408,7 +409,7 @@ class ShowCheckpointStatusSheetTest(unittest.TestCase):
     )
     def test_state_alert_tiers(self, state, expected):
         render = self.render(
-            {"test": {"state": state, "files_done": 3, "files_total": 11}}
+            {"test": {"state": state, "files_completed": 3, "files_total": 11}}
         )
         record = render["groups"][0]["records"][0]
 
@@ -424,7 +425,13 @@ class ShowCheckpointStatusSheetTest(unittest.TestCase):
     )
     def test_progress_percent(self, done, total, expected):
         render = self.render(
-            {"test": {"state": "copying", "files_done": done, "files_total": total}}
+            {
+                "test": {
+                    "state": "copying",
+                    "files_completed": done,
+                    "files_total": total,
+                }
+            }
         )
         record = render["groups"][0]["records"][0]
 
@@ -434,12 +441,39 @@ class ShowCheckpointStatusSheetTest(unittest.TestCase):
     def test_groups_by_namespace(self):
         render = self.render(
             {
-                "test": {"state": "done", "files_done": 11, "files_total": 11},
-                "bar": {"state": "copying", "files_done": 1, "files_total": 9},
+                "test": {"state": "done", "files_completed": 11, "files_total": 11},
+                "bar": {"state": "copying", "files_completed": 1, "files_total": 9},
             }
         )
 
         self.assertEqual(len(render["groups"]), 2)
+
+    def test_park_state_is_repeated_on_every_namespace_row(self):
+        # Park state is per node. Each namespace row carries it so a reader scanning
+        # one group sees it without cross-referencing.
+        render = self.render(
+            {
+                "test": {"state": "done", "files_completed": 11, "files_total": 11},
+                "bar": {"state": "done", "files_completed": 2, "files_total": 2},
+            },
+            parked=True,
+            park_ms=61000,
+        )
+
+        for group in render["groups"]:
+            record = group["records"][0]
+
+            self.assertTrue(record["Parked"]["raw"])
+            self.assertEqual(record["Park Time"]["converted"], "00:01:01")
+
+    def test_not_parked(self):
+        render = self.render(
+            {"test": {"state": "copying", "files_completed": 1, "files_total": 9}}
+        )
+        record = render["groups"][0]["records"][0]
+
+        self.assertFalse(record["Parked"]["raw"])
+        self.assertEqual(record["Park Time"]["converted"], "00:00:00")
 
 
 MEMORY_NODE = "127.0.0.1:3000"
