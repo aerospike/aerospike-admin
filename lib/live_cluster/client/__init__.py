@@ -16,6 +16,8 @@ from .types import (
     ASInfoError,
     ASInfoResponseError,
     ASInfoNotAuthenticatedError,
+    ASInfoCheckpointError,
+    ASInfoCheckpointParkedError,
     ASInfoClusterStableError,
     ASInfoConfigError,
     ASProtocolError,

@@ -376,6 +376,120 @@ class NodeHighlightingTest(unittest.TestCase):
         self.assertEqual(record["Node"]["converted"], "node1")
 
 
+class ShowCheckpointStatusSheetTest(unittest.TestCase):
+    """Covers the state alert tiers, the client-computed progress percentage and the
+    node-global park columns of 'manage checkpoint' (TOOLS-3976)."""
+
+    def render(self, ns_data, parked=False, park_ms=0):
+        node = "127.0.0.1:3000"
+        sources = dict(
+            node_names={node: "node-A"},
+            node_ids={node: "BB9040011AC4202"},
+            data={node: ns_data},
+            status={node: {"is_parked": parked, "park_ms": park_ms}},
+        )
+        common = dict(principal="BB9040011AC4202")
+
+        render = sheet.render(
+            templates.show_checkpoint_status,
+            "Shared-Memory Checkpoint",
+            sources,
+            common=common,
+            style=SheetStyle.json,
+        )
+        return json.loads(render)
+
+    @parameterized.expand(
+        [
+            ("done", "green-alert"),
+            ("failed", "red-alert"),
+            ("copying", "yellow-alert"),
+            ("none", None),
+        ]
+    )
+    def test_state_alert_tiers(self, state, expected):
+        render = self.render(
+            {"test": {"state": state, "files_completed": 3, "files_total": 11}}
+        )
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["State"].get("format"), expected)
+
+    @parameterized.expand(
+        [
+            (0, 11, "0.0 %"),
+            (3, 11, "27.27 %"),
+            (11, 11, "100.0 %"),
+            (0, 0, "0.0 %"),  # a namespace with nothing to copy must not divide by zero
+        ]
+    )
+    def test_progress_percent(self, done, total, expected):
+        render = self.render(
+            {
+                "test": {
+                    "state": "copying",
+                    "files_completed": done,
+                    "files_total": total,
+                }
+            }
+        )
+        record = render["groups"][0]["records"][0]
+
+        self.assertEqual(record["Progress"]["converted"], expected)
+        self.assertEqual(record["Files"]["converted"], "{}/{}".format(done, total))
+
+    def test_groups_by_namespace(self):
+        render = self.render(
+            {
+                "test": {"state": "done", "files_completed": 11, "files_total": 11},
+                "bar": {"state": "copying", "files_completed": 1, "files_total": 9},
+            }
+        )
+
+        self.assertEqual(len(render["groups"]), 2)
+
+    def test_park_state_is_repeated_on_every_namespace_row(self):
+        # Park state is per node. Each namespace row carries it so a reader scanning
+        # one group sees it without cross-referencing.
+        render = self.render(
+            {
+                "test": {"state": "done", "files_completed": 11, "files_total": 11},
+                "bar": {"state": "done", "files_completed": 2, "files_total": 2},
+            },
+            parked=True,
+            park_ms=61000,
+        )
+
+        for group in render["groups"]:
+            record = group["records"][0]
+
+            self.assertTrue(record["Parked"]["raw"])
+            self.assertEqual(record["Park Time"]["converted"], "00:01:01")
+
+    def test_not_parked(self):
+        render = self.render(
+            {"test": {"state": "copying", "files_completed": 1, "files_total": 9}}
+        )
+        record = render["groups"][0]["records"][0]
+
+        self.assertFalse(record["Parked"]["raw"])
+        self.assertEqual(record["Park Time"]["converted"], "00:00:00")
+
+    def test_placeholder_row_keeps_a_namespaceless_parked_node_visible(self):
+        render = self.render(
+            {"": {"state": "", "files_completed": 0, "files_total": 0}},
+            parked=True,
+            park_ms=5000,
+        )
+
+        self.assertEqual(len(render["groups"]), 1)
+        record = render["groups"][0]["records"][0]
+
+        self.assertTrue(record["Parked"]["raw"])
+        self.assertEqual(record["Park Time"]["converted"], "00:00:05")
+        self.assertIsNone(record["State"].get("format"))
+
+
 MEMORY_NODE = "127.0.0.1:3000"
 
 

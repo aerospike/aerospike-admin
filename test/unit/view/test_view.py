@@ -37,6 +37,32 @@ class CliViewTest(unittest.TestCase):
         self.print_result_mock = patch("lib.view.view.CliView.print_result").start()
         self.addCleanup(patch.stopall)
 
+    def test_show_checkpoint_status_keeps_a_namespaceless_node(self):
+        checkpoint_data = {
+            "1.1.1.1:3000": {"is_parked": True, "park_ms": 5000, "namespaces": {}},
+            "2.2.2.2:3000": {
+                "is_parked": False,
+                "park_ms": 0,
+                "namespaces": {
+                    "test": {"state": "copying", "files_completed": 1, "files_total": 9}
+                },
+            },
+        }
+
+        CliView.show_checkpoint_status(checkpoint_data, self.cluster_mock, **{})
+
+        sources = self.render_mock.call_args[0][2]
+        self.assertEqual(
+            sources["data"],
+            {
+                "1.1.1.1:3000": {
+                    "": {"state": "", "files_completed": 0, "files_total": 0}
+                },
+                "2.2.2.2:3000": checkpoint_data["2.2.2.2:3000"]["namespaces"],
+            },
+        )
+        self.assertIs(sources["status"], checkpoint_data)
+
     def test_show_roster(self):
         roster_data = {
             "1.1.1.1": {

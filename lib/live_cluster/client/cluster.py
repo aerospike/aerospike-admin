@@ -260,6 +260,31 @@ class Cluster(AsyncObject):
         # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
 
+    def _no_usable_nodes_error(self) -> IOError:
+        """
+        "Unable to find any Aerospike nodes" is baffling when the nodes are right
+        there and merely parked. Say so, and say what still works.
+        """
+        parked = self.get_parked_nodes()
+
+        if not parked:
+            return IOError("Unable to find any Aerospike nodes")
+
+        return IOError(
+            "No live nodes. Parked by checkpoint-save: {}. Only 'manage checkpoint "
+            "status' and 'manage checkpoint save' will answer until the node is "
+            "stopped or its park timeout elapses.".format(
+                ", ".join(node.key for node in parked)
+            )
+        )
+
+    def get_parked_nodes(self) -> list[Node]:
+        """
+        Nodes that are not alive because checkpoint-save parked them. They still serve
+        checkpoint-status, so "no live nodes" does not mean "no cluster to talk to".
+        """
+        return [node for node in self.nodes.values() if node.checkpoint_parked]
+
     def get_visibility_error_nodes(self) -> list[str]:
         visible = self.get_live_nodes()
         cluster_visibility_error_nodes = []
@@ -744,7 +769,7 @@ class Cluster(AsyncObject):
         use_nodes = self.get_nodes(nodes)
 
         if len(use_nodes) == 0:
-            raise IOError("Unable to find any Aerospike nodes")
+            raise self._no_usable_nodes_error()
 
         async def key_to_method(node) -> tuple[str, Any]:
             node_result = getattr(node, method_name)(*args, **kwargs)
@@ -770,7 +795,7 @@ class Cluster(AsyncObject):
         use_nodes = self.get_nodes(nodes)
 
         if len(use_nodes) == 0:
-            raise IOError("Unable to find any Aerospike nodes")
+            raise self._no_usable_nodes_error()
 
         def key_to_method(node):
             node_result = getattr(node, method_name)(*args, **kwargs)
