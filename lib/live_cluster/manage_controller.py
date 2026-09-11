@@ -3285,8 +3285,9 @@ class ManageCheckpointController(ManageCheckpointLeafController):
 
 @CommandHelp(
     "Checkpoint a node's shared-memory segments to durable storage so it can warm",
-    "restart. The node then leaves the cluster and parks until it is stopped or the",
-    'park timeout elapses. This cannot be undone, so "--warn" is on by default.',
+    "restart. The node leaves the cluster first, then copies, then parks until it is",
+    'stopped or the park timeout elapses. This cannot be undone, so "--warn" is on by',
+    "default.",
     "Quiesce the node first ('manage quiesce', then 'manage recluster', wait for",
     "migrations) so its departure does not trigger migrations.",
     modifiers=(
@@ -3381,9 +3382,9 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
             target = "node(s): {}".format(", ".join(self.nodes))
 
         return (
-            "You are about to checkpoint {}. Each saves its shared-memory segments to "
-            "durable storage, departs the cluster and parks until it is stopped or "
-            "the park timeout elapses ({}s). This cannot be undone.".format(
+            "You are about to checkpoint {}. Each leaves the cluster, saves its "
+            "shared-memory segments to durable storage, then parks until it is stopped "
+            "or the park timeout elapses ({}s). This cannot be undone.".format(
                 target, timeout
             )
         )
@@ -3554,7 +3555,8 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
 
                 await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:
-            return
+            self._report(nodes, last_seen, last_error, {node.key for node in pending})
+            raise
 
         self._report(nodes, last_seen, last_error, timed_out)
 
@@ -3610,17 +3612,18 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
             status = last_seen.get(node.key)
 
             if status is None:
-                error = last_error.get(node.key)
-
-                if error is not None:
-                    logger.error(
-                        "Never read a checkpoint status from %s: %s", node.key, error
+                if node.key in timed_out:
+                    logger.warning(
+                        "Stopped polling %s before it reported a checkpoint status. "
+                        "The checkpoint may still be running - follow it with "
+                        "'manage checkpoint status'.",
+                        node.key,
                     )
                 else:
                     logger.error(
-                        "Never read a checkpoint status from %s. Its checkpoint state "
-                        "is unknown - check the server log before restarting it.",
+                        "Never read a checkpoint status from %s: %s",
                         node.key,
+                        last_error.get(node.key),
                     )
 
                 continue
@@ -3631,6 +3634,12 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                 if status["is_parked"]:
                     logger.warning(
                         "%s parked with no namespace checkpointing.", node.key
+                    )
+                elif node.key in timed_out:
+                    logger.warning(
+                        "Stopped polling %s before it parked. No namespace is "
+                        "checkpointing - follow it with 'manage checkpoint status'.",
+                        node.key,
                     )
                 else:
                     logger.error(
@@ -3678,8 +3687,9 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
 
 
 @CommandHelp(
-    "Display the per-namespace progress of an index checkpoint. Works against a node",
-    "that has already departed the cluster and parked.",
+    "Display the per-namespace progress of an index checkpoint. A parked node has left",
+    "the cluster, so it is only reachable when this session was seeded at it",
+    "(asadm -h <parked node>).",
     modifiers=(
         ModifierHelp(
             constants.Modifiers.WITH,

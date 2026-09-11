@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import itertools
 import unittest
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
@@ -47,6 +48,7 @@ from lib.live_cluster.live_cluster_command_controller import (
 )
 from lib.live_cluster.manage_controller import (
     LiveClusterManageCommandController,
+    ManageController,
     ManageCheckpointController,
     ManageCheckpointSaveController,
     ManageCheckpointStatusController,
@@ -76,7 +78,10 @@ from lib.live_cluster.manage_controller import (
     ManageTruncateController,
 )
 from lib.utils import constants
+from lib.utils import logger as logger_util
 from test.unit import util as test_util
+
+LOGGER_NAME = "lib.live_cluster.manage_controller"
 
 
 @CommandHelp(
@@ -5309,11 +5314,86 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
             "--timeout 10 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
         )
 
-        # It must keep polling rather than concluding on the first empty answer.
+        # It must keep polling rather than concluding on the first empty answer, and
+        # running out of poll window is asadm giving up, not the node failing.
         self.assertGreater(self.node_mock.info_checkpoint_status.await_count, 1)
         self.view_mock.print_result.assert_not_called()
+        self.logger_mock.error.assert_not_called()
+        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
+        self.assertTrue(
+            any("Stopped polling %s before it parked" in msg for msg in messages),
+            messages,
+        )
+
+    async def test_node_that_stops_answering_with_no_namespaces_is_an_error(self):
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._no_namespace_status(), IOError("connection refused")]
+        )
+
+        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
         self.logger_mock.error.assert_called_once()
         self.assertIn("reported no namespaces", self.logger_mock.error.call_args[0][0])
+
+    async def test_parked_refusal_for_the_whole_window_is_a_warning(self):
+        # checkpoint-status itself can return the parked refusal. Such a node is never
+        # terminal and never "copying", so the deadline is the only way out - and
+        # asadm giving up must not read as the node having died.
+        self._tick_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [
+                ASInfoCheckpointParkedError(
+                    "Failed to get checkpoint status",
+                    "ERROR:22:checkpoint-save in progress - only checkpoint-status",
+                )
+            ]
+            * 10
+        )
+
+        await self.controller.execute(
+            "--timeout 1 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.logger_mock.error.assert_not_called()
+        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
+        self.assertTrue(
+            any(
+                "Stopped polling %s before it reported a checkpoint status" in msg
+                for msg in messages
+            ),
+            messages,
+        )
+
+    async def test_never_read_and_not_timed_out_names_the_error(self):
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [IOError("connection refused")]
+        )
+
+        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.logger_mock.error.assert_called_once()
+        self.assertIn(
+            "Never read a checkpoint status from %s: %s",
+            self.logger_mock.error.call_args[0][0],
+        )
+
+    async def test_cancel_mid_poll_reports_and_propagates(self):
+        # Ctrl-C after an irreversible save must still print the last known state,
+        # and the cancel must reach asadm.py so -e mode exits non-zero.
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("copying", 3, 11)]
+        )
+        self.sleep_mock.side_effect = asyncio.CancelledError()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.logger_mock.error.assert_not_called()
+        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
+        self.assertTrue(
+            any("Stopped polling %s while namespace(s)" in msg for msg in messages),
+            messages,
+        )
 
     async def test_parked_with_nothing_to_checkpoint_ends_the_poll_with_a_warning(
         self,
@@ -5696,6 +5776,119 @@ class ManageCheckpointStatusControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.node_mock.info_checkpoint_status.assert_awaited_once()
         parked.info_checkpoint_status.assert_not_awaited()
+
+
+class ManageCheckpointExitCodeTest(unittest.IsolatedAsyncioTestCase):
+    """TOOLS-3976 - a failed save must exit non-zero. The other checkpoint tests mock
+    the logger, which proves a message was logged, not that set_exit_code(2) ran."""
+
+    async def asyncSetUp(self) -> None:
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        warnings.filterwarnings("error", category=PytestUnraisableExceptionWarning)
+        self.cluster_mock = patch(
+            "lib.live_cluster.manage_controller.ManageLeafCommandController.cluster",
+            AsyncMock(),
+        ).start()
+        self.controller = ManageCheckpointSaveController()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        patch("lib.live_cluster.manage_controller.asyncio.sleep", AsyncMock()).start()
+        self.builds_mock = patch.object(
+            GetClusterMetadataController, "get_builds", AsyncMock()
+        ).start()
+        # Under pytest this module is imported before lib.utils.logger installs
+        # BaseLogger, so its logger is a plain logging.Logger. asadm.py imports
+        # lib.utils.logger first, so at runtime it is a BaseLogger. Test that class.
+        self.logger = logger_util.BaseLogger(LOGGER_NAME)
+        patch("lib.live_cluster.manage_controller.logger", self.logger).start()
+
+        self.builds_mock.return_value = {"1.1.1.1:3000": "8.2.0.0"}
+        self.controller.mods = {}
+
+        self.node_mock = MagicMock()
+        self.node_mock.key = "1.1.1.1:3000"
+        self.node_mock.checkpoint_parked = False
+        self.node_mock.info_all_namespace_statistics = AsyncMock(
+            return_value={"test": {"effective_is_quiesced": "true"}}
+        )
+        self.node_mock.info_checkpoint_status = AsyncMock()
+        self.cluster_mock.get_nodes = MagicMock(return_value=[self.node_mock])
+        self.cluster_mock.get_parked_nodes = MagicMock(return_value=[])
+
+        logger_util.set_exit_code(0)
+        self.addCleanup(logger_util.set_exit_code, 0)
+        self.addCleanup(patch.stopall)
+
+    async def test_save_refused_by_the_server_exits_2(self):
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASInfoResponseError("Failed", "ERROR:25:enterprise only")
+        }
+
+        with self.assertLogs(self.logger, level="ERROR"):
+            await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
+    async def test_failed_namespace_exits_2(self):
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASINFO_RESPONSE_OK
+        }
+        self.node_mock.info_checkpoint_status.return_value = _checkpoint_status(
+            test={"state": "failed", "files_completed": 4, "files_total": 11}
+        )
+
+        with self.assertLogs(self.logger, level="ERROR"):
+            await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
+    async def test_completed_save_leaves_exit_code_0(self):
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASINFO_RESPONSE_OK
+        }
+        self.node_mock.info_checkpoint_status.return_value = _checkpoint_status(
+            test={"state": "done", "files_completed": 11, "files_total": 11}
+        )
+
+        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.assertEqual(logger_util.get_exit_code(), 0)
+
+
+class ManageControllerAliasTest(unittest.TestCase):
+    """'manage c' resolved to config before 'checkpoint' shared the prefix. The alias
+    pin is the only thing keeping it unambiguous."""
+
+    def setUp(self):
+        patch.object(
+            LiveClusterCommandController,
+            "cluster",
+            create_autospec(Cluster),
+            create=True,
+        ).start()
+        self.controller = ManageController()
+        self.controller._init()
+        self.addCleanup(patch.stopall)
+
+    def test_c_is_alias_for_config(self):
+        self.assertEqual(self.controller.aliases, {"c": "config"})
+
+    def test_c_alias_does_not_register_a_command(self):
+        self.assertNotIn("c", self.controller.commands.keys())
+        self.assertIn("config", self.controller.commands.keys())
+        self.assertIn("checkpoint", self.controller.commands.keys())
+
+    def test_c_dispatches_to_config(self):
+        self.assertIsInstance(
+            self.controller._find_method(["c"]), ManageConfigController
+        )
+
+    def test_unpinned_prefixes_still_resolve(self):
+        self.assertIsInstance(
+            self.controller._find_method(["co"]), ManageConfigController
+        )
+        self.assertIsInstance(
+            self.controller._find_method(["ch"]), ManageCheckpointController
+        )
 
 
 class ManageCheckpointErrorReportingTest(unittest.IsolatedAsyncioTestCase):

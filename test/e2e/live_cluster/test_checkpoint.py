@@ -42,7 +42,7 @@ def checkpoint_template():
 class TestCheckpoint(unittest.TestCase):
     """
     TOOLS-3976 - index checkpoint. EE only, preview-gated, and it TERMINATES the node:
-    checkpoint-save copies the shmem segments, leaves the cluster, then parks serving
+    checkpoint-save leaves the cluster, copies the shmem segments, then parks serving
     only checkpoint-status. Every test here gets its own cluster and tears it down.
     """
 

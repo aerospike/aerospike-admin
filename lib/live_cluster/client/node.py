@@ -3898,8 +3898,8 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_checkpoint_save(self, timeout=None):
         """
-        Trigger an index checkpoint. The node copies its shared-memory segments to
-        durable storage, leaves the cluster, and then parks - serving only
+        Trigger an index checkpoint. The node leaves the cluster, copies its
+        shared-memory segments to durable storage, then parks - serving only
         checkpoint-status and a re-issued checkpoint-save - until it is stopped or the
         park timeout elapses. There is no undo.
 
