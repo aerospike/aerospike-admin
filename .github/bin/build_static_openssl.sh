@@ -12,6 +12,19 @@
 # Usage: build_static_openssl.sh <prefix> <min_macos>
 set -euo pipefail
 
+# THIS OPENSSL SHIPS INSIDE THE INTEL macOS asadm, AND NOTHING UPDATES IT FOR US.
+#
+# Dependabot covers pip, github-actions and docker; no ecosystem watches a
+# version string in a shell script. The asymmetry is what makes it easy to
+# miss: on an OpenSSL security release the arm64 bundle picks up the fix by
+# itself, because cryptography's own wheels vendor a current OpenSSL, while
+# the Intel bundle keeps linking whatever is pinned here -- with every CI gate
+# green. On any OpenSSL 3.6.x security release, bump both lines below. The
+# cache keys hash this file, so a bump invalidates the OpenSSL and bundle
+# caches on its own. Checksums: https://github.com/openssl/openssl/releases
+#
+# 3.6 is not an LTS line. When it goes end-of-support, move to a supported
+# branch here rather than letting the pin outlive it.
 VERSION="3.6.4"
 SHA256="9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef"
 URL="https://github.com/openssl/openssl/releases/download/openssl-${VERSION}/openssl-${VERSION}.tar.gz"

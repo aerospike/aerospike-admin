@@ -401,10 +401,14 @@ jobs:
           # served a stale bundle for every source change within one rc: a
           # pyinstaller-build.spec fix landed, the key was unchanged, `make
           # one-dir` was skipped, and the pre-fix binaries shipped.
-          # build_static_openssl.sh is a build input too: it decides which
-          # OpenSSL gets linked into _rust.abi3.so, so patching the pinned
-          # version there has to miss this cache or the old bundle ships.
-          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py', '.github/bin/build_static_openssl.sh') }}
+          # build_static_openssl.sh and pkg/Makefile are build inputs too: the
+          # first decides which OpenSSL gets linked into _rust.abi3.so, the
+          # second carries MACOS_MIN_VERSION, which becomes the compile's
+          # deployment target. Leaving the floor out wedges CI when it is
+          # lowered: the bundle cache hits, every rebuild step is gated off, and
+          # check_min_os.sh then fails on the stale bundle on every rerun, with
+          # no way out but a manual cache-index bump nothing hints at.
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'pkg/Makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py', '.github/bin/build_static_openssl.sh') }}
 
       - name: Get the macOS support floor
         # Read the floor from pkg/Makefile rather than repeating it here, so the
@@ -413,7 +417,11 @@ jobs:
         run: |
           set -euo pipefail
           min_os=$(sed -n 's/^MACOS_MIN_VERSION[[:space:]]*=[[:space:]]*//p' pkg/Makefile)
-          [[ -n "${min_os}" ]] || { echo "::error::MACOS_MIN_VERSION not found in pkg/Makefile" >&2; exit 1; }
+          # Shape-check rather than just non-empty: the sed prints whatever
+          # follows the "=", so a trailing inline comment or stray whitespace
+          # would sail through and land in both the deployment target and the
+          # cache key.
+          [[ "${min_os}" =~ ^[0-9]+(\.[0-9]+)*$ ]] || { echo "::error::MACOS_MIN_VERSION malformed in pkg/Makefile: '${min_os}'" >&2; exit 1; }
           echo "MACOS_MIN_VERSION=${min_os}" >> "$GITHUB_ENV"
 
       - name: Cache static OpenSSL
@@ -422,7 +430,12 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/openssl-static
-          key: openssl-static-${{ runner.arch }}-${{ env.MACOS_MIN_VERSION }}-${{ hashFiles('.github/bin/build_static_openssl.sh') }}
+          # check_min_os.sh is hashed because build_static_openssl.sh runs it as
+          # its own gate. Member minos is unrecoverable once the archives are
+          # linked in, so that build-time scan is the only scan; a later fix to
+          # the scanner has to re-run it rather than hit a cache validated by
+          # the old one.
+          key: openssl-static-${{ runner.arch }}-${{ env.MACOS_MIN_VERSION }}-${{ hashFiles('.github/bin/build_static_openssl.sh', '.github/bin/check_min_os.sh') }}
 
       - name: Build static OpenSSL
         if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true' && steps.cache-openssl.outputs.cache-hit != 'true'
@@ -438,9 +451,9 @@ jobs:
         if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          # Assigned on its own line: a failing command substitution inside an
-          # argument does not trip `set -e`, and an empty OPENSSL_DIR would
-          # reach openssl-sys as a real prefix.
+          # Confirm the prefix really holds an archive before exporting it: an
+          # empty or half-built OPENSSL_DIR would reach openssl-sys as a real
+          # prefix and fail much further downstream.
           openssl_dir="$RUNNER_TEMP/openssl-static"
           [[ -f "${openssl_dir}/lib/libcrypto.a" ]] || { echo "::error::no static OpenSSL at ${openssl_dir}" >&2; exit 1; }
           echo "OPENSSL_DIR=${openssl_dir}" >> "$GITHUB_ENV"
