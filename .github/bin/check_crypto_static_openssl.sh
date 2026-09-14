@@ -23,8 +23,16 @@ fi
 checked=0
 violations=0
 while IFS= read -r f; do
+	# Keep "otool could not read it" apart from "it has no OpenSSL dylib".
+	# Piped straight into grep, pipefail makes both look identical, and this
+	# guard would then report success on a build it never actually inspected.
+	if ! out=$(otool -L "$f" 2>&1); then
+		echo "error: otool failed on $f" >&2
+		printf '%s\n' "$out" >&2
+		exit 1
+	fi
 	checked=$((checked + 1))
-	if deps=$(otool -L "$f" 2>/dev/null | grep -E 'libssl|libcrypto'); then
+	if deps=$(printf '%s\n' "$out" | grep -E 'libssl|libcrypto'); then
 		echo "  $f" >&2
 		echo "$deps" | sed 's/^/    /' >&2
 		violations=$((violations + 1))
