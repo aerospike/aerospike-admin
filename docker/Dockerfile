@@ -32,6 +32,11 @@ ARG ASADM_ARM64_SHA256
 ARG ASADM_LOCAL_PKG=""
 ARG ASADM_LOCAL_PKG_AMD64=""
 ARG ASADM_LOCAL_PKG_ARM64=""
+# Path of the entrypoint script inside the build context. CI (docker-verify
+# and the shared publish workflow) builds from the repo root, where
+# .dockerignore re-includes exactly this file; docker/docker-build.sh bakes
+# from docker/ and overrides it to the bare file name.
+ARG ENTRYPOINT_SRC=docker/docker-entrypoint.sh
 
 LABEL org.opencontainers.image.title="Aerospike asadm" \
       org.opencontainers.image.description="asadm and asinfo, tools for managing Aerospike database." \
@@ -57,6 +62,9 @@ SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 # transitive Depends from the .deb (currently none declared) and the .deb's
 # PyInstaller bundle relies only on libs already present in ubuntu:24.04.
 # curl is installed only when we need to download, then purged.
+# Then record, from the installed package's own file list, the executables it
+# put on PATH: docker-entrypoint.sh reads /usr/local/share/aerospike/tools and
+# image-info to print usage, so the list is generated, never hand-maintained.
 # hadolint ignore=DL3008
 RUN --mount=type=bind,source=.,target=/build-ctx \
     export DEBIAN_FRONTEND=noninteractive && \
@@ -86,10 +94,32 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
         echo "${PKG_SHA}  /tmp/asadm.deb" | sha256sum -c -; \
     fi && \
     apt-get install -y --no-install-recommends /tmp/asadm.deb && \
+    PKG_NAME="$(dpkg-deb -f /tmp/asadm.deb Package)" && \
+    PKG_VERSION="$(dpkg-query -W -f='${Version}' "${PKG_NAME}")" && \
+    mkdir -p /usr/local/share/aerospike && \
+    dpkg-query -L "${PKG_NAME}" \
+      | { grep -E '^/usr/(local/)?bin/.' || true; } \
+      | while read -r f; do \
+            if [ -f "${f}" ] && [ -x "${f}" ]; then basename "${f}"; fi; \
+        done \
+      | sort -u > /usr/local/share/aerospike/tools && \
+    if [ ! -s /usr/local/share/aerospike/tools ]; then \
+        echo "ERROR: ${PKG_NAME} installed no executables under /usr/bin; the entrypoint usage would be empty." >&2; \
+        exit 1; \
+    fi && \
+    printf 'Aerospike %s image (%s %s)\n' "${PKG_NAME#aerospike-}" "${PKG_NAME}" "${PKG_VERSION}" \
+      > /usr/local/share/aerospike/image-info && \
     rm -f /tmp/asadm.deb && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# .deb installs /usr/bin/asadm and /usr/bin/asinfo symlinks → the bundle.
-# Both are on PATH; default to asadm, swap with `docker run IMAGE asinfo …`.
-CMD ["asadm"]
+# The .deb installs /usr/bin/asadm and /usr/bin/asinfo symlinks → the bundle;
+# both are on PATH.
+# Convention: `docker run --rm IMAGE <binary> [args]`.
+# The entrypoint execs whatever is named (a passthrough, so `IMAGE bash` still
+# works) and prints usage built from /usr/local/share/aerospike/tools when
+# nothing, or an option, is named. No CMD: a default binary would hide that
+# usage and a multi-binary image has no right default. Exec form so the script
+# -- and, after exec, the tool -- is PID 1 and gets `docker stop`'s SIGTERM.
+COPY --chmod=0755 ${ENTRYPOINT_SRC} /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

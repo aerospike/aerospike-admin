@@ -62,6 +62,13 @@ jobs:
       - name: Test pkg_release.sh
         run: bats .github/bin/test/pkg_release.bats
 
+      # docker/docker-entrypoint.sh is the tools image's entrypoint. It is
+      # otherwise only executed by the release workflow's docker smoke test,
+      # which is workflow_dispatch-only, so unit-test it here against a fixture
+      # on every pull request. Needs no docker and no package.
+      - name: Test the docker entrypoint
+        run: bats .github/bin/test/test_entrypoint.bats
+
       # The .deb/.rpm legs below only count that a package appeared; nothing
       # asserts the NAME. Assert it here, where the expected name is derived
       # from the same script pkg/Makefile uses, so the two cannot drift.

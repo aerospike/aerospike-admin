@@ -178,6 +178,10 @@ find_package() {
 # stale ARGs into the bake file.
 function _emit_args() {
   local pairs=("$@")
+  # Bake targets use context "." = docker/, so the entrypoint is at the context
+  # root. CI builds from the repo root and takes the Dockerfile's default
+  # (docker/docker-entrypoint.sh) instead.
+  pairs+=(ENTRYPOINT_SRC "docker-entrypoint.sh")
   local i n=${#pairs[@]}
   local emitted=()
   for ((i = 0; i < n; i += 2)); do
