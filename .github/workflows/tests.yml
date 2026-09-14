@@ -12,11 +12,11 @@ jobs:
       id-token: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
       - name: Install JFrog CLI
@@ -30,7 +30,7 @@ jobs:
           oidc-provider-name: database-gh-aerospike
           oidc-audience: database-gh-aerospike
       - name: Docker login to Artifactory
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: artifact.aerospike.io
           username: ${{ steps.jf.outputs.oidc-user }}
@@ -38,7 +38,7 @@ jobs:
       - name: Get Python version from Pipfile
         run: echo "PYTHON_VERSION=$(grep "python_version" Pipfile | cut -d ' ' -f 3  - | tr -d '"')" >> $GITHUB_ENV
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3.1.4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
@@ -57,20 +57,20 @@ jobs:
           pipenv run bash -c "coverage report --format=markdown" >> $GITHUB_STEP_SUMMARY
       - name: Upload Collectinfo for Debugging
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test_collectinfo
           path: /tmp/asadm_test*
           if-no-files-found: error
       - name: Upload Health Struct for Debugging
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: health_files
           path: "*_health_input.txt"
           if-no-files-found: error
       - name: Upload coverage report to Codecov
-        uses: codecov/codecov-action@ab904c41d6ece82784817410c45d8b8c02684457 # v3.1.6
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}

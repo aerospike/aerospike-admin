@@ -22,25 +22,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
       - name: Get checkout directory
-        uses: step-security/action-cond@45aa5a709bd075f11c74285d8b0ca4d527e5fbcf # v1.2.4
+        uses: step-security/action-cond@6c9b559685e1bcd523fc000b3cc1272529f8810d # v1.2.5
         id: checkout-dir
         with:
           cond: ${{ inputs.submodule != '' }}
           if_true: aerospike-tools # In this case we are expecting to checkout the tools package.
           if_false: admin
       - name: Get asadm working directory
-        uses: step-security/action-cond@45aa5a709bd075f11c74285d8b0ca4d527e5fbcf # v1.2.4
+        uses: step-security/action-cond@6c9b559685e1bcd523fc000b3cc1272529f8810d # v1.2.5
         id: working-dir
         with:
           cond: ${{ inputs.submodule != '' }}
           if_true: aerospike-tools/${{ inputs.submodule }} # In this case we are expecting to checkout the tools package.
           if_false: admin
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ steps.checkout-dir.outputs.value }}
           fetch-depth: 0
@@ -55,7 +55,7 @@ jobs:
         run: |
           git describe --tags --always --abbrev=9
           echo "tag=$(git describe --tags --always --abbrev=9)" >> $GITHUB_OUTPUT
-      - uses: kenchan0130/actions-system-info@b98fe44bc35efcc60a9828cf4a04783a8b370bde # v1.3.0
+      - uses: kenchan0130/actions-system-info@59699597e84e80085a750998045983daa49274c4 # v1.4.0
         id: system-info
       - name: Get Python version from Pipfile
         working-directory: ${{ steps.working-dir.outputs.value }}
@@ -66,11 +66,11 @@ jobs:
           echo ${{ steps.system-info.outputs.kernel-release }}
           echo ${{ steps.system-info.outputs.platform }}
       - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Cache asadm and asinfo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: cache-asadm-asinfo
         env:
           cache-name: cache-asadm-asinfo
@@ -105,7 +105,7 @@ jobs:
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           tar -C build/bin/ -cvf asadm.tar asadm
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ matrix.os }}-${{ steps.system-info.outputs.release }}-asadm
           path: ${{ steps.working-dir.outputs.value }}/asadm.tar
