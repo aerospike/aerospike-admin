@@ -401,7 +401,10 @@ jobs:
           # served a stale bundle for every source change within one rc: a
           # pyinstaller-build.spec fix landed, the key was unchanged, `make
           # one-dir` was skipped, and the pre-fix binaries shipped.
-          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py') }}
+          # build_static_openssl.sh is a build input too: it decides which
+          # OpenSSL gets linked into _rust.abi3.so, so patching the pinned
+          # version there has to miss this cache or the old bundle ships.
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py', '.github/bin/build_static_openssl.sh') }}
 
       - name: Get the macOS support floor
         # Read the floor from pkg/Makefile rather than repeating it here, so the
@@ -423,7 +426,7 @@ jobs:
 
       - name: Build static OpenSSL
         if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true' && steps.cache-openssl.outputs.cache-hit != 'true'
-        run: .github/bin/build_static_openssl.sh "${{ runner.temp }}/openssl-static" "${{ env.MACOS_MIN_VERSION }}"
+        run: .github/bin/build_static_openssl.sh "$RUNNER_TEMP/openssl-static" "$MACOS_MIN_VERSION"
 
       - name: Static OpenSSL for the Intel cryptography build
         # cryptography publishes arm64-only macOS wheels from 49.0.0 on, so the
@@ -438,7 +441,7 @@ jobs:
           # Assigned on its own line: a failing command substitution inside an
           # argument does not trip `set -e`, and an empty OPENSSL_DIR would
           # reach openssl-sys as a real prefix.
-          openssl_dir="${{ runner.temp }}/openssl-static"
+          openssl_dir="$RUNNER_TEMP/openssl-static"
           [[ -f "${openssl_dir}/lib/libcrypto.a" ]] || { echo "::error::no static OpenSSL at ${openssl_dir}" >&2; exit 1; }
           echo "OPENSSL_DIR=${openssl_dir}" >> "$GITHUB_ENV"
           echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
@@ -457,7 +460,11 @@ jobs:
         run: |
           make one-dir
           ls -al build/bin/asadm || true
-          .github/bin/check_crypto_static_openssl.sh build/bin
+
+      - name: Check cryptography links OpenSSL statically
+        # Deliberately not gated on the build cache: a restored bundle ships
+        # exactly like a freshly built one, so it has to clear the same bar.
+        run: .github/bin/check_crypto_static_openssl.sh build/bin
 
       - name: Create .pkg
         env:
