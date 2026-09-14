@@ -92,7 +92,7 @@ jobs:
       - name: Cache static OpenSSL
         if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         id: cache-openssl
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/openssl-static
           key: openssl-static-${{ runner.arch }}-${{ env.MACOS_MIN_VERSION }}-${{ hashFiles('.github/bin/build_static_openssl.sh') }}
