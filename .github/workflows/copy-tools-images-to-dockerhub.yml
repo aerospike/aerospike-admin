@@ -2,9 +2,16 @@ name: Copy aerospike-asadm images to Docker Hub
 
 # Copies already-published aerospike-asadm tags from JFrog to Docker Hub.
 # Does not build images and does not write anything back to Artifactory.
-# Tags: 5.0.3-5 (multi-arch index), 5.0.3-5-amd64 (linux/amd64),
-# 5.0.3-5-arm64 (linux/arm64). Extra dest tags 5.0.3 and latest
-# are aliases of 5.0.3-5.
+#
+# Default tags come from the VERSION file, not a hard-coded string.
+# VERSION is MAJOR.MINOR.PATCH with an optional -rcN (e.g. 5.0.3-rc5).
+# Only the three-digit semver is used for Hub aliases; pkg_release.sh
+# folds rcN into the image tag (5.0.3-rc5 -> 5.0.3-5):
+#   tags:       <release>, <release>-amd64, <release>-arm64
+#   alias-from: <release>
+#   alias-tags: <MAJOR.MINOR.PATCH>, latest
+# Leave tags / alias-from / alias-tags empty at dispatch to use those
+# defaults, or set them to copy a different already-published set.
 
 on:
   workflow_dispatch:
@@ -18,22 +25,22 @@ on:
         required: true
         default: aerospike/aerospike-asadm
       tags:
-        description: Comma-separated tags to copy unchanged (index, linux/amd64, linux/arm64)
-        required: true
-        default: 5.0.3-5,5.0.3-5-amd64,5.0.3-5-arm64
+        description: Comma-separated tags to copy unchanged (index, linux/amd64, linux/arm64). Empty = derive from VERSION.
+        required: false
+        default: ""
       dry-run:
         description: Inspect JFrog tags only; do not push to Docker Hub
         type: boolean
         required: false
         default: true
       alias-from:
-        description: Source tag to copy onto extra destination tags
+        description: Source tag to copy onto extra destination tags. Empty = VERSION release tag.
         required: false
-        default: 5.0.3-5
+        default: ""
       alias-tags:
-        description: Extra destination tags (comma-separated) based on alias-from
+        description: Extra destination tags (comma-separated) based on alias-from. Empty = "<semver>,latest" from VERSION.
         required: false
-        default: 5.0.3,latest
+        default: ""
 
 permissions:
   contents: read
@@ -50,6 +57,72 @@ jobs:
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Resolve tags from VERSION
+        id: resolve
+        env:
+          TAGS_INPUT: ${{ inputs.tags }}
+          ALIAS_FROM_INPUT: ${{ inputs.alias-from }}
+          ALIAS_TAGS_INPUT: ${{ inputs.alias-tags }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f VERSION ]]; then
+            echo "::error::VERSION file is missing at repo root." >&2
+            exit 1
+          fi
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::VERSION file is empty." >&2
+            exit 1
+          fi
+          # VERSION may be 5.0.3-rc5; Docker Hub aliases only want MAJOR.MINOR.PATCH.
+          if [[ ! "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            echo "::error::VERSION '$VERSION' does not start with MAJOR.MINOR.PATCH." >&2
+            exit 1
+          fi
+          SEMVER="${BASH_REMATCH[1]}"
+          RELEASE=$(.github/bin/pkg_release.sh "$VERSION" release)
+
+          trim() {
+            local value="$1"
+            value="${value#"${value%%[![:space:]]*}"}"
+            value="${value%"${value##*[![:space:]]}"}"
+            printf '%s' "$value"
+          }
+
+          tags="$(trim "${TAGS_INPUT:-}")"
+          if [[ -z "$tags" ]]; then
+            tags="${RELEASE},${RELEASE}-amd64,${RELEASE}-arm64"
+          fi
+
+          alias_from="$(trim "${ALIAS_FROM_INPUT:-}")"
+          if [[ -z "$alias_from" ]]; then
+            alias_from="$RELEASE"
+          fi
+
+          alias_tags="$(trim "${ALIAS_TAGS_INPUT:-}")"
+          if [[ -z "$alias_tags" ]]; then
+            alias_tags="${SEMVER},latest"
+          fi
+
+          {
+            echo "version=$VERSION"
+            echo "semver=$SEMVER"
+            echo "release=$RELEASE"
+            echo "tags=$tags"
+            echo "alias-from=$alias_from"
+            echo "alias-tags=$alias_tags"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "VERSION file: $VERSION"
+          echo "semver:       $SEMVER"
+          echo "release tag:  $RELEASE"
+          echo "tags:         $tags"
+          echo "alias-from:   $alias_from"
+          echo "alias-tags:   $alias_tags"
 
       - name: Install JFrog CLI
         id: jf
@@ -84,10 +157,13 @@ jobs:
         env:
           SOURCE_IMAGE: ${{ inputs.source-image }}
           DEST_IMAGE: ${{ inputs.dest-image }}
-          TAGS: ${{ inputs.tags }}
+          TAGS: ${{ steps.resolve.outputs.tags }}
           DRY_RUN: ${{ inputs.dry-run }}
-          ALIAS_FROM: ${{ inputs.alias-from }}
-          ALIAS_TAGS: ${{ inputs.alias-tags }}
+          ALIAS_FROM: ${{ steps.resolve.outputs.alias-from }}
+          ALIAS_TAGS: ${{ steps.resolve.outputs.alias-tags }}
+          VERSION_FILE: ${{ steps.resolve.outputs.version }}
+          SEMVER: ${{ steps.resolve.outputs.semver }}
+          RELEASE: ${{ steps.resolve.outputs.release }}
         run: |
           set -euo pipefail
 
@@ -123,6 +199,9 @@ jobs:
           {
             echo "## Docker copy"
             echo ""
+            echo "- VERSION file: \`$VERSION_FILE\`"
+            echo "- Semver: \`$SEMVER\`"
+            echo "- Release tag: \`$RELEASE\`"
             echo "- Source: \`$SOURCE_IMAGE\`"
             echo "- Destination: \`$DEST_IMAGE\`"
             echo "- Dry run: \`$DRY_RUN\`"
