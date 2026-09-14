@@ -393,7 +393,7 @@ jobs:
         id: cache-asadm-asinfo
         env:
           cache-name: cache-asadm-asinfo
-          cache-index: "4"
+          cache-index: "5"
         with:
           path: |
             build/bin
@@ -402,6 +402,25 @@ jobs:
           # pyinstaller-build.spec fix landed, the key was unchanged, `make
           # one-dir` was skipped, and the pre-fix binaries shipped.
           key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py') }}
+
+      - name: Static OpenSSL for the Intel cryptography build
+        # cryptography publishes arm64-only macOS wheels from 49.0.0 on, so the
+        # Intel leg builds it from the sdist instead. PyInstaller flattens
+        # vendored dylibs by base name, where Python's own _ssl and _hashlib
+        # already put a libssl.3.dylib, so a dynamically linked cryptography
+        # collides with them and loses. Linking it statically keeps it out of
+        # that collision; the floor keeps _rust.abi3.so under check_min_os.sh.
+        if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          brew install openssl@3
+          # Read the floor from pkg/Makefile rather than repeating it here, so
+          # the bundle and this compile cannot drift apart.
+          min_os=$(sed -n 's/^MACOS_MIN_VERSION[[:space:]]*=[[:space:]]*//p' pkg/Makefile)
+          [[ -n "${min_os}" ]] || { echo "::error::MACOS_MIN_VERSION not found in pkg/Makefile" >&2; exit 1; }
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=${min_os}" >> "$GITHUB_ENV"
 
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
@@ -416,6 +435,7 @@ jobs:
         run: |
           make one-dir
           ls -al build/bin/asadm || true
+          .github/bin/check_crypto_static_openssl.sh build/bin
 
       - name: Create .pkg
         env:
