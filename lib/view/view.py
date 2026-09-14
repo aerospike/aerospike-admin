@@ -1799,6 +1799,37 @@ class CliView(object):
             sheet.render(templates.node_info_responses, title, sources, common=common)
         )
 
+    @staticmethod
+    @reserved_modifiers
+    def show_checkpoint_status(
+        checkpoint_data, cluster, timestamp="", with_=None, **ignore
+    ):
+        if not checkpoint_data:
+            return
+
+        node_names = cluster.get_node_names(with_)
+        node_ids = cluster.get_node_ids(with_)
+        title_timestamp = CliView._get_timestamp_suffix(timestamp)
+        title = "Shared-Memory Checkpoint{}".format(title_timestamp)
+        sources = dict(
+            node_names=node_names,
+            node_ids=node_ids,
+            data={
+                # Placeholder row so a node with no namespaces still shows its park state.
+                node: status["namespaces"]
+                or {"": {"state": "", "files_completed": 0, "files_total": 0}}
+                for node, status in checkpoint_data.items()
+            },
+            status=checkpoint_data,
+        )
+        common = CliView._common(cluster)
+
+        CliView.print_result(
+            sheet.render(
+                templates.show_checkpoint_status, title, sources, common=common
+            )
+        )
+
     # ##########################
     # ## Health Print functions
     # ##########################

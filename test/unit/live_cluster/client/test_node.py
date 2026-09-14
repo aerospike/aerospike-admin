@@ -27,6 +27,8 @@ from parameterized import parameterized
 import lib
 from lib.live_cluster.client import (
     ASINFO_RESPONSE_OK,
+    ASInfoCheckpointError,
+    ASInfoCheckpointParkedError,
     ASInfoConfigError,
     ASInfoError,
     ASInfoResponseError,
@@ -43,6 +45,9 @@ from lib.live_cluster.client.types import (
 )
 from lib.utils import constants
 from test.unit import util
+
+# Captured before any test patches it out, so a test can exercise the real method.
+_REAL_INFO_BUILD = Node.info_build
 
 
 class NodeInitTest(unittest.IsolatedAsyncioTestCase):
@@ -4479,6 +4484,271 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             str(actual),
             "Failed to undo quiesce : Unknown error occurred.",
         )
+
+    # TOOLS-3976 - index checkpoint (checkpoint-save / checkpoint-status).
+
+    async def test_info_checkpoint_save_success(self):
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_checkpoint_save()
+
+        self.info_mock.assert_called_once_with("checkpoint-save", self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    async def test_info_checkpoint_save_with_timeout(self):
+        self.info_mock.return_value = "ok"
+
+        actual = await self.node.info_checkpoint_save(timeout=1200)
+
+        self.info_mock.assert_called_once_with("checkpoint-save:timeout=1200", self.ip)
+        self.assertEqual(actual, ASINFO_RESPONSE_OK)
+
+    @parameterized.expand(
+        [
+            ("checkpoint-save already in progress",),
+            ("checkpoint-save already complete",),
+        ]
+    )
+    async def test_info_checkpoint_save_idempotent_reissue_is_success(self, resp):
+        # A re-issue against a parked node reports state rather than re-running the
+        # save, so a retrying poll loop must not read it as a failure.
+        self.info_mock.return_value = resp
+
+        actual = await self.node.info_checkpoint_save()
+
+        self.assertEqual(actual, resp)
+
+    async def test_info_checkpoint_save_param_error_keeps_equals_in_message(self):
+        # The server echoes the rejected parameter, so the message contains an "=".
+        # ASInfoResponseError splits on "=" first and would mangle it to "1')".
+        self.info_mock.return_value = (
+            "ERROR:4:checkpoint-save takes only an optional 'timeout' of 1..3600 "
+            "seconds (got 'foo=1')"
+        )
+
+        actual = await self.node.info_checkpoint_save()
+
+        self.assertEqual(
+            str(actual),
+            "Failed to start checkpoint save : checkpoint-save takes only an optional "
+            "'timeout' of 1..3600 seconds (got 'foo=1').",
+        )
+
+    async def test_info_checkpoint_save_not_configured(self):
+        self.info_mock.return_value = (
+            "ERROR:4:'index-checkpoint-path' is not configured"
+        )
+
+        actual = await self.node.info_checkpoint_save()
+
+        self.assertEqual(
+            str(actual),
+            "Failed to start checkpoint save : 'index-checkpoint-path' is not "
+            "configured.",
+        )
+
+    @parameterized.expand(
+        [
+            ("checkpoint-save failed - see checkpoint-status",),
+            (
+                "checkpoint-save raced a shutdown already in progress - check "
+                "checkpoint-status",
+            ),
+        ]
+    )
+    async def test_info_checkpoint_save_reissue_errors(self, message):
+        # Both use AS_ERR_UNKNOWN, and info_respond_error_argp OMITS the code when it
+        # is AS_ERR_UNKNOWN - so the wire form is "ERROR::", not "ERROR:1:".
+        self.info_mock.return_value = "ERROR::{}".format(message)
+
+        actual = await self.node.info_checkpoint_save()
+
+        self.assertIsInstance(actual, ASInfoCheckpointError)
+        self.assertNotIsInstance(actual, ASInfoCheckpointParkedError)
+        self.assertEqual(
+            str(actual),
+            "Failed to start checkpoint save : {}.".format(message),
+        )
+
+    async def test_info_checkpoint_save_enterprise_only(self):
+        self.info_mock.return_value = "ERROR:25:enterprise only"
+
+        actual = await self.node.info_checkpoint_save()
+
+        self.assertEqual(
+            str(actual),
+            "Failed to start checkpoint save : enterprise only.",
+        )
+
+    async def test_info_checkpoint_save_parked_raises_parked_error(self):
+        self.info_mock.return_value = (
+            "ERROR:22:checkpoint-save in progress - only checkpoint-status and "
+            "checkpoint-save are available"
+        )
+
+        actual = await self.node.info_checkpoint_save()
+
+        self.assertIsInstance(actual, ASInfoCheckpointParkedError)
+
+    @parameterized.expand([("abc",), (0,), (3601,), (-1,)])
+    async def test_info_checkpoint_save_rejects_bad_timeout(self, timeout):
+        actual = await self.node.info_checkpoint_save(timeout=timeout)
+
+        self.info_mock.assert_not_called()
+        self.assertEqual(
+            str(actual),
+            "Failed to start checkpoint save : {}.".format(
+                ErrorsMsgs.INVALID_CHECKPOINT_TIMEOUT
+            ),
+        )
+
+    @staticmethod
+    def _checkpoint_status(**namespaces):
+        return {"is_parked": False, "park_ms": 0, "namespaces": namespaces}
+
+    async def test_info_checkpoint_status_single_namespace(self):
+        # The server chomps the trailing ";" - see cf_dyn_buf_chomp in
+        # index_checkpoint_ee.c.
+        self.info_mock.return_value = "test:state=done:files_completed=11:files_total=11:is_parked=false:park_ms=0"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.info_mock.assert_called_once_with("checkpoint-status", self.ip)
+        self.assertEqual(
+            actual,
+            self._checkpoint_status(
+                test={"state": "done", "files_completed": 11, "files_total": 11}
+            ),
+        )
+
+    async def test_info_checkpoint_status_tolerates_trailing_semicolon(self):
+        self.info_mock.return_value = "test:state=done:files_completed=11:files_total=11:is_parked=false:park_ms=0;"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            self._checkpoint_status(
+                test={"state": "done", "files_completed": 11, "files_total": 11}
+            ),
+        )
+
+    async def test_info_checkpoint_status_multiple_namespaces(self):
+        self.info_mock.return_value = (
+            "test:state=copying:files_completed=3:files_total=11:is_parked=false:park_ms=0;"
+            "bar:state=none:files_completed=0:files_total=0:is_parked=false:park_ms=0"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            self._checkpoint_status(
+                test={"state": "copying", "files_completed": 3, "files_total": 11},
+                bar={"state": "none", "files_completed": 0, "files_total": 0},
+            ),
+        )
+
+    async def test_info_checkpoint_status_failed_state(self):
+        self.info_mock.return_value = "test:state=failed:files_completed=4:files_total=11:is_parked=true:park_ms=1500"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(actual["namespaces"]["test"]["state"], "failed")
+
+    async def test_info_checkpoint_status_parked_is_node_global(self):
+        # The server repeats the park state on every namespace record for the
+        # metrics exporter. asadm lifts it to the node once.
+        self.info_mock.return_value = (
+            "test:state=done:files_completed=11:files_total=11:is_parked=true:park_ms=4200;"
+            "bar:state=done:files_completed=2:files_total=2:is_parked=true:park_ms=4200"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertTrue(actual["is_parked"])
+        self.assertEqual(actual["park_ms"], 4200)
+        self.assertNotIn("is_parked", actual["namespaces"]["test"])
+
+    async def test_info_checkpoint_status_no_namespace_checkpointing(self):
+        # 'index-checkpoint-path' is set but every namespace opted out, so there is no
+        # per-namespace record - only the node-global park state a poller needs to see.
+        self.info_mock.return_value = "is_parked=true:park_ms=987"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(actual, {"is_parked": True, "park_ms": 987, "namespaces": {}})
+
+    async def test_info_checkpoint_status_malformed_files(self):
+        self.info_mock.return_value = "test:state=copying:files_completed=bogus:files_total=:is_parked=false:park_ms=x"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            self._checkpoint_status(
+                test={"state": "copying", "files_completed": 0, "files_total": 0}
+            ),
+        )
+
+    async def test_info_checkpoint_status_not_configured(self):
+        self.info_mock.return_value = (
+            "ERROR:4:'index-checkpoint-path' is not configured"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertIsInstance(actual, ASInfoCheckpointError)
+        self.assertEqual(
+            str(actual),
+            "Failed to get checkpoint status : 'index-checkpoint-path' is not "
+            "configured.",
+        )
+
+    async def test_info_checkpoint_status_parked_raises_parked_error(self):
+        self.info_mock.return_value = (
+            "ERROR:22:checkpoint-save in progress - only checkpoint-status and "
+            "checkpoint-save are available"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertIsInstance(actual, ASInfoCheckpointParkedError)
+
+    async def test_info_checkpoint_status_error(self):
+        self.info_mock.return_value = (
+            "ERROR:4:checkpoint-status takes no parameters (got 'x')"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertIsInstance(actual, ASInfoCheckpointError)
+
+    async def test_info_build_does_not_return_cached_error_string(self):
+        # _node_connect used to store the parked node's refusal in self.build. Handing
+        # that to LooseVersion raises TypeError deep inside check_version_support.
+        lib.live_cluster.client.node.Node.info_build = _REAL_INFO_BUILD
+        self.node.build = (
+            "ERROR:22:checkpoint-save in progress - only checkpoint-status"
+        )
+        self.info_mock.return_value = "8.2.0.0"
+
+        actual = await self.node.info_build()
+
+        self.info_mock.assert_called_once_with("build", self.ip)
+        self.assertEqual(actual, "8.2.0.0")
+
+    async def test_info_build_parked_raises_parked_error(self):
+        lib.live_cluster.client.node.Node.info_build = _REAL_INFO_BUILD
+        self.node.build = None
+        self.info_mock.return_value = (
+            "ERROR:22:checkpoint-save in progress - only checkpoint-status and "
+            "checkpoint-save are available"
+        )
+
+        actual = await self.node.info_build()
+
+        self.assertIsInstance(actual, ASInfoCheckpointParkedError)
 
     async def test_info_jobs(self):
         self.info_mock.return_value = (

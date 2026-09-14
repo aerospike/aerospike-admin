@@ -52,10 +52,16 @@ IMAGE_REPO = os.environ.get(
     "ASADM_E2E_IMAGE_REPO",
     "artifact.aerospike.io/database-docker-test-local/aerospike-server-enterprise",
 )
-SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.2.0.0-20260908214755")
+SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.2.0.0_20260911T220300Z")
 
 WORK_DIRECTORY = "work"
 LUA_DIRECTORY = "work/lua"
+# 'index-checkpoint-path' for tests that need one. It lives INSIDE the container, not
+# on the bind mount: the server requires the directory be owned by its own uid (root
+# here), and a Linux bind mount keeps the host uid, so a shared path would boot fine
+# on macOS (virtiofs maps everything to root) and cf_crash_nostack() in CI. Each
+# container has its own filesystem, so this is per-node by construction.
+CKPT_DIR = "/opt/aerospike/ckpt"
 STATE_DIRECTORIES = ["state-%d" % i for i in range(1, NODE_CAPACITY + 1)]
 UDF_DIRECTORIES = ["udf-%d" % i for i in range(1, NODE_CAPACITY + 1)]
 LOG_PATH = "/var/log/aerospike/aerospike.log"
@@ -491,6 +497,8 @@ def start_server(
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
+    preview_features=None,
+    ckpt_dir=None,
 ):
     global CLIENT
     global NODES
@@ -531,6 +539,20 @@ def start_server(
         CONTAINER_DIR + "/" + get_file(conf_file, base=mount_dir),
         str(index - 1),
     )
+
+    for feature in preview_features or ():
+        cmd += " --preview %s" % feature
+
+    if ckpt_dir:
+        # Must exist, be owned by the server uid and not be world-writable before asd
+        # reads the config. The entrypoint ends in exec "$@", so a list command is
+        # handed straight to sh.
+        cmd = [
+            "sh",
+            "-c",
+            "mkdir -p -m 755 {} && exec {}".format(ckpt_dir, cmd),
+        ]
+
     print("running in docker: %s" % cmd)
     try:
         container = DOCKER_CLIENT.containers.get("aerospike-%d" % (index))
@@ -595,6 +617,8 @@ def start(
     template_file="aerospike_latest.conf",
     template_content=None,
     config_content=None,
+    preview_features=None,
+    ckpt_dir=None,
 ):
     global CLIENT
     global NODES
@@ -622,6 +646,8 @@ def start(
                     template_file=template_file,
                     template_content=template_content,
                     config_content=config_content,
+                    preview_features=preview_features,
+                    ckpt_dir=ckpt_dir,
                 )
                 if index == 1:
                     SERVER_IP = ip

@@ -68,6 +68,9 @@ class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
             def get_live_nodes(*args, **kwargs):
                 return []
 
+            def get_parked_nodes(*args, **kwargs):
+                return []
+
         class MockLiveClusterRootController(async_object.AsyncObject):
             async def __init__(self, *args, **kwargs):
                 self.cluster = ClusterMock()
@@ -87,6 +90,50 @@ class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
         mock_logger.error.assert_called_once_with(
             "Not able to connect any cluster with [('1.1.1.1', 3000, None)]."
         )
+
+    async def test_live_cluster_init_succeeds_with_only_a_parked_node(self):
+        """
+        TOOLS-3976 - a node parked by checkpoint-save is not alive, but it still
+        serves checkpoint-status. Bailing out here made 'manage checkpoint status'
+        impossible to run against the one node it exists to poll.
+        """
+        parked = Mock()
+        parked.key = "1.1.1.1:3000"
+
+        class ClusterMock:
+            def get_live_nodes(*args, **kwargs):
+                return []
+
+            def get_parked_nodes(*args, **kwargs):
+                return [parked]
+
+            def __str__(self):
+                return "Offline: 1.1.1.1:3000"
+
+        class MockLiveClusterRootController(async_object.AsyncObject):
+            async def __init__(self, *args, **kwargs):
+                self.cluster = ClusterMock()
+
+        patch(
+            "asadm.LiveClusterRootController",
+            MockLiveClusterRootController,
+        ).start()
+        mock_logger = patch("asadm.logger", autospec=True).start()
+        patch(
+            "readline.read_history_file",
+            Mock(),
+        ).start()
+        self.addCleanup(patch.stopall)
+
+        shell = await AerospikeShell(  # type: ignore
+            "test-version",
+            seeds=[("1.1.1.1", 3000, None)],
+            execute_only_mode=True,
+        )
+
+        self.assertTrue(shell.connected)
+        mock_logger.error.assert_not_called()
+        self.assertIn("Parked by checkpoint-save", mock_logger.warning.call_args[0][0])
 
     async def test_admin_port_visual_cue_prompt_switching(self):
         """Test admin port visual cue functionality - prompt switching based on admin nodes"""
