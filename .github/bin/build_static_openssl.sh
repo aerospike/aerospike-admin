@@ -1,30 +1,20 @@
 #!/usr/bin/env bash
 # Build a static-only OpenSSL pinned to our macOS support floor.
 #
-# Homebrew builds each bottle on its own macOS, so its libcrypto.a/libssl.a
-# members carry that runner's minos. Linking those into cryptography's
-# _rust.abi3.so leaves the final Mach-O stamped with MACOSX_DEPLOYMENT_TARGET
-# while the code inside it was compiled for a later release -- and
-# check_min_os.sh reads only the final object, so the mismatch is invisible to
-# it. Compiling OpenSSL ourselves against the floor is what makes the floor the
-# binary claims actually true.
+# Homebrew bottles carry the building runner's minos in their libcrypto.a and
+# libssl.a members. Linked into cryptography's _rust.abi3.so, the final Mach-O
+# is stamped with MACOSX_DEPLOYMENT_TARGET while the code inside was compiled
+# for a later release, and check_min_os.sh reads only the final object.
 #
 # Usage: build_static_openssl.sh <prefix> <min_macos>
 set -euo pipefail
 
-# THIS OPENSSL SHIPS INSIDE THE INTEL macOS asadm, AND NOTHING UPDATES IT FOR US.
-#
-# Dependabot covers pip, github-actions and docker; no ecosystem watches a
-# version string in a shell script. The asymmetry is what makes it easy to
-# miss: on an OpenSSL security release the arm64 bundle picks up the fix by
-# itself, because cryptography's own wheels vendor a current OpenSSL, while
-# the Intel bundle keeps linking whatever is pinned here -- with every CI gate
-# green. On any OpenSSL 3.6.x security release, bump both lines below. The
-# cache keys hash this file, so a bump invalidates the OpenSSL and bundle
-# caches on its own. Checksums: https://github.com/openssl/openssl/releases
-#
-# 3.6 is not an LTS line. When it goes end-of-support, move to a supported
-# branch here rather than letting the pin outlive it.
+# NOTHING UPDATES THIS PIN FOR US. Dependabot watches pip, github-actions and
+# docker, not a version string in a shell script. The arm64 bundle picks up
+# OpenSSL fixes from cryptography's own wheels; the Intel bundle ships whatever
+# is pinned here, with every CI gate green. Bump both lines on any 3.6.x
+# security release, and move off 3.6 when it goes end-of-support -- not an LTS
+# line. Checksums: https://github.com/openssl/openssl/releases
 VERSION="3.6.4"
 SHA256="9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef"
 URL="https://github.com/openssl/openssl/releases/download/openssl-${VERSION}/openssl-${VERSION}.tar.gz"
@@ -59,9 +49,7 @@ echo "${SHA256}  $work/openssl.tar.gz" | shasum -a 256 -c -
 tar -xzf "$work/openssl.tar.gz" -C "$work"
 cd "$work/openssl-${VERSION}"
 
-# no-shared so nothing dynamic can be vendored into the bundle later; no-tests
-# and no-docs keep a build we only ever link against from taking minutes we
-# do not need to spend.
+# no-shared so nothing dynamic can be vendored into the bundle later.
 echo "==> configuring $target for macOS $min_os"
 MACOSX_DEPLOYMENT_TARGET="$min_os" \
 	./Configure "$target" no-shared no-tests no-docs --prefix="$prefix" --libdir=lib
@@ -70,8 +58,8 @@ echo "==> building"
 MACOSX_DEPLOYMENT_TARGET="$min_os" make -j"$(sysctl -n hw.ncpu)" >/dev/null
 MACOSX_DEPLOYMENT_TARGET="$min_os" make install_sw >/dev/null
 
-# Prove the floor rather than trusting the flag: unpack the archives and reuse
-# the same scanner the shipping bundle is held to.
+# Prove the floor rather than trusting the flag. Once these are linked in,
+# member minos is unrecoverable, so this is the only scan they get.
 echo "==> checking archive members against the macOS $min_os floor"
 members="$work/members"
 mkdir -p "$members"

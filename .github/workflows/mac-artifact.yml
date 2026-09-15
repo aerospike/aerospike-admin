@@ -80,8 +80,6 @@ jobs:
             ${{ steps.working-dir.outputs.value }}/build/bin
           key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ steps.tag.outputs.tag }}
       - name: Get the macOS support floor
-        # Read the floor from pkg/Makefile rather than repeating it here, so the
-        # shipping bundle and the Intel compile below cannot drift apart.
         # Ungated: the bundle floor check at the end of the job runs on every
         # arch and on a restored cache, so the floor has to be known there too.
         working-directory: ${{ steps.working-dir.outputs.value }}
@@ -95,16 +93,13 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/openssl-static
-          # hashFiles resolves against GITHUB_WORKSPACE, and this workflow
-          # checks out into a subdirectory, so the path has to be qualified.
-          # Unqualified it matches nothing, hashFiles returns "", and the key
+          # hashFiles resolves against GITHUB_WORKSPACE and this workflow checks
+          # out into a subdirectory, so the paths have to be qualified.
+          # Unqualified they match nothing, hashFiles returns "", and the key
           # degenerates to a constant that pins the OpenSSL build forever.
           # check_min_os.sh is hashed because build_static_openssl.sh runs it as
-          # its own gate. Member minos is unrecoverable once the archives are
-          # linked in, so that build-time scan is the only scan; a later fix to
-          # the scanner has to re-run it rather than hit a cache validated by
-          # the old one. macos_min_version.sh decides the floor the archives are
-          # compiled against, so a parsing change has to miss this cache too.
+          # its own gate, and that member-level scan is the only one the
+          # archives get.
           key: openssl-static-${{ runner.arch }}-${{ env.MACOS_MIN_VERSION }}-${{ hashFiles(format('{0}/.github/bin/build_static_openssl.sh', steps.working-dir.outputs.value), format('{0}/.github/bin/check_min_os.sh', steps.working-dir.outputs.value), format('{0}/.github/bin/macos_min_version.sh', steps.working-dir.outputs.value)) }}
       - name: Build static OpenSSL
         if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true' && steps.cache-openssl.outputs.cache-hit != 'true'
@@ -112,17 +107,13 @@ jobs:
         run: .github/bin/build_static_openssl.sh "$RUNNER_TEMP/openssl-static" "$MACOS_MIN_VERSION"
       - name: Static OpenSSL for the Intel cryptography build
         # cryptography publishes arm64-only macOS wheels from 49.0.0 on, so the
-        # Intel leg builds it from the sdist instead. PyInstaller flattens
-        # vendored dylibs by base name, where Python's own _ssl and _hashlib
-        # already put a libssl.3.dylib, so a dynamically linked cryptography
-        # collides with them and loses. Linking it statically keeps it out of
-        # that collision entirely.
+        # Intel leg builds from the sdist and has to link OpenSSL statically --
+        # see check_crypto_static_openssl.sh for what it collides with if not.
         if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          # Confirm the prefix really holds an archive before exporting it: an
-          # empty or half-built OPENSSL_DIR would reach openssl-sys as a real
-          # prefix and fail much further downstream.
+          # An empty or half-built OPENSSL_DIR reaches openssl-sys as a real
+          # prefix and fails much further downstream.
           openssl_dir="$RUNNER_TEMP/openssl-static"
           [[ -f "${openssl_dir}/lib/libcrypto.a" ]] || { echo "::error::no static OpenSSL at ${openssl_dir}" >&2; exit 1; }
           {
@@ -143,14 +134,12 @@ jobs:
           make one-dir
           ls -al build/bin/asadm || true
       - name: Check cryptography links OpenSSL statically
-        # Deliberately not gated on the build cache: a restored bundle ships
-        # exactly like a freshly built one, so it has to clear the same bar.
+        # Ungated: a restored bundle ships like a freshly built one.
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: .github/bin/check_crypto_static_openssl.sh build/bin
       - name: Check the bundle against the macOS support floor
-        # The same scan pkg/Makefile runs before pkgbuild. That one lives in
-        # build-and-release.yml, which is workflow_dispatch-only, so without
-        # this an unpinned compile would first be seen during a release.
+        # The same scan pkg/Makefile runs before pkgbuild, repeated here because
+        # that one only runs from workflow_dispatch-only build-and-release.yml.
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: .github/bin/check_min_os.sh "$MACOS_MIN_VERSION" build/bin
       # - name: Setup tmate session

@@ -1,12 +1,9 @@
 #!/usr/bin/env bats
 #
-# Failure-path tests for check_crypto_static_openssl.sh, the guard that keeps
-# cryptography out of the PyInstaller dylib base-name collision. `otool` is
-# stubbed on PATH, so these run on any OS and on every pull request.
-#
-# The guard's whole value is its failure path, and it has already regressed to
-# fail-open once: piped into grep under pipefail, "otool could not read it" and
-# "it has no OpenSSL dylib" were indistinguishable.
+# Failure-path tests for check_crypto_static_openssl.sh. `otool` is stubbed on
+# PATH, so these run on any OS and on every pull request. The guard has already
+# regressed to fail-open once: piped into grep under pipefail, "otool could not
+# read it" and "it has no OpenSSL dylib" were indistinguishable.
 
 setup() {
   CHECK_CRYPTO="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/check_crypto_static_openssl.sh"

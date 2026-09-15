@@ -1,11 +1,9 @@
 #!/usr/bin/env bats
 #
-# Table test for macos_min_version.sh -- the single read of the macOS support
+# Table test for macos_min_version.sh, the single read of the macOS support
 # floor behind the Intel deployment target, the OpenSSL cache key and the
-# bundle floor check.
-#
-# Like pkg_release.bats these need no installed binary and no packaging, so
-# they run on every pull request.
+# bundle floor check. Like pkg_release.bats these need no installed binary and
+# no packaging, so they run on every pull request.
 
 setup() {
   MACOS_MIN_VERSION_SH="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/macos_min_version.sh"
@@ -53,8 +51,6 @@ assert_malformed() {
 }
 
 @test "a trailing inline comment is rejected, not passed through" {
-  # The sed prints whatever follows the '=', so this is the case a non-empty
-  # check alone would ship into MACOSX_DEPLOYMENT_TARGET and the cache key.
   assert_malformed "MACOS_MIN_VERSION = 14.0 # oldest supported"
 }
 

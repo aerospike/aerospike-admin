@@ -62,9 +62,8 @@ jobs:
       - name: Test pkg_release.sh
         run: bats .github/bin/test/pkg_release.bats
 
-      # The macOS build guards stub otool and file, so their failure paths run
-      # here rather than only on a macOS runner. Those paths are the point of
-      # the guards, and CI otherwise only ever exercises the passing one.
+      # These stub otool and file, so the guards' failure paths run here rather
+      # than only on a macOS runner, where CI only exercises the passing one.
       - name: Test the macOS build guards
         run: bats .github/bin/test/check_crypto_static_openssl.bats .github/bin/test/check_min_os.bats .github/bin/test/macos_min_version.bats
 

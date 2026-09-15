@@ -1,12 +1,9 @@
 #!/usr/bin/env bats
 #
-# Failure-path tests for check_min_os.sh, the scan that decides whether a
-# macOS payload can run on the support floor. `file` and `otool` are stubbed on
-# PATH, so these run on any OS and on every pull request.
-#
-# The fail-open cases matter most: this scan is the only thing that ever sees
-# the static OpenSSL archive members (member minos is unrecoverable once they
-# are linked in), and its verdict is then cached.
+# Failure-path tests for check_min_os.sh. `file` and `otool` are stubbed on
+# PATH, so these run on any OS and on every pull request. The fail-open cases
+# matter most: this scan is the only thing that ever sees the static OpenSSL
+# archive members, and its verdict is then cached.
 
 setup() {
   CHECK_MIN_OS="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/check_min_os.sh"
@@ -109,8 +106,6 @@ $(build_version 15.0)"
 }
 
 @test "an otool failure fails loudly instead of counting as clean" {
-  # Discarding otool's status reported an uninspected file as compliant, which
-  # for the OpenSSL archive members would be the only scan they ever get.
   export STUB_OTOOL_FAIL=1
   run "$CHECK_MIN_OS" 14.0 "$PAYLOAD"
   [ "$status" -eq 1 ]

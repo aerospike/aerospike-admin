@@ -46,7 +46,6 @@ while IFS= read -r f; do
 	*) continue ;;
 	esac
 	scanned=$((scanned + 1))
-	# Keep "otool could not read it" apart from "it has no load command".
 	# Discarding otool's status reports an uninspected file as clean, and for
 	# the static OpenSSL archive members this is the only scan there will be.
 	if ! load_commands=$(otool -l "$f" 2>&1); then

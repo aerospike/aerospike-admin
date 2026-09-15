@@ -3,14 +3,10 @@
 #
 # PyInstaller flattens every vendored dylib into one directory, keyed by base
 # name. Python's own _ssl and _hashlib bring a libssl.3.dylib/libcrypto.3.dylib
-# along, so a cryptography that also links OpenSSL dynamically collides with
-# them: one copy wins, and if it is not the one cryptography was compiled
-# against, the binary dies at startup on a missing symbol.
-#
-# cryptography publishes arm64-only macOS wheels from 49.0.0 on, so the Intel
-# leg compiles from the sdist and has to link OpenSSL statically to stay out of
-# that collision. The published wheels are already statically linked, so this
-# holds on every platform.
+# along, so a dynamically linked cryptography collides with them: one copy
+# wins, and if it is not the one cryptography was compiled against, the binary
+# dies at startup on a missing symbol. The published wheels are already static,
+# so this holds on every platform.
 #
 # Usage: check_crypto_static_openssl.sh <path>...
 set -euo pipefail
@@ -23,9 +19,9 @@ fi
 checked=0
 violations=0
 while IFS= read -r f; do
-	# Keep "otool could not read it" apart from "it has no OpenSSL dylib".
-	# Piped straight into grep, pipefail makes both look identical, and this
-	# guard would then report success on a build it never actually inspected.
+	# Piped straight into grep, "otool could not read it" and "it has no
+	# OpenSSL dylib" are indistinguishable under pipefail, and this reports
+	# success on a build it never inspected.
 	if ! out=$(otool -L "$f" 2>&1); then
 		echo "error: otool failed on $f" >&2
 		printf '%s\n' "$out" >&2
