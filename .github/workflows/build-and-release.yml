@@ -1065,6 +1065,66 @@ jobs:
           [[ "${CHARMAP}" == "UTF-8" ]] \
             || { echo "ERROR: LANG override drops the charmap to '${CHARMAP//$'\n'/ }', expected UTF-8 (LC_CTYPE pin lost?)" >&2; exit 1; }
 
+          # Entrypoint contract (TOOLS-4360). Naming the binary is the convention
+          # for these images, so an image invoked without one has to say so
+          # rather than fail with runc's "executable file not found in $PATH".
+          # test_entrypoint.bats pins the script against a fixture on every PR;
+          # this runs the same contract against the built image, which is what
+          # catches a lost exec bit, a missing tool list, or a Dockerfile that
+          # dropped the ENTRYPOINT or grew a CMD back.
+          bins=(asadm asinfo)
+          [[ -z "$(docker inspect -f '{{join .Config.Cmd " "}}' "${IMAGE}")" ]] \
+            || { echo "ERROR: the image has a CMD; a default binary would hide the usage message" >&2; exit 1; }
+          usage=$(docker run --rm "${IMAGE}") \
+            || { echo "ERROR: the image failed to print usage with no arguments" >&2; exit 1; }
+          # The title is the first line, "Aerospike <name> image (<package> <version>)":
+          # exactly two tokens in the parentheses -- an earlier build printed the
+          # package name twice.
+          title_re='^Aerospike [a-z]+ image \([^() ]+ [^() ]+\)$'
+          [[ "$(head -n1 <<<"${usage}")" =~ ${title_re} ]] \
+            || { echo "ERROR: unexpected usage title: '$(head -n1 <<<"${usage}")'" >&2; exit 1; }
+          for bin in "${bins[@]}"; do
+            grep -qE "^  docker run --rm <image> ${bin}( |$)" <<<"${usage}" \
+              || { echo "ERROR: the usage message does not list ${bin}" >&2; exit 1; }
+          done
+          grep -qF -- '--entrypoint bash' <<<"${usage}" \
+            || { echo "ERROR: the usage message does not say how to get a shell" >&2; exit 1; }
+
+          # 127 exactly: 126 means the entrypoint lost its exec bit and 1 or 2
+          # mean it crashed, and neither must read as a correct refusal. Usage
+          # on error belongs on stderr, so `docker run IMAGE --x > file` leaves
+          # the file empty. set +e because under set -e the non-zero exit would
+          # end the step before the assertion runs.
+          set +e
+          docker run --rm "${IMAGE}" --version >"${SHIM_DIR}/ep.out" 2>"${SHIM_DIR}/ep.err"; rc=$?
+          set -e
+          [[ "${rc}" -eq 127 ]] \
+            || { echo "ERROR: a leading-flag first argument exited ${rc}, expected 127" >&2; exit 1; }
+          [[ ! -s "${SHIM_DIR}/ep.out" ]] \
+            || { echo "ERROR: the refusal wrote to stdout; usage on error belongs on stderr" >&2; exit 1; }
+          grep -qF "Error: '--version' is an option, not a binary." "${SHIM_DIR}/ep.err" \
+            || { echo "ERROR: the refusal did not name the bad argument on stderr" >&2; exit 1; }
+          grep -qE "^  docker run --rm <image> ${bins[0]}( |$)" "${SHIM_DIR}/ep.err" \
+            || { echo "ERROR: the refusal did not print usage on stderr" >&2; exit 1; }
+          set +e
+          docker run --rm "${IMAGE}" no-such-tool >"${SHIM_DIR}/ep.out" 2>"${SHIM_DIR}/ep.err"; rc=$?
+          set -e
+          [[ "${rc}" -eq 127 ]] \
+            || { echo "ERROR: an unknown first argument exited ${rc}, expected 127" >&2; exit 1; }
+          grep -qF "Error: 'no-such-tool' is not an executable in this image." "${SHIM_DIR}/ep.err" \
+            || { echo "ERROR: the unknown-argument refusal did not name the argument on stderr" >&2; exit 1; }
+
+          # Passthrough: anything executable runs as given, so the entrypoint is
+          # additive. `docker run IMAGE bash`, pod specs that set only args:, and
+          # diagnostics such as `docker run IMAGE ls` keep working.
+          set +e
+          docker run --rm "${IMAGE}" sh -c 'exit 3'; rc=$?
+          set -e
+          [[ "${rc}" -eq 3 ]] \
+            || { echo "ERROR: passthrough of \"sh -c 'exit 3'\" exited ${rc}, expected 3" >&2; exit 1; }
+          docker run --rm --entrypoint bash "${IMAGE}" -c true \
+            || { echo "ERROR: --entrypoint bash no longer gives a shell" >&2; exit 1; }
+
           if [[ -n "${SNYK_TOKEN:-}" ]]; then
             snyk container test "${IMAGE}" \
               --platform=linux/${{ matrix.arch }} \
