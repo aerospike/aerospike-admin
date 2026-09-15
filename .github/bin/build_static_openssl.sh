@@ -49,14 +49,27 @@ echo "${SHA256}  $work/openssl.tar.gz" | shasum -a 256 -c -
 tar -xzf "$work/openssl.tar.gz" -C "$work"
 cd "$work/openssl-${VERSION}"
 
-# no-shared so nothing dynamic can be vendored into the bundle later.
+# no-shared so nothing dynamic can be vendored into the bundle later. no-module
+# builds the legacy provider into libcrypto: left as a module it is a separate
+# legacy.dylib under MODULESDIR, a build-time path that does not exist on a
+# user's machine, so every asadm run warns that legacy failed to load.
 echo "==> configuring $target for macOS $min_os"
 MACOSX_DEPLOYMENT_TARGET="$min_os" \
-	./Configure "$target" no-shared no-tests no-docs --prefix="$prefix" --libdir=lib
+	./Configure "$target" no-shared no-module no-tests no-docs --prefix="$prefix" --libdir=lib
 
 echo "==> building"
 MACOSX_DEPLOYMENT_TARGET="$min_os" make -j"$(sysctl -n hw.ncpu)" >/dev/null
 MACOSX_DEPLOYMENT_TARGET="$min_os" make install_sw >/dev/null
+
+# A legacy provider left outside the archive loads fine here, off the prefix we
+# just installed, and fails only once the bundle is on a machine without it.
+# Not grep -q: under pipefail an early exit leaves nm dying of SIGPIPE, and a
+# symbol that is present reads as absent.
+echo "==> checking the legacy provider is in libcrypto, not a module"
+if ! nm -g "$prefix/lib/libcrypto.a" | grep ossl_legacy_provider_init >/dev/null; then
+	echo "error: libcrypto.a has no built-in legacy provider; configure with no-module" >&2
+	exit 1
+fi
 
 # Prove the floor rather than trusting the flag. Once these are linked in,
 # member minos is unrecoverable, so this is the only scan they get.

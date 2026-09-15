@@ -152,6 +152,21 @@ jobs:
           asadm -e "info" 2>&1 | grep "Not able to connect"
           asinfo || true
           asinfo 2>&1 | grep "Not able to connect"
+      - name: Check the legacy provider is built into cryptography's OpenSSL
+        # The static OpenSSL was installed on this runner, so a legacy provider
+        # built as a module still loads here from its build-time MODULESDIR and
+        # only fails on a user's machine. OPENSSL_MODULES redirects that lookup
+        # to reproduce the user's machine; a built-in provider never looks.
+        # Assigned on its own line so an asadm that cannot start fails the step
+        # instead of reading as "no warning".
+        run: |
+          set -euo pipefail
+          out=$(OPENSSL_MODULES=/nonexistent asadm --version 2>&1)
+          if [[ "${out}" == *"legacy provider failed to load"* ]]; then
+            echo "::error::cryptography's OpenSSL loads the legacy provider from a module; build it in with no-module" >&2
+            printf '%s\n' "${out}" >&2
+            exit 1
+          fi
       - name: Create .tar
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
