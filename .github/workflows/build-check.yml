@@ -62,13 +62,6 @@ jobs:
       - name: Test pkg_release.sh
         run: bats .github/bin/test/pkg_release.bats
 
-      # docker/docker-entrypoint.sh is the tools image's entrypoint. It is
-      # otherwise only executed by the release workflow's docker smoke test,
-      # which is workflow_dispatch-only, so unit-test it here against a fixture
-      # on every pull request. Needs no docker and no package.
-      - name: Test the docker entrypoint
-        run: bats .github/bin/test/test_entrypoint.bats
-
       # The .deb/.rpm legs below only count that a package appeared; nothing
       # asserts the NAME. Assert it here, where the expected name is derived
       # from the same script pkg/Makefile uses, so the two cannot drift.
@@ -186,3 +179,28 @@ jobs:
           fi
           echo "Installer build succeeded:"
           find pkg/target -maxdepth 2 -name "*.${{ matrix.pkg }}" -type f
+
+  # docker/docker-entrypoint.sh is the tools image's entrypoint. The release
+  # workflow's docker smoke test is the only other thing that executes it, and
+  # that is workflow_dispatch-only, so unit-test it here against a fixture on
+  # every pull request. Its own job, so a red check names the entrypoint rather
+  # than the naming scripts. Needs no docker and no package; the distro bats
+  # (1.10 on noble) satisfies the suite's 1.5 floor.
+  docker-entrypoint:
+    name: Docker entrypoint (bats)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install bats
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bats
+          bats --version
+      - name: Test the docker entrypoint
+        run: bats .github/bin/test/test_entrypoint.bats

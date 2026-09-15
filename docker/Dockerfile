@@ -64,7 +64,7 @@ SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 # curl is installed only when we need to download, then purged.
 # Then record, from the installed package's own file list, the executables it
 # put on PATH: docker-entrypoint.sh reads /usr/local/share/aerospike/tools and
-# image-info to print usage, so the list is generated, never hand-maintained.
+# image-info to print usage, so the usage text follows the package.
 # hadolint ignore=DL3008
 RUN --mount=type=bind,source=.,target=/build-ctx \
     export DEBIAN_FRONTEND=noninteractive && \
@@ -104,7 +104,7 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
         done \
       | sort -u > /usr/local/share/aerospike/tools && \
     if [ ! -s /usr/local/share/aerospike/tools ]; then \
-        echo "ERROR: ${PKG_NAME} installed no executables under /usr/bin; the entrypoint usage would be empty." >&2; \
+        echo "ERROR: ${PKG_NAME} installed no executables under /usr/bin or /usr/local/bin; the entrypoint usage would be empty." >&2; \
         exit 1; \
     fi && \
     printf 'Aerospike %s image (%s %s)\n' "${PKG_NAME#aerospike-}" "${PKG_NAME}" "${PKG_VERSION}" \
@@ -119,7 +119,8 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
 # The entrypoint execs whatever is named (a passthrough, so `IMAGE bash` still
 # works) and prints usage built from /usr/local/share/aerospike/tools when
 # nothing, or an option, is named. No CMD: a default binary would hide that
-# usage and a multi-binary image has no right default. Exec form so the script
-# -- and, after exec, the tool -- is PID 1 and gets `docker stop`'s SIGTERM.
+# usage, and the tools images share one convention (TOOLS-4360) even where
+# only one binary ships. Exec form so the script -- and, after exec, the tool
+# -- is PID 1 and gets `docker stop`'s SIGTERM.
 COPY --chmod=0755 ${ENTRYPOINT_SRC} /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

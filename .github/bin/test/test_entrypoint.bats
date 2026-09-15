@@ -12,8 +12,12 @@
 # Contract pinned here:
 #   no arguments                 -> usage on stdout, exit 0
 #   first argument starts "-"    -> error + usage on stderr, stdout empty, exit 127
-#   first argument not runnable  -> error + usage on stderr, stdout empty, exit 127
+#   first argument resolves to nothing (no such command on PATH, no file at
+#   that path)                   -> error + usage on stderr, stdout empty, exit 127
 #   anything else                -> exec'd as given (passthrough), status propagated
+# A path that exists but is not executable resolves, so it falls through to
+# exec and fails there: exit 126 with dash's own message and no usage, exactly
+# what runc returned before the entrypoint existed.
 # The tool list and image-info only feed the usage text; exec never reads them.
 #
 # Shared verbatim across the tools repos; keep the copies byte-identical.
@@ -122,6 +126,19 @@ usage_lists() {
 @test "passthrough: an absolute path is exec'd, not matched by basename" {
     run -42 sh "${ENTRY}" "${FAKE_BIN}/faketool" x
     [ "${lines[0]}" = "x" ]
+}
+
+@test "passthrough: an existing but non-executable path falls through to exec, exit 126, no usage" {
+    # dash resolves a slash path by existence alone; bash also checks the exec
+    # bit and would refuse at command -v. The image runs dash, so pin dash.
+    if sh -c '[ -n "${BASH_VERSION:-}" ]'; then
+        skip "sh is bash here; the fall-through is dash behaviour"
+    fi
+    printf 'not a program\n' > "${BATS_TEST_TMPDIR}/data.txt"
+    chmod 0644 "${BATS_TEST_TMPDIR}/data.txt"
+    run -126 --separate-stderr sh "${ENTRY}" "${BATS_TEST_TMPDIR}/data.txt"
+    [ -z "${output}" ]
+    [[ "${stderr}" != *"docker run --rm <image>"* ]]
 }
 
 @test "missing tool list: generic usage, exit 0, and exec is unaffected" {
