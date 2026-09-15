@@ -10,8 +10,10 @@ name: Copy aerospike-asadm images to Docker Hub
 #   tags:       <release>, <release>-amd64, <release>-arm64
 #   alias-from: <release>
 #   alias-tags: <MAJOR.MINOR.PATCH>, latest
-# Leave tags / alias-from / alias-tags empty at dispatch to use those
-# defaults, or set them to copy a different already-published set.
+# Derived tags require git tag <VERSION> (create-tag is tag-last). Pass
+# explicit tags to copy a different already-published set. alias-tags of
+# "none" (or "-") skips Hub aliases. Non-rc pre-releases cannot default
+# alias-tags to <semver>,latest.
 
 on:
   workflow_dispatch:
@@ -25,7 +27,7 @@ on:
         required: true
         default: aerospike/aerospike-asadm
       tags:
-        description: Comma-separated tags to copy unchanged (index, linux/amd64, linux/arm64). Empty = derive from VERSION.
+        description: Comma-separated tags to copy unchanged (index, linux/amd64, linux/arm64). Empty = derive from VERSION (requires git tag VERSION).
         required: false
         default: ""
       dry-run:
@@ -38,7 +40,7 @@ on:
         required: false
         default: ""
       alias-tags:
-        description: Extra destination tags (comma-separated) based on alias-from. Empty = "<semver>,latest" from VERSION.
+        description: Extra destination tags based on alias-from. Empty = "<semver>,latest" from VERSION. "none" or "-" disables aliases.
         required: false
         default: ""
 
@@ -49,6 +51,9 @@ permissions:
 jobs:
   copy:
     runs-on: ubuntu-24.04
+    # Hub writes use the same protected environment as create-tag. Dry-run
+    # skips it so a PR-branch inspect does not need deploy-to-master.
+    environment: ${{ !inputs.dry-run && 'deploy-to-master' || fromJSON('null') }}
     permissions:
       contents: read
       id-token: write
@@ -60,6 +65,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-tags: true
 
       - name: Resolve tags from VERSION
         id: resolve
@@ -78,51 +85,16 @@ jobs:
             echo "::error::VERSION file is empty." >&2
             exit 1
           fi
-          # VERSION may be 5.0.3-rc5; Docker Hub aliases only want MAJOR.MINOR.PATCH.
-          if [[ ! "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-            echo "::error::VERSION '$VERSION' does not start with MAJOR.MINOR.PATCH." >&2
-            exit 1
+          tag_exists=false
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            tag_exists=true
           fi
-          SEMVER="${BASH_REMATCH[1]}"
-          RELEASE=$(.github/bin/pkg_release.sh "$VERSION" release)
-
-          trim() {
-            local value="$1"
-            value="${value#"${value%%[![:space:]]*}"}"
-            value="${value%"${value##*[![:space:]]}"}"
-            printf '%s' "$value"
-          }
-
-          tags="$(trim "${TAGS_INPUT:-}")"
-          if [[ -z "$tags" ]]; then
-            tags="${RELEASE},${RELEASE}-amd64,${RELEASE}-arm64"
-          fi
-
-          alias_from="$(trim "${ALIAS_FROM_INPUT:-}")"
-          if [[ -z "$alias_from" ]]; then
-            alias_from="$RELEASE"
-          fi
-
-          alias_tags="$(trim "${ALIAS_TAGS_INPUT:-}")"
-          if [[ -z "$alias_tags" ]]; then
-            alias_tags="${SEMVER},latest"
-          fi
-
-          {
-            echo "version=$VERSION"
-            echo "semver=$SEMVER"
-            echo "release=$RELEASE"
-            echo "tags=$tags"
-            echo "alias-from=$alias_from"
-            echo "alias-tags=$alias_tags"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "VERSION file: $VERSION"
-          echo "semver:       $SEMVER"
-          echo "release tag:  $RELEASE"
-          echo "tags:         $tags"
-          echo "alias-from:   $alias_from"
-          echo "alias-tags:   $alias_tags"
+          .github/bin/resolve_copy_tags.sh \
+            "$VERSION" \
+            "${TAGS_INPUT:-}" \
+            "${ALIAS_FROM_INPUT:-}" \
+            "${ALIAS_TAGS_INPUT:-}" \
+            "$tag_exists" | tee -a "$GITHUB_OUTPUT"
 
       - name: Install JFrog CLI
         id: jf

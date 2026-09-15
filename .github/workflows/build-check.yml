@@ -62,6 +62,9 @@ jobs:
       - name: Test pkg_release.sh
         run: bats .github/bin/test/pkg_release.bats
 
+      - name: Test resolve_copy_tags.sh
+        run: bats .github/bin/test/resolve_copy_tags.bats
+
       # The .deb/.rpm legs below only count that a package appeared; nothing
       # asserts the NAME. Assert it here, where the expected name is derived
       # from the same script pkg/Makefile uses, so the two cannot drift.
