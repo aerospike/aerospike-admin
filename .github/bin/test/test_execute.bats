@@ -27,6 +27,15 @@ setup() {
   assert_version_output "$output" "$expected"
 }
 
+@test "asadm starts without OpenSSL's legacy provider failing to load" {
+  # The Intel macOS bundle links its own OpenSSL. A legacy provider built as
+  # a module sits at a build-time path, loads on the build runner, and warns on
+  # every start anywhere else, so this only proves anything on a clean host.
+  run asadm --version
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"legacy provider failed to load"* ]]
+}
+
 @test "can run asinfo" {
   run asinfo --help
   [ "$status" -eq 0 ]

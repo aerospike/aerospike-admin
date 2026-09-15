@@ -12,6 +12,10 @@ expected="$(expected_version "$REPO_ROOT/VERSION")"
 for tool in asadm asinfo; do
 	"$tool" --help >/dev/null
 	out="$("$tool" --version 2>&1)"
+	if [[ "$out" == *"legacy provider failed to load"* ]]; then
+		echo "error: $tool: OpenSSL's legacy provider failed to load" >&2
+		exit 1
+	fi
 	assert_version_output "$out" "$expected"
 	echo "$tool reports $(expected_version_lines "$expected" | tr '\n' ' ')(from $expected)"
 done

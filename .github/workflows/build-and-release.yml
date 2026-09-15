@@ -393,7 +393,7 @@ jobs:
         id: cache-asadm-asinfo
         env:
           cache-name: cache-asadm-asinfo
-          cache-index: "4"
+          cache-index: "5"
         with:
           path: |
             build/bin
@@ -401,7 +401,50 @@ jobs:
           # served a stale bundle for every source change within one rc: a
           # pyinstaller-build.spec fix landed, the key was unchanged, `make
           # one-dir` was skipped, and the pre-fix binaries shipped.
-          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py') }}
+          # The OpenSSL scripts and pkg/Makefile (MACOS_MIN_VERSION) are build
+          # inputs too, and every OpenSSL step below is gated on this cache: a
+          # bundle hit that outlives a change to any of them ships a stale
+          # bundle no rerun can rebuild, short of a manual cache-index bump.
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'pkg/Makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py', '.github/bin/build_static_openssl.sh', '.github/bin/check_min_os.sh', '.github/bin/macos_min_version.sh') }}
+
+      - name: Get the macOS support floor
+        run: |
+          set -euo pipefail
+          min_os=$(.github/bin/macos_min_version.sh)
+          echo "MACOS_MIN_VERSION=${min_os}" >> "$GITHUB_ENV"
+
+      - name: Cache static OpenSSL
+        if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        id: cache-openssl
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/openssl-static
+          # check_min_os.sh is hashed because build_static_openssl.sh runs it as
+          # its own gate, and that member-level scan is the only one the
+          # archives get. A fix to the scanner has to re-run it rather than hit
+          # a cache the old one validated.
+          key: openssl-static-${{ runner.arch }}-${{ env.MACOS_MIN_VERSION }}-${{ hashFiles('.github/bin/build_static_openssl.sh', '.github/bin/check_min_os.sh', '.github/bin/macos_min_version.sh') }}
+
+      - name: Build static OpenSSL
+        if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true' && steps.cache-openssl.outputs.cache-hit != 'true'
+        run: .github/bin/build_static_openssl.sh "$RUNNER_TEMP/openssl-static" "$MACOS_MIN_VERSION"
+
+      - name: Static OpenSSL for the Intel cryptography build
+        # cryptography publishes arm64-only macOS wheels from 49.0.0 on, so the
+        # Intel leg builds from the sdist and has to link OpenSSL statically --
+        # see check_crypto_static_openssl.sh for what it collides with if not.
+        if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          # An empty or half-built OPENSSL_DIR reaches openssl-sys as a real
+          # prefix and fails much further downstream.
+          openssl_dir="$RUNNER_TEMP/openssl-static"
+          [[ -f "${openssl_dir}/lib/libcrypto.a" ]] || { echo "::error::no static OpenSSL at ${openssl_dir}" >&2; exit 1; }
+          {
+            echo "OPENSSL_DIR=${openssl_dir}"
+            echo "OPENSSL_STATIC=1"
+            echo "MACOSX_DEPLOYMENT_TARGET=${MACOS_MIN_VERSION}"
+          } >> "$GITHUB_ENV"
 
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
@@ -416,6 +459,10 @@ jobs:
         run: |
           make one-dir
           ls -al build/bin/asadm || true
+
+      - name: Check cryptography links OpenSSL statically
+        # Ungated: a restored bundle ships like a freshly built one.
+        run: .github/bin/check_crypto_static_openssl.sh build/bin
 
       - name: Create .pkg
         env:

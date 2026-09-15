@@ -23,12 +23,12 @@ version_le() {
 	[[ "$1" == "$2" ]] || [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" == "$1" ]]
 }
 
-# Every floor in the file, one per line: LC_BUILD_VERSION on current objects,
-# LC_VERSION_MIN_MACOSX on older ones. A universal binary carries one set of
-# load commands per slice, and `otool -l` prints them in slice order, so
+# Every floor in the load commands, one per line: LC_BUILD_VERSION on current
+# objects, LC_VERSION_MIN_MACOSX on older ones. A universal binary carries one
+# set of load commands per slice, and `otool -l` prints them in slice order, so
 # stopping at the first would let a later slice's higher floor through.
-read_minos() {
-	otool -l "$1" 2>/dev/null | awk '
+parse_minos() {
+	awk '
 		/^Load command/      { bv = 0; vm = 0; next }
 		/LC_BUILD_VERSION/   { bv = 1; next }
 		/LC_VERSION_MIN_MAC/ { vm = 1; next }
@@ -46,6 +46,13 @@ while IFS= read -r f; do
 	*) continue ;;
 	esac
 	scanned=$((scanned + 1))
+	# Discarding otool's status reports an uninspected file as clean, and for
+	# the static OpenSSL archive members this is the only scan there will be.
+	if ! load_commands=$(otool -l "$f" 2>&1); then
+		echo "error: otool failed on $f" >&2
+		printf '%s\n' "$load_commands" >&2
+		exit 1
+	fi
 	# Report the highest offending slice. A file with no load command at all
 	# has no floor to violate.
 	worst=""
@@ -54,7 +61,7 @@ while IFS= read -r f; do
 		if [[ -z "$worst" ]] || ! version_le "$minos" "$worst"; then
 			worst="$minos"
 		fi
-	done < <(read_minos "$f")
+	done < <(printf '%s\n' "$load_commands" | parse_minos)
 	if [[ -n "$worst" ]]; then
 		echo "  $worst  $f" >&2
 		violations=$((violations + 1))
