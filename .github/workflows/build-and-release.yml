@@ -408,20 +408,16 @@ jobs:
           # lowered: the bundle cache hits, every rebuild step is gated off, and
           # check_min_os.sh then fails on the stale bundle on every rerun, with
           # no way out but a manual cache-index bump nothing hints at.
-          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'pkg/Makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py', '.github/bin/build_static_openssl.sh') }}
+          key: ${{ env.cache-name }}-${{ env.cache-index }}-${{ matrix.os }}-${{ runner.arch }}-${{ steps.system-info.outputs.release }}-${{ env.PYTHON_VERSION }}-${{ needs.get-version.outputs.VERSION }}-${{ hashFiles('pyinstaller-build.spec', 'Pipfile.lock', 'makefile', 'pkg/Makefile', 'asadm.py', 'lib/**/*.py', 'asinfo/**/*.py', '.github/bin/build_static_openssl.sh', '.github/bin/macos_min_version.sh') }}
 
       - name: Get the macOS support floor
         # Read the floor from pkg/Makefile rather than repeating it here, so the
         # shipping bundle and the Intel compile below cannot drift apart.
-        if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
+        # Ungated, as in mac-artifact.yml: a malformed floor is worth failing on
+        # from every leg, and the read is a sed.
         run: |
           set -euo pipefail
-          min_os=$(sed -n 's/^MACOS_MIN_VERSION[[:space:]]*=[[:space:]]*//p' pkg/Makefile)
-          # Shape-check rather than just non-empty: the sed prints whatever
-          # follows the "=", so a trailing inline comment or stray whitespace
-          # would sail through and land in both the deployment target and the
-          # cache key.
-          [[ "${min_os}" =~ ^[0-9]+(\.[0-9]+)*$ ]] || { echo "::error::MACOS_MIN_VERSION malformed in pkg/Makefile: '${min_os}'" >&2; exit 1; }
+          min_os=$(.github/bin/macos_min_version.sh)
           echo "MACOS_MIN_VERSION=${min_os}" >> "$GITHUB_ENV"
 
       - name: Cache static OpenSSL
@@ -434,8 +430,9 @@ jobs:
           # its own gate. Member minos is unrecoverable once the archives are
           # linked in, so that build-time scan is the only scan; a later fix to
           # the scanner has to re-run it rather than hit a cache validated by
-          # the old one.
-          key: openssl-static-${{ runner.arch }}-${{ env.MACOS_MIN_VERSION }}-${{ hashFiles('.github/bin/build_static_openssl.sh', '.github/bin/check_min_os.sh') }}
+          # the old one. macos_min_version.sh decides the floor the archives are
+          # compiled against, so a parsing change has to miss this cache too.
+          key: openssl-static-${{ runner.arch }}-${{ env.MACOS_MIN_VERSION }}-${{ hashFiles('.github/bin/build_static_openssl.sh', '.github/bin/check_min_os.sh', '.github/bin/macos_min_version.sh') }}
 
       - name: Build static OpenSSL
         if: runner.arch == 'X64' && steps.cache-asadm-asinfo.outputs.cache-hit != 'true' && steps.cache-openssl.outputs.cache-hit != 'true'
@@ -456,9 +453,11 @@ jobs:
           # prefix and fail much further downstream.
           openssl_dir="$RUNNER_TEMP/openssl-static"
           [[ -f "${openssl_dir}/lib/libcrypto.a" ]] || { echo "::error::no static OpenSSL at ${openssl_dir}" >&2; exit 1; }
-          echo "OPENSSL_DIR=${openssl_dir}" >> "$GITHUB_ENV"
-          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
-          echo "MACOSX_DEPLOYMENT_TARGET=${MACOS_MIN_VERSION}" >> "$GITHUB_ENV"
+          {
+            echo "OPENSSL_DIR=${openssl_dir}"
+            echo "OPENSSL_STATIC=1"
+            echo "MACOSX_DEPLOYMENT_TARGET=${MACOS_MIN_VERSION}"
+          } >> "$GITHUB_ENV"
 
       - name: Pipenv setup
         if: steps.cache-asadm-asinfo.outputs.cache-hit != 'true'
