@@ -10,10 +10,8 @@ name: Copy aerospike-asadm images to Docker Hub
 #   tags:       <release>, <release>-amd64, <release>-arm64
 #   alias-from: <release>
 #   alias-tags: <MAJOR.MINOR.PATCH>, latest
-# Derived tags require git tag <VERSION> (create-tag is tag-last). Pass
-# explicit tags to copy a different already-published set. alias-tags of
-# "none" (or "-") skips Hub aliases. Non-rc pre-releases cannot default
-# alias-tags to <semver>,latest.
+# Derived tags require git tag <VERSION>. Pass explicit tags to copy a
+# different set. alias-tags of "none" skips Hub aliases.
 
 on:
   workflow_dispatch:
@@ -40,7 +38,7 @@ on:
         required: false
         default: ""
       alias-tags:
-        description: Extra destination tags based on alias-from. Empty = "<semver>,latest" from VERSION. "none" or "-" disables aliases.
+        description: Extra destination tags based on alias-from. Empty = "<semver>,latest". "none" disables aliases.
         required: false
         default: ""
 
@@ -51,9 +49,6 @@ permissions:
 jobs:
   copy:
     runs-on: ubuntu-24.04
-    # Hub writes use the same protected environment as create-tag. Dry-run
-    # skips it so a PR-branch inspect does not need deploy-to-master.
-    environment: ${{ !inputs.dry-run && 'deploy-to-master' || fromJSON('null') }}
     permissions:
       contents: read
       id-token: write
@@ -85,16 +80,61 @@ jobs:
             echo "::error::VERSION file is empty." >&2
             exit 1
           fi
-          tag_exists=false
-          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
-            tag_exists=true
+          if [[ ! "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            echo "::error::VERSION '$VERSION' does not start with MAJOR.MINOR.PATCH." >&2
+            exit 1
           fi
-          .github/bin/resolve_copy_tags.sh \
-            "$VERSION" \
-            "${TAGS_INPUT:-}" \
-            "${ALIAS_FROM_INPUT:-}" \
-            "${ALIAS_TAGS_INPUT:-}" \
-            "$tag_exists" | tee -a "$GITHUB_OUTPUT"
+          SEMVER="${BASH_REMATCH[1]}"
+          PKG_VERSION=$(.github/bin/pkg_release.sh "$VERSION" version)
+          RELEASE=$(.github/bin/pkg_release.sh "$VERSION" release)
+
+          trim() {
+            local value="$1"
+            value="${value#"${value%%[![:space:]]*}"}"
+            value="${value%"${value##*[![:space:]]}"}"
+            printf '%s' "$value"
+          }
+
+          tags="$(trim "${TAGS_INPUT:-}")"
+          if [[ -z "$tags" ]]; then
+            if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+              echo "::error::VERSION ${VERSION} has no release tag — pass explicit tags or dispatch on the release tag." >&2
+              exit 1
+            fi
+            tags="${RELEASE},${RELEASE}-amd64,${RELEASE}-arm64"
+          fi
+
+          alias_from="$(trim "${ALIAS_FROM_INPUT:-}")"
+          if [[ -z "$alias_from" ]]; then
+            alias_from="$RELEASE"
+          fi
+
+          alias_tags="$(trim "${ALIAS_TAGS_INPUT:-}")"
+          if [[ "$alias_tags" == "none" || "$alias_tags" == "-" ]]; then
+            alias_tags=""
+          elif [[ -z "$alias_tags" ]]; then
+            if [[ "$PKG_VERSION" != "$SEMVER" ]]; then
+              echo "::error::VERSION '$VERSION' carries a non-rc pre-release identifier; pass alias-tags explicitly (or 'none')." >&2
+              exit 1
+            fi
+            alias_tags="${SEMVER},latest"
+          fi
+
+          {
+            echo "version=$VERSION"
+            echo "semver=$SEMVER"
+            echo "release=$RELEASE"
+            echo "tags=$tags"
+            echo "alias-from=$alias_from"
+            echo "alias-tags=$alias_tags"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "VERSION file: $VERSION"
+          echo "semver:       $SEMVER"
+          echo "release tag:  $RELEASE"
+          echo "tags:         $tags"
+          echo "alias-from:   $alias_from"
+          echo "alias-tags:   $alias_tags"
 
       - name: Install JFrog CLI
         id: jf
