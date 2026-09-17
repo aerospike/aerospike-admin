@@ -743,7 +743,7 @@ class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
             return {"10.71.71.169:3000": "3.6.0"}
 
         if cmd == "node":
-            return {"10.71.71.169:3000": "BB93039BC7AC40C"}
+            return self.node_ids
 
         if cmd == "partition-info":
             return self.partition_info
@@ -757,6 +757,7 @@ class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
             "lib.live_cluster.client.cluster.Cluster", AsyncMock()
         ).start()
         self.partition_info = {}
+        self.node_ids = {"10.71.71.169:3000": "BB93039BC7AC40C"}
         cluster_mock.info_statistics.return_value = {
             "10.71.71.169:3000": {"cluster_key": "ck"}
         }
@@ -825,6 +826,29 @@ class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
         expected_output["10.71.71.169:3000"]["test"]["unavailable_partitions"] = "0"
         actual_output = await self.controller.get_pmap()
         self.assertEqual(expected_output, actual_output)
+
+    async def test_get_pmap_keeps_partition_info_exceptions(self):
+        """collectinfo records which nodes lost partition-info, so it needs the
+        exception rather than a node key that quietly disappeared."""
+        error = TimeoutError("partition-info timed out")
+        self.partition_info = {"10.71.71.169:3000": error}
+
+        self.assertEqual({}, await self.controller.get_pmap())
+        self.assertEqual(
+            {"10.71.71.169:3000": error},
+            await self.controller.get_pmap(keep_exceptions=True),
+        )
+
+    async def test_get_pmap_skips_a_node_whose_node_id_failed(self):
+        """An exception from the 'node' call never equals working_master, which
+        would otherwise report every partition as a prole."""
+        self.node_ids = {"10.71.71.169:3000": TimeoutError("node timed out")}
+        self.partition_info = {
+            "10.71.71.169:3000": "namespace:partition:state:replica:n_dupl:working_master:emigrates:immigrates:records:tombstones:version:final_version;"
+            "test:0:S:0:0:BB93039BC7AC40C:0:0:0:0:0:0"
+        }
+
+        self.assertEqual({}, await self.controller.get_pmap())
 
 
 class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
