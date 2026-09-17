@@ -791,11 +791,11 @@ class SheetTest(unittest.TestCase):
         self.assertEqual(record["P"]["raw"], p)
 
         self.assertEqual(record["U"]["converted"], "2.000 B")
-        self.assertEqual(record["K"]["converted"], "2.000 KB")
-        self.assertEqual(record["M"]["converted"], "2.000 MB")
-        self.assertEqual(record["G"]["converted"], "2.000 GB")
-        self.assertEqual(record["T"]["converted"], "2.000 TB")
-        self.assertEqual(record["P"]["converted"], "2.000 PB")
+        self.assertEqual(record["K"]["converted"], "2.000 KiB")
+        self.assertEqual(record["M"]["converted"], "2.000 MiB")
+        self.assertEqual(record["G"]["converted"], "2.000 GiB")
+        self.assertEqual(record["T"]["converted"], "2.000 TiB")
+        self.assertEqual(record["P"]["converted"], "2.000 PiB")
 
     def test_sheet_formatters(self):
         red = 1000
