@@ -2465,7 +2465,7 @@ class CliView(object):
                         f"{terminal.fg_red()}({license_value}) ?{terminal.fg_clear()}"
                     )
 
-                s += f"Latest ({time_str}): {license_value}  Min: {file_size.size(license_dict['min'])} Max: {file_size.size(license_dict['max'])} Avg: {file_size.size(license_dict['avg'])}"
+                s += f"Latest ({time_str}): {license_value}  Min: {file_size.size(license_dict['min']).strip()} Max: {file_size.size(license_dict['max']).strip()} Avg: {file_size.size(license_dict['avg']).strip()}"
 
             except Exception:
                 # license_data was manually computed by asadm
