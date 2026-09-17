@@ -253,7 +253,7 @@ class TestCollectinfo(unittest.IsolatedAsyncioTestCase):
         live_mode_cmds.append(collectinfo_cmd)
         cmds = "; ".join(live_mode_cmds)
         live_mode_cp = util.run_asadm(
-            f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmds}' -Uadmin -Padmin --json --pmap --timeout 20"
+            f"-h {lib.SERVER_IP}:{lib.PORT} -e '{cmds}' -Uadmin -Padmin --json --timeout 20"
         )
 
         # with open("out.txt", "w") as f:

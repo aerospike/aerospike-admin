@@ -63,6 +63,28 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
                     )
                 )
 
+    def test_as_stat_has_aerospike_data(self):
+        self.assertFalse(util.as_stat_has_aerospike_data({}))
+        self.assertTrue(
+            util.as_stat_has_aerospike_data({"statistics": {"service": {"a": "1"}}})
+        )
+
+        # pmap is collected unconditionally, so a node that answered nothing else
+        # still counts as a node that returned no data (TOOLS-4157).
+        self.assertFalse(
+            util.as_stat_has_aerospike_data(
+                {"pmap": {"test": {"master_partition_count": 4096}}}
+            )
+        )
+        self.assertTrue(
+            util.as_stat_has_aerospike_data(
+                {
+                    "pmap": {"test": {"master_partition_count": 4096}},
+                    "statistics": {"service": {"a": "1"}},
+                }
+            )
+        )
+
     def test_get_value_from_dict(self):
         value = {"a": 123, "b": "8.9", "c": "abc"}
 

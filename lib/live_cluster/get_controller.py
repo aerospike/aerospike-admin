@@ -1066,7 +1066,7 @@ class GetPmapController:
             ck = cluster_keys[_node]
             node_id = node_ids[_node]
 
-            if isinstance(partitions, Exception):
+            if isinstance(partitions, Exception) or isinstance(node_id, Exception):
                 continue
 
             f_indices = {}
@@ -1178,7 +1178,9 @@ class GetPmapController:
 
         return pmap_data
 
-    async def get_pmap(self, nodes="all"):
+    async def get_pmap(self, nodes="all", keep_exceptions=False):
+        """keep_exceptions preserves per-node partition-info Exception values instead
+        of dropping the node key, so collectinfo can record which nodes failed."""
         getter = GetStatisticsController(self.cluster)
         service_stats = asyncio.create_task(getter.get_service(nodes=nodes))
         namespace_stats = asyncio.create_task(
@@ -1200,9 +1202,15 @@ class GetPmapController:
                 )
 
         ns_info = self._get_namespace_data(await namespace_stats, cluster_keys)
+        pmap_info = await pmap_info
         pmap_data = self._get_pmap_data(
-            await pmap_info, ns_info, cluster_keys, await node_ids
+            pmap_info, ns_info, cluster_keys, await node_ids
         )
+
+        if keep_exceptions:
+            for node, partitions in pmap_info.items():
+                if isinstance(partitions, Exception):
+                    pmap_data[node] = partitions
 
         return pmap_data
 

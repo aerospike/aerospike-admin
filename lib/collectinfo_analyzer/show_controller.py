@@ -1428,15 +1428,22 @@ class ShowPmapController(CollectinfoCommandController):
 
     def _do_default(self, line):
         pmap_data = self.log_handler.info_pmap()
+        rendered = False
 
         for timestamp in sorted(pmap_data.keys()):
             if not pmap_data[timestamp]:
                 continue
 
+            rendered = True
             self.view.show_pmap(
                 pmap_data[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
+            )
+
+        if not rendered:
+            logger.warning(
+                "Partition map data was not written to collectinfo files by asadm before 5.1.0."
             )
 
 
