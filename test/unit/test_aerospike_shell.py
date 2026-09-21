@@ -135,6 +135,55 @@ class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
         mock_logger.error.assert_not_called()
         self.assertIn("Parked by checkpoint-save", mock_logger.warning.call_args[0][0])
 
+    async def test_live_cluster_init_succeeds_with_only_a_parked_node_interactively(
+        self,
+    ):
+        """
+        Every startup diagnostic fans out through the Cluster, which refuses the call
+        when no node is live. Interactively that raised out of __init__ and killed the
+        session with a traceback - the one session 'manage checkpoint status' needs.
+        The mock has none of the diagnostic methods, so reaching any of them fails.
+        """
+        parked = Mock()
+        parked.key = "1.1.1.1:3000"
+
+        class ClusterMock:
+            def get_live_nodes(*args, **kwargs):
+                return []
+
+            def get_parked_nodes(*args, **kwargs):
+                return [parked]
+
+            def has_admin_nodes(*args, **kwargs):
+                return False
+
+            def __str__(self):
+                return "Offline: 1.1.1.1:3000"
+
+        class MockLiveClusterRootController(async_object.AsyncObject):
+            async def __init__(self, *args, **kwargs):
+                self.cluster = ClusterMock()
+
+        patch(
+            "asadm.LiveClusterRootController",
+            MockLiveClusterRootController,
+        ).start()
+        mock_logger = patch("asadm.logger", autospec=True).start()
+        patch("readline.read_history_file", Mock()).start()
+        patch("readline.write_history_file", Mock()).start()
+        self.addCleanup(patch.stopall)
+
+        shell = await AerospikeShell(  # type: ignore
+            "test-version",
+            seeds=[("1.1.1.1", 3000, None)],
+        )
+
+        self.assertTrue(shell.connected)
+        mock_logger.error.assert_not_called()
+        mock_logger.critical.assert_not_called()
+        self.assertIn("Offline: 1.1.1.1:3000", shell.intro)
+        self.assertIn("Parked by checkpoint-save", mock_logger.warning.call_args[0][0])
+
     async def test_admin_port_visual_cue_prompt_switching(self):
         """Test admin port visual cue functionality - prompt switching based on admin nodes"""
 
