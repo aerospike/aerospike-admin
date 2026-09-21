@@ -32,6 +32,7 @@ from lib.live_cluster.client import (
     ASInfoCheckpointParkedError,
     ASInfoConfigError,
     ASInfoError,
+    ASInfoNotAuthenticatedError,
     ASInfoResponseError,
 )
 from lib.live_cluster.client.assocket import ASSocket
@@ -40,6 +41,7 @@ from lib.live_cluster.client.ctx import CDTContext, CTXItems
 from lib.live_cluster.client.msgpack import pack_ael_expression
 from lib.live_cluster.client.node import _SysCmd, Node
 from lib.live_cluster.client.types import (
+    ASProtocolConnectionError,
     ASProtocolError,
     ASProtocolExcFactory,
     ASResponse,
@@ -6552,6 +6554,62 @@ class NodeConnectFailureTimestampTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(node.alive)
         self.assertIsNone(node.last_connect_failure)
+
+    async def test_connect_timeout_records_the_time(self):
+        # A hung node costs a full --timeout per attempt, so it is stamped like any
+        # other failure rather than retried on the next crawl.
+        self.info_mock.side_effect = asyncio.TimeoutError()
+
+        node = await Node("192.1.1.1", timeout=0)
+
+        self.assertFalse(node.alive)
+        self.assertIsNotNone(node.last_connect_failure)
+
+    async def _connected_node(self):
+        self.info_mock.side_effect = None
+        self.info_mock.return_value = {
+            "node": "A00000000000000",
+            "build": "8.2.0.0",
+            "peers-generation": "1",
+            "service-clear-std": "192.1.1.1:3000",
+            "peers-clear-std": "1,3000,[]",
+        }
+
+        with patch.object(
+            Node, "_node_connect", new_callable=AsyncMock
+        ) as node_connect_mock:
+            node_connect_mock.return_value = (
+                "A00000000000000",
+                [("192.1.1.1", 3000, None)],
+                [],
+                "1",
+            )
+            node = await Node("192.1.1.1", timeout=0)
+
+        self.assertTrue(node.alive)
+        return node
+
+    async def test_auth_failure_on_refresh_is_re_raised_and_enters_the_backoff(self):
+        # Expired password, expired session and not-whitelisted recur on every
+        # attempt. connect re-raises so the caller can say why, but the node must
+        # still go not-alive and stamped, or the refresh retries it every command.
+        errors = [
+            ASProtocolConnectionError(ASResponse.EXPIRED_SESSION, "Login failed"),
+            ASInfoNotAuthenticatedError(
+                "Connection failed", "ERROR:80:not authenticated"
+            ),
+        ]
+
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                node = await self._connected_node()
+                self.info_mock.side_effect = error
+
+                with self.assertRaises(type(error)):
+                    await node.refresh_connection()
+
+                self.assertFalse(node.alive)
+                self.assertIsNotNone(node.last_connect_failure)
 
 
 class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):

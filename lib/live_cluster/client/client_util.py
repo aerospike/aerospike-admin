@@ -213,13 +213,22 @@ def parse_peers_string(
     return peers_list
 
 
-async def concurrent_map(func, data):
+async def concurrent_map(func, data, limit=None):
     """
     Similar to the builtin function map(). But run a coroutine for each argument
-    and apply 'func' concurrently.
+    and apply 'func' concurrently, at most 'limit' at a time when one is given.
     """
 
-    return await asyncio.gather(*(func(d) for d in data))
+    if limit is None:
+        return await asyncio.gather(*(func(d) for d in data))
+
+    semaphore = asyncio.Semaphore(limit)
+
+    async def bounded(d):
+        async with semaphore:
+            return await func(d)
+
+    return await asyncio.gather(*(bounded(d) for d in data))
 
 
 def flatten(list1):

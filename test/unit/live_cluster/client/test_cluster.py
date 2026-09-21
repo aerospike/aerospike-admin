@@ -1268,15 +1268,33 @@ class ClusterDeadNodeRefreshTest(unittest.IsolatedAsyncioTestCase):
         node = MagicMock()
         node.ip = ip
         node.port = 3000
+        node.tls_name = None
         node.key = "{}:3000".format(ip)
+        node.node_id = "BB9{}".format(ip.replace(".", ""))
+        node.sock_name = MagicMock(return_value=node.key)
         node.alive = alive
         # Just failed, so the backoff applies unless a test says otherwise.
         node.last_connect_failure = None if alive else time()
         node.needs_refresh = AsyncMock(return_value=True)
         node.refresh_connection = AsyncMock()
+        node.close = AsyncMock()
         node.service_addresses = [(ip, 3000, None)]
         node.peers = []
         return node
+
+    def _patch_node_factory(self, make):
+        """Replace Node construction in the crawl with 'make', an async callable."""
+        node_cls = patch("lib.live_cluster.client.cluster.Node").start()
+        node_cls.create_key = Node.create_key
+        node_cls.side_effect = make
+        return node_cls
+
+    async def _cluster_with_peer(self, *endpoints):
+        """One live node whose only peer is reachable at 'endpoints'."""
+        live = self._make_node("192.1.1.2", alive=True)
+        live.needs_refresh = AsyncMock(return_value=False)
+        live.peers = [tuple((ip, 3000, None) for ip in endpoints)]
+        return await self._cluster_with(live)
 
     async def test_find_new_nodes_refreshes_nodes_concurrently(self):
         cluster = await Cluster([("192.1.1.1", 3000, None)])
@@ -1369,6 +1387,131 @@ class ClusterDeadNodeRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("192.1.1.9:3000", cluster.nodes)
         self.assertIs(cluster.nodes[moved.key], moved)
+
+    async def test_node_whose_refresh_failed_auth_enters_the_backoff(self):
+        # Node.connect goes not-alive and stamps the failure before re-raising an
+        # auth error, so the next refresh inside the interval must skip the node
+        # rather than pay another login attempt on every command.
+        failing = self._make_node("192.1.1.1", alive=True)
+
+        async def fail_auth():
+            failing.alive = False
+            failing.last_connect_failure = time()
+            raise ASInfoNotAuthenticatedError(
+                "Not authenticated", "ERROR:80:not authenticated"
+            )
+
+        failing.refresh_connection = AsyncMock(side_effect=fail_auth)
+        live = self._make_node("192.1.1.2", alive=True)
+        cluster = await self._cluster_with(failing, live)
+
+        with self.assertRaises(ASInfoNotAuthenticatedError):
+            await cluster.find_new_nodes()
+        await cluster.find_new_nodes()
+
+        failing.refresh_connection.assert_called_once()
+
+    async def test_spare_endpoint_of_a_dead_peer_is_not_re_attempted_within_the_backoff(
+        self,
+    ):
+        # Only the last endpoint tried is stored as a dead node, and find_new_nodes
+        # rebuilds aliases from that node's single address, so the spare endpoint
+        # has nothing in self.nodes carrying its failure. Without the crawl's own
+        # clock it costs a full connect timeout on every crawl.
+        cluster = await self._cluster_with_peer("192.1.1.9", "192.1.1.10")
+        attempts = []
+
+        async def dead_node(addr, port=3000, **kwargs):
+            attempts.append(addr)
+            return self._make_node(addr, alive=False)
+
+        self._patch_node_factory(dead_node)
+
+        await cluster._crawl()
+        await cluster._crawl()
+
+        self.assertEqual(attempts, ["192.1.1.9", "192.1.1.10"])
+
+    async def test_spare_endpoint_of_a_dead_peer_is_re_attempted_after_the_backoff(
+        self,
+    ):
+        cluster = await self._cluster_with_peer("192.1.1.9", "192.1.1.10")
+        attempts = []
+
+        async def dead_node(addr, port=3000, **kwargs):
+            attempts.append(addr)
+            return self._make_node(addr, alive=False)
+
+        self._patch_node_factory(dead_node)
+
+        await cluster._crawl()
+        later = time() + DEAD_NODE_RETRY_INTERVAL
+        with patch("lib.live_cluster.client.cluster.time", return_value=later):
+            await cluster._crawl()
+
+        self.assertEqual(attempts, ["192.1.1.9", "192.1.1.10", "192.1.1.9"])
+
+    async def test_peer_that_fails_auth_at_registration_enters_the_backoff(self):
+        # Node() raises here instead of returning a dead node, so nothing is stored
+        # and the crawl's clock is all that stands between it and a login attempt,
+        # plus an error line, on every crawl.
+        cluster = await self._cluster_with_peer("192.1.1.9")
+
+        async def refuse_login(*args, **kwargs):
+            raise ASInfoNotAuthenticatedError(
+                "Not authenticated", "ERROR:80:not authenticated"
+            )
+
+        node_cls = self._patch_node_factory(refuse_login)
+
+        await cluster._crawl()
+        await cluster._crawl()
+
+        self.assertEqual(node_cls.call_count, 1)
+
+    async def test_with_nothing_alive_registration_ignores_the_backoff(self):
+        # Same rule as find_new_nodes: with no live node there is no command to
+        # protect, so a seed that just failed is still retried.
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        cluster.nodes = {}
+        cluster.aliases = {}
+        cluster._record_endpoint_failure("192.1.1.1", 3000)
+
+        async def live_node(addr, port=3000, **kwargs):
+            return self._make_node(addr, alive=True)
+
+        node_cls = self._patch_node_factory(live_node)
+
+        await cluster._crawl()
+
+        self.assertEqual(node_cls.call_count, 1)
+
+    async def test_registration_is_capped_at_the_refresh_concurrency(self):
+        # Every registration is a connect attempt, the same cost find_new_nodes caps.
+        # With asyncio.sleep(0) in the factory exactly NODE_REFRESH_CONCURRENCY
+        # constructions start before any finishes, so equality is deterministic.
+        cluster = await self._cluster_with_peer(
+            *("192.1.2.{}".format(i) for i in range(NODE_REFRESH_CONCURRENCY + 4))
+        )
+        live = next(iter(cluster.nodes.values()))
+        live.peers = [(endpoint,) for endpoint in live.peers[0]]
+        in_flight = 0
+        peak = 0
+
+        async def slow_node(addr, port=3000, **kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return self._make_node(addr, alive=True)
+
+        self._patch_node_factory(slow_node)
+
+        await cluster._crawl()
+
+        self.assertGreater(peak, 1)
+        self.assertEqual(peak, NODE_REFRESH_CONCURRENCY)
 
     async def test_node_that_never_failed_is_always_refreshed(self):
         # last_connect_failure is None until a connect actually fails, so a node the

@@ -51,6 +51,13 @@ NODE_REFRESH_CONCURRENCY = 16
 logger = logging.getLogger(__name__)
 
 
+def _backoff_elapsed(last_failure) -> bool:
+    if last_failure is None:
+        return True
+
+    return time() - last_failure >= DEAD_NODE_RETRY_INTERVAL
+
+
 class DownNodesResult(NamedTuple):
     """failed_nodes holds live nodes whose peer queries failed: their alumni
     view is unknown, so down_nodes may be incomplete."""
@@ -105,6 +112,10 @@ class Cluster(AsyncObject):
 
         self._seed_nodes: set[Addr_Port_TLSName] = set(seed_nodes)
         self._live_nodes: set[Addr_Port_TLSName] = set()
+        # Endpoints the crawl tried and failed to bring up, keyed like aliases. A
+        # peer that raised, or a spare endpoint of one that came up dead, is never
+        # stored in self.nodes, so nothing there carries its last failure.
+        self._endpoint_failures: dict[str, float] = {}
         self.ssl_context = ssl_context
         self.user_agent = user_agent
 
@@ -413,12 +424,17 @@ class Cluster(AsyncObject):
     @staticmethod
     def _should_retry_dead_node(node) -> bool:
         """True once the last connect failure is DEAD_NODE_RETRY_INTERVAL old."""
-        last_failure = node.last_connect_failure
+        return _backoff_elapsed(node.last_connect_failure)
 
-        if last_failure is None:
-            return True
+    def _should_retry_endpoint(self, addr, port) -> bool:
+        return _backoff_elapsed(
+            self._endpoint_failures.get(Node.create_key(addr, port))
+        )
 
-        return time() - last_failure >= DEAD_NODE_RETRY_INTERVAL
+    def _record_endpoint_failure(self, addr, port, when=None):
+        self._endpoint_failures[Node.create_key(addr, port)] = (
+            time() if when is None else when
+        )
 
     async def _refresh_node(self, node, apply_backoff=True):
         if apply_backoff and not node.alive and not self._should_retry_dead_node(node):
@@ -522,12 +538,22 @@ class Cluster(AsyncObject):
             all_services = set()
             visited = set()
             unvisited = set(nodes_to_add)
+            # Same rule as find_new_nodes: with nothing alive there is no command to
+            # protect, so every endpoint is tried.
+            apply_backoff = any(node.alive for node in self.nodes.values())
+            self._endpoint_failures = {
+                key: when
+                for key, when in self._endpoint_failures.items()
+                if not _backoff_elapsed(when)
+            }
 
             while unvisited - visited:
                 l_unvisited = list(unvisited)
                 logger.debug("Attempting to add nodes to the cluster: %s", l_unvisited)
                 nodes = await client_util.concurrent_map(
-                    self._register_node, l_unvisited
+                    lambda endpoint: self._register_node(endpoint, apply_backoff),
+                    l_unvisited,
+                    limit=NODE_REFRESH_CONCURRENCY,
                 )
                 live_nodes = [
                     node
@@ -690,20 +716,24 @@ class Cluster(AsyncObject):
         for node in self.nodes.values():
             node.set_timeout(timeout)
 
-    async def _register_node(self, addr_port_tls):
+    async def _register_node(self, addr_port_tls, apply_backoff=True):
         if not addr_port_tls:
             return None
         if not isinstance(addr_port_tls, tuple):
             return None
         if not isinstance(addr_port_tls[0], tuple):
-            return await self._create_node(addr_port_tls, force=True)
+            return await self._create_node(
+                addr_port_tls, force=True, apply_backoff=apply_backoff
+            )
 
         new_node = None
         for i, a_p_t in enumerate(addr_port_tls):
             if i == len(addr_port_tls) - 1:
-                new_node = await self._create_node(a_p_t, force=True)
+                new_node = await self._create_node(
+                    a_p_t, force=True, apply_backoff=apply_backoff
+                )
             else:
-                new_node = await self._create_node(a_p_t)
+                new_node = await self._create_node(a_p_t, apply_backoff=apply_backoff)
             if not new_node:
                 continue
             else:
@@ -727,13 +757,17 @@ class Cluster(AsyncObject):
             pass
         return None
 
-    async def _create_node(self, addr_port_tls: Addr_Port_TLSName, force=False):
+    async def _create_node(
+        self, addr_port_tls: Addr_Port_TLSName, force=False, apply_backoff=True
+    ):
         """
         Instantiate and return a new node
 
         If cannot instantiate node, return None.
         Creates a new node if:
            1) key(addr,port) is not available in self.aliases
+           2) apply_backoff is False, or the endpoint has not failed to connect
+              within DEAD_NODE_RETRY_INTERVAL
         """
         try:
             # tuple of length 3 for server version >= 3.10.0 (with tls name)
@@ -768,6 +802,15 @@ class Cluster(AsyncObject):
                 # else
                 # Will create node again
 
+            if apply_backoff and not self._should_retry_endpoint(addr, port):
+                logger.debug(
+                    "%s:%s failed to connect less than %ss ago, skipping",
+                    addr,
+                    port,
+                    DEAD_NODE_RETRY_INTERVAL,
+                )
+                return None
+
             # if not existing:
             new_node = await Node(
                 addr,
@@ -786,16 +829,21 @@ class Cluster(AsyncObject):
             if not new_node:
                 return new_node
             if not new_node.alive:
+                self._record_endpoint_failure(addr, port, new_node.last_connect_failure)
                 if not force:
                     # Check other endpoints
                     await new_node.close()
                     return None
+            else:
+                self._endpoint_failures.pop(Node.create_key(addr, port), None)
             self.update_node(new_node)
             self.update_aliases(self.aliases, new_node.service_addresses, new_node.key)
             return new_node
         except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
+            self._record_endpoint_failure(addr, port)
             logger.error(e)
         except Exception as e:
+            self._record_endpoint_failure(addr, port)
             logger.debug(e, exc_info=True)
         return None
 

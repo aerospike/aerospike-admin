@@ -271,6 +271,23 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             list(result), expected, "concurrent_map did not return the expected result"
         )
 
+    async def test_concurrent_map_limit_caps_in_flight_calls(self):
+        in_flight = 0
+        peak = 0
+
+        async def record(v):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return v * v
+
+        result = await client_util.concurrent_map(record, range(10), limit=3)
+
+        self.assertEqual(list(result), [v * v for v in range(10)])
+        self.assertEqual(peak, 3)
+
     def test_flatten(self):
         value = [
             (("172.17.0.1", 3000, None),),

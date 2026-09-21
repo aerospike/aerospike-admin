@@ -673,6 +673,10 @@ class Node(AsyncObject):
             self.alive = True
             self.last_connect_failure = None
         except (ASInfoNotAuthenticatedError, ASProtocolError):
+            # Bad credentials recur on every attempt, so the node enters the same
+            # backoff as an unreachable one. Re-raised so the caller can say why.
+            self.alive = False
+            self.last_connect_failure = time.time()
             raise
         except Exception as e:
             logger.debug(e, exc_info=True)  # type: ignore
