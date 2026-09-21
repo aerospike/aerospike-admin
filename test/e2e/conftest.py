@@ -17,7 +17,7 @@
 # per-test stop()/start() the next module has come up with a strong-consistency
 # roster that still named the departed node ("Node not found for partition
 # test_sc:<pid>"). Nothing may depend on cluster state after these run.
-DESTRUCTIVE_MODULES = ("test_checkpoint.py", "test_down_node.py")
+DESTRUCTIVE_MODULES = ("test_checkpoint.py",)
 
 
 def pytest_collection_modifyitems(items):
