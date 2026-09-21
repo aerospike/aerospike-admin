@@ -33,7 +33,9 @@ from lib.view import terminal
 from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.utils.lookup_dict import PrefixDict
+from lib.utils.exit_code import set_exit_code
 from .client import (
+    ASInfoCheckpointError,
     ASInfoResponseError,
     ASInfoError,
     ASProtocolError,
@@ -3289,10 +3291,11 @@ class ManageCheckpointController(ManageCheckpointLeafController):
     "default.",
     "Quiesce the node first ('manage quiesce', then 'manage recluster', wait for",
     "migrations) so its departure does not trigger migrations.",
-    "A node that stops answering is polled for at least another {} seconds before".format(
+    "A node that stops answering is polled for up to another {} seconds, or".format(
         client_constants.CHECKPOINT_UNREACHABLE_GRACE_SEC
     ),
-    "it is reported with its checkpoint result unknown.",
+    "until --timeout elapses, whichever is sooner, before its checkpoint result",
+    "is reported unknown.",
     modifiers=(
         ModifierHelp(
             "--timeout",
@@ -3483,11 +3486,12 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
 
         if not no_wait and timeout - self.POLL_MARGIN_SEC < poll_interval:
             logger.warning(
-                "--timeout %s leaves less than one %s second poll of park to observe, "
-                "so this may stop polling before the node parks. Use a longer "
-                "--timeout, or --no-wait and follow it with 'manage checkpoint "
-                "status'.",
+                "--timeout %s is short: asadm stops polling %s seconds before the park "
+                "window elapses, leaving about one %s second poll, so it will likely "
+                "stop before the node parks. Use a longer --timeout, or --no-wait and "
+                "follow it with 'manage checkpoint status'.",
                 timeout,
+                self.POLL_MARGIN_SEC,
                 poll_interval,
             )
 
@@ -3550,12 +3554,12 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                     last_answer[key] = now
                     last_error.pop(key, None)
 
-                # A server ERROR is still an answer. Only a failed connection counts
-                # toward the unreachable grace. ASInfoResponseError is the one that
-                # carries an "ERROR:" the server sent; the ASInfoError base is also
-                # raised locally for a response asadm could not use.
+                # A server ERROR about this command is still an answer. Only a failed
+                # connection counts toward the unreachable grace. ASInfoCheckpointError
+                # is what info_checkpoint_status raises from a server "ERROR:"; wider
+                # families (not authenticated, local parse errors) are not answers.
                 for key, error in errors.items():
-                    if isinstance(error, ASInfoResponseError):
+                    if isinstance(error, ASInfoCheckpointError):
                         last_answer[key] = now
 
                 # Errors are expected mid-poll (a parked node refuses, a reaped one
@@ -3688,15 +3692,18 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                     if s["state"] not in self.TERMINAL_STATES
                 ]
                 logger.warning(
-                    "%s has not answered checkpoint-status for %s seconds "
-                    "(last poll: %s). Namespace(s) %s unknown - if it is still "
-                    "running, follow it with 'manage checkpoint status'; if it was "
-                    "stopped, check its server log.",
+                    "%s has not answered checkpoint-status for at least %s seconds "
+                    "(last poll: %s). Checkpoint result unknown for namespace(s): %s. "
+                    "If it is still running, follow it with 'manage checkpoint "
+                    "status'; if it was stopped, check its server log.",
                     node.key,
                     unreachable_grace,
                     self._last_poll(last_error, node.key, "no response"),
                     ", ".join(unknown) if unknown else "none reported",
                 )
+                # Unknown is not success: a '&& systemctl stop' chain must not proceed
+                # on it. The text stays a warning because asadm is not asserting failure.
+                set_exit_code(2)
 
                 continue
 
@@ -3710,6 +3717,7 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                     node.key,
                     self._last_poll(last_error, node.key, "no response"),
                 )
+                set_exit_code(2)
 
                 continue
 
@@ -3724,6 +3732,7 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                         "checkpointing - follow it with 'manage checkpoint status'.",
                         node.key,
                     )
+                    set_exit_code(2)
 
                 continue
 
@@ -3743,6 +3752,7 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                     ", ".join(unfinished),
                     self._last_poll(last_error, node.key),
                 )
+                set_exit_code(2)
             elif unfinished:
                 # Only reachable when parked, so the state is the server's own report.
                 logger.error(

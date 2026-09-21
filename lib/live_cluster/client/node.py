@@ -1241,8 +1241,9 @@ class Node(AsyncObject):
         async with self._borrow_socket(ip, port) as sock:
             try:
                 result = await sock.info(command)
-            except (OSError, SSL.Error) as e:
-                # A timeout is the node being slow, not a dead socket. On 3.11+
+            except OSError as e:
+                # info.py wraps every wire error, SSL included, in IOError. A timeout
+                # is the node being slow, not a dead socket. On 3.11+
                 # asyncio.TimeoutError subclasses OSError (TOOLS-3596).
                 if (
                     retry_stale
@@ -1267,14 +1268,16 @@ class Node(AsyncObject):
                 raise ASInfoError("Invalid command '%s'" % command)
 
     @async_return_exceptions
-    async def info(self, command):
+    async def info(self, command, retry_stale=True):
         """
         asinfo function equivalent but returns exceptions instead of raising them
 
         Arguments:
         command -- the info command to execute on this node
+        retry_stale -- False when asadm cannot know whether the command mutates, such
+        as text an operator typed into 'asinfo'.
         """
-        return await self._info(command)
+        return await self._info(command, retry_stale)
 
     async def _info(self, command, retry_stale=True):
         """
@@ -1984,7 +1987,7 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc)
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(ErrorsMsgs.DC_CREATE_FAIL, resp)
@@ -2013,7 +2016,7 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc)
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(ErrorsMsgs.DC_DELETE_FAIL, resp)
@@ -2069,7 +2072,7 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, namespace)
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(ErrorsMsgs.DC_NS_REMOVE_FAIL, resp)
@@ -2091,7 +2094,7 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, node)
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(ErrorsMsgs.DC_NODE_ADD_FAIL, resp)
@@ -2113,7 +2116,7 @@ class Node(AsyncObject):
             req = req.replace("dc", "datacenter")
 
         req = req.format(dc, node)
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(ErrorsMsgs.DC_NODE_REMOVE_FAIL, resp)
@@ -4092,7 +4095,7 @@ class Node(AsyncObject):
         return jobs
 
     @async_return_exceptions
-    async def _jobs_helper(self, old_req, new_req):
+    async def _jobs_helper(self, old_req, new_req, retry_stale=True):
         req = None
 
         build = await self.info_build()
@@ -4108,7 +4111,7 @@ class Node(AsyncObject):
         else:
             req = old_req
 
-        return await self._info(req)
+        return await self._info(req, retry_stale)
 
     @async_return_exceptions
     async def info_query_show(self):
@@ -4170,7 +4173,7 @@ class Node(AsyncObject):
         """
         req = "jobs:module={};cmd=kill-job;trid={}".format(module, trid)
 
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError("Failed to kill job", resp)
@@ -4189,7 +4192,7 @@ class Node(AsyncObject):
         old_req = "jobs:module=scan;cmd=kill-job;trid={}".format(trid)
         new_req = "scan-abort:trid={}".format(trid)
 
-        resp = await self._jobs_helper(old_req, new_req)
+        resp = await self._jobs_helper(old_req, new_req, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError("Failed to kill job", resp)
@@ -4207,7 +4210,7 @@ class Node(AsyncObject):
         old_req = "jobs:module=query;cmd=kill-job;trid={}".format(trid)
         new_req = "query-abort:trid={}".format(trid)
 
-        resp = await self._jobs_helper(old_req, new_req)
+        resp = await self._jobs_helper(old_req, new_req, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError("Failed to kill job", resp)
@@ -4283,7 +4286,7 @@ class Node(AsyncObject):
         for param_name, param_value in func_params.items():
             req += ";{}={}".format(param_name, param_value)
 
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError("Failed to add masking rule", resp)
@@ -4298,7 +4301,7 @@ class Node(AsyncObject):
         req = "masking:namespace={};set={};bin={};type={};function=remove".format(
             namespace, set_, bin_, bin_type
         )
-        resp = await self._info(req)
+        resp = await self._info(req, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError("Failed to remove masking rule", resp)

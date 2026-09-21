@@ -230,9 +230,10 @@ class TestCheckpoint(unittest.TestCase):
 
         self.assertNotIn("cold-start", combined, combined)
         self.assertNotIn("No usable checkpoint", combined, combined)
-        # A short park is worth warning about, but it is not a failure.
+        # A short park is worth warning about, but asadm must not assert failure.
+        # The exit code is not asserted: a fast node reads 'done' on the first poll
+        # and exits 0, a slow one leaves through the deadline and exits 2.
         self.assertNotIn("ERROR", cp.stderr, cp.stderr)
-        self.assertEqual(cp.returncode, 0, combined)
 
     def test_interactive_session_seeded_at_a_parked_node_survives(self):
         """

@@ -1302,7 +1302,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_set_config_xdr_create_dc("DC1")
 
         self.info_mock.assert_called_with(
-            "set-config:context=xdr;dc=DC1;action=create", self.ip
+            "set-config:context=xdr;dc=DC1;action=create",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1314,7 +1317,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_set_config_xdr_create_dc("DC1")
 
         self.info_mock.assert_called_with(
-            "set-config:context=xdr;datacenter=DC1;action=create", self.ip
+            "set-config:context=xdr;datacenter=DC1;action=create",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1346,7 +1352,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_set_config_xdr_delete_dc("DC1")
 
         self.info_mock.assert_called_with(
-            "set-config:context=xdr;dc=DC1;action=delete", self.ip
+            "set-config:context=xdr;dc=DC1;action=delete",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1358,7 +1367,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_set_config_xdr_delete_dc("DC1")
 
         self.info_mock.assert_called_with(
-            "set-config:context=xdr;datacenter=DC1;action=delete", self.ip
+            "set-config:context=xdr;datacenter=DC1;action=delete",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1443,7 +1455,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
 
         self.info_mock.assert_called_with(
-            "set-config:context=xdr;dc=DC1;namespace=ns;action=remove", self.ip
+            "set-config:context=xdr;dc=DC1;namespace=ns;action=remove",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1454,7 +1469,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_set_config_xdr_remove_namespace("DC1", "ns")
 
         self.info_mock.assert_called_with(
-            "set-config:context=xdr;datacenter=DC1;namespace=ns;action=remove", self.ip
+            "set-config:context=xdr;datacenter=DC1;namespace=ns;action=remove",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1477,6 +1495,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;node-address-port=3.3.3.3:8000;action=add",
             self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1489,6 +1509,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(
             "set-config:context=xdr;datacenter=DC1;node-address-port=3.3.3.3:8000;action=add",
             self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1509,6 +1531,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;node-address-port=3.3.3.3:8000;action=remove",
             self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1521,6 +1545,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(
             "set-config:context=xdr;datacenter=DC1;node-address-port=3.3.3.3:8000;action=remove",
             self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, expected)
 
@@ -1532,6 +1558,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with(
             "set-config:context=xdr;dc=DC1;node-address-port=3.3.3.3:8000;action=remove",
             self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual.message, "Failed to remove node from XDR datacenter")
         self.assertEqual(actual.response, "Unknown error occurred")
@@ -4840,7 +4868,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_jobs_kill("foo", "123")
 
         self.info_mock.assert_called_with(
-            "jobs:module=foo;cmd=kill-job;trid=123", self.ip
+            "jobs:module=foo;cmd=kill-job;trid=123", self.ip, self.node.port, False
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -4851,7 +4879,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_jobs_kill("foo", "123")
 
         self.info_mock.assert_called_with(
-            "jobs:module=foo;cmd=kill-job;trid=123", self.ip
+            "jobs:module=foo;cmd=kill-job;trid=123", self.ip, self.node.port, False
         )
         self.assertEqual(actual, expected)
 
@@ -4863,7 +4891,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_scan_abort("123")
 
         self.node._jobs_helper.assert_called_with(
-            "jobs:module=scan;cmd=kill-job;trid=123", "scan-abort:trid=123"
+            "jobs:module=scan;cmd=kill-job;trid=123",
+            "scan-abort:trid=123",
+            retry_stale=False,
         )
         self.assertEqual(actual, expected)
 
@@ -4875,7 +4905,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_scan_abort("123")
 
         self.node._jobs_helper.assert_called_with(
-            "jobs:module=scan;cmd=kill-job;trid=123", "scan-abort:trid=123"
+            "jobs:module=scan;cmd=kill-job;trid=123",
+            "scan-abort:trid=123",
+            retry_stale=False,
         )
         self.assertEqual(actual, expected)
 
@@ -4887,7 +4919,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_query_abort("123")
 
         self.node._jobs_helper.assert_called_with(
-            "jobs:module=query;cmd=kill-job;trid=123", "query-abort:trid=123"
+            "jobs:module=query;cmd=kill-job;trid=123",
+            "query-abort:trid=123",
+            retry_stale=False,
         )
         self.assertEqual(actual, expected)
 
@@ -4899,7 +4933,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_query_abort("123")
 
         self.node._jobs_helper.assert_called_with(
-            "jobs:module=query;cmd=kill-job;trid=123", "query-abort:trid=123"
+            "jobs:module=query;cmd=kill-job;trid=123",
+            "query-abort:trid=123",
+            retry_stale=False,
         )
         self.assertEqual(actual, expected)
 
@@ -5135,7 +5171,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
 
         expected_req = "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*"
-        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.info_mock.assert_called_with(expected_req, self.ip, self.node.port, False)
         self.assertEqual(result, ASINFO_RESPONSE_OK)
 
     async def test_info_masking_add_rule_error(self):
@@ -5160,7 +5196,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         expected_req = (
             "masking:namespace=test;set=demo;bin=ssn;type=string;function=remove"
         )
-        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.info_mock.assert_called_with(expected_req, self.ip, self.node.port, False)
         self.assertEqual(result, ASINFO_RESPONSE_OK)
 
     async def test_info_masking_remove_rule_with_custom_type(self):
@@ -5174,7 +5210,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         expected_req = (
             "masking:namespace=test;set=demo;bin=ssn;type=number;function=remove"
         )
-        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.info_mock.assert_called_with(expected_req, self.ip, self.node.port, False)
         self.assertEqual(result, ASINFO_RESPONSE_OK)
 
     async def test_info_masking_remove_rule_error(self):
@@ -6280,14 +6316,33 @@ class StalePooledSocketRetryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get_conn_mock.await_count, 2)
         stale.close.assert_awaited()
 
-    async def test_ssl_error_on_a_pooled_socket_retries(self):
-        # What the customer's log showed: OpenSSL.SSL.SysCallError, Unexpected EOF.
-        stale = self._sock(True, info_error=SSL.SysCallError(-1, "Unexpected EOF"))
+    async def test_wrapped_ssl_error_on_a_pooled_socket_retries(self):
+        # The customer's log showed OpenSSL.SSL.SysCallError, Unexpected EOF. info.py
+        # wraps every wire error in IOError before it reaches sock.info, so that is
+        # the shape the retry actually sees.
+        stale = self._sock(True, info_error=IOError("Error: (-1, 'Unexpected EOF')"))
         fresh = self._sock(False, info_result="a=1")
 
         result, _ = await self._call([stale, fresh])
 
         self.assertEqual(result, "a=1")
+
+    async def test_info_passthrough_can_opt_out_of_the_retry(self):
+        # 'asinfo -v "truncate:..."' arrives as operator text; asadm cannot tell a
+        # read from a mutation, so the controller opts out and the flag must reach
+        # _info_cinfo positionally, which is the only way async_cached forwards it.
+        with patch.object(
+            self.node, "_info_cinfo", new_callable=AsyncMock
+        ) as info_cinfo_mock:
+            info_cinfo_mock.return_value = "ok"
+
+            await self.node.info("truncate:namespace=test", retry_stale=False)
+            info_cinfo_mock.assert_awaited_with(
+                "truncate:namespace=test", self.ip, self.port, False
+            )
+
+            await self.node.info("statistics")
+            info_cinfo_mock.assert_awaited_with("statistics", self.ip)
 
     async def test_retry_surfaces_the_original_error_when_it_fails_too(self):
         stale = self._sock(True, info_error=ConnectionResetError("reset by peer"))

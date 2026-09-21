@@ -143,6 +143,21 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             await cached_tester_exc()
         self.assertTrue(await cached_tester_exc())
 
+    async def test_async_cached_rejects_keyword_arguments(self):
+        # The cache key is the positional tuple, so a keyword would be dropped
+        # silently and the wrapped function would run with its default instead.
+        async def tester(arg, flag=True):
+            return (arg, flag)
+
+        cached_tester = util.async_cached(tester, ttl=5.0)
+
+        with self.assertRaises(TypeError) as context:
+            cached_tester(1, flag=False)
+
+        self.assertIn("flag", str(context.exception))
+        self.assertEqual(await cached_tester(1, False), (1, False))
+        self.assertEqual(await cached_tester(2, disable_cache=True), (2, True))
+
     def test_deep_merge_dicts(self):
         arg1 = {
             ("C1", "CLUSTER"): {

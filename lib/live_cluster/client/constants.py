@@ -34,4 +34,9 @@ CHECKPOINT_TIMEOUT_DEFAULT = 300
 # whatever --timeout is set to - never more than the park maximum.
 CHECKPOINT_POLL_INTERVAL_MIN = 1
 CHECKPOINT_POLL_INTERVAL_DEFAULT = 2
+
+# How long a node that stops answering checkpoint-status is still polled before its
+# checkpoint result is reported unknown. Floored at two poll intervals by the poll,
+# and capped by the park window - see ManageCheckpointSaveController._poll. Lives
+# here so @CommandHelp can read it before the controller class is defined.
 CHECKPOINT_UNREACHABLE_GRACE_SEC = 30

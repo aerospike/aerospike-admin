@@ -76,6 +76,6 @@ class ASInfoController(LiveClusterCommandController):
         if value is not None:
             value = value.translate(str.maketrans("", "", "'\""))
 
-        results = await self.cluster.info(value, nodes=nodes)
+        results = await self.cluster.info(value, nodes=nodes, retry_stale=False)
 
         return self.view.asinfo(results, line_sep, show_node_name, self.cluster, **mods)

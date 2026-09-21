@@ -25,7 +25,11 @@ from pytest import PytestUnraisableExceptionWarning
 
 import lib
 from lib.live_cluster.client import ASInfoNotAuthenticatedError
-from lib.live_cluster.client.cluster import DEAD_NODE_RETRY_INTERVAL, Cluster
+from lib.live_cluster.client.cluster import (
+    DEAD_NODE_RETRY_INTERVAL,
+    NODE_REFRESH_CONCURRENCY,
+    Cluster,
+)
 from lib.live_cluster.client.node import Node
 from lib.utils import constants
 
@@ -1289,7 +1293,10 @@ class ClusterDeadNodeRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         nodes = {}
 
-        for i in range(3):
+        # More nodes than the cap, so the cap is what bounds the peak. With
+        # asyncio.sleep(0) in the recorder exactly NODE_REFRESH_CONCURRENCY tasks
+        # acquire before any resumes, so equality is deterministic.
+        for i in range(NODE_REFRESH_CONCURRENCY + 4):
             node = self._make_node(f"192.1.1.{i + 1}", alive=True)
             node.needs_refresh = needs_refresh_recording_overlap
             nodes[node.key] = node
@@ -1299,6 +1306,7 @@ class ClusterDeadNodeRefreshTest(unittest.IsolatedAsyncioTestCase):
         await cluster.find_new_nodes()
 
         self.assertGreater(peak, 1)
+        self.assertEqual(peak, NODE_REFRESH_CONCURRENCY)
 
     async def _cluster_with(self, *nodes):
         cluster = await Cluster([("192.1.1.1", 3000, None)])
@@ -1327,15 +1335,40 @@ class ClusterDeadNodeRefreshTest(unittest.IsolatedAsyncioTestCase):
         dead.refresh_connection.assert_called_once()
 
     async def test_dead_node_is_retried_exactly_at_the_backoff(self):
-        # The interval is inclusive; nothing else pins the boundary.
+        # The interval is inclusive; nothing else pins the boundary. The clock is
+        # frozen so the elapsed time is exactly the interval, not a hair over it.
+        now = time()
         dead = self._make_node("192.1.1.1", alive=False)
-        dead.last_connect_failure = time() - DEAD_NODE_RETRY_INTERVAL
+        dead.last_connect_failure = now - DEAD_NODE_RETRY_INTERVAL
         live = self._make_node("192.1.1.2", alive=True)
         cluster = await self._cluster_with(dead, live)
 
-        await cluster.find_new_nodes()
+        with patch("lib.live_cluster.client.cluster.time", return_value=now):
+            await cluster.find_new_nodes()
 
         dead.refresh_connection.assert_called_once()
+
+    async def test_a_failing_refresh_does_not_skip_reconciling_the_others(self):
+        # The raise used to come before the reconciliation loop, so one node with
+        # unusable credentials left a peer whose service list changed registered
+        # under its stale key for as long as the credentials stayed bad.
+        failing = self._make_node("192.1.1.1", alive=True)
+        failing.refresh_connection = AsyncMock(
+            side_effect=ASInfoNotAuthenticatedError(
+                "Not authenticated", "ERROR:80:not authenticated"
+            )
+        )
+        moved = self._make_node("192.1.1.2", alive=True)
+        moved.sock_name = MagicMock(return_value="192.1.1.2:3000")
+        moved.node_id = "BB9020011AC4202"
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        cluster.nodes = {failing.key: failing, "192.1.1.9:3000": moved}
+
+        with self.assertRaises(ASInfoNotAuthenticatedError):
+            await cluster.find_new_nodes()
+
+        self.assertNotIn("192.1.1.9:3000", cluster.nodes)
+        self.assertIs(cluster.nodes[moved.key], moved)
 
     async def test_node_that_never_failed_is_always_refreshed(self):
         # last_connect_failure is None until a connect actually fails, so a node the

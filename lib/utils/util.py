@@ -1350,8 +1350,16 @@ class async_cached(Generic[AwaitableType]):
         return self.cache[key][0]
 
     def __call__(self, *args, **kwargs):
-        if "disable_cache" in kwargs and kwargs["disable_cache"]:
+        if kwargs.pop("disable_cache", False):
             return self.func(*args)
+
+        if kwargs:
+            raise TypeError(
+                "async_cached cannot forward keyword arguments: {}".format(
+                    ", ".join(sorted(kwargs))
+                )
+            )
+
         return self[args]
 
     def __repr__(self):

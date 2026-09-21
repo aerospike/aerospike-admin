@@ -459,7 +459,8 @@ class Cluster(AsyncObject):
                     await self._refresh_node(node, apply_backoff=apply_backoff)
 
             # return_exceptions so one failing node does not orphan the other
-            # refreshes; the first failure is re-raised once all have settled.
+            # refreshes; the first failure is re-raised once the nodes that did
+            # refresh have been reconciled below.
             results = await asyncio.gather(
                 *(refresh(node) for node in refresh_nodes),
                 return_exceptions=True,
@@ -476,9 +477,6 @@ class Cluster(AsyncObject):
                     if failure is None:
                         failure = result
 
-            if failure is not None:
-                raise failure
-
             for node_key in list(self.nodes.keys()):
                 node = self.nodes[node_key]
                 if node.key != node_key:
@@ -490,6 +488,9 @@ class Cluster(AsyncObject):
                 added_endpoints = added_endpoints + _endpoints
                 if not self.only_connect_seed:
                     peers = peers + node.peers
+
+            if failure is not None:
+                raise failure
         else:
             peers = self._seed_nodes
 
