@@ -5377,7 +5377,7 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gave_up[0][0][3], "in progress")
 
     async def test_node_that_stops_answering_is_polled_until_the_park_deadline(self):
-        # checkpoint-save closes the listener for the whole copy, and the copy is
+        # In the reported case every poll during the copy failed, and the copy is
         # proportional to index size, so the only bound asadm can apply is the park
         # window the operator asked for.
         self._sleep_advances_clock()
@@ -5463,9 +5463,7 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.node_mock.info_checkpoint_status.await_count, 5)
         self.logger_mock.error.assert_not_called()
-        # The short --timeout warns up front, but nothing must report giving up.
-        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
-        self.assertFalse(any("Stopped polling" in msg for msg in messages), messages)
+        self.logger_mock.warning.assert_not_called()
         self.view_mock.print_result.assert_called_once()
 
     async def test_giving_up_on_a_stalled_node_is_a_warning_not_a_cold_start_error(

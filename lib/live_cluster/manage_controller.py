@@ -3531,8 +3531,8 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                 for key in ok:
                     last_error.pop(key, None)
 
-                # Errors are expected mid-poll (the listener is closed for the copy, a
-                # parked node refuses) so they are reported once by _report, not per
+                # Errors are expected mid-poll (a stale pooled socket, a refused dial
+                # while the copy runs) so they are reported once by _report, not per
                 # tick.
                 if ok:
                     self.view.show_checkpoint_status(ok, self.cluster, **self.mods)
@@ -3585,9 +3585,10 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
 
     def _is_terminal(self, status):
         if isinstance(status, Exception):
-            # A failed poll is not the node dying: checkpoint-save closes the listener
-            # for the whole copy, and a parked node refuses. The park deadline in
-            # _poll bounds it.
+            # A failed poll is not the node dying. The server answers checkpoint-status
+            # through the copy and the park; what fails is the transport (a stale
+            # pooled socket, a refused dial while the copy runs). The park deadline
+            # in _poll bounds it.
             return False
 
         if status["is_parked"]:
@@ -3635,7 +3636,6 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                     ", ".join(failed),
                 )
 
-            if failed:
                 continue
 
             if status is None:
@@ -3659,8 +3659,10 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                 else:
                     logger.warning(
                         "Stopped polling %s before it parked. No namespace is "
-                        "checkpointing - follow it with 'manage checkpoint status'.",
+                        "checkpointing (last poll: %s) - follow it with 'manage "
+                        "checkpoint status'.",
                         node.key,
+                        self._last_poll(last_error, node.key),
                     )
                     set_exit_code(2)
 

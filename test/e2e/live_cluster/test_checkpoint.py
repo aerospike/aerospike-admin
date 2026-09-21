@@ -128,7 +128,12 @@ class TestCheckpoint(unittest.TestCase):
         records = []
 
         while time.time() < deadline:
-            records = self.status_records()
+            # A failed poll mid-copy renders no sheet. That is the window under test,
+            # not a reason to stop waiting.
+            try:
+                records = self.status_records()
+            except AssertionError:
+                records = []
 
             if records and all(
                 record["State"] in TERMINAL_STATES for record in records
@@ -168,20 +173,7 @@ class TestCheckpoint(unittest.TestCase):
 
         self.assertNotIn("ERROR", cp.stderr, cp.stderr)
 
-        deadline = time.time() + 120
-        records = []
-
-        while time.time() < deadline:
-            records = self.status_records()
-
-            if records and all(
-                record["State"] in TERMINAL_STATES for record in records
-            ):
-                break
-
-            time.sleep(2)
-
-        self.assertTrue(records, "never read a checkpoint status from the parked node")
+        records = self.wait_for_terminal_state()
 
         for record in records:
             self.assertEqual(
@@ -271,17 +263,7 @@ class TestCheckpoint(unittest.TestCase):
             "manage checkpoint save --no-warn --no-wait with {}".format(self.node)
         )
 
-        deadline = time.time() + 120
-
-        while time.time() < deadline:
-            records = self.status_records()
-
-            if records and all(
-                record["State"] in TERMINAL_STATES for record in records
-            ):
-                break
-
-            time.sleep(2)
+        self.wait_for_terminal_state()
 
         cp = self.run_asadm(
             "manage checkpoint save --no-warn --no-wait with {}".format(self.node)
