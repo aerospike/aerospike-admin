@@ -3240,7 +3240,8 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
     @staticmethod
     def _log_status_errors(errors):
         for key, error in errors.items():
-            logger.error("%s: %s", key, error)
+            # TimeoutError has no text, and a blank line hides why the node failed.
+            logger.error("%s: %s", key, str(error) or repr(error))
 
     async def _show_status(self):
         await self._check_version_support(lenient=True)

@@ -6340,7 +6340,21 @@ class ManageCheckpointErrorReportingTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute("with 1.1.1.1:3000".split())
 
-        self.logger_mock.error.assert_called_once_with("%s: %s", "1.1.1.1:3000", error)
+        self.logger_mock.error.assert_called_once_with(
+            "%s: %s", "1.1.1.1:3000", str(error)
+        )
+        self.assertIn("'index-checkpoint-path' is not configured", str(error))
+
+    async def test_error_with_no_text_is_logged_by_repr(self):
+        # TimeoutError() renders as "", which printed "1.1.1.1:3000: " and hid the
+        # reason. The repr at least names the exception.
+        self.node_mock.info_checkpoint_status.return_value = TimeoutError()
+
+        await self.controller.execute("with 1.1.1.1:3000".split())
+
+        self.logger_mock.error.assert_called_once_with(
+            "%s: %s", "1.1.1.1:3000", "TimeoutError()"
+        )
 
     async def test_healthy_nodes_still_tabulated_alongside_an_errored_one(self):
         good = MagicMock()
