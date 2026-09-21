@@ -242,9 +242,10 @@ class TestCheckpoint(unittest.TestCase):
         )
         self.wait_for_terminal_state()
 
+        # --enable only auto-enables in -e mode, so an interactive session types it.
         cp = test_util.run_asadm(
-            "-h {}:{} --enable -Uadmin -Padmin".format(lib.SERVER_IP, lib.PORT),
-            stdin_input="manage checkpoint status\nexit\n",
+            "-h {}:{} -Uadmin -Padmin".format(lib.SERVER_IP, lib.PORT),
+            stdin_input="enable\nmanage checkpoint status\nexit\n",
         )
         combined = cp.stdout + cp.stderr
 
@@ -252,6 +253,7 @@ class TestCheckpoint(unittest.TestCase):
         self.assertNotIn("No live nodes", combined, combined)
         self.assertIn("Parked by checkpoint-save", combined, combined)
         # The session must be usable, not merely alive.
+        self.assertNotIn("must be in privileged mode", combined, combined)
         self.assertIn("Checkpoint", cp.stdout, cp.stdout)
 
     def test_save_is_idempotent_while_parked(self):
