@@ -441,6 +441,10 @@ def create_conf_file_from_template(
             else "mesh-seed-address-port " + peer_addr[0] + " " + str(peer_addr[1] + 2)
         ),
         "namespace": NAMESPACE,
+        # Only the checkpoint template uses this; an unreferenced param is harmless.
+        # 'index-checkpoint-path' requires an explicit node-id, because a derived one
+        # can change on a reschedule and orphan the checkpoint.
+        "node_id": "a%d" % index,
     }
 
     temp = string.Template(template_content)

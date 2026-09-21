@@ -25,6 +25,7 @@ def checkpoint_template():
     """
     'index-checkpoint-path' cannot live in the shared template: it is preview-gated,
     so every other e2e cluster would have to boot with --preview or cf_crash_nostack.
+    It also requires an explicit node-id, which lib.py substitutes per node.
     """
     with open(lib.absolute_path("aerospike_latest.conf")) as f:
         content = f.read()
@@ -35,7 +36,12 @@ def checkpoint_template():
         raise AssertionError("service stanza anchor missing from the template")
 
     return content.replace(
-        marker, marker + "\tindex-checkpoint-path " + lib.CKPT_DIR + "\n"
+        marker,
+        marker
+        + "\tnode-id ${node_id}\n"
+        + "\tindex-checkpoint-path "
+        + lib.CKPT_DIR
+        + "\n",
     )
 
 
