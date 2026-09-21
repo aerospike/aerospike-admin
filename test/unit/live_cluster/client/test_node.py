@@ -22,6 +22,7 @@ from ctypes import ArgumentError
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
+from OpenSSL import SSL
 from parameterized import parameterized
 
 import lib
@@ -3989,7 +3990,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
         self.info_mock.return_value = "OK"
@@ -4009,7 +4010,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_fail(self):
@@ -4045,7 +4046,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_with_exp_base64(self):
@@ -4066,7 +4067,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_with_ael_src(self):
@@ -4089,7 +4090,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_with_supports_sindex_type_syntax(self):
@@ -4107,7 +4108,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_with_all_new_params(self):
@@ -4128,7 +4129,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_set_based(self):
@@ -4150,7 +4151,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_numeric_mapped_to_integer(self):
@@ -4170,7 +4171,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_integer_passthrough(self):
@@ -4190,7 +4191,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_create_numeric_unchanged_on_old_server(self):
@@ -4212,7 +4213,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_delete_success(self):
@@ -4226,7 +4227,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             "iname", "ns", feature_support={"namespace_query_selector_support": False}
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
         self.info_mock.return_value = "OK"
@@ -4243,7 +4244,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             feature_support={"namespace_query_selector_support": False},
         )
 
-        self.info_mock.assert_called_with(expected_call, self.ip)
+        self.info_mock.assert_called_with(expected_call, self.ip, self.node.port, False)
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_sindex_delete_fail(self):
@@ -4278,7 +4279,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_truncate("test-ns")
 
         self.info_mock.assert_called_once_with(
-            "truncate-namespace:namespace=test-ns", self.ip
+            "truncate-namespace:namespace=test-ns", self.ip, self.node.port, False
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -4291,7 +4292,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.node.info_truncate("test-ns")
 
-        self.info_mock.assert_called_once_with("truncate:namespace=test-ns", self.ip)
+        self.info_mock.assert_called_once_with(
+            "truncate:namespace=test-ns", self.ip, self.node.port, False
+        )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_truncate_with_ns_and_lut_success(self):
@@ -4300,7 +4303,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_truncate("test-ns", lut="123456789")
 
         self.info_mock.assert_called_once_with(
-            "truncate-namespace:namespace=test-ns;lut=123456789", self.ip
+            "truncate-namespace:namespace=test-ns;lut=123456789",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -4310,7 +4316,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_truncate("test-ns", "bar")
 
         self.info_mock.assert_called_once_with(
-            "truncate:namespace=test-ns;set=bar", self.ip
+            "truncate:namespace=test-ns;set=bar", self.ip, self.node.port, False
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -4320,7 +4326,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_truncate("test-ns", "bar", "123456789")
 
         self.info_mock.assert_called_once_with(
-            "truncate:namespace=test-ns;set=bar;lut=123456789", self.ip
+            "truncate:namespace=test-ns;set=bar;lut=123456789",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
@@ -4330,7 +4339,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_truncate("test-ns", "bar", "123456789")
 
         self.info_mock.assert_called_once_with(
-            "truncate:namespace=test-ns;set=bar;lut=123456789", self.ip
+            "truncate:namespace=test-ns;set=bar;lut=123456789",
+            self.ip,
+            self.node.port,
+            False,
         )
         self.assertEqual(
             str(actual),
@@ -4342,7 +4354,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_truncate("test-ns")
 
         self.info_mock.assert_called_with(
-            "truncate-namespace:namespace=test-ns", self.ip
+            "truncate-namespace:namespace=test-ns", self.ip, self.node.port, False
         )
         self.assertEqual(
             str(actual),
@@ -4433,7 +4445,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.node.info_recluster()
 
-        self.info_mock.assert_called_once_with("recluster:", self.ip)
+        self.info_mock.assert_called_once_with(
+            "recluster:", self.ip, self.node.port, False
+        )
         self.assertEqual(actual, ASINFO_RESPONSE_OK)
 
     async def test_info_recluster_fail(self):
@@ -4441,7 +4455,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.node.info_recluster()
 
-        self.info_mock.assert_called_once_with("recluster:", self.ip)
+        self.info_mock.assert_called_once_with(
+            "recluster:", self.ip, self.node.port, False
+        )
         self.assertEqual(
             str(actual),
             "Failed to recluster : Unknown error occurred.",
@@ -6182,6 +6198,305 @@ class SocketLeakPreventionTest(unittest.IsolatedAsyncioTestCase):
 
         # Verify _get_connection was called with node's default ip and port
         get_conn_mock.assert_called_once_with(self.node.ip, self.node.port)
+
+
+class StalePooledSocketRetryTest(unittest.IsolatedAsyncioTestCase):
+    """A pooled connection the server closed while idle fails on first use. That is
+    the socket dying, not the node - letting the OSError out marked a healthy node
+    not alive and dropped it from the cluster."""
+
+    async def asyncSetUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        self.ip = "192.1.1.1"
+        self.port = 3000
+
+        patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start().return_value = "host.domain.local"
+        patch("lib.live_cluster.client.node.util.async_shell_command").start()
+        patch.object(
+            lib.live_cluster.client.node.Node, "info_build", new_callable=AsyncMock
+        ).start().return_value = "8.2.0.0"
+        info_cinfo_mock = patch.object(
+            lib.live_cluster.client.node.Node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+        info_cinfo_mock.side_effect = self._connect_responses
+        self.addCleanup(patch.stopall)
+
+        self.node = await Node(self.ip, self.port, timeout=0)
+        # Drop the connect-time patch of _info_cinfo so the real one under test runs.
+        patch.stopall()
+        self.node._initialize_socket_pool()
+
+    @staticmethod
+    def _connect_responses(*args, **kwargs):
+        cmd = args[0]
+
+        if cmd == ["node", "build", "peers-generation"]:
+            return {
+                "node": "A00000000000000",
+                "build": "8.2.0.0",
+                "peers-generation": "1",
+            }
+
+        if cmd == ["service-clear-std", "peers-clear-std"]:
+            return {
+                "service-clear-std": "192.1.1.1:3000",
+                "peers-clear-std": "1,3000,[]",
+            }
+
+        return "mock_response"
+
+    def _sock(self, from_pool, info_result=None, info_error=None):
+        sock = AsyncMock()
+        sock.from_pool = from_pool
+
+        if info_error is not None:
+            sock.info.side_effect = info_error
+        else:
+            sock.info.return_value = info_result
+
+        return sock
+
+    async def _call(self, sockets):
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.side_effect = list(sockets)
+
+            result = await self.node._info_cinfo(
+                "statistics", self.ip, self.port, disable_cache=True
+            )
+
+        return result, get_conn_mock
+
+    async def test_stale_pooled_socket_retries_on_a_new_connection(self):
+        stale = self._sock(True, info_error=ConnectionResetError("reset by peer"))
+        fresh = self._sock(False, info_result="a=1")
+
+        result, get_conn_mock = await self._call([stale, fresh])
+
+        self.assertEqual(result, "a=1")
+        self.assertEqual(get_conn_mock.await_count, 2)
+        stale.close.assert_awaited()
+
+    async def test_ssl_error_on_a_pooled_socket_retries(self):
+        # What the customer's log showed: OpenSSL.SSL.SysCallError, Unexpected EOF.
+        stale = self._sock(True, info_error=SSL.SysCallError(-1, "Unexpected EOF"))
+        fresh = self._sock(False, info_result="a=1")
+
+        result, _ = await self._call([stale, fresh])
+
+        self.assertEqual(result, "a=1")
+
+    async def test_retry_surfaces_the_original_error_when_it_fails_too(self):
+        stale = self._sock(True, info_error=ConnectionResetError("reset by peer"))
+        also_stale = self._sock(True, info_error=ConnectionResetError("reset again"))
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.side_effect = [stale, also_stale]
+
+            with self.assertRaises(ConnectionResetError) as context:
+                await self.node._info_cinfo(
+                    "statistics", self.ip, self.port, disable_cache=True
+                )
+
+        # The caller must see the real error, never the internal wrapper.
+        self.assertIn("reset again", str(context.exception))
+
+    async def test_fresh_socket_failure_is_not_retried(self):
+        # A node that is genuinely unreachable must not cost a second dial.
+        fresh = self._sock(False, info_error=ConnectionResetError("reset by peer"))
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.side_effect = [fresh]
+
+            with self.assertRaises(ConnectionResetError):
+                await self.node._info_cinfo(
+                    "statistics", self.ip, self.port, disable_cache=True
+                )
+
+            self.assertEqual(get_conn_mock.await_count, 1)
+
+    async def test_timeout_on_a_pooled_socket_is_not_retried(self):
+        # A timeout is the node being slow. Retrying would cost a second full
+        # timeout on every slow call. The guard only bites on 3.11+, where
+        # asyncio.TimeoutError subclasses OSError and so reaches the handler at all.
+        stale = self._sock(True, info_error=asyncio.TimeoutError())
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.side_effect = [stale]
+
+            with self.assertRaises(asyncio.TimeoutError):
+                await self.node._info_cinfo(
+                    "statistics", self.ip, self.port, disable_cache=True
+                )
+
+            self.assertEqual(get_conn_mock.await_count, 1)
+
+    async def test_connect_failure_is_not_wrapped_or_retried(self):
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.return_value = None
+
+            with self.assertRaises(IOError) as context:
+                await self.node._info_cinfo(
+                    "statistics", self.ip, self.port, disable_cache=True
+                )
+
+            self.assertIn("Could not connect to node", str(context.exception))
+            self.assertEqual(get_conn_mock.await_count, 1)
+
+    async def test_invalid_command_is_not_retried(self):
+        # A None response is the server rejecting the command, not a dead socket.
+        pooled = self._sock(True, info_result=None)
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.side_effect = [pooled]
+
+            with self.assertRaises(ASInfoError):
+                await self.node._info_cinfo(
+                    "statistics", self.ip, self.port, disable_cache=True
+                )
+
+            self.assertEqual(get_conn_mock.await_count, 1)
+
+    async def test_a_pooled_socket_is_marked_from_pool_by_get_connection(self):
+        # The other tests patch _get_connection out, so nothing exercises the line that
+        # arms the retry. Without it from_pool stays False and the fix is inert.
+        pooled = AsyncMock()
+        pooled.is_connected.return_value = True
+        self.node.socket_pool[self.port].append(pooled)
+
+        sock = await self.node._get_connection(self.ip, self.port)
+
+        self.assertIs(sock, pooled)
+        self.assertTrue(sock.from_pool)
+
+    async def test_a_stale_pooled_socket_recovers_through_the_real_pool(self):
+        # End to end over _get_connection rather than a patched one: a pooled socket
+        # that dies on first use must not surface as an error to the caller.
+        stale = AsyncMock()
+        stale.is_connected.return_value = True
+        stale.info.side_effect = ConnectionResetError("reset by peer")
+        self.node.socket_pool[self.port].append(stale)
+
+        fresh = self._sock(False, info_result="a=1")
+
+        with patch.object(lib.live_cluster.client.node, "ASSocket", return_value=fresh):
+            fresh.connect.return_value = True
+            fresh.authenticate.return_value = True
+
+            result = await self.node._info_cinfo(
+                "statistics", self.ip, self.port, disable_cache=True
+            )
+
+        self.assertEqual(result, "a=1")
+        stale.close.assert_awaited()
+
+    async def test_a_mutating_command_is_not_retried(self):
+        # A failure after the request is written is indistinguishable from one before
+        # it, so replaying truncate would delete records written since the first try.
+        stale = self._sock(True, info_error=ConnectionResetError("reset by peer"))
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.side_effect = [stale]
+
+            with self.assertRaises(ConnectionResetError):
+                await self.node._info_cinfo(
+                    "truncate:namespace=test",
+                    self.ip,
+                    self.port,
+                    False,
+                    disable_cache=True,
+                )
+
+            self.assertEqual(get_conn_mock.await_count, 1)
+
+    async def test_a_recovered_call_leaves_the_node_alive(self):
+        # The whole point: info() must not report an exception, because
+        # async_return_exceptions would then set alive=False.
+        self.node.alive = True
+        stale = self._sock(True, info_error=ConnectionResetError("reset by peer"))
+        fresh = self._sock(False, info_result="a=1")
+
+        with patch.object(
+            self.node, "_get_connection", new_callable=AsyncMock
+        ) as get_conn_mock:
+            get_conn_mock.side_effect = [stale, fresh]
+
+            result = await self.node.info("statistics")
+
+        self.assertEqual(result, "a=1")
+        self.assertTrue(self.node.alive)
+
+
+class NodeConnectFailureTimestampTest(unittest.IsolatedAsyncioTestCase):
+    """Cluster backs off reconnecting to a node that is not alive, and reads
+    last_connect_failure to decide. A stale or missing timestamp either taxes every
+    command or strands a node that came back."""
+
+    async def asyncSetUp(self):
+        warnings.filterwarnings("error", category=RuntimeWarning)
+        patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start().return_value = "host.domain.local"
+        patch("lib.live_cluster.client.node.util.async_shell_command").start()
+        patch.object(
+            lib.live_cluster.client.node.Node, "info_build", new_callable=AsyncMock
+        ).start().return_value = "8.2.0.0"
+        self.info_mock = patch.object(
+            lib.live_cluster.client.node.Node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_failed_connect_records_the_time(self):
+        self.info_mock.side_effect = IOError("Could not connect")
+
+        node = await Node("192.1.1.1", timeout=0)
+
+        self.assertFalse(node.alive)
+        self.assertIsNotNone(node.last_connect_failure)
+
+    async def test_successful_connect_clears_the_timestamp(self):
+        self.info_mock.side_effect = IOError("Could not connect")
+        node = await Node("192.1.1.1", timeout=0)
+
+        self.assertIsNotNone(node.last_connect_failure)
+
+        self.info_mock.side_effect = None
+        self.info_mock.return_value = {
+            "node": "A00000000000000",
+            "build": "8.2.0.0",
+            "peers-generation": "1",
+            "service-clear-std": "192.1.1.1:3000",
+            "peers-clear-std": "1,3000,[]",
+        }
+
+        with patch.object(
+            Node, "_node_connect", new_callable=AsyncMock
+        ) as node_connect_mock:
+            node_connect_mock.return_value = (
+                "A00000000000000",
+                [("192.1.1.1", 3000, None)],
+                [],
+                "1",
+            )
+            await node.refresh_connection()
+
+        self.assertTrue(node.alive)
+        self.assertIsNone(node.last_connect_failure)
 
 
 class NodeErrorHandlingTest(unittest.IsolatedAsyncioTestCase):

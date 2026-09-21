@@ -35,10 +35,18 @@ from .node import Node
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
 
+# Floor between reconnect attempts to a node that is not alive; each costs a full
+# connect timeout on every refresh.
+DEAD_NODE_RETRY_INTERVAL = 10
+
 # Cap on concurrent per-node peer queries in get_down_nodes: each node costs four
 # in-flight info calls, so an unbounded gather over a large cluster multiplies
 # open sockets by four.
 DOWN_NODE_QUERY_CONCURRENCY = 16
+
+# Same cap for the refresh in find_new_nodes, which runs every CLUSTER_REFRESH_INTERVAL
+# and costs a reconnect per node rather than a single query.
+NODE_REFRESH_CONCURRENCY = 16
 
 logger = logging.getLogger(__name__)
 
@@ -402,16 +410,77 @@ class Cluster(AsyncObject):
             except Exception as e:
                 logger.debug(e, exc_info=True)
 
+    @staticmethod
+    def _should_retry_dead_node(node) -> bool:
+        """True once the last connect failure is DEAD_NODE_RETRY_INTERVAL old."""
+        last_failure = node.last_connect_failure
+
+        if last_failure is None:
+            return True
+
+        return time() - last_failure >= DEAD_NODE_RETRY_INTERVAL
+
+    async def _refresh_node(self, node, apply_backoff=True):
+        if apply_backoff and not node.alive and not self._should_retry_dead_node(node):
+            logger.debug(
+                "Node %s:%s not alive and retried less than %ss ago, skipping refresh",
+                node.ip,
+                node.port,
+                DEAD_NODE_RETRY_INTERVAL,
+            )
+            return
+
+        start = time()
+
+        if await node.needs_refresh():
+            logger.debug("Node %s:%s needs refresh", node.ip, node.port)
+            await node.refresh_connection()
+
+        logger.debug(
+            "Node %s:%s refresh check took %.3fs, alive=%s",
+            node.ip,
+            node.port,
+            time() - start,
+            node.alive,
+        )
+
     async def find_new_nodes(self):
         added_endpoints = []
         peers = []
         aliases = {}
         if self.nodes:
+            refresh_nodes = list(self.nodes.values())
+            # With nothing alive there is no command to protect, so retry every node.
+            apply_backoff = any(node.alive for node in refresh_nodes)
+            semaphore = asyncio.Semaphore(NODE_REFRESH_CONCURRENCY)
+
+            async def refresh(node):
+                async with semaphore:
+                    await self._refresh_node(node, apply_backoff=apply_backoff)
+
+            # return_exceptions so one failing node does not orphan the other
+            # refreshes; the first failure is re-raised once all have settled.
+            results = await asyncio.gather(
+                *(refresh(node) for node in refresh_nodes),
+                return_exceptions=True,
+            )
+
+            failure = None
+
+            for node, result in zip(refresh_nodes, results):
+                if isinstance(result, BaseException):
+                    logger.debug(
+                        "Node %s:%s refresh raised %r", node.ip, node.port, result
+                    )
+
+                    if failure is None:
+                        failure = result
+
+            if failure is not None:
+                raise failure
+
             for node_key in list(self.nodes.keys()):
                 node = self.nodes[node_key]
-                if await node.needs_refresh():
-                    logger.debug("Node %s:%s needs refresh", node.ip, node.port)
-                    await node.refresh_connection()
                 if node.key != node_key:
                     # change in service list
                     self.nodes.pop(node_key)

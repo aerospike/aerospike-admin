@@ -13,16 +13,19 @@
 # limitations under the License.
 
 
+import asyncio
 import socket
 import unittest
 import warnings
 from collections import deque
+from time import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pytest import PytestUnraisableExceptionWarning
 
 import lib
-from lib.live_cluster.client.cluster import Cluster
+from lib.live_cluster.client import ASInfoNotAuthenticatedError
+from lib.live_cluster.client.cluster import DEAD_NODE_RETRY_INTERVAL, Cluster
 from lib.live_cluster.client.node import Node
 from lib.utils import constants
 
@@ -958,6 +961,7 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         # Create a node that needs refresh
         node = await Node("192.1.1.1", 3000)
+        node.alive = True
         node.needs_refresh = AsyncMock(return_value=True)
         node.refresh_connection = AsyncMock()
         node.service_addresses = [("192.1.1.1", 3000, None)]
@@ -1076,6 +1080,7 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         # Node 2: needs refresh
         node2 = await Node("192.1.1.2", 3000)
+        node2.alive = True
         node2.needs_refresh = AsyncMock(return_value=True)
         node2.refresh_connection = AsyncMock()
         node2.service_addresses = [("192.1.1.2", 3000, None)]
@@ -1107,6 +1112,7 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         # Create a node connected via load balancer
         lb_node = await Node("load-balancer.com", 3000)
+        lb_node.alive = True
         lb_node.needs_refresh = AsyncMock(
             return_value=True
         )  # Should refresh to try direct
@@ -1141,6 +1147,7 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         # Node 2: Load balancer connection (needs refresh)
         lb_node = await Node("load-balancer.com", 3000)
+        lb_node.alive = True
         lb_node.needs_refresh = AsyncMock(return_value=True)
         lb_node.refresh_connection = AsyncMock()
         lb_node.service_addresses = [("192.1.1.2", 3000, None)]
@@ -1176,6 +1183,7 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
             # Only odd-numbered nodes need refresh
             needs_refresh = i % 2 == 1
+            node.alive = True
             node.needs_refresh = AsyncMock(return_value=needs_refresh)
 
             def make_refresh_mock():
@@ -1202,6 +1210,193 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
             node.refresh_connection.call_count for node in nodes.values()
         )
         self.assertEqual(total_refresh_calls, 2)  # Only odd-numbered indices (1, 3)
+
+
+class ClusterDeadNodeRefreshTest(unittest.IsolatedAsyncioTestCase):
+    """A down node costs a connect timeout on every refresh, and the refresh runs on
+    any command more than CLUSTER_REFRESH_INTERVAL apart. Serially and with no
+    backoff, one down node taxed every command in the session."""
+
+    async def asyncSetUp(self):
+        # The seed Cluster is real, so without these every test here pays a live DNS
+        # lookup and connect attempt (~1s each).
+        patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name"
+        ).start().return_value = "host.domain.local"
+        patch("lib.live_cluster.client.node.util.async_shell_command").start()
+        patch.object(
+            lib.live_cluster.client.node.Node, "info_build", new_callable=AsyncMock
+        ).start().return_value = "5.0.0.11"
+        patch("socket.getaddrinfo").start().return_value = [
+            (2, 1, 6, "", ("192.1.1.1", 3000))
+        ]
+        patch.object(
+            lib.live_cluster.client.node.Node, "_info_cinfo", new_callable=AsyncMock
+        ).start().side_effect = self._seed_responses
+        self.addCleanup(patch.stopall)
+
+    @staticmethod
+    def _seed_responses(*args, **kwargs):
+        cmd = args[0]
+
+        if cmd == ["node", "features", "connection"]:
+            return {
+                "node": "A00000000000000",
+                "features": "features",
+                "connection": "admin=false",
+            }
+
+        if cmd == ["service-clear-std", "peers-clear-std"]:
+            return {
+                "service-clear-std": "192.1.1.1:3000",
+                "peers-clear-std": "1,3000,[]",
+            }
+
+        return "mock_response"
+
+    @staticmethod
+    def _make_node(ip, alive):
+        """
+        A stand-in rather than a real Node: constructing one attempts a live connect,
+        which costs seconds and would age last_connect_failure past the backoff
+        before the call under test even runs.
+        """
+        node = MagicMock()
+        node.ip = ip
+        node.port = 3000
+        node.key = "{}:3000".format(ip)
+        node.alive = alive
+        # Just failed, so the backoff applies unless a test says otherwise.
+        node.last_connect_failure = None if alive else time()
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock()
+        node.service_addresses = [(ip, 3000, None)]
+        node.peers = []
+        return node
+
+    async def test_find_new_nodes_refreshes_nodes_concurrently(self):
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        in_flight = 0
+        peak = 0
+
+        async def needs_refresh_recording_overlap():
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return False
+
+        nodes = {}
+
+        for i in range(3):
+            node = self._make_node(f"192.1.1.{i + 1}", alive=True)
+            node.needs_refresh = needs_refresh_recording_overlap
+            nodes[node.key] = node
+
+        cluster.nodes = nodes
+
+        await cluster.find_new_nodes()
+
+        self.assertGreater(peak, 1)
+
+    async def _cluster_with(self, *nodes):
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        cluster.nodes = {node.key: node for node in nodes}
+        return cluster
+
+    async def test_dead_node_is_not_retried_within_the_backoff(self):
+        dead = self._make_node("192.1.1.1", alive=False)
+        live = self._make_node("192.1.1.2", alive=True)
+        cluster = await self._cluster_with(dead, live)
+
+        await cluster.find_new_nodes()
+        await cluster.find_new_nodes()
+
+        dead.refresh_connection.assert_not_called()
+        dead.needs_refresh.assert_not_called()
+
+    async def test_dead_node_is_retried_after_the_backoff(self):
+        dead = self._make_node("192.1.1.1", alive=False)
+        dead.last_connect_failure = time() - (DEAD_NODE_RETRY_INTERVAL + 1)
+        live = self._make_node("192.1.1.2", alive=True)
+        cluster = await self._cluster_with(dead, live)
+
+        await cluster.find_new_nodes()
+
+        dead.refresh_connection.assert_called_once()
+
+    async def test_dead_node_is_retried_exactly_at_the_backoff(self):
+        # The interval is inclusive; nothing else pins the boundary.
+        dead = self._make_node("192.1.1.1", alive=False)
+        dead.last_connect_failure = time() - DEAD_NODE_RETRY_INTERVAL
+        live = self._make_node("192.1.1.2", alive=True)
+        cluster = await self._cluster_with(dead, live)
+
+        await cluster.find_new_nodes()
+
+        dead.refresh_connection.assert_called_once()
+
+    async def test_node_that_never_failed_is_always_refreshed(self):
+        # last_connect_failure is None until a connect actually fails, so a node the
+        # backoff has never seen must not be held back by it.
+        dead = self._make_node("192.1.1.1", alive=False)
+        dead.last_connect_failure = None
+        live = self._make_node("192.1.1.2", alive=True)
+        cluster = await self._cluster_with(dead, live)
+
+        await cluster.find_new_nodes()
+
+        dead.refresh_connection.assert_called_once()
+
+    async def test_live_node_is_never_held_back_by_the_backoff(self):
+        node = self._make_node("192.1.1.1", alive=True)
+        node.last_connect_failure = time()
+        cluster = await self._cluster_with(node)
+
+        await cluster.find_new_nodes()
+
+        node.refresh_connection.assert_called_once()
+
+    async def test_a_dead_node_does_not_stop_a_live_peer_being_refreshed(self):
+        dead = self._make_node("192.1.1.1", alive=False)
+        live = self._make_node("192.1.1.2", alive=True)
+        cluster = await self._cluster_with(dead, live)
+
+        await cluster.find_new_nodes()
+
+        dead.refresh_connection.assert_not_called()
+        live.refresh_connection.assert_called_once()
+
+    async def test_backoff_does_not_apply_when_no_node_is_alive(self):
+        # With nothing alive there is no working command to protect, and holding the
+        # retry back would only keep a recovered cluster out of reach.
+        first = self._make_node("192.1.1.1", alive=False)
+        second = self._make_node("192.1.1.2", alive=False)
+        cluster = await self._cluster_with(first, second)
+
+        await cluster.find_new_nodes()
+
+        first.refresh_connection.assert_called_once()
+        second.refresh_connection.assert_called_once()
+
+    async def test_one_node_failing_to_refresh_does_not_orphan_the_others(self):
+        # gather without return_exceptions would raise on the first failure and leave
+        # the remaining refreshes running as orphaned tasks.
+        failing = self._make_node("192.1.1.1", alive=True)
+        failing.refresh_connection = AsyncMock(
+            side_effect=ASInfoNotAuthenticatedError(
+                "Not authenticated", "ERROR:80:not authenticated"
+            )
+        )
+        other = self._make_node("192.1.1.2", alive=True)
+        cluster = await self._cluster_with(failing, other)
+
+        with self.assertRaises(ASInfoNotAuthenticatedError):
+            await cluster.find_new_nodes()
+
+        # The sibling still ran to completion rather than being abandoned mid-flight.
+        other.refresh_connection.assert_awaited_once()
 
 
 class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):

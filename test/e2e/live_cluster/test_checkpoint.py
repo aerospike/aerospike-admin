@@ -116,6 +116,25 @@ class TestCheckpoint(unittest.TestCase):
 
         self.assertIn("takes no parameters", cp.stdout + cp.stderr)
 
+    def wait_for_terminal_state(self, deadline_sec=120):
+        """Poll from a separate process until every namespace stops copying."""
+        deadline = time.time() + deadline_sec
+        records = []
+
+        while time.time() < deadline:
+            records = self.status_records()
+
+            if records and all(
+                record["State"] in TERMINAL_STATES for record in records
+            ):
+                return records
+
+            time.sleep(2)
+
+        raise AssertionError(
+            "namespaces still copying after {}s: {}".format(deadline_sec, records)
+        )
+
     def require_checkpoint_configured(self):
         """
         Fail before parking anything if 'index-checkpoint-path' did not take. An
@@ -169,6 +188,71 @@ class TestCheckpoint(unittest.TestCase):
 
             self.assertEqual(done, total)
             self.assertNotEqual(total, "0")
+
+    def test_save_polls_through_the_copy_to_done(self):
+        """
+        The poll itself, against a real node. Every other test here passes --no-wait
+        and polls from separate processes after the park is established, so _poll and
+        _report were only ever covered by mocks - and they reported a checkpoint that
+        completed as a cold-start.
+        """
+        self.require_checkpoint_configured()
+
+        cp = self.run_asadm(
+            "manage checkpoint save --no-warn --timeout 120 with {}".format(self.node)
+        )
+        combined = cp.stdout + cp.stderr
+
+        self.assertIn("Checkpoint complete on", combined, combined)
+        self.assertNotIn("cold-start", combined, combined)
+        self.assertNotIn("ERROR", cp.stderr, cp.stderr)
+        self.assertEqual(cp.returncode, 0, combined)
+
+    def test_save_with_a_short_timeout_does_not_report_a_false_cold_start(self):
+        """
+        The reported command, verbatim: 'manage checkpoint save --timeout 3'. The node
+        parks for only 3s and stops answering while the copy is still running, which
+        ended the poll and printed 'No usable checkpoint - this node will cold-start'
+        for a checkpoint that had completed.
+        """
+        self.require_checkpoint_configured()
+
+        cp = self.run_asadm(
+            "manage checkpoint save --no-warn --timeout 3 with {}".format(self.node)
+        )
+        combined = cp.stdout + cp.stderr
+
+        self.assertNotIn("cold-start", combined, combined)
+        self.assertNotIn("No usable checkpoint", combined, combined)
+        # A short park is worth warning about, but it is not a failure.
+        self.assertNotIn("ERROR", cp.stderr, cp.stderr)
+        self.assertEqual(cp.returncode, 0, combined)
+
+    def test_interactive_session_seeded_at_a_parked_node_survives(self):
+        """
+        Every startup diagnostic fans out through the Cluster, which refuses the call
+        when no node is live. Seeded at a parked node interactively that raised
+        'No live nodes' out of the shell's __init__ and killed the session with a
+        traceback - the one session 'manage checkpoint status' needs.
+        """
+        self.require_checkpoint_configured()
+
+        self.run_asadm(
+            "manage checkpoint save --no-warn --no-wait with {}".format(self.node)
+        )
+        self.wait_for_terminal_state()
+
+        cp = test_util.run_asadm(
+            "-h {}:{} --enable -Uadmin -Padmin".format(lib.SERVER_IP, lib.PORT),
+            stdin_input="manage checkpoint status\nexit\n",
+        )
+        combined = cp.stdout + cp.stderr
+
+        self.assertNotIn("Traceback", combined, combined)
+        self.assertNotIn("No live nodes", combined, combined)
+        self.assertIn("Parked by checkpoint-save", combined, combined)
+        # The session must be usable, not merely alive.
+        self.assertIn("Checkpoint", cp.stdout, cp.stdout)
 
     def test_save_is_idempotent_while_parked(self):
         """Re-issuing against a parked node reports state, it does not error."""

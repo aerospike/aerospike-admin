@@ -60,7 +60,11 @@ class CompletedProcess:
         return get_separate_output(self.stdout)
 
 
-def run_asadm(args=None, strip_header=True) -> CompletedProcess:
+def run_asadm(args=None, strip_header=True, stdin_input=None) -> CompletedProcess:
+    """
+    stdin_input feeds an interactive session. -e mode skips the startup diagnostics,
+    so a session opened without it is the only way to cover them.
+    """
     if "ASADM_TEST_BUNDLE" in os.environ:
         binary = os.path.abspath("build/bin/asadm/asadm")
     else:
@@ -74,7 +78,8 @@ def run_asadm(args=None, strip_header=True) -> CompletedProcess:
         subprocess.run(
             cmd,
             capture_output=True,
-            stdin=subprocess.DEVNULL,
+            input=None if stdin_input is None else stdin_input.encode(),
+            stdin=subprocess.DEVNULL if stdin_input is None else None,
             start_new_session=True,
             env=os.environ,
         )

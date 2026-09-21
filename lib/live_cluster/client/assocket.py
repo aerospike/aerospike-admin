@@ -78,6 +78,8 @@ class ASSocket:
         self.auth_mode = auth_mode
         self.ssl_context = ssl_context
         self._timeout = timeout
+        # Set by Node._get_connection; a failure on a reused socket may be staleness.
+        self.from_pool = False
 
     def settimeout(self, timeout):
         """

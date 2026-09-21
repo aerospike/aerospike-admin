@@ -206,7 +206,9 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                 # node 'manage checkpoint status' exists to poll. Treating it as "no
                 # cluster" made that command impossible to run. Every other unreachable
                 # case still errors exactly as before.
-                if not self.ctrl.cluster.get_live_nodes():
+                live_nodes = self.ctrl.cluster.get_live_nodes()
+
+                if not live_nodes:
                     parked_nodes = self.ctrl.cluster.get_parked_nodes()
 
                     if not parked_nodes:
@@ -231,6 +233,10 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                     self.intro += str(self.ctrl.cluster) + "\n"
                     # Update prompt now that cluster is connected and admin nodes are detected
                     self.set_default_prompt()
+
+                # The diagnostics fan out through the Cluster, which raises with no
+                # live node.
+                if not execute_only_mode and live_nodes:
                     cluster_visibility_error_nodes = (
                         self.ctrl.cluster.get_visibility_error_nodes()
                     )

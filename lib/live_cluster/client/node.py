@@ -86,6 +86,14 @@ def get_fully_qualified_domain_name(address, timeout=0.5):
     return result[0]
 
 
+class _StaleSocketError(Exception):
+    """Info call failed on a pooled socket. _info_cinfo retries once on a new one."""
+
+    def __init__(self, cause: Exception):
+        super().__init__(str(cause))
+        self.cause = cause
+
+
 def async_return_exceptions(func):
     async def wrapper(*args, raise_exception=False, **kwargs):
         exception = None
@@ -193,6 +201,8 @@ class Node(AsyncObject):
     security_disabled_warning = False  # We only want to warn the user once.
     # Not alive because it is parked by checkpoint-save, as opposed to being down.
     checkpoint_parked = False
+    # Read by Cluster to back off reconnecting. None means connect never failed.
+    last_connect_failure = None
 
     async def __init__(
         self,
@@ -661,6 +671,7 @@ class Node(AsyncObject):
             # Set the user agent for this node
             await self._set_user_agent()
             self.alive = True
+            self.last_connect_failure = None
         except (ASInfoNotAuthenticatedError, ASProtocolError):
             raise
         except Exception as e:
@@ -683,6 +694,7 @@ class Node(AsyncObject):
             self.is_admin_node = False
             self.use_new_histogram_format = False
             self.alive = False
+            self.last_connect_failure = time.time()
 
     async def refresh_connection(self):
         await self.connect(self.ip, self.port)
@@ -1033,6 +1045,7 @@ class Node(AsyncObject):
                 sock = self.socket_pool[port].popleft()  # FIFO: get oldest socket
 
                 if await sock.is_connected():
+                    sock.from_pool = True
                     break
 
                 logger.debug("closing sock %s as it is not connected", id(sock))
@@ -1196,15 +1209,49 @@ class Node(AsyncObject):
     # connect. If this happens while setting ip (connection process) then node
     # will get that ip to which asadm can't connect. It will create new
     # issues in future process.
+    # retry_stale is positional because async_cached drops kwargs; passing it by
+    # keyword would silently lose it and re-enable the retry.
     @util.async_cached
-    async def _info_cinfo(self, command, ip=None, port=None) -> str:
+    async def _info_cinfo(self, command, ip=None, port=None, retry_stale=True) -> str:
         if ip is None:
             ip = self.ip
         if port is None:
             port = self.port
 
+        try:
+            return await self._info_on_socket(command, ip, port, retry_stale)
+        except _StaleSocketError as e:
+            # A pooled socket the server closed says nothing about the node. Try once
+            # more before letting the error mark it not alive.
+            logger.debug(
+                "%s:%s info cmd '%s' failed on a pooled socket (%s), retrying on "
+                "another connection",
+                ip,
+                port,
+                command,
+                e.cause,
+            )
+
+        try:
+            return await self._info_on_socket(command, ip, port, retry_stale)
+        except _StaleSocketError as e:
+            raise e.cause from None
+
+    async def _info_on_socket(self, command, ip, port, retry_stale=True) -> str:
         async with self._borrow_socket(ip, port) as sock:
-            result = await sock.info(command)
+            try:
+                result = await sock.info(command)
+            except (OSError, SSL.Error) as e:
+                # A timeout is the node being slow, not a dead socket. On 3.11+
+                # asyncio.TimeoutError subclasses OSError (TOOLS-3596).
+                if (
+                    retry_stale
+                    and sock.from_pool
+                    and not isinstance(e, asyncio.TimeoutError)
+                ):
+                    raise _StaleSocketError(e) from e
+
+                raise
 
             if result is not None:
                 logger.debug(
@@ -1229,7 +1276,7 @@ class Node(AsyncObject):
         """
         return await self._info(command)
 
-    async def _info(self, command):
+    async def _info(self, command, retry_stale=True):
         """
         TODO: Start using this as the internal info function. I think mechanism that catches
         and returns exceptions should be done at the cluster level. It can make things difficult
@@ -1239,8 +1286,14 @@ class Node(AsyncObject):
 
         Arguments:
         command -- the info command to execute on this node
+        retry_stale -- False for a command the server must not execute twice. A failure
+        after the request is written is indistinguishable from one before it, so a
+        retry can re-run a command the server already applied.
         """
-        return await self._info_cinfo(command, self.ip)
+        if retry_stale:
+            return await self._info_cinfo(command, self.ip)
+
+        return await self._info_cinfo(command, self.ip, self.port, False)
 
     @async_return_exceptions
     async def info_node(self):
@@ -3576,7 +3629,9 @@ class Node(AsyncObject):
             else:
                 command += "indexdata={},{}".format(bin_name, bin_type)
 
-        resp = await self._info(command)
+        # A replay of a create that succeeded reports "already exists", so a successful
+        # command surfaces to the operator as a failure.
+        resp = await self._info(command, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(
@@ -3608,7 +3663,9 @@ class Node(AsyncObject):
                 namespace_info_selector, namespace, set_, index_name
             )
 
-        resp = await self._info(command)
+        # A replay of a delete that succeeded reports "not found", so a successful
+        # command surfaces to the operator as a failure.
+        resp = await self._info(command, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(
@@ -3809,7 +3866,9 @@ class Node(AsyncObject):
         if lut is not None:
             req += ";lut={}".format(lut)
 
-        resp = await self._info(req)
+        # Without an explicit lut the server truncates at its own "now", so a replay
+        # deletes records written since the first attempt.
+        resp = await self._info(req, retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError(error_message, resp)
@@ -3854,7 +3913,7 @@ class Node(AsyncObject):
 
         Returns: ASINFO_RESPONSE_OK on success and ASInfoError on failure
         """
-        resp = await self._info("recluster:")
+        resp = await self._info("recluster:", retry_stale=False)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError("Failed to recluster", resp)
