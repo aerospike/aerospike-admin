@@ -5141,6 +5141,9 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
             "1.1.1.1:3000": ASINFO_RESPONSE_OK
         }
 
+        # _report sets the process exit code directly; the mocked logger does not
+        # reset it, so it would leak into later tests.
+        self.addCleanup(logger_util.set_exit_code, 0)
         self.addCleanup(patch.stopall)
 
     @staticmethod
@@ -5170,6 +5173,18 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
         return {"is_parked": parked, "park_ms": park_ms, "namespaces": {}}
 
     @staticmethod
+    def _multi_status(states, parked=False, park_ms=0):
+        """states maps namespace to state, for the mixed cases _status cannot build."""
+        return {
+            "is_parked": parked,
+            "park_ms": park_ms,
+            "namespaces": {
+                ns: {"state": state, "files_completed": 0, "files_total": 1}
+                for ns, state in states.items()
+            },
+        }
+
+    @staticmethod
     def _responses(values):
         """
         info_* methods are wrapped in @async_return_exceptions, so they RETURN an
@@ -5189,6 +5204,22 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
             "lib.live_cluster.manage_controller.time.time",
             side_effect=itertools.count(0, 1),
         ).start()
+
+    def _sleep_advances_clock(self):
+        """Time moves only in asyncio.sleep, so each loop is exactly one interval."""
+        now = 0.0
+
+        def current_time():
+            return now
+
+        async def sleep(seconds):
+            nonlocal now
+            now += seconds
+
+        patch(
+            "lib.live_cluster.manage_controller.time.time", side_effect=current_time
+        ).start()
+        self.sleep_mock.side_effect = sleep
 
     async def test_success_polls_to_done(self):
         self.node_mock.info_checkpoint_status.side_effect = self._responses(
@@ -5252,18 +5283,170 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
         self.logger_mock.error.assert_not_called()
         self.view_mock.print_result.assert_called_once()
 
-    async def test_node_stops_answering_while_copying_is_an_error(self):
+    @parameterized.expand(
+        [
+            ("connection_refused", IOError("connection refused")),
+            ("timeout", asyncio.TimeoutError()),
+            (
+                "server_error",
+                ASInfoCheckpointError(
+                    "Failed to get checkpoint status", "ERROR:4:some other refusal"
+                ),
+            ),
+        ]
+    )
+    async def test_connection_error_while_copying_keeps_polling(self, _, error):
+        # The copy runs after the node has left the cluster and outlasts the pooled
+        # connections, so a failed poll mid-copy is not the node dying. Ending the
+        # poll here reported a checkpoint that completed as a cold-start.
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [
+                self._status("copying", 3, 11),
+                error,
+                self._status("done", 11, 11),
+            ]
+        )
+
+        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.assertEqual(self.node_mock.info_checkpoint_status.await_count, 3)
+        self.logger_mock.error.assert_not_called()
+        self.view_mock.print_result.assert_called_once()
+
+    async def test_repeated_transient_errors_keep_polling(self):
         self.node_mock.info_checkpoint_status.side_effect = self._responses(
             [
                 self._status("copying", 3, 11),
                 IOError("connection refused"),
+                IOError("connection refused"),
+                self._status("done", 11, 11),
+            ]
+        )
+
+        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.assertEqual(self.node_mock.info_checkpoint_status.await_count, 4)
+        self.logger_mock.error.assert_not_called()
+        self.view_mock.print_result.assert_called_once()
+
+    async def test_reported_short_timeout_command_warns_and_names_the_last_error(self):
+        # The bug report verbatim: --timeout 3, one copying tick, then silence. asadm
+        # leaves through the park deadline with a warning that quotes the last poll.
+        self._sleep_advances_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("copying", 3, 11)] + [IOError("connection refused")] * 50
+        )
+
+        await self.controller.execute(
+            "--timeout 3 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.logger_mock.error.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        warnings_logged = self.logger_mock.warning.call_args_list
+        messages = [call[0][0] for call in warnings_logged]
+        self.assertFalse(any("cold-start" in msg for msg in messages), messages)
+        gave_up = [
+            call for call in warnings_logged if "Stopped polling %s while" in call[0][0]
+        ]
+        self.assertEqual(len(gave_up), 1, messages)
+        self.assertIn("manage checkpoint status", gave_up[0][0][0])
+        self.assertIn("connection refused", str(gave_up[0][0][3]))
+
+    async def test_recovered_error_is_not_quoted_when_the_poll_times_out(self):
+        # One transient failure, then the node answers again until the deadline. The
+        # give-up message must quote the last outcome, not the stale failure.
+        self._sleep_advances_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("copying", 3, 11), IOError("connection refused")]
+            + [self._status("none", 0, 0)] * 20
+        )
+
+        await self.controller.execute(
+            "--timeout 10 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.logger_mock.error.assert_not_called()
+        gave_up = [
+            call
+            for call in self.logger_mock.warning.call_args_list
+            if "Stopped polling %s while" in call[0][0]
+        ]
+        self.assertEqual(len(gave_up), 1, self.logger_mock.warning.call_args_list)
+        self.assertNotIn("connection refused", str(gave_up[0][0]))
+        self.assertEqual(gave_up[0][0][3], "in progress")
+
+    async def test_node_that_stops_answering_is_polled_until_the_park_deadline(self):
+        # In the reported case every poll during the copy failed, and the copy is
+        # proportional to index size, so the only bound asadm can apply is the park
+        # window the operator asked for.
+        self._sleep_advances_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("copying", 3, 11)] + [IOError("connection refused")] * 200
+        )
+
+        await self.controller.execute(
+            "--timeout 60 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        # One answering poll, then one per second across park_window = 55.
+        self.assertEqual(self.node_mock.info_checkpoint_status.await_count, 56)
+        self.logger_mock.error.assert_not_called()
+        self.view_mock.print_result.assert_not_called()
+        gave_up = [
+            call
+            for call in self.logger_mock.warning.call_args_list
+            if "Stopped polling %s while" in call[0][0]
+        ]
+        self.assertEqual(len(gave_up), 1, self.logger_mock.warning.call_args_list)
+        self.assertIn("connection refused", str(gave_up[0][0][3]))
+
+    async def test_answering_node_that_never_finishes_ends_on_the_park_deadline(self):
+        self._tick_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("none", 0, 0)] * 50
+        )
+
+        await self.controller.execute(
+            "--timeout 10 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.logger_mock.error.assert_not_called()
+        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
+        self.assertTrue(any("Stopped polling %s" in msg for msg in messages), messages)
+
+    async def test_parked_with_unfinished_namespace_reports_the_state_verbatim(self):
+        # is_parked is terminal, so a namespace short of done/failed is the server's
+        # own report. Say what it said; do not diagnose a cold-start from it.
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [
+                {
+                    "is_parked": True,
+                    "park_ms": 120,
+                    "namespaces": {
+                        "test": {
+                            "state": "done",
+                            "files_completed": 11,
+                            "files_total": 11,
+                        },
+                        "bar": {
+                            "state": "none",
+                            "files_completed": 0,
+                            "files_total": 0,
+                        },
+                    },
+                }
             ]
         )
 
         await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
 
         self.logger_mock.error.assert_called_once()
-        self.assertIn("still copying", self.logger_mock.error.call_args[0][0])
+        args = self.logger_mock.error.call_args[0]
+        self.assertNotIn("cold-start", args[0])
+        # The name appears once, carrying the server's own state.
+        self.assertIn("bar=none", args[2])
+        self.assertNotIn("test", args[2])
 
     async def test_copying_does_not_burn_the_park_window(self):
         # The server's --timeout is the park hold and its clock only starts once the
@@ -5325,15 +5508,21 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
             messages,
         )
 
-    async def test_node_that_stops_answering_with_no_namespaces_is_an_error(self):
+    async def test_node_that_stops_answering_with_no_namespaces_is_a_warning(self):
+        # Reading one empty status then losing contact says nothing about the
+        # checkpoint, so it cannot be reported as a known-bad state.
+        self._tick_clock()
         self.node_mock.info_checkpoint_status.side_effect = self._responses(
-            [self._no_namespace_status(), IOError("connection refused")]
+            [self._no_namespace_status()] + [IOError("connection refused")] * 50
         )
 
-        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+        await self.controller.execute(
+            "--timeout 10 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
 
-        self.logger_mock.error.assert_called_once()
-        self.assertIn("reported no namespaces", self.logger_mock.error.call_args[0][0])
+        self.logger_mock.error.assert_not_called()
+        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
+        self.assertTrue(any("before it parked" in msg for msg in messages), messages)
 
     async def test_parked_refusal_for_the_whole_window_is_a_warning(self):
         # checkpoint-status itself can return the parked refusal. Such a node is never
@@ -5364,18 +5553,86 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
             messages,
         )
 
-    async def test_never_read_and_not_timed_out_names_the_error(self):
+    @parameterized.expand(
+        [
+            (
+                "parked_refusal",
+                ASInfoCheckpointParkedError(
+                    "Failed to get checkpoint status",
+                    "ERROR:22:checkpoint-save in progress - only checkpoint-status",
+                ),
+            ),
+            (
+                "server_error",
+                ASInfoCheckpointError(
+                    "Failed to get checkpoint status", "ERROR:4:some other refusal"
+                ),
+            ),
+        ]
+    )
+    async def test_server_error_is_not_terminal_and_runs_to_the_deadline(
+        self, _, error
+    ):
+        # The server answered, with an ERROR. That is no result either way, so the
+        # node runs to the park deadline.
+        self._tick_clock()
         self.node_mock.info_checkpoint_status.side_effect = self._responses(
-            [IOError("connection refused")]
+            [error] * 500
         )
 
-        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+        await self.controller.execute(
+            "--timeout 300 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.logger_mock.error.assert_not_called()
+        messages = [call[0][0] for call in self.logger_mock.warning.call_args_list]
+        self.assertTrue(
+            any("before it reported a checkpoint status" in msg for msg in messages),
+            messages,
+        )
+
+    async def test_failed_namespace_still_errors_when_the_node_then_goes_silent(self):
+        # A namespace the server itself called failed is a known result. Losing contact
+        # afterwards must not downgrade it to "unknown" and exit 0 - that would let
+        # 'manage checkpoint save && systemctl stop aerospike' stop the node.
+        self._tick_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._multi_status({"test": "failed", "bar": "copying"})]
+            + [IOError("connection refused")] * 200
+        )
+
+        await self.controller.execute(
+            "--timeout 60 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
 
         self.logger_mock.error.assert_called_once()
-        self.assertIn(
-            "Never read a checkpoint status from %s: %s",
-            self.logger_mock.error.call_args[0][0],
+        error_args = self.logger_mock.error.call_args[0]
+        self.assertIn("Checkpoint FAILED", error_args[0])
+        self.assertIn("test", error_args[2])
+        self.view_mock.print_result.assert_not_called()
+
+    async def test_never_read_a_status_names_the_last_error(self):
+        # Failing every poll from the start is asadm never learning the result, not
+        # the node having failed.
+        self._tick_clock()
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [IOError("connection refused")] * 200
         )
+
+        await self.controller.execute(
+            "--timeout 30 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        self.logger_mock.error.assert_not_called()
+        warnings_logged = [
+            call
+            for call in self.logger_mock.warning.call_args_list
+            if "before it reported a checkpoint status" in call[0][0]
+        ]
+        self.assertEqual(
+            len(warnings_logged), 1, self.logger_mock.warning.call_args_list
+        )
+        self.assertIn("connection refused", str(warnings_logged[0][0][2]))
 
     async def test_cancel_mid_poll_reports_and_propagates(self):
         # Ctrl-C after an irreversible save must still print the last known state,
@@ -5866,6 +6123,128 @@ class ManageCheckpointExitCodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(logger_util.get_exit_code(), 0)
 
+    async def test_transient_connection_error_mid_copy_leaves_exit_code_0(self):
+        # 'manage checkpoint save && systemctl stop aerospike' must not stop on a
+        # checkpoint that completed.
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASINFO_RESPONSE_OK
+        }
+        statuses = iter(
+            [
+                _checkpoint_status(
+                    test={"state": "copying", "files_completed": 3, "files_total": 11}
+                ),
+                IOError("connection refused"),
+                _checkpoint_status(
+                    test={"state": "done", "files_completed": 11, "files_total": 11}
+                ),
+            ]
+        )
+
+        async def next_status(*args, **kwargs):
+            return next(statuses)
+
+        self.node_mock.info_checkpoint_status.side_effect = next_status
+
+        await self.controller.execute("--no-warn with 1.1.1.1:3000".split())
+
+        self.assertEqual(logger_util.get_exit_code(), 0)
+
+    async def test_failed_namespace_then_silence_exits_non_zero(self):
+        # Unknown is not failure, but a namespace the server called failed IS, and it
+        # must keep exiting non-zero so a '&& systemctl stop aerospike' chain halts.
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASINFO_RESPONSE_OK
+        }
+        patch(
+            "lib.live_cluster.manage_controller.time.time",
+            side_effect=itertools.count(0, 1),
+        ).start()
+        statuses = itertools.chain(
+            [
+                _checkpoint_status(
+                    test={"state": "failed", "files_completed": 3, "files_total": 11},
+                    bar={"state": "copying", "files_completed": 1, "files_total": 11},
+                )
+            ],
+            itertools.repeat(IOError("connection refused")),
+        )
+
+        async def next_status(*args, **kwargs):
+            return next(statuses)
+
+        self.node_mock.info_checkpoint_status.side_effect = next_status
+
+        await self.controller.execute(
+            "--timeout 60 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+        )
+
+        # logger.error sets 2; the point is that it is not 0.
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
+    async def test_node_stopped_before_terminal_status_exits_2(self):
+        # asadm never learned the result. Unknown is not failure, so the text is a
+        # warning, but it is not success either: '&& systemctl stop aerospike' must
+        # not proceed on a checkpoint asadm watched fail to finish.
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASINFO_RESPONSE_OK
+        }
+        patch(
+            "lib.live_cluster.manage_controller.time.time",
+            side_effect=itertools.count(0, 1),
+        ).start()
+        statuses = itertools.chain(
+            [
+                _checkpoint_status(
+                    test={"state": "copying", "files_completed": 3, "files_total": 11}
+                )
+            ],
+            itertools.repeat(IOError("connection refused")),
+        )
+
+        async def next_status(*args, **kwargs):
+            return next(statuses)
+
+        self.node_mock.info_checkpoint_status.side_effect = next_status
+
+        with self.assertNoLogs(self.logger, level="ERROR"):
+            await self.controller.execute(
+                "--timeout 60 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+            )
+
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
+    async def test_reported_short_timeout_command_exits_2(self):
+        # 'manage checkpoint save --timeout 3' with the node going silent mid-copy
+        # leaves through the park deadline. Same contract: warning text, exit 2.
+        self.cluster_mock.info_checkpoint_save.return_value = {
+            "1.1.1.1:3000": ASINFO_RESPONSE_OK
+        }
+        patch(
+            "lib.live_cluster.manage_controller.time.time",
+            side_effect=itertools.count(0, 1),
+        ).start()
+        statuses = itertools.chain(
+            [
+                _checkpoint_status(
+                    test={"state": "copying", "files_completed": 3, "files_total": 11}
+                )
+            ],
+            itertools.repeat(IOError("connection refused")),
+        )
+
+        async def next_status(*args, **kwargs):
+            return next(statuses)
+
+        self.node_mock.info_checkpoint_status.side_effect = next_status
+
+        with self.assertNoLogs(self.logger, level="ERROR"):
+            await self.controller.execute(
+                "--timeout 3 --poll-interval 1 --no-warn with 1.1.1.1:3000".split()
+            )
+
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
 
 class ManageControllerAliasTest(unittest.TestCase):
     """'manage c' resolved to config before 'checkpoint' shared the prefix. The alias
@@ -5959,7 +6338,21 @@ class ManageCheckpointErrorReportingTest(unittest.IsolatedAsyncioTestCase):
 
         await self.controller.execute("with 1.1.1.1:3000".split())
 
-        self.logger_mock.error.assert_called_once_with("%s: %s", "1.1.1.1:3000", error)
+        self.logger_mock.error.assert_called_once_with(
+            "%s: %s", "1.1.1.1:3000", str(error)
+        )
+        self.assertIn("'index-checkpoint-path' is not configured", str(error))
+
+    async def test_error_with_no_text_is_logged_by_repr(self):
+        # TimeoutError() renders as "", which printed "1.1.1.1:3000: " and hid the
+        # reason. The repr at least names the exception.
+        self.node_mock.info_checkpoint_status.return_value = TimeoutError()
+
+        await self.controller.execute("with 1.1.1.1:3000".split())
+
+        self.logger_mock.error.assert_called_once_with(
+            "%s: %s", "1.1.1.1:3000", "TimeoutError()"
+        )
 
     async def test_healthy_nodes_still_tabulated_alongside_an_errored_one(self):
         good = MagicMock()

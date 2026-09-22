@@ -52,7 +52,7 @@ IMAGE_REPO = os.environ.get(
     "ASADM_E2E_IMAGE_REPO",
     "artifact.aerospike.io/database-docker-test-local/aerospike-server-enterprise",
 )
-SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.2.0.0_20260911T220300Z")
+SERVER_TAG = os.environ.get("ASADM_E2E_SERVER_TAG", "8.2.0.0_20260918T215052Z")
 
 WORK_DIRECTORY = "work"
 LUA_DIRECTORY = "work/lua"
@@ -441,6 +441,10 @@ def create_conf_file_from_template(
             else "mesh-seed-address-port " + peer_addr[0] + " " + str(peer_addr[1] + 2)
         ),
         "namespace": NAMESPACE,
+        # Only the checkpoint template uses this; an unreferenced param is harmless.
+        # 'index-checkpoint-path' requires an explicit node-id, because a derived one
+        # can change on a reschedule and orphan the checkpoint.
+        "node_id": "a%d" % index,
     }
 
     temp = string.Template(template_content)

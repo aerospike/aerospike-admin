@@ -33,8 +33,8 @@ from lib.view import terminal
 from lib.utils import constants, util, version
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.utils.lookup_dict import PrefixDict
+from lib.utils.exit_code import set_exit_code
 from .client import (
-    ASInfoCheckpointParkedError,
     ASInfoResponseError,
     ASInfoError,
     ASProtocolError,
@@ -3240,7 +3240,8 @@ class ManageCheckpointLeafController(ManageLeafCommandController):
     @staticmethod
     def _log_status_errors(errors):
         for key, error in errors.items():
-            logger.error("%s: %s", key, error)
+            # TimeoutError has no text, and a blank line hides why the node failed.
+            logger.error("%s: %s", key, str(error) or repr(error))
 
     async def _show_status(self):
         await self._check_version_support(lenient=True)
@@ -3524,16 +3525,22 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                 ok, errors = self._split_statuses(statuses)
                 last_seen.update(ok)
                 last_error.update(errors)
+                now = time.time()
 
-                # Errors are expected mid-poll (a parked node refuses, a reaped one
-                # stops answering) so they are reported once by _report, not per tick.
+                # The final report quotes the last outcome, not the oldest failure.
+                for key in ok:
+                    last_error.pop(key, None)
+
+                # Errors are expected mid-poll (a stale pooled socket, a refused dial
+                # while the copy runs) so they are reported once by _report, not per
+                # tick.
                 if ok:
                     self.view.show_checkpoint_status(ok, self.cluster, **self.mods)
 
                 pending = [
                     node
                     for node in pending
-                    if not self._is_terminal(node, statuses[node.key])
+                    if not self._is_terminal(statuses[node.key])
                 ]
 
                 if not pending:
@@ -3543,8 +3550,8 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                 # the copy has finished. Copying is unbounded and I/O-bound, so the
                 # countdown restarts for as long as a node reports progress.
                 if self._any_copying(pending, statuses):
-                    deadline = time.time() + park_window
-                elif time.time() >= deadline:
+                    deadline = now + park_window
+                elif now >= deadline:
                     timed_out = {node.key for node in pending}
                     logger.warning(
                         "Stopped polling after %s seconds. Nodes still in progress: %s",
@@ -3576,15 +3583,13 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
 
         return False
 
-    def _is_terminal(self, node, status):
-        if isinstance(status, ASInfoCheckpointParkedError):
-            # The node is parked but refused checkpoint-status. Keep polling.
-            return False
-
+    def _is_terminal(self, status):
         if isinstance(status, Exception):
-            # The node stopped answering. The park window closed, or an operator
-            # stopped it. Either way there is nothing left to poll.
-            return True
+            # A failed poll is not the node dying. The server answers checkpoint-status
+            # through the copy and the park; what fails is the transport (a stale
+            # pooled socket, a refused dial while the copy runs). The park deadline
+            # in _poll bounds it.
+            return False
 
         if status["is_parked"]:
             # The park is entered only after every save has finished, so nothing
@@ -3604,59 +3609,24 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
             for ns_status in namespaces.values()
         )
 
-    def _report(self, nodes, last_seen, last_error=None, timed_out=None):
-        last_error = last_error or {}
-        timed_out = timed_out or set()
+    @staticmethod
+    def _last_poll(last_error, key, default="in progress"):
+        """The last failure for key, as operator-facing text. TimeoutError has none."""
+        error = last_error.get(key)
 
+        if error is None:
+            return default
+
+        return str(error) or repr(error)
+
+    def _report(self, nodes, last_seen, last_error, timed_out):
         for node in nodes:
             status = last_seen.get(node.key)
-
-            if status is None:
-                if node.key in timed_out:
-                    logger.warning(
-                        "Stopped polling %s before it reported a checkpoint status. "
-                        "The checkpoint may still be running - follow it with "
-                        "'manage checkpoint status'.",
-                        node.key,
-                    )
-                else:
-                    logger.error(
-                        "Never read a checkpoint status from %s: %s",
-                        node.key,
-                        last_error.get(node.key),
-                    )
-
-                continue
-
-            namespaces = status["namespaces"]
-
-            if not namespaces:
-                if status["is_parked"]:
-                    logger.warning(
-                        "%s parked with no namespace checkpointing.", node.key
-                    )
-                elif node.key in timed_out:
-                    logger.warning(
-                        "Stopped polling %s before it parked. No namespace is "
-                        "checkpointing - follow it with 'manage checkpoint status'.",
-                        node.key,
-                    )
-                else:
-                    logger.error(
-                        "%s reported no namespaces to checkpoint. Its checkpoint state "
-                        "is unknown - check the server log before restarting it.",
-                        node.key,
-                    )
-
-                continue
-
+            namespaces = status["namespaces"] if status else {}
             failed = [ns for ns, s in namespaces.items() if s["state"] == "failed"]
-            unfinished = [
-                ns
-                for ns, s in namespaces.items()
-                if s["state"] not in self.TERMINAL_STATES
-            ]
 
+            # A namespace the server itself called failed is a known result, so it
+            # outranks losing contact afterwards. Silence is what is unknown, not this.
             if failed:
                 logger.error(
                     "Checkpoint FAILED on %s for namespace(s): %s. Retention is "
@@ -3665,22 +3635,65 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
                     node.key,
                     ", ".join(failed),
                 )
-            elif node.key in timed_out:
+
+                continue
+
+            if status is None:
+                logger.warning(
+                    "Stopped polling %s before it reported a checkpoint status "
+                    "(last poll: %s). Follow it with 'manage checkpoint status'.",
+                    node.key,
+                    self._last_poll(last_error, node.key, "no response"),
+                )
+                # Unknown is not success: a '&& systemctl stop' chain must not proceed
+                # on it. The text stays a warning because asadm is not asserting failure.
+                set_exit_code(2)
+
+                continue
+
+            if not namespaces:
+                if status["is_parked"]:
+                    logger.warning(
+                        "%s parked with no namespace checkpointing.", node.key
+                    )
+                else:
+                    logger.warning(
+                        "Stopped polling %s before it parked. No namespace is "
+                        "checkpointing (last poll: %s) - follow it with 'manage "
+                        "checkpoint status'.",
+                        node.key,
+                        self._last_poll(last_error, node.key),
+                    )
+                    set_exit_code(2)
+
+                continue
+
+            unfinished = [
+                ns
+                for ns, s in namespaces.items()
+                if s["state"] not in self.TERMINAL_STATES
+            ]
+
+            if node.key in timed_out:
                 # asadm gave up, the node did not. Saying "no usable checkpoint" here
                 # would push an operator into killing a node that is still copying.
                 logger.warning(
-                    "Stopped polling %s while namespace(s) %s were still in progress. "
-                    "The checkpoint is still running - follow it with 'manage "
-                    "checkpoint status'.",
+                    "Stopped polling %s while namespace(s) %s were still in progress "
+                    "(last poll: %s). Follow it with 'manage checkpoint status'.",
                     node.key,
                     ", ".join(unfinished),
+                    self._last_poll(last_error, node.key),
                 )
+                set_exit_code(2)
             elif unfinished:
+                # Only reachable when parked, so the state is the server's own report.
                 logger.error(
-                    "%s stopped answering while namespace(s) %s were still copying. "
-                    "No usable checkpoint - this node will cold-start.",
+                    "%s parked with namespace(s) not in a terminal state: %s. "
+                    "Check the server log before restarting it.",
                     node.key,
-                    ", ".join(unfinished),
+                    ", ".join(
+                        "{}={}".format(ns, namespaces[ns]["state"]) for ns in unfinished
+                    ),
                 )
             else:
                 self.view.print_result("Checkpoint complete on {}.".format(node.key))
