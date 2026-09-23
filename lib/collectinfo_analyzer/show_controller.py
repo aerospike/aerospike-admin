@@ -31,7 +31,11 @@ from lib.live_cluster.get_controller import (
 )
 from lib.utils import common, constants, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
-from .collectinfo_command_controller import CollectinfoCommandController
+from .collectinfo_command_controller import (
+    CollectinfoCommandController,
+    has_node_data,
+    warn_no_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +167,9 @@ class ShowConfigController(CollectinfoCommandController):
             stanza=constants.CONFIG_SECURITY
         )
 
+        if not has_node_data(security_configs):
+            warn_no_data("show config security", "security configuration")
+
         for timestamp in sorted(security_configs.keys()):
             self.view.show_config(
                 "Security Configuration",
@@ -212,6 +219,9 @@ class ShowConfigController(CollectinfoCommandController):
             stanza=constants.CONFIG_SERVICE
         )
 
+        if not has_node_data(service_configs):
+            warn_no_data("show config service", "service configuration")
+
         for timestamp in sorted(service_configs.keys()):
             self.view.show_config(
                 "Service Configuration",
@@ -260,6 +270,9 @@ class ShowConfigController(CollectinfoCommandController):
         network_configs = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_NETWORK
         )
+
+        if not has_node_data(network_configs):
+            warn_no_data("show config network", "network configuration")
 
         for timestamp in sorted(network_configs.keys()):
             self.view.show_config(
@@ -311,6 +324,9 @@ class ShowConfigController(CollectinfoCommandController):
             stanza=constants.CONFIG_NAMESPACE, flip=True
         )
 
+        if not any(ns_configs.values()):
+            warn_no_data("show config namespace", "namespace configuration")
+
         for timestamp in sorted(ns_configs.keys()):
             for ns, configs in ns_configs[timestamp].items():
                 self.view.show_config(
@@ -360,6 +376,11 @@ class ShowConfigController(CollectinfoCommandController):
         )
 
         xdr_dc_configs = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
+
+        if not has_node_data(xdr_dc_configs):
+            warn_no_data(
+                "show config dc", "XDR DC configuration", " ".join(self.mods["for"])
+            )
 
         for timestamp in xdr_dc_configs.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
@@ -438,6 +459,9 @@ class ShowConfigXDRController(CollectinfoCommandController):
 
         xdr_configs = self.getter.get_xdr()
 
+        if not has_node_data(xdr_configs):
+            warn_no_data("show config xdr", "XDR configuration")
+
         for timestamp in xdr_configs.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
@@ -488,6 +512,13 @@ class ShowConfigXDRController(CollectinfoCommandController):
         )
 
         xdr_dc_configs = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
+
+        if not has_node_data(xdr_dc_configs):
+            warn_no_data(
+                "show config xdr dc",
+                "XDR DC configuration",
+                " ".join(self.mods["for"]),
+            )
 
         for timestamp in xdr_dc_configs.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
@@ -540,6 +571,13 @@ class ShowConfigXDRController(CollectinfoCommandController):
 
         xdr_ns_configs = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
 
+        if not has_node_data(xdr_ns_configs):
+            warn_no_data(
+                "show config xdr namespace",
+                "XDR namespace configuration",
+                " ".join(self.mods["for"]),
+            )
+
         for timestamp in xdr_ns_configs.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             self.view.show_xdr_ns_config(
@@ -590,6 +628,11 @@ class ShowConfigXDRController(CollectinfoCommandController):
 
         xdr_filters = self.getter.get_xdr_filters(for_mods=self.mods["for"])
 
+        if not has_node_data(xdr_filters):
+            warn_no_data(
+                "show config xdr filter", "XDR filters", " ".join(self.mods["for"])
+            )
+
         for timestamp in xdr_filters.keys():
             self.view.show_xdr_filters(
                 xdr_filters[timestamp],
@@ -616,8 +659,12 @@ class ShowDistributionController(CollectinfoCommandController):
         self.do_time_to_live(line)
         self.do_object_size(line)
 
-    def _do_distribution(self, histogram_name, title, unit):
+    def _do_distribution(self, command, histogram_name, title, unit):
         histogram = self.log_handler.info_histogram(histogram_name)
+
+        if not has_node_data(histogram):
+            warn_no_data(command, f"{title.lower()} data")
+
         for timestamp in sorted(histogram.keys()):
             if not histogram[timestamp]:
                 continue
@@ -641,7 +688,9 @@ class ShowDistributionController(CollectinfoCommandController):
         usage=f"[{Modifiers.FOR} <ns-substring>]",
     )
     def do_time_to_live(self, line):
-        return self._do_distribution("ttl", "TTL Distribution", "Seconds")
+        return self._do_distribution(
+            "show distribution time_to_live", "ttl", "TTL Distribution", "Seconds"
+        )
 
     @CommandHelp(
         "Displays the distribution of Object sizes for namespaces",
@@ -674,16 +723,20 @@ class ShowDistributionController(CollectinfoCommandController):
             mods=self.mods,
         )
 
+        command = "show distribution object_size"
         histogram_name = "objsz"
         if not byte_distribution:
             return self._do_distribution(
-                histogram_name, "Object Size Distribution", "Record Blocks"
+                command, histogram_name, "Object Size Distribution", "Record Blocks"
             )
 
         histogram = self.log_handler.info_histogram(
             histogram_name, byte_distribution=True
         )
         builds = self.log_handler.info_meta_data(stanza="asd_build")
+
+        if not has_node_data(histogram):
+            warn_no_data(command, "object size distribution data")
 
         for timestamp in histogram:
             self.view.show_object_distribution(
@@ -728,6 +781,9 @@ class ShowLatenciesController(CollectinfoCommandController):
             namespaces = self.log_handler.info_namespaces()
 
         latency = self.log_handler.info_latency()
+
+        if not has_node_data(latency):
+            warn_no_data("show latencies", "latency data")
 
         for timestamp in sorted(latency.keys()):
             namespace_set = set()
@@ -851,6 +907,9 @@ class ShowStatisticsController(CollectinfoCommandController):
 
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
 
+        if not has_node_data(service_stats):
+            warn_no_data("show statistics service", "service statistics")
+
         for timestamp in sorted(service_stats.keys()):
             self.view.show_config(
                 "Service Statistics",
@@ -905,12 +964,14 @@ class ShowStatisticsController(CollectinfoCommandController):
         ns_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_NAMESPACE, flip=True
         )
+        shown = False
 
         for timestamp in sorted(ns_stats.keys()):
             namespace_list = util.filter_list(
                 ns_stats[timestamp].keys(), self.mods["for"]
             )
             for ns in sorted(namespace_list):
+                shown = True
                 stats = ns_stats[timestamp][ns]
                 self.view.show_stats(
                     "%s Namespace Statistics" % (ns),
@@ -922,6 +983,13 @@ class ShowStatisticsController(CollectinfoCommandController):
                     timestamp=timestamp,
                     **self.mods,
                 )
+
+        if not shown:
+            warn_no_data(
+                "show statistics namespace",
+                "namespace statistics",
+                " ".join(self.mods["for"]),
+            )
 
     @CommandHelp(
         "Displays set statistics",
@@ -966,6 +1034,11 @@ class ShowStatisticsController(CollectinfoCommandController):
         )
 
         set_stats = self.getter.get_sets(for_mods=self.mods["for"], flip=True)
+
+        if not any(set_stats.values()):
+            warn_no_data(
+                "show statistics sets", "set statistics", " ".join(self.mods["for"])
+            )
 
         for timestamp in sorted(set_stats.keys()):
             for key, stats in set_stats[timestamp].items():
@@ -1038,6 +1111,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         new_bin_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_BINS, flip=True
         )
+        shown = False
 
         for timestamp in sorted(new_bin_stats.keys()):
             if not new_bin_stats[timestamp] or isinstance(
@@ -1053,6 +1127,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 if ns not in namespace_set:
                     continue
 
+                shown = True
                 self.view.show_stats(
                     "%s Bin Statistics" % (ns),
                     stats,
@@ -1063,6 +1138,11 @@ class ShowStatisticsController(CollectinfoCommandController):
                     timestamp=timestamp,
                     **self.mods,
                 )
+
+        if not shown:
+            warn_no_data(
+                "show statistics bins", "bin statistics", " ".join(self.mods["for"])
+            )
 
     # pre 5.0
     @CommandHelp(
@@ -1105,6 +1185,9 @@ class ShowStatisticsController(CollectinfoCommandController):
         )
 
         xdr_dc_stats = self.getter.get_xdr_dcs()
+
+        if not has_node_data(xdr_dc_stats):
+            warn_no_data("show statistics dc", "XDR DC statistics")
 
         for timestamp in xdr_dc_stats.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
@@ -1168,6 +1251,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         sindex_stats = self.log_handler.info_statistics(
             stanza=constants.STAT_SINDEX, flip=True
         )
+        shown = False
 
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or isinstance(
@@ -1200,6 +1284,7 @@ class ShowStatisticsController(CollectinfoCommandController):
                 if ns not in namespace_set or si not in sindex_set:
                     continue
 
+                shown = True
                 self.view.show_stats(
                     "%s SIndex Statistics" % (sindex),
                     stats,
@@ -1210,6 +1295,13 @@ class ShowStatisticsController(CollectinfoCommandController):
                     timestamp=timestamp,
                     **self.mods,
                 )
+
+        if not shown:
+            warn_no_data(
+                "show statistics sindex",
+                "sindex statistics",
+                " ".join(self.mods["for"]),
+            )
 
 
 @CommandHelp(
@@ -1334,6 +1426,13 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
 
         xdr_dc_stats = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
 
+        if not has_node_data(xdr_dc_stats):
+            warn_no_data(
+                "show statistics xdr dc",
+                "XDR DC statistics",
+                " ".join(self.mods["for"]),
+            )
+
         for timestamp in xdr_dc_stats.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
@@ -1404,6 +1503,13 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
 
         xdr_ns_stats = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
 
+        if not has_node_data(xdr_ns_stats):
+            warn_no_data(
+                "show statistics xdr namespace",
+                "XDR namespace statistics",
+                " ".join(self.mods["for"]),
+            )
+
         for timestamp in xdr_ns_stats.keys():
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
@@ -1428,6 +1534,9 @@ class ShowPmapController(CollectinfoCommandController):
 
     def _do_default(self, line):
         pmap_data = self.log_handler.info_pmap()
+
+        if not has_node_data(pmap_data):
+            warn_no_data("show pmap", "partition map data")
 
         for timestamp in sorted(pmap_data.keys()):
             if not pmap_data[timestamp]:
@@ -1467,6 +1576,9 @@ class ShowUsersController(CollectinfoCommandController):
         else:
             users_data = self.getter.get_user(user, nodes="principal")
 
+        if not has_node_data(users_data):
+            warn_no_data("show users", "users", user or "")
+
         for timestamp in sorted(users_data.keys()):
             if not users_data[timestamp]:
                 continue
@@ -1499,6 +1611,9 @@ class ShowUsersStatsController(CollectinfoCommandController):
         else:
             users_data = self.getter.get_user(user)
 
+        if not has_node_data(users_data):
+            warn_no_data("show users statistics", "users", user or "")
+
         for timestamp in sorted(users_data.keys()):
             if not users_data[timestamp]:
                 continue
@@ -1523,6 +1638,9 @@ class ShowRolesController(CollectinfoCommandController):
     def _do_default(self, line):
         roles_data = self.log_handler.admin_acl(stanza=constants.ADMIN_ROLES)
 
+        if not has_node_data(roles_data):
+            warn_no_data("show roles", "roles")
+
         for timestamp in sorted(roles_data.keys()):
             if not roles_data[timestamp]:
                 continue
@@ -1545,6 +1663,9 @@ class ShowUdfsController(CollectinfoCommandController):
     def _do_default(self, line):
         # Show all UDFs
         udf_data = self.log_handler.info_meta_data(stanza=constants.METADATA_UDF)
+
+        if not has_node_data(udf_data):
+            warn_no_data("show udfs", "UDF modules")
 
         for timestamp in sorted(udf_data.keys()):
             if not udf_data[timestamp]:
@@ -1578,6 +1699,9 @@ class ShowSIndexController(CollectinfoCommandController):
 
     def _do_default(self, line):
         sindexes_data = self.log_handler.info_statistics(stanza=constants.STAT_SINDEX)
+
+        if not has_node_data(sindexes_data):
+            warn_no_data("show sindex", "secondary indexes")
 
         for timestamp in sorted(sindexes_data.keys()):
             if not sindexes_data[timestamp]:
@@ -1633,6 +1757,9 @@ class ShowRosterController(CollectinfoCommandController):
 
         roster_configs = self.log_handler.info_getconfig(stanza=constants.CONFIG_ROSTER)
 
+        if not has_node_data(roster_configs):
+            warn_no_data("show roster", "roster data")
+
         for timestamp in roster_configs:
             self.view.show_roster(
                 roster_configs[timestamp],
@@ -1653,6 +1780,13 @@ class ShowBestPracticesController(CollectinfoCommandController):
         best_practices = self.log_handler.info_meta_data(
             stanza=constants.METADATA_PRACTICES
         )
+
+        if not any(
+            isinstance(failed, list)
+            for nodes in best_practices.values()
+            for failed in nodes.values()
+        ):
+            warn_no_data("show best-practices", "best-practices data")
 
         for timestamp in sorted(best_practices.keys()):
             if not best_practices[timestamp]:
@@ -1676,15 +1810,16 @@ class ShowJobsController(CollectinfoCommandController):
         "Displays scans, queries, and sindex-builder jobs.",
     )
     def _do_default(self, line):
-        self.do_scans(line[:])
+        self.do_scans(line[:], default=True)
         self.do_queries(line[:])
-        self.do_sindex_builder(line[:])
+        self.do_sindex_builder(line[:], default=True)
 
-    def _job_helper(self, module, title, line):
+    def _job_helper(self, module, title, line, default=False):
         flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
         for_mods = self.mods[Modifiers.FOR]
 
         jobs_data = self.log_handler.info_meta_data(stanza=constants.METADATA_JOBS)
+        shown = False
 
         for timestamp in sorted(jobs_data.keys()):
             if not jobs_data[timestamp]:
@@ -1695,6 +1830,7 @@ class ShowJobsController(CollectinfoCommandController):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
             scan_data = filter_jobs(scan_data, for_mods=for_mods, where=where)
+            shown = shown or has_node_data({timestamp: scan_data or {}})
 
             self.view.show_jobs(
                 title,
@@ -1702,6 +1838,13 @@ class ShowJobsController(CollectinfoCommandController):
                 scan_data,
                 flip_output=flip_output,
                 **self.mods,
+            )
+
+        if not shown and not default:
+            warn_no_data(
+                "show jobs",
+                title.lower(),
+                "the given filters" if for_mods or where else "",
             )
 
     @CommandHelp(
@@ -1716,8 +1859,8 @@ class ShowJobsController(CollectinfoCommandController):
         usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg=f"Displays scan jobs. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
     )
-    def do_scans(self, line):
-        self._job_helper(constants.JobType.SCAN, "Scan Jobs", line)
+    def do_scans(self, line, default=False):
+        self._job_helper(constants.JobType.SCAN, "Scan Jobs", line, default)
 
     @CommandHelp(
         'Displays query jobs. For easier viewing run "page on" first.',
@@ -1753,8 +1896,10 @@ class ShowJobsController(CollectinfoCommandController):
         ),
     )
     @CommandName("sindex-builder")
-    def do_sindex_builder(self, line):
-        self._job_helper(constants.JobType.SINDEX_BUILDER, "SIndex Builder Jobs", line)
+    def do_sindex_builder(self, line, default=False):
+        self._job_helper(
+            constants.JobType.SINDEX_BUILDER, "SIndex Builder Jobs", line, default
+        )
 
 
 @CommandHelp(
@@ -1767,7 +1912,13 @@ class ShowRacksController(CollectinfoCommandController):
     def _do_default(self, line):
         racks_data = self.log_handler.info_getconfig(stanza=constants.CONFIG_RACKS)
 
+        if not has_node_data(racks_data):
+            warn_no_data("show racks", "rack data")
+
         for timestamp, data in racks_data.items():
+            if not data:
+                continue
+
             node_id_to_ip = self.log_handler.get_node_id_to_ip_mapping(timestamp)
             principal_id = self.log_handler.get_principal(timestamp)
 
@@ -1809,6 +1960,9 @@ class ShowStopWritesController(CollectinfoCommandController):
         set_stats = self.stat_getter.get_sets(for_mods=self.mods["for"])
         set_configs = self.config_getter.get_sets(for_mods=self.mods["for"])
 
+        if not has_node_data(service_stats):
+            warn_no_data("show stop-writes", "service statistics")
+
         for timestamp in sorted(service_stats.keys()):
             if not service_stats[timestamp]:
                 continue
@@ -1842,10 +1996,14 @@ class ShowUserAgentsController(CollectinfoCommandController):
 
         # Get the latest timestamp
         if not user_agents_data:
+            warn_no_data("show user-agents", "user agents")
             return
 
         latest_timestamp = max(user_agents_data.keys())
         data = user_agents_data[latest_timestamp]
+
+        if not has_node_data({latest_timestamp: data}):
+            warn_no_data("show user-agents", "user agents")
 
         # Process the data (base64 decode, etc.) similar to live cluster
         processed_data = {}
@@ -1939,6 +2097,7 @@ class ShowMaskingController(CollectinfoCommandController):
 
         # Get the latest timestamp
         if not masking_data:
+            warn_no_data("show masking", "masking rules")
             return
 
         latest_timestamp = max(masking_data.keys())
@@ -1952,6 +2111,7 @@ class ShowMaskingController(CollectinfoCommandController):
                 break
 
         if not masking_rules:
+            warn_no_data("show masking", "masking rules")
             return
 
         # Apply filtering if specified
@@ -1968,6 +2128,12 @@ class ShowMaskingController(CollectinfoCommandController):
 
                 filtered_rules.append(rule)
             masking_rules = filtered_rules
+
+            if not masking_rules:
+                filter_desc = f"namespace {namespace}"
+                if set_name:
+                    filter_desc += f" set {set_name}"
+                warn_no_data("show masking", "masking rules", filter_desc)
 
         return self.view.show_masking_rules(
             masking_rules, timestamp=latest_timestamp, **self.mods

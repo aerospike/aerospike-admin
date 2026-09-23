@@ -22,7 +22,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from .collectinfo_command_controller import CollectinfoCommandController
+from .collectinfo_command_controller import (
+    CollectinfoCommandController,
+    has_node_data,
+    warn_no_data,
+)
 from lib.base_controller import ShellException
 
 Modifiers = constants.Modifiers
@@ -59,13 +63,17 @@ class InfoController(CollectinfoCommandController):
         self.do_network(line)
         # needs to be awaited since the base class is async
         await self.controller_map["namespace"]()(line[:])
-        self.do_xdr(line)
+        self.do_xdr(line, default=True)
 
     @CommandHelp(
         "Displays network information for the cluster",
     )
     def do_network(self, line):
         service_stats = self.log_handler.info_statistics(stanza=constants.STAT_SERVICE)
+
+        if not has_node_data(service_stats):
+            warn_no_data("info network", "service statistics")
+
         for timestamp in sorted(service_stats.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
@@ -137,6 +145,9 @@ class InfoController(CollectinfoCommandController):
         missing_alloc_stats = set()
         all_nodes = set()
 
+        if not has_node_data(service_stats):
+            warn_no_data("info memory", "service statistics")
+
         for timestamp in sorted(service_stats.keys()):
             if not service_stats[timestamp]:
                 continue
@@ -177,6 +188,9 @@ class InfoController(CollectinfoCommandController):
     def do_set(self, line):
         set_stats = self.stats_getter.get_sets()
 
+        if not has_node_data(set_stats):
+            warn_no_data("info set", "set statistics")
+
         for timestamp in sorted(set_stats.keys()):
             if not set_stats[timestamp]:
                 continue
@@ -195,9 +209,13 @@ class InfoController(CollectinfoCommandController):
             ModifierHelp(Modifiers.FOR, "Filter datacenters using a substring match"),
         ),
     )
-    def do_xdr(self, line):
+    def do_xdr(self, line, default=False):
         old_stats = self.stats_getter.get_xdr()
         new_stats = self.stats_getter.get_xdr_dcs(for_mods=self.mods["for"])
+
+        if not default and not (has_node_data(old_stats) or has_node_data(new_stats)):
+            warn_no_data("info xdr", "XDR statistics", " ".join(self.mods["for"]))
+
         for timestamp in sorted(old_stats.keys()):
             if not old_stats[timestamp]:
                 continue
@@ -251,6 +269,10 @@ class InfoController(CollectinfoCommandController):
         dc_config = self.log_handler.info_getconfig(
             stanza=constants.CONFIG_DC, flip=True
         )
+
+        if not any(dc_stats.values()) and not any(dc_config.values()):
+            warn_no_data("info dc", "XDR DC statistics")
+
         for timestamp in sorted(dc_stats.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
             builds = cinfo_log.get_asd_build()
@@ -323,6 +345,9 @@ class InfoController(CollectinfoCommandController):
         sindex_stats = self.stats_getter.get_sindex()
         ns_configs = self.config_getter.get_namespace()
 
+        if not has_node_data(sindex_stats):
+            warn_no_data("info sindex", "secondary indexes")
+
         for timestamp in sorted(sindex_stats.keys()):
             if not sindex_stats[timestamp] or not ns_configs[timestamp]:
                 continue
@@ -370,6 +395,9 @@ class InfoController(CollectinfoCommandController):
                 )
                 continue
 
+            if not has_node_data({timestamp: release_data[timestamp]}):
+                warn_no_data("info release", "release data")
+
             if not release_data[timestamp]:
                 continue
 
@@ -401,6 +429,9 @@ class InfoNamespaceController(CollectinfoCommandController):
         ns_stats = self.stat_getter.get_namespace()
         service_stats = self.stat_getter.get_service()
 
+        if not has_node_data(ns_stats):
+            warn_no_data("info namespace usage", "namespace statistics")
+
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
                 continue
@@ -418,6 +449,9 @@ class InfoNamespaceController(CollectinfoCommandController):
         # In SC mode effective rack-id is different from that in namespace config.
         ns_stats = self.stat_getter.get_namespace()
         rack_ids = self.config_getter.get_rack_ids()
+
+        if not has_node_data(ns_stats):
+            warn_no_data("info namespace object", "namespace statistics")
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
@@ -453,6 +487,9 @@ class InfoTransactionsController(CollectinfoCommandController):
     def do_monitors(self, line):
         # Get namespace statistics which contain MRT metrics
         ns_stats = self.stats_getter.get_strong_consistency_namespace()
+
+        if not has_node_data(ns_stats):
+            warn_no_data("info transactions monitors", "strong-consistency namespaces")
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
@@ -513,6 +550,11 @@ class InfoTransactionsController(CollectinfoCommandController):
     def do_provisionals(self, line):
         # Get namespace statistics which contain MRT metrics
         ns_stats = self.stats_getter.get_strong_consistency_namespace()
+
+        if not has_node_data(ns_stats):
+            warn_no_data(
+                "info transactions provisionals", "strong-consistency namespaces"
+            )
 
         for timestamp in sorted(ns_stats.keys()):
             if not ns_stats[timestamp]:
