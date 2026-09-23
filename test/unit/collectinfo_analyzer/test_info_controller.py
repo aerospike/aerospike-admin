@@ -29,7 +29,10 @@ from lib.collectinfo_analyzer.get_controller import (
     GetStatisticsController,
 )
 from lib.base_controller import ShellException
-from lib.collectinfo_analyzer.info_controller import InfoController
+from lib.collectinfo_analyzer.info_controller import (
+    InfoController,
+    InfoTransactionsController,
+)
 
 NODE = "1.1.1.1"
 
@@ -328,3 +331,107 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
             self.controller.do_memory([])
 
         self.view_mock.info_memory.assert_not_called()
+
+
+NO_DATA_LOGGER = "lib.collectinfo_analyzer.collectinfo_command_controller"
+TS = "2025-01-01T00:00:00"
+
+
+class CollectinfoInfoNoDataTest(unittest.TestCase):
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        patch.object(
+            CollectinfoCommandController,
+            "log_handler",
+            self.log_handler,
+            create=True,
+        ).start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.addCleanup(patch.stopall)
+
+        cinfo_log_mock = MagicMock()
+        cinfo_log_mock.get_asd_build.return_value = {NODE: "8.2.0"}
+        self.log_handler.get_cinfo_log_at.return_value = cinfo_log_mock
+
+    def _info_controller(self, mods=None):
+        controller = InfoController()
+        controller.mods = mods if mods is not None else {"for": []}
+        controller.stats_getter = create_autospec(GetStatisticsController)
+        controller.config_getter = create_autospec(GetConfigController)
+        return controller
+
+    def no_data_warnings(self, run):
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING") as cm:
+            run()
+
+        return [r.getMessage() for r in cm.records]
+
+    def test_do_set_no_sets(self):
+        controller = self._info_controller()
+        controller.stats_getter.get_sets.return_value = {TS: {NODE: {}}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_set([]))
+
+        self.assertEqual(warnings, ["info set: no set statistics in this collectinfo."])
+
+    def test_do_set_sets_present_logs_nothing(self):
+        controller = self._info_controller()
+        controller.stats_getter.get_sets.return_value = {
+            TS: {NODE: {("test", "demo"): {"objects": "1"}}}
+        }
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            controller.do_set([])
+
+        self.view_mock.info_set.assert_called_once()
+
+    @parameterized.expand(
+        [
+            ([], "info xdr: no XDR statistics in this collectinfo."),
+            (["dc9"], "info xdr: no XDR statistics match dc9 in this collectinfo."),
+        ]
+    )
+    def test_do_xdr_no_datacenters(self, for_mods, expected):
+        controller = self._info_controller({"for": for_mods})
+        controller.stats_getter.get_xdr.return_value = {TS: {NODE: {}}}
+        controller.stats_getter.get_xdr_dcs.return_value = {TS: {NODE: {}}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_xdr([]))
+
+        self.assertEqual(warnings, [expected])
+
+    def test_do_xdr_quiet_under_plain_info(self):
+        controller = self._info_controller()
+        controller.stats_getter.get_xdr.return_value = {TS: {NODE: {}}}
+        controller.stats_getter.get_xdr_dcs.return_value = {TS: {NODE: {}}}
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            controller.do_xdr([], default=True)
+
+    def test_do_release_supported_but_empty(self):
+        controller = self._info_controller()
+        self.log_handler.info_release.return_value = {TS: {NODE: {}}}
+        self.log_handler.info_meta_data.return_value = {TS: {NODE: "8.2.0"}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_release([]))
+
+        self.assertEqual(
+            warnings, ["info release: no release data in this collectinfo."]
+        )
+
+    @parameterized.expand([("do_monitors",), ("do_provisionals",)])
+    def test_transactions_without_strong_consistency_namespaces(self, method):
+        controller = InfoTransactionsController()
+        controller.mods = {}
+        controller.stats_getter = create_autospec(GetStatisticsController)
+        controller.stats_getter.get_strong_consistency_namespace.return_value = {
+            TS: {NODE: {}}
+        }
+        command = "info transactions " + method[len("do_") :]
+
+        warnings = self.no_data_warnings(lambda: getattr(controller, method)([]))
+
+        self.assertEqual(
+            warnings,
+            [f"{command}: no strong-consistency namespaces in this collectinfo."],
+        )
