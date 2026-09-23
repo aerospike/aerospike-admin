@@ -2037,6 +2037,9 @@ class ShowUserAgentsController(LiveClusterCommandController):
                         f"Error processing user agent data from {node}: {e}"
                     )
 
+        if not any(processed_data.values()):
+            logger.warning("show user-agents: no user agents found.")
+
         return self.view.show_user_agents(self.cluster, processed_data, **self.mods)
 
 
@@ -2087,5 +2090,14 @@ class ShowMaskingController(LiveClusterCommandController):
             return
         elif isinstance(resp, Exception):
             raise resp
+
+        if not resp:
+            if namespace:
+                filter_desc = f"namespace {namespace}"
+                if set_name:
+                    filter_desc += f" set {set_name}"
+                logger.warning("show masking: no masking rules match %s.", filter_desc)
+            else:
+                logger.warning("show masking: no masking rules found.")
 
         return self.view.show_masking_rules(resp, **self.mods)

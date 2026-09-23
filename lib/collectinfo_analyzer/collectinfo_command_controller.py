@@ -12,10 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+
 from lib.base_controller import CommandController
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
     CollectinfoLogHandler,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def has_node_data(data: dict) -> bool:
+    """Whether any node, at any timestamp, holds a non-empty value."""
+    return any(
+        value and not isinstance(value, Exception)
+        for nodes in data.values()
+        if isinstance(nodes, dict)
+        for value in nodes.values()
+    )
+
+
+def warn_no_data(command: str, what: str, filter_desc: str = "") -> None:
+    """Say on stderr that the bundle has nothing for a command to show."""
+    if filter_desc:
+        logger.warning(
+            "%s: no %s match %s in this collectinfo.", command, what, filter_desc
+        )
+    else:
+        logger.warning("%s: no %s in this collectinfo.", command, what)
 
 
 class CollectinfoCommandController(CommandController):
