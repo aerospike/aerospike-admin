@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import shutil
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -4261,3 +4264,219 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         self.assertIn("package_with_underscores", result)
         self.assertIn("package.with.dots", result)
         self.assertIsNone(error)
+
+
+class CollectStorageBackendTest(unittest.TestCase):
+    """Test cases for _collect_storage_backend using a fake sysfs tree"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.sys = os.path.join(self.tmp, "sys")
+        self.proc = os.path.join(self.tmp, "proc")
+        os.makedirs(os.path.join(self.sys, "block"))
+        os.makedirs(self.proc)
+        self._write(os.path.join(self.proc, "mounts"), "/dev/nvme0n1p1 / ext4 rw 0 0\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def _write(self, path, content):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(content)
+
+    def _device(self, name, real_path, files=None, slaves=()):
+        """Create sys/devices/<real_path>/<name> and link sys/block/<name> to it."""
+        real = os.path.join(self.sys, "devices", real_path, name)
+        os.makedirs(real)
+        for rel, content in (files or {}).items():
+            self._write(os.path.join(real, rel), content + "\n")
+        if slaves:
+            os.makedirs(os.path.join(real, "slaves"))
+            for s in slaves:
+                os.symlink(
+                    os.path.join(self.sys, "block", s),
+                    os.path.join(real, "slaves", s),
+                )
+        os.symlink(real, os.path.join(self.sys, "block", name))
+
+    def _collect(self):
+        out, err = common._collect_storage_backend(
+            sys_root=self.sys, proc_root=self.proc
+        )
+        self.assertIsNone(err)
+        return out
+
+    def test_local_nvme_is_not_network(self):
+        self._device(
+            "nvme0n1",
+            "pci0000:00/0000:00:04.0/nvme/nvme0",
+            {
+                "device/transport": "pcie",
+                "device/model": "Amazon EC2 NVMe Instance Storage",
+                "queue/rotational": "0",
+                "size": "2097152",
+            },
+        )
+        out = self._collect()
+        self.assertIn("nvme0n1 transport=nvme-pcie size=1.0GiB", out)
+        self.assertIn('hint="AWS instance store, local"', out)
+        self.assertIn("Network-backed block devices: none detected", out)
+
+    def test_ebs_hint_does_not_change_transport(self):
+        self._device(
+            "nvme1n1",
+            "pci0000:00/0000:00:1f.0/nvme/nvme1",
+            {"device/transport": "pcie", "device/model": "Amazon Elastic Block Store"},
+        )
+        out = self._collect()
+        self.assertIn("nvme1n1 transport=nvme-pcie", out)
+        self.assertIn('hint="AWS EBS, network-attached"', out)
+
+    def test_nvme_over_tcp_is_network(self):
+        self._device(
+            "nvme2n1", "virtual/nvme-fabrics/ctl/nvme2", {"device/transport": "tcp"}
+        )
+        out = self._collect()
+        self.assertIn("nvme2n1 transport=nvme-tcp", out)
+        self.assertIn("Network-backed block devices: nvme2n1", out)
+
+    def test_rbd_reports_pool_and_image(self):
+        self._device("rbd0", "virtual/block", {"queue/rotational": "0"})
+        self._write(os.path.join(self.sys, "bus/rbd/devices/0/pool"), "replicapool\n")
+        self._write(os.path.join(self.sys, "bus/rbd/devices/0/name"), "csi-vol-1\n")
+        out = self._collect()
+        self.assertIn("rbd0 transport=ceph-rbd", out)
+        self.assertIn("rbd-pool=replicapool rbd-name=csi-vol-1", out)
+        self.assertIn("Network-backed block devices: rbd0", out)
+
+    def test_iscsi_reports_target_and_portal(self):
+        self._device("sdb", "platform/host3/session1/target3:0:0/3:0:0:0/block", {})
+        self._write(
+            os.path.join(self.sys, "class/iscsi_session/session1/targetname"),
+            "iqn.2026-01.com.example:vol1\n",
+        )
+        self._write(
+            os.path.join(
+                self.sys, "class/iscsi_connection/connection1:0/persistent_address"
+            ),
+            "10.0.0.5\n",
+        )
+        self._write(
+            os.path.join(
+                self.sys, "class/iscsi_connection/connection1:0/persistent_port"
+            ),
+            "3260\n",
+        )
+        out = self._collect()
+        self.assertIn("sdb transport=iscsi", out)
+        self.assertIn("target=iqn.2026-01.com.example:vol1 portal=10.0.0.5:3260", out)
+        self.assertIn("Network-backed block devices: sdb", out)
+
+    def test_device_mapper_over_rbd_is_network(self):
+        self._device("rbd0", "virtual/block", {})
+        self._device("dm-0", "virtual/block", {"dm/name": "vg-data"}, slaves=("rbd0",))
+        out = self._collect()
+        self.assertIn(
+            'dm-0 transport=device-mapper dm-name="vg-data" slaves=rbd0 backing=network',
+            out,
+        )
+        self.assertIn("Network-backed block devices: dm-0, rbd0", out)
+
+    def test_network_filesystem_mounts(self):
+        self._write(
+            os.path.join(self.proc, "mounts"),
+            "/dev/sda1 / ext4 rw 0 0\n"
+            "10.0.0.9:/export /opt/aerospike/data nfs4 rw 0 0\n"
+            "s3fs /mnt/bucket fuse.s3fs rw 0 0\n",
+        )
+        out = self._collect()
+        self.assertIn("10.0.0.9:/export on /opt/aerospike/data type nfs4", out)
+        self.assertIn("s3fs on /mnt/bucket type fuse.s3fs", out)
+        self.assertNotIn("/dev/sda1 on", out)
+
+    def test_zero_size_devices_are_skipped(self):
+        for name in ("nbd0", "nbd10", "nbd2", "loop0"):
+            self._device(name, "virtual/block", {"size": "0"})
+        self._device("vda", "pci0000:00/0000:00:05.0/virtio2/block", {"size": "8"})
+        out = self._collect()
+        self.assertIn("vda transport=virtio size=0.0MiB", out)
+        self.assertNotIn("nbd0 transport", out)
+        self.assertIn("Skipped 4 zero-size devices: loop0 nbd0 nbd2 nbd10", out)
+        self.assertIn("Network-backed block devices: none detected", out)
+
+    def test_unreadable_sysfs(self):
+        shutil.rmtree(os.path.join(self.sys, "block"))
+        out = self._collect()
+        self.assertIn("not readable", out)
+
+
+class CollectAsdCgroupTest(unittest.TestCase):
+    """Test cases for _collect_asd_cgroup using a fake /proc and cgroup tree"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.proc = os.path.join(self.tmp, "proc")
+        self.cg = os.path.join(self.tmp, "cgroup")
+        os.makedirs(self.cg)
+        self._write(os.path.join(self.proc, "1", "comm"), "systemd\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def _write(self, path, content):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(content)
+
+    def _collect(self):
+        out, err = common._collect_asd_cgroup(proc_root=self.proc, cgroup_root=self.cg)
+        self.assertIsNone(err)
+        return out
+
+    def test_no_asd(self):
+        self.assertIn("No running asd process found.", self._collect())
+
+    def test_v2_reads_asd_cgroup_not_root(self):
+        path = "kubepods.slice/kubepods-pod1.slice/cri-abc.scope"
+        self._write(os.path.join(self.proc, "42", "comm"), "asd\n")
+        self._write(os.path.join(self.proc, "42", "cgroup"), "0::/%s\n" % path)
+        self._write(os.path.join(self.cg, "cpu.max"), "max 100000\n")
+        self._write(os.path.join(self.cg, path, "cpu.max"), "400000 100000\n")
+        self._write(
+            os.path.join(self.cg, path, "cpu.stat"),
+            "usage_usec 10\nnr_throttled 7\nthrottled_usec 900\n",
+        )
+        self._write(os.path.join(self.cg, path, "memory.max"), "8589934592\n")
+        out = self._collect()
+        self.assertIn(os.path.join(self.cg, path, "cpu.max") + ": 400000 100000", out)
+        self.assertNotIn("max 100000", out)
+        self.assertIn("  nr_throttled 7", out)
+        self.assertIn(os.path.join(self.cg, path, "memory.max") + ": 8589934592", out)
+
+    def test_v2_hybrid_uses_unified(self):
+        self._write(os.path.join(self.proc, "42", "comm"), "asd\n")
+        self._write(os.path.join(self.proc, "42", "cgroup"), "0::/system.slice\n")
+        self._write(
+            os.path.join(self.cg, "unified", "system.slice", "cpu.pressure"),
+            "some avg10=0.00\n",
+        )
+        out = self._collect()
+        self.assertIn("unified/system.slice/cpu.pressure: some avg10=0.00", out)
+
+    def test_v1_comounted_controllers(self):
+        self._write(os.path.join(self.proc, "42", "comm"), "asd\n")
+        self._write(
+            os.path.join(self.proc, "42", "cgroup"),
+            "4:memory:/docker/abc\n3:cpu,cpuacct:/docker/abc\n",
+        )
+        self._write(
+            os.path.join(self.cg, "cpu,cpuacct", "docker/abc", "cpu.cfs_quota_us"),
+            "200000\n",
+        )
+        self._write(
+            os.path.join(self.cg, "memory", "docker/abc", "memory.failcnt"), "3\n"
+        )
+        out = self._collect()
+        self.assertIn("cpu,cpuacct/docker/abc/cpu.cfs_quota_us: 200000", out)
+        self.assertIn("memory/docker/abc/memory.failcnt: 3", out)
