@@ -308,8 +308,8 @@ class ShowJobsControllerTest(unittest.TestCase):
 
 
 class ShowPmapControllerTest(unittest.TestCase):
-    """A bundle collected before TOOLS-4157 carries no pmap stanza, and rendering
-    nothing at all reads as a cluster with no partitions."""
+    """A bundle with no pmap stanza, from an older asadm or a collection that failed
+    on every node, must not render as a cluster with no partitions."""
 
     LOGGER_NAME = "lib.collectinfo_analyzer.show_controller"
 
@@ -337,6 +337,9 @@ class ShowPmapControllerTest(unittest.TestCase):
 
         self.view_mock.show_pmap.assert_not_called()
         self.assertTrue(
-            any("was not written to collectinfo files" in msg for msg in cm.output),
+            any(
+                "show pmap: no partition map data in this collectinfo." in msg
+                for msg in cm.output
+            ),
             cm.output,
         )

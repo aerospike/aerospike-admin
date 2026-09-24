@@ -522,7 +522,6 @@ class NoDataWarningProductionShapeTest(unittest.IsolatedAsyncioTestCase):
         )
         cluster.info = AsyncMock(
             side_effect=lambda cmd, **kwargs: {
-                "node": {"A": "A1", "B": failed},
                 "partition-info": {
                     "A": "namespace:partition:state:replica:working_master;"
                     "test:0:S:0:A1",
@@ -742,6 +741,73 @@ class GetAsPmapTest(unittest.IsolatedAsyncioTestCase):
             await self.controller._get_as_pmap(ledger=ledger)
 
         self.assertEqual(ledger, {})
+
+    async def test_a_getter_that_raises_costs_only_the_pmap_section(self):
+        self.controller.cluster.get_nodes.return_value = [
+            MagicMock(key="A"),
+            MagicMock(key="B"),
+        ]
+        ledger = {}
+
+        with patch.object(
+            GetPmapController, "get_pmap", AsyncMock(side_effect=IndexError("row"))
+        ):
+            pmap_map = await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertEqual(pmap_map, {})
+
+        for node in ("A", "B"):
+            self.assertIn(
+                (self.PMAP, constants.CollectinfoErrorClass.OTHER, ""), ledger[node]
+            )
+
+    def _cluster(self, **calls):
+        cluster = MagicMock()
+        cluster.info_statistics = AsyncMock(
+            return_value={"A": {"cluster_key": "CK"}, "B": {"cluster_key": "CK"}}
+        )
+        cluster.info_namespaces = AsyncMock(return_value={"A": ["test"], "B": ["test"]})
+        cluster.info_namespace_statistics = AsyncMock(return_value={"A": {}, "B": {}})
+        cluster.info_node = AsyncMock(return_value={"A": "A1", "B": "B1"})
+        cluster.info = AsyncMock(
+            return_value={
+                "A": "namespace:partition:state:replica:working_master;test:0:S:0:A1",
+                "B": "namespace:partition:state:replica:working_master;test:1:S:0:B1",
+            }
+        )
+
+        for name, value in calls.items():
+            setattr(cluster, name, AsyncMock(return_value=value))
+
+        return cluster
+
+    async def test_a_node_whose_service_stats_failed_keeps_its_partitions(self):
+        self.controller.cluster = self._cluster(
+            info_statistics={
+                "A": {"cluster_key": "CK"},
+                "B": asyncio.TimeoutError("late"),
+            }
+        )
+        ledger = {}
+
+        pmap_map = await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertEqual(pmap_map["B"]["test"]["cluster_key"], "N/E")
+        self.assertEqual(pmap_map["B"]["test"]["master_partition_count"], 1)
+        self.assertIn((self.PMAP, self.TIMEOUT, constants.STAT_SERVICE), ledger["B"])
+
+    async def test_a_node_id_failure_is_recorded_and_the_node_dropped(self):
+        self.controller.cluster = self._cluster(
+            info_node={"A": "A1", "B": asyncio.TimeoutError("late")}
+        )
+        ledger = {}
+
+        pmap_map = await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertIn("A", pmap_map)
+        self.assertNotIn("B", pmap_map)
+        self.assertEqual(list(ledger["B"]), [(self.PMAP, self.TIMEOUT, "node")])
+        self.assertNotIn("A", ledger)
 
 
 class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
@@ -1359,6 +1425,53 @@ class OlderServerMetadataTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(warning)
         self.assertIn("meta_data", warning.table_lines[0])
+
+
+class MetadataJobsLedgerTest(unittest.IsolatedAsyncioTestCase):
+    """GetJobsController drops a node whose job call failed, so the failure is read
+    off the info call or the node's jobs vanish with nothing to retry."""
+
+    async def test_a_dropped_job_call_is_recorded_under_metadata(self):
+        controller = CollectinfoController()
+        controller.nodes = "all"
+        cluster = MagicMock()
+        cluster.get_node_names.return_value = {"A": "A-name"}
+
+        for call, value in {
+            "info_build": "8.0.0.5",
+            "info_version": "Enterprise 8.0.0.5",
+            "info_node": "A1",
+            "info_ip_port": "1.1.1.1:3000",
+            "info_service_list": [],
+            "info_peers_flat_list": [],
+            "info_udf_list": {},
+            "info_health_outliers": {},
+            "info_best_practices": [],
+            "info_feature_key": {},
+            "info_release": {},
+            "info_query_show": {},
+            "info_jobs": {},
+        }.items():
+            setattr(cluster, call, AsyncMock(return_value={"A": value}))
+
+        cluster.info_scan_show = AsyncMock(
+            return_value={"A": asyncio.TimeoutError("late")}
+        )
+        controller.cluster = cluster
+        ledger = {}
+
+        await controller._get_as_metadata(ledger=ledger)
+
+        self.assertEqual(
+            list(ledger["A"]),
+            [
+                (
+                    constants.CollectinfoSection.METADATA,
+                    constants.CollectinfoErrorClass.TIMEOUT,
+                    "scan_show",
+                )
+            ],
+        )
 
 
 class RecordNodeErrorTest(unittest.TestCase):

@@ -18,6 +18,7 @@ from pytest import PytestUnraisableExceptionWarning
 from mock import patch, MagicMock
 from mock.mock import AsyncMock
 from lib.base_controller import ShellException
+from lib.live_cluster.client import ASInfoResponseError
 from lib.live_cluster.client.cluster import Cluster
 
 from lib.live_cluster.get_controller import (
@@ -120,7 +121,7 @@ class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
             "4.4.4.4": "5.2.0.0",
             "5.5.5.5": Exception(),
         }
-        expected = (["2.2.2.2", "4.4.4.4"], ["1.1.1.1", "3.3.3.3"])
+        expected = (["2.2.2.2", "4.4.4.4", "5.5.5.5"], ["1.1.1.1", "3.3.3.3"])
         actual = await self.controller.get_latencies_and_latency_nodes(nodes="1234")
 
         self.assertCountEqual(expected[0], actual[0])
@@ -742,9 +743,6 @@ class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
         if cmd == "version":
             return {"10.71.71.169:3000": "3.6.0"}
 
-        if cmd == "node":
-            return self.node_ids
-
         if cmd == "partition-info":
             return self.partition_info
 
@@ -768,8 +766,10 @@ class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
                 "unavailable_partitions": "0",
             }
         }
+        cluster_mock.info_node.side_effect = lambda nodes="all": self.node_ids
         cluster_mock.info = AsyncMock()
         cluster_mock.info.side_effect = self.mock_info_call
+        self.cluster_mock = cluster_mock
         self.controller = GetPmapController(cluster_mock)
 
     async def test_get_pmap_data(self):
@@ -849,6 +849,50 @@ class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
         }
 
         self.assertEqual({}, await self.controller.get_pmap())
+
+    async def test_get_pmap_keeps_a_node_whose_service_stats_failed(self):
+        """Namespace stats still name the node, so it must have a cluster key or
+        the lookup raises and collectinfo loses the whole snapshot."""
+        self.cluster_mock.info_statistics.return_value = {
+            "10.71.71.169:3000": TimeoutError("statistics timed out")
+        }
+        self.partition_info = {
+            "10.71.71.169:3000": "namespace:partition:state:replica:n_dupl:working_master:emigrates:immigrates:records:tombstones:version:final_version;"
+            "test:0:S:0:0:BB93039BC7AC40C:0:0:0:0:0:0"
+        }
+
+        actual = await self.controller.get_pmap()
+
+        self.assertEqual("N/E", actual["10.71.71.169:3000"]["test"]["cluster_key"])
+        self.assertEqual(
+            1, actual["10.71.71.169:3000"]["test"]["master_partition_count"]
+        )
+
+    async def test_get_pmap_turns_an_error_response_into_an_exception(self):
+        self.partition_info = {"10.71.71.169:3000": "ERROR:80:not authorized"}
+
+        self.assertEqual({}, await self.controller.get_pmap())
+        self.assertIsInstance(
+            (await self.controller.get_pmap(keep_exceptions=True))["10.71.71.169:3000"],
+            ASInfoResponseError,
+        )
+
+    async def test_get_pmap_ignores_empty_rows(self):
+        self.partition_info = {
+            "10.71.71.169:3000": "namespace:partition:state:replica:n_dupl:working_master:emigrates:immigrates:records:tombstones:version:final_version;"
+            "test:0:S:0:0:BB93039BC7AC40C:0:0:0:0:0:0;"
+        }
+
+        actual = await self.controller.get_pmap()
+
+        self.assertEqual(
+            1, actual["10.71.71.169:3000"]["test"]["master_partition_count"]
+        )
+
+    async def test_get_pmap_reads_an_empty_response_as_no_partitions(self):
+        self.partition_info = {"10.71.71.169:3000": ""}
+
+        self.assertEqual({"10.71.71.169:3000": {}}, await self.controller.get_pmap())
 
 
 class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
