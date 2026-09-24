@@ -37,6 +37,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
+from lib.live_cluster.get_controller import GetPmapController
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
     CollectionContext,
@@ -87,7 +88,7 @@ class BuildDumpMapTest(unittest.TestCase):
             meta_map,
             histogram_map if histogram_map is not None else {},
             latency_map if latency_map is not None else {},
-            pmap_map,
+            pmap_map if pmap_map is not None else {},
             acl_map if acl_map is not None else {},
             user_agents_map if user_agents_map is not None else {},
             masking_map if masking_map is not None else {},
@@ -149,17 +150,23 @@ class BuildDumpMapTest(unittest.TestCase):
         self.assertEqual(as_stat["masking"], [{"rule": "y"}])
         self.assertEqual(dump_map["A"]["sys_stat"], {"sys": 1})
 
-    def test_node_only_in_pmap_is_included(self):
-        # pmap is gathered separately and is the only optional map that can be None.
+    def test_node_only_in_pmap_is_included_and_warned(self):
+        # pmap is collected unconditionally (TOOLS-4157), so a node that returned
+        # nothing else is still a node that returned nothing (TOOLS-3596).
         as_map = {"A": {"statistics": {"s": 1}}}
         pmap_map = {"B": {"p": 1}}
 
-        dump_map = self._build(
-            {"A", "B"}, as_map, self.empty, self.empty, pmap_map=pmap_map
-        )
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as cm:
+            dump_map = self._build(
+                {"A", "B"}, as_map, self.empty, self.empty, pmap_map=pmap_map
+            )
 
         self.assertIn("B", dump_map)
         self.assertEqual(dump_map["B"]["as_stat"], {"pmap": {"p": 1}})
+        self.assertTrue(
+            any("no Aerospike data for 1 node(s): B" in msg for msg in cm.output),
+            cm.output,
+        )
 
     def test_node_with_no_data_anywhere_is_included_and_warned(self):
         # "A" produced data; expected node "C" produced nothing in any section map. The
@@ -283,6 +290,7 @@ class GetCollectinfoDataJsonTest(unittest.IsolatedAsyncioTestCase):
             "_get_as_metadata": {"A": {"asd_build": "8.0"}, "B": {"asd_build": "8.0"}},
             "_get_as_histograms": {},
             "_get_as_latency": {},
+            "_get_as_pmap": {},
             "_get_as_access_control_list": {},
             "_get_as_user_agents": {},
             "_get_as_masking_rules": {},
@@ -507,6 +515,20 @@ class NoDataWarningProductionShapeTest(unittest.IsolatedAsyncioTestCase):
         cluster.info_histogram = ok_and_failed("0,1,2")
         cluster.info_latencies = ok_and_failed({"read": {}})
         cluster.info_user_agents = ok_and_failed([{"user-agent": "x", "count": "1"}])
+        cluster.info_statistics = ok_and_failed({"cluster_key": "CK1"})
+        cluster.info_namespaces = ok_and_failed(["test"])
+        cluster.info_namespace_statistics = ok_and_failed(
+            {"dead_partitions": "0", "unavailable_partitions": "0"}
+        )
+        cluster.info = AsyncMock(
+            side_effect=lambda cmd, **kwargs: {
+                "partition-info": {
+                    "A": "namespace:partition:state:replica:working_master;"
+                    "test:0:S:0:A1",
+                    "B": failed,
+                },
+            }[cmd]
+        )
         self.controller.cluster = cluster
 
         patches = {
@@ -540,6 +562,10 @@ class NoDataWarningProductionShapeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(b_as_stat["meta_data"]["asd_build"], "")
         self.assertEqual(b_as_stat["histogram"], {})
         self.assertEqual(b_as_stat["user_agents"], [])
+        self.assertNotIn("pmap", b_as_stat)
+        self.assertEqual(
+            dump_map["A"]["as_stat"]["pmap"]["test"]["master_partition_count"], 1
+        )
 
         self.assertTrue(
             any("no Aerospike data for 1 node(s): B" in msg for msg in cm.output),
@@ -662,6 +688,126 @@ class DataJsonSubsectionLedgerTest(unittest.IsolatedAsyncioTestCase):
         await self.controller._get_as_data_json(ledger=ledger)
 
         self.assertEqual(ledger, {})
+
+
+class GetAsPmapTest(unittest.IsolatedAsyncioTestCase):
+    """_get_as_pmap's ledger contract.
+
+    GetPmapController reaches partition-info through cluster.info, which the
+    recording cluster does not wrap, so the failure has to be read off the
+    getter's own output or it is lost."""
+
+    TIMEOUT = constants.CollectinfoErrorClass.TIMEOUT
+    PMAP = constants.CollectinfoSection.PMAP
+
+    def setUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.controller.cluster = MagicMock()
+
+    async def test_a_partition_info_failure_is_recorded_and_the_node_dropped(self):
+        ledger = {}
+        pmap = {"A": {"test": {"master_partition_count": 4096}}}
+
+        with patch.object(
+            GetPmapController,
+            "get_pmap",
+            AsyncMock(return_value={**pmap, "B": asyncio.TimeoutError("late")}),
+        ):
+            pmap_map = await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertEqual(pmap_map, pmap)
+        self.assertIn((self.PMAP, self.TIMEOUT, "partition-info"), ledger["B"])
+        self.assertNotIn("A", ledger)
+
+    async def test_no_exception_reaches_the_data(self):
+        with patch.object(
+            GetPmapController,
+            "get_pmap",
+            AsyncMock(return_value={"B": asyncio.TimeoutError("late")}),
+        ):
+            pmap_map = await self.controller._get_as_pmap(ledger={})
+
+        json.dumps(pmap_map)
+
+    async def test_a_healthy_collection_records_nothing(self):
+        ledger = {}
+
+        with patch.object(
+            GetPmapController,
+            "get_pmap",
+            AsyncMock(return_value={"A": {"test": {}}, "B": {"test": {}}}),
+        ):
+            await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertEqual(ledger, {})
+
+    async def test_a_getter_that_raises_costs_only_the_pmap_section(self):
+        self.controller.cluster.get_nodes.return_value = [
+            MagicMock(key="A"),
+            MagicMock(key="B"),
+        ]
+        ledger = {}
+
+        with patch.object(
+            GetPmapController, "get_pmap", AsyncMock(side_effect=IndexError("row"))
+        ):
+            pmap_map = await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertEqual(pmap_map, {})
+
+        for node in ("A", "B"):
+            self.assertIn(
+                (self.PMAP, constants.CollectinfoErrorClass.OTHER, ""), ledger[node]
+            )
+
+    def _cluster(self, **calls):
+        cluster = MagicMock()
+        cluster.info_statistics = AsyncMock(
+            return_value={"A": {"cluster_key": "CK"}, "B": {"cluster_key": "CK"}}
+        )
+        cluster.info_namespaces = AsyncMock(return_value={"A": ["test"], "B": ["test"]})
+        cluster.info_namespace_statistics = AsyncMock(return_value={"A": {}, "B": {}})
+        cluster.info_node = AsyncMock(return_value={"A": "A1", "B": "B1"})
+        cluster.info = AsyncMock(
+            return_value={
+                "A": "namespace:partition:state:replica:working_master;test:0:S:0:A1",
+                "B": "namespace:partition:state:replica:working_master;test:1:S:0:B1",
+            }
+        )
+
+        for name, value in calls.items():
+            setattr(cluster, name, AsyncMock(return_value=value))
+
+        return cluster
+
+    async def test_a_node_whose_service_stats_failed_keeps_its_partitions(self):
+        self.controller.cluster = self._cluster(
+            info_statistics={
+                "A": {"cluster_key": "CK"},
+                "B": asyncio.TimeoutError("late"),
+            }
+        )
+        ledger = {}
+
+        pmap_map = await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertEqual(pmap_map["B"]["test"]["cluster_key"], "N/E")
+        self.assertEqual(pmap_map["B"]["test"]["master_partition_count"], 1)
+        self.assertIn((self.PMAP, self.TIMEOUT, constants.STAT_SERVICE), ledger["B"])
+
+    async def test_a_node_id_failure_is_recorded_and_the_node_dropped(self):
+        self.controller.cluster = self._cluster(
+            info_node={"A": "A1", "B": asyncio.TimeoutError("late")}
+        )
+        ledger = {}
+
+        pmap_map = await self.controller._get_as_pmap(ledger=ledger)
+
+        self.assertIn("A", pmap_map)
+        self.assertNotIn("B", pmap_map)
+        self.assertEqual(list(ledger["B"]), [(self.PMAP, self.TIMEOUT, "node")])
+        self.assertNotIn("A", ledger)
 
 
 class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
@@ -1279,6 +1425,53 @@ class OlderServerMetadataTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(warning)
         self.assertIn("meta_data", warning.table_lines[0])
+
+
+class MetadataJobsLedgerTest(unittest.IsolatedAsyncioTestCase):
+    """GetJobsController drops a node whose job call failed, so the failure is read
+    off the info call or the node's jobs vanish with nothing to retry."""
+
+    async def test_a_dropped_job_call_is_recorded_under_metadata(self):
+        controller = CollectinfoController()
+        controller.nodes = "all"
+        cluster = MagicMock()
+        cluster.get_node_names.return_value = {"A": "A-name"}
+
+        for call, value in {
+            "info_build": "8.0.0.5",
+            "info_version": "Enterprise 8.0.0.5",
+            "info_node": "A1",
+            "info_ip_port": "1.1.1.1:3000",
+            "info_service_list": [],
+            "info_peers_flat_list": [],
+            "info_udf_list": {},
+            "info_health_outliers": {},
+            "info_best_practices": [],
+            "info_feature_key": {},
+            "info_release": {},
+            "info_query_show": {},
+            "info_jobs": {},
+        }.items():
+            setattr(cluster, call, AsyncMock(return_value={"A": value}))
+
+        cluster.info_scan_show = AsyncMock(
+            return_value={"A": asyncio.TimeoutError("late")}
+        )
+        controller.cluster = cluster
+        ledger = {}
+
+        await controller._get_as_metadata(ledger=ledger)
+
+        self.assertEqual(
+            list(ledger["A"]),
+            [
+                (
+                    constants.CollectinfoSection.METADATA,
+                    constants.CollectinfoErrorClass.TIMEOUT,
+                    "scan_show",
+                )
+            ],
+        )
 
 
 class RecordNodeErrorTest(unittest.TestCase):
@@ -2037,6 +2230,7 @@ class RetryTimedOutNodesTest(unittest.IsolatedAsyncioTestCase):
             sys_map=maps.pop("sys_map", {}),
             histogram_map=maps.pop("histogram_map", {}),
             latency_map=maps.pop("latency_map", {}),
+            pmap_map=maps.pop("pmap_map", {}),
             user_agents_map=maps.pop("user_agents_map", {}),
         )
 
@@ -2069,6 +2263,32 @@ class RetryTimedOutNodesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(as_map["A"], {"statistics": {"s": 1}, "config": {"c": 1}})
         self.assertTrue(
             self._recovered(ledger, "B", constants.CollectinfoSection.STATISTICS)
+        )
+
+    async def test_a_timed_out_pmap_is_retried_and_merged(self):
+        ledger = {}
+        _record_node_error(
+            ledger,
+            "B",
+            constants.CollectinfoSection.PMAP,
+            asyncio.TimeoutError("late"),
+            detail="partition-info",
+        )
+        pmap_map = {"A": {"test": {"master_partition_count": 2048}}}
+
+        with patch.object(
+            CollectinfoController,
+            "_get_as_pmap",
+            self._getter({"B": {"test": {"master_partition_count": 2048}}}),
+        ) as pmap_mock:
+            await self._retry(ledger=ledger, pmap_map=pmap_map)
+
+        self._assert_retried(pmap_mock, ["B"])
+        self.assertEqual(pmap_map["B"], {"test": {"master_partition_count": 2048}})
+        self.assertTrue(
+            self._recovered(
+                ledger, "B", constants.CollectinfoSection.PMAP, "partition-info"
+            )
         )
 
     async def test_an_empty_but_successful_retry_is_a_recovery(self):

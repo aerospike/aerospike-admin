@@ -26,6 +26,7 @@ from lib.collectinfo_analyzer.show_controller import (
     ShowController,
     ShowJobsController,
     ShowMaskingController,
+    ShowPmapController,
     ShowStatisticsController,
 )
 from lib.base_controller import ShellException
@@ -304,3 +305,41 @@ class ShowJobsControllerTest(unittest.TestCase):
             self.controller._job_helper(
                 constants.JobType.QUERY, "Query Jobs", ["-where"]
             )
+
+
+class ShowPmapControllerTest(unittest.TestCase):
+    """A bundle with no pmap stanza, from an older asadm or a collection that failed
+    on every node, must not render as a cluster with no partitions."""
+
+    LOGGER_NAME = "lib.collectinfo_analyzer.show_controller"
+
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.controller = ShowPmapController()
+        self.controller.log_handler = self.log_handler
+        self.controller.mods = {}
+        self.addCleanup(patch.stopall)
+
+    def test_do_default_renders_each_populated_timestamp(self):
+        pmap = {"1.1.1.1:3000": {"test": {"master_partition_count": 4096}}}
+        self.log_handler.info_pmap.return_value = {"2026-01-01 00:00:00 UTC": pmap}
+
+        self.controller._do_default([])
+
+        self.view_mock.show_pmap.assert_called_once()
+
+    def test_do_default_warns_when_no_timestamp_has_pmap(self):
+        self.log_handler.info_pmap.return_value = {"2026-01-01 00:00:00 UTC": {}}
+
+        with self.assertLogs(self.LOGGER_NAME, level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_pmap.assert_not_called()
+        self.assertTrue(
+            any(
+                "show pmap: no partition map data in this collectinfo." in msg
+                for msg in cm.output
+            ),
+            cm.output,
+        )
