@@ -23,7 +23,8 @@ from lib.base_get_controller import BaseGetConfigController
 from lib.utils import common, util, constants
 from lib.utils.constants import Modifiers
 from lib.utils.types import NodeDict, DatacenterDict, NamespaceDict
-from .client import Cluster
+from .client import ASInfoResponseError, Cluster
+from .client.constants import ErrorsMsgs
 
 logger = logging.getLogger(__name__)
 
@@ -118,16 +119,15 @@ class GetLatenciesController:
     ) -> tuple[list[str], list[str]]:
         """
         Returns a tuple (latencies, latency) of lists that contain nodes that support
-        latencies cmd and nodes that do not.
+        latencies cmd and nodes that do not. A node whose build is unknown is queried
+        with latencies, so its failure is reported instead of the node being skipped.
         """
         latencies_nodes = []
         latency_nodes = []
         builds = await self.cluster.info_build(nodes=nodes)
 
         for node, build in builds.items():
-            if isinstance(build, Exception):
-                continue
-            if common.is_new_latencies_version(build):
+            if isinstance(build, Exception) or common.is_new_latencies_version(build):
                 latencies_nodes.append(node)
             else:
                 latency_nodes.append(node)
@@ -1001,6 +1001,13 @@ class GetClusterMetadataController:
         return util.filter_exceptions(builds)
 
 
+def _error_response_as_exception(resp):
+    if isinstance(resp, str) and resp.startswith(("ERROR", "error")):
+        return ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp)
+
+    return resp
+
+
 class GetPmapController:
     def __init__(self, cluster):
         self.cluster = cluster
@@ -1016,10 +1023,12 @@ class GetPmapController:
                 if isinstance(params, Exception):
                     continue
 
-                if cluster_keys[node] not in ns_info:
-                    ns_info[cluster_keys[node]] = {}
+                ck = cluster_keys.get(node, "N/E")
 
-                d = ns_info[cluster_keys[node]]
+                if ck not in ns_info:
+                    ns_info[ck] = {}
+
+                d = ns_info[ck]
                 if ns not in d:
                     d[ns] = {}
 
@@ -1079,6 +1088,9 @@ class GetPmapController:
             index_set = False
 
             for item in partitions.split(";"):
+                if not item:
+                    continue
+
                 fields = item.split(":")
 
                 if not index_set:
@@ -1182,11 +1194,13 @@ class GetPmapController:
         """keep_exceptions preserves per-node partition-info Exception values instead
         of dropping the node key, so collectinfo can record which nodes failed."""
         getter = GetStatisticsController(self.cluster)
-        service_stats = asyncio.create_task(getter.get_service(nodes=nodes))
+        service_stats = asyncio.create_task(
+            getter.get_service(nodes=nodes, keep_exceptions=True)
+        )
         namespace_stats = asyncio.create_task(
             getter.get_namespace(flip=True, nodes=nodes)
         )
-        node_ids = asyncio.create_task(self.cluster.info("node", nodes=nodes))
+        node_ids = asyncio.create_task(self.cluster.info_node(nodes=nodes))
         pmap_info = asyncio.create_task(
             self.cluster.info("partition-info", nodes=nodes)
         )
@@ -1202,7 +1216,10 @@ class GetPmapController:
                 )
 
         ns_info = self._get_namespace_data(await namespace_stats, cluster_keys)
-        pmap_info = await pmap_info
+        pmap_info = {
+            node: _error_response_as_exception(resp)
+            for node, resp in (await pmap_info).items()
+        }
         pmap_data = self._get_pmap_data(
             pmap_info, ns_info, cluster_keys, await node_ids
         )

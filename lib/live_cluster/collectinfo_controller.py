@@ -274,7 +274,9 @@ server returns set stats and set config in one response - so a node that fails
 it is recorded under both sections, which is what the bundle actually loses.
 """
 
-_ALWAYS_SERVED_INFO_CALLS = frozenset({"info_statistics", "info_namespaces"})
+_ALWAYS_SERVED_INFO_CALLS = frozenset(
+    {"info_statistics", "info_namespaces", "info_node"}
+)
 """Calls whose failure always means data the bundle should have is missing.
 
 Everything else is recorded as an optional call, so an ASInfoError from it is
@@ -903,7 +905,9 @@ class CollectinfoController(LiveClusterCommandController):
             self.cluster.info_udf_list(nodes=nodes),
             self.cluster.info_health_outliers(nodes=nodes),
             self.cluster.info_best_practices(nodes=nodes),
-            GetJobsController(self.cluster).get_all(flip=True, nodes=nodes),
+            GetJobsController(
+                self._cluster_for_section(constants.CollectinfoSection.METADATA, ledger)
+            ).get_all(flip=True, nodes=nodes),
             self.cluster.info_feature_key(nodes=nodes),
             self.cluster.info_release(nodes=nodes),
         )
@@ -1032,10 +1036,20 @@ class CollectinfoController(LiveClusterCommandController):
         return latency_map
 
     async def _get_as_pmap(self, nodes=None, ledger=None):
+        """A failure here costs the pmap section, never the snapshot whose batch
+        it shares."""
         nodes = self.nodes if nodes is None else nodes
         section = constants.CollectinfoSection
         getter = GetPmapController(self._cluster_for_section(section.PMAP, ledger))
-        pmap_data = await getter.get_pmap(nodes=nodes, keep_exceptions=True)
+
+        try:
+            pmap_data = await getter.get_pmap(nodes=nodes, keep_exceptions=True)
+        except Exception as e:
+            for node in self.cluster.get_nodes(nodes):
+                _record_node_error(ledger, node.key, section.PMAP, e)
+
+            return {}
+
         pmap_map = {}
 
         for node in pmap_data:

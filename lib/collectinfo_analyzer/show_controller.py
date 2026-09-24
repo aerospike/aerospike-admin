@@ -1442,9 +1442,7 @@ class ShowPmapController(CollectinfoCommandController):
             )
 
         if not rendered:
-            logger.warning(
-                "Partition map data was not written to collectinfo files by asadm before 5.1.0."
-            )
+            logger.warning("show pmap: no partition map data in this collectinfo.")
 
 
 @CommandHelp(
