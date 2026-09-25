@@ -4395,6 +4395,51 @@ class CollectStorageBackendTest(unittest.TestCase):
         self.assertIn("s3fs on /mnt/bucket type fuse.s3fs", out)
         self.assertNotIn("/dev/sda1 on", out)
 
+    def test_hypervisor_presented_scsi_disk(self):
+        # e.g. an OpenStack Cinder volume on virtio-scsi: backend not visible.
+        self._device(
+            "sda",
+            "pci0000:00/0000:00:04.0/virtio1/host0/target0:0:0/0:0:0:1/block",
+            {"device/vendor": "QEMU", "device/model": "QEMU HARDDISK"},
+        )
+        self._device("dm-0", "virtual/block", {"dm/name": "vg-data"}, slaves=("sda",))
+        out = self._collect()
+        self.assertIn(
+            'sda transport=virtio vendor="QEMU" model="QEMU HARDDISK" '
+            'hint="hypervisor-presented, backend not visible from guest"',
+            out,
+        )
+        self.assertIn("slaves=sda backing=hypervisor", out)
+        self.assertIn("Hypervisor-presented block devices: dm-0, sda", out)
+        self.assertIn("Network-backed block devices: none detected", out)
+
+    @parameterized.expand([("VMware", "Virtual disk"), ("Msft", "Virtual Disk")])
+    def test_hypervisor_vendors(self, vendor, model):
+        self._device(
+            "sdb",
+            "pci0000:00/0000:00:10.0/host2/target2:0:0/2:0:0:0/block",
+            {"device/vendor": vendor, "device/model": model},
+        )
+        out = self._collect()
+        self.assertIn("sdb transport=scsi", out)
+        self.assertIn("Hypervisor-presented block devices: sdb", out)
+
+    def test_local_and_identified_devices_are_not_hypervisor(self):
+        self._device(
+            "nvme0n1",
+            "pci0000:00/0000:00:04.0/nvme/nvme0",
+            {"device/transport": "pcie", "device/model": "Samsung SSD 980"},
+        )
+        self._device(
+            "nvme1n1",
+            "pci0000:00/0000:00:1f.0/nvme/nvme1",
+            {"device/transport": "pcie", "device/model": "Amazon Elastic Block Store"},
+        )
+        self._device("rbd0", "virtual/block", {})
+        out = self._collect()
+        self.assertIn("Hypervisor-presented block devices: none detected", out)
+        self.assertIn("Network-backed block devices: rbd0", out)
+
     def test_zero_size_devices_are_skipped(self):
         for name in ("nbd0", "nbd10", "nbd2", "loop0"):
             self._device(name, "virtual/block", {"size": "0"})
