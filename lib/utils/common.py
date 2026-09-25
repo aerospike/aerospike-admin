@@ -2919,6 +2919,11 @@ _KNOWN_DEVICE_MODELS = (
     ("PersistentDisk", "GCP Persistent Disk, network-attached"),
 )
 
+# SCSI vendor strings of disks emulated by a hypervisor (QEMU/KVM incl.
+# OpenStack, VMware, Hyper-V/Azure). What backs such a disk, local or network
+# storage, is not visible from the guest.
+_HYPERVISOR_DEVICE_VENDORS = ("QEMU", "VMware", "Msft")
+
 
 def _read_sysfs(path):
     try:
@@ -3016,6 +3021,7 @@ def _collect_storage_backend(cmd="", sys_root="/sys", proc_root="/proc"):
     transports = {}
     rows = []
     skipped = []
+    hypervisor = set()
 
     for name in names:
         block_dir = os.path.join(block_root, name)
@@ -3068,32 +3074,43 @@ def _collect_storage_backend(cmd="", sys_root="/sys", proc_root="/proc"):
             row += _iscsi_target(dev_path, sys_root)
 
         model = _read_sysfs(os.path.join(block_dir, "device", "model")) or ""
-        for needle, hint in _KNOWN_DEVICE_MODELS:
-            if needle in model:
-                row += ' hint="%s"' % hint
-                break
+        vendor = _read_sysfs(os.path.join(block_dir, "device", "vendor")) or ""
+        model_hint = next(
+            (hint for needle, hint in _KNOWN_DEVICE_MODELS if needle in model), None
+        )
+        if model_hint:
+            row += ' hint="%s"' % model_hint
+        elif transport in ("virtio", "xen") or vendor.startswith(
+            _HYPERVISOR_DEVICE_VENDORS
+        ):
+            hypervisor.add(name)
+            row += ' hint="hypervisor-presented, backend not visible from guest"'
 
         rows.append((name, slaves, row))
 
-    def backed_by_network(name, seen=()):
-        transport, is_network = transports.get(name, ("", False))
-        if is_network:
+    def backed_by(name, is_match, seen=()):
+        if is_match(name):
             return True
         try:
             slaves = os.listdir(os.path.join(block_root, name, "slaves"))
         except OSError:
             return False
         return any(
-            backed_by_network(s, seen + (name,)) for s in slaves if s not in seen
+            backed_by(s, is_match, seen + (name,)) for s in slaves if s not in seen
         )
 
     network_devices = []
+    hypervisor_devices = []
     out.append("Block devices (%s):" % block_root)
     for name, slaves, row in rows:
-        if backed_by_network(name):
+        if backed_by(name, lambda n: transports.get(n, ("", False))[1]):
             network_devices.append(name)
             if not transports[name][1]:
                 row += " backing=network"
+        elif backed_by(name, lambda n: n in hypervisor):
+            hypervisor_devices.append(name)
+            if name not in hypervisor:
+                row += " backing=hypervisor"
         out.append(row)
 
     if skipped:
@@ -3105,6 +3122,10 @@ def _collect_storage_backend(cmd="", sys_root="/sys", proc_root="/proc"):
     out.append(
         "Network-backed block devices: %s"
         % (", ".join(network_devices) if network_devices else "none detected")
+    )
+    out.append(
+        "Hypervisor-presented block devices: %s"
+        % (", ".join(hypervisor_devices) if hypervisor_devices else "none detected")
     )
 
     network_mounts = []
@@ -3458,7 +3479,7 @@ def get_system_commands(port=3000) -> list[list[str]]:
             "grep -H . /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max"
         ],
         [
-            "sudo sysctl vm.swappiness vm.dirty_ratio vm.dirty_background_ratio net.core.somaxconn net.core.rmem_max net.core.wmem_max fs.nr_open"
+            "sudo sysctl vm.swappiness vm.dirty_ratio vm.dirty_background_ratio net.core.somaxconn net.core.rmem_max net.core.wmem_max fs.nr_open vm.max_map_count"
         ],
     ]
 
