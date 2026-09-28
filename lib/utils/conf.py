@@ -74,7 +74,6 @@ _confdefault = {
         "enable": False,
         "log-analyzer": False,
         "log-path": "",
-        "pmap": False,
     },
 }
 
@@ -458,7 +457,6 @@ def print_config_help():
         "                      By default asadm connects to all nodes in cluster."
     )
     print(" --collectinfo        Start asadm to run against offline collectinfo files.")
-    print(" --pmap               Include partition map analysis in collectinfo files.")
     print(
         " --log-analyzer       Start asadm in log-analyzer mode and analyze data from log files."
     )
@@ -706,8 +704,8 @@ def get_cli_args():
     add_fn("--tls_crl_check_all", action="store_true")
 
     ### collectinfo options ###
-    # include pmap analysis in collect info file.
-    # Usage, `asadm collectinfo --pmap`
+    # Accepted for compatibility with existing scripts. Partition map data is
+    # always collected (TOOLS-4157), so this has no effect.
     add_fn("--pmap", action="store_true")
 
     return parser.parse_args()

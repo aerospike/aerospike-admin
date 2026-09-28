@@ -274,7 +274,9 @@ server returns set stats and set config in one response - so a node that fails
 it is recorded under both sections, which is what the bundle actually loses.
 """
 
-_ALWAYS_SERVED_INFO_CALLS = frozenset({"info_statistics", "info_namespaces"})
+_ALWAYS_SERVED_INFO_CALLS = frozenset(
+    {"info_statistics", "info_namespaces", "info_node"}
+)
 """Calls whose failure always means data the bundle should have is missing.
 
 Everything else is recorded as an optional call, so an ASInfoError from it is
@@ -605,8 +607,6 @@ def _timed_out_nodes(ledger: NodeErrorLedger) -> dict[str, set[str]]:
     short_msg="Collects cluster info, system stats, and aerospike conf file for local node",
 )
 class CollectinfoController(LiveClusterCommandController):
-    get_pmap = False
-
     def __init__(self):
         self.modifiers = set(["with"])
         self.collectinfo_root_controller = None
@@ -905,7 +905,9 @@ class CollectinfoController(LiveClusterCommandController):
             self.cluster.info_udf_list(nodes=nodes),
             self.cluster.info_health_outliers(nodes=nodes),
             self.cluster.info_best_practices(nodes=nodes),
-            GetJobsController(self.cluster).get_all(flip=True, nodes=nodes),
+            GetJobsController(
+                self._cluster_for_section(constants.CollectinfoSection.METADATA, ledger)
+            ).get_all(flip=True, nodes=nodes),
             self.cluster.info_feature_key(nodes=nodes),
             self.cluster.info_release(nodes=nodes),
         )
@@ -1033,9 +1035,37 @@ class CollectinfoController(LiveClusterCommandController):
 
         return latency_map
 
-    async def _get_as_pmap(self):
-        getter = GetPmapController(self.cluster)
-        return await getter.get_pmap(nodes=self.nodes)
+    async def _get_as_pmap(self, nodes=None, ledger=None):
+        """A failure here costs the pmap section, never the snapshot whose batch
+        it shares."""
+        nodes = self.nodes if nodes is None else nodes
+        section = constants.CollectinfoSection
+        getter = GetPmapController(self._cluster_for_section(section.PMAP, ledger))
+
+        try:
+            pmap_data = await getter.get_pmap(nodes=nodes, keep_exceptions=True)
+        except Exception as e:
+            for node in self.cluster.get_nodes(nodes):
+                _record_node_error(ledger, node.key, section.PMAP, e)
+
+            return {}
+
+        pmap_map = {}
+
+        for node in pmap_data:
+            if isinstance(pmap_data[node], Exception):
+                _record_node_error(
+                    ledger,
+                    node,
+                    section.PMAP,
+                    pmap_data[node],
+                    detail="partition-info",
+                )
+                continue
+
+            pmap_map[node] = pmap_data[node]
+
+        return pmap_map
 
     async def _get_as_access_control_list(
         self, ledger=None
@@ -1258,15 +1288,19 @@ class CollectinfoController(LiveClusterCommandController):
             self._get_as_latency(ledger=node_errors),
         )
 
-        # Batch 3: Security and auxiliary data (lighter operations)
+        # Batch 3: Security and auxiliary data (lighter operations). pmap parses
+        # 4096 rows per namespace per node synchronously, so it shares a batch
+        # with the cheapest calls rather than adding that stall to a heavier one.
         (
             acl_map,
             user_agents_map,
             masking_map,
+            pmap_map,
         ) = await asyncio.gather(
             self._get_as_access_control_list(ledger=node_errors),
             self._get_as_user_agents(ledger=node_errors),
             self._get_as_masking_rules(ledger=node_errors),
+            self._get_as_pmap(ledger=node_errors),
         )
 
         self._record_sysinfo_errors(sys_map, node_errors)
@@ -1279,13 +1313,9 @@ class CollectinfoController(LiveClusterCommandController):
             sys_map=sys_map,
             histogram_map=histogram_map,
             latency_map=latency_map,
+            pmap_map=pmap_map,
             user_agents_map=user_agents_map,
         )
-
-        pmap_map = None
-
-        if CollectinfoController.get_pmap:
-            pmap_map = await self._get_as_pmap()
 
         dump_map = self._build_dump_map(
             expected_node_keys=expected_node_keys,
@@ -1320,6 +1350,7 @@ class CollectinfoController(LiveClusterCommandController):
         sys_map,
         histogram_map,
         latency_map,
+        pmap_map,
         user_agents_map,
     ) -> None:
         """Re-query only the nodes/sections that timed out, once.
@@ -1383,6 +1414,12 @@ class CollectinfoController(LiveClusterCommandController):
                 getter=self._get_as_latency,
                 merge_section=section.LATENCY,
                 target=latency_map,
+            ),
+            _RetryableSection(
+                ledger_sections=(section.PMAP,),
+                getter=self._get_as_pmap,
+                merge_section=section.PMAP,
+                target=pmap_map,
             ),
             _RetryableSection(
                 ledger_sections=(section.USER_AGENTS,),
@@ -1724,7 +1761,7 @@ class CollectinfoController(LiveClusterCommandController):
             acl_map,
             user_agents_map,
             masking_map,
-            pmap_map or {},
+            pmap_map,
         )
 
         dump_map = {}
@@ -1744,7 +1781,7 @@ class CollectinfoController(LiveClusterCommandController):
             if node in latency_map:
                 dump_map[node]["as_stat"]["latency"] = latency_map[node]
 
-            if pmap_map and node in pmap_map:
+            if node in pmap_map:
                 dump_map[node]["as_stat"]["pmap"] = pmap_map[node]
 
             # ACL requests only go to principal therefor we are storing it only
@@ -2046,9 +2083,6 @@ class CollectinfoController(LiveClusterCommandController):
                 "statistics dc",
                 "statistics sindex",
             ]
-
-            if CollectinfoController.get_pmap:
-                dignostic_show_params.append("pmap")
 
             dignostic_aerospike_info_commands = [
                 "connection",

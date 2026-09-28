@@ -1107,13 +1107,21 @@ def as_stat_has_aerospike_data(as_stat) -> bool:
     and the analyzer, which decides from it which nodes are empty. Two copies had
     already drifted in their guards, and a node counted as empty by one and not
     the other produces contradictory findings about the same bundle.
+
+    Supplemental stanzas are skipped. pmap is a partition-count summary built from
+    one info call, collected unconditionally since TOOLS-4157, and says nothing
+    about whether the node's statistics, config or identity were collected;
+    counting it would let a node that lost every other section read as healthy
+    (TOOLS-3596).
     """
     if not as_stat:
         return False
 
     try:
         return any(
-            stanza_has_server_data(key, section) for key, section in as_stat.items()
+            stanza_has_server_data(key, section)
+            for key, section in as_stat.items()
+            if key not in constants.COLLECTINFO_SUPPLEMENTAL_STANZAS
         )
     except Exception:
         return False

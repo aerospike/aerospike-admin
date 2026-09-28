@@ -143,7 +143,6 @@ CMDS = [
 NOT_IN_CI_MODE = [
     Cmd("show mapping ip"),
     Cmd("show mapping node"),
-    Cmd("show pmap"),
 ]
 
 

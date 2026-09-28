@@ -62,7 +62,6 @@ from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
-from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.utils import common, util, conf
 from lib.utils.constants import (
     ADMIN_HOME,
@@ -798,9 +797,6 @@ async def main():
 
     if cli_args.no_color:
         disable_coloring()
-
-    if cli_args.pmap:
-        CollectinfoController.get_pmap = True
 
     mode = AdminMode.LIVE_CLUSTER
     if cli_args.collectinfo:

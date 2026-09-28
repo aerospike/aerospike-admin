@@ -127,10 +127,14 @@ class CollectinfoSection:
     METADATA = "meta_data"
     HISTOGRAM = "histogram"
     LATENCY = "latency"
+    PMAP = "pmap"
     ACL = "acl"
     USER_AGENTS = "user_agents"
     MASKING = "masking"
     SYSINFO = "sys_stat"
+
+
+COLLECTINFO_SUPPLEMENTAL_STANZAS = frozenset((CollectinfoSection.PMAP,))
 
 
 class SysinfoSource:
