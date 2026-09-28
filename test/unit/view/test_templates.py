@@ -67,9 +67,9 @@ class HelperTests(unittest.TestCase):
     @parameterized.expand(
         [
             # Test compression enabled with non-zero value
-            ({"latest": 1000000}, True, "(976.562 KB) ?"),
+            ({"latest": 1000000}, True, "(976.562 KiB) ?"),
             # Test compression disabled with non-zero value
-            ({"latest": 1000000}, False, "976.562 KB"),
+            ({"latest": 1000000}, False, "976.562 KiB"),
             # Test compression enabled with zero value (no parentheses)
             ({"latest": 0}, True, "0.000 B"),
             # Test compression disabled with zero value

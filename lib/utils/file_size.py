@@ -13,21 +13,12 @@
 # limitations under the License.
 
 byte = [
-    (1024.0**5, " PB"),
-    (1024.0**4, " TB"),
-    (1024.0**3, " GB"),
-    (1024.0**2, " MB"),
-    (1024.0**1, " KB"),
-    (1024.0**0, " B "),
-]
-
-byte_verbose = [
-    (1024**5, (" petabyte ", " petabytes")),
-    (1024**4, (" terabyte ", " terabytes")),
-    (1024**3, (" gigabyte ", " gigabytes")),
-    (1024**2, (" megabyte ", " megabytes")),
-    (1024**1, (" kilobyte ", " kilobytes")),
-    (1024**0, (" byte     ", " bytes    ")),
+    (1024.0**5, " PiB"),
+    (1024.0**4, " TiB"),
+    (1024.0**3, " GiB"),
+    (1024.0**2, " MiB"),
+    (1024.0**1, " KiB"),
+    (1024.0**0, " B  "),
 ]
 
 si = [
@@ -55,7 +46,9 @@ time = [
     (60.0**0, " secs"),
 ]
 
-systems = (byte, byte_verbose, si, si_float, time)
+legacy_byte_suffixes = (" PB", " TB", " GB", " MB", " KB", " B ")
+
+systems = (byte, si, si_float, time)
 
 
 def size(bytes, system=byte):
@@ -66,12 +59,6 @@ def size(bytes, system=byte):
         if bytes >= factor:
             break
     amount = bytes / factor
-    if isinstance(suffix, tuple):
-        singular, multiple = suffix
-        if amount == 1:
-            suffix = singular
-        else:
-            suffix = multiple
     if type(amount) == float:
         return "%0.3f%s" % (amount, suffix)
     else:
@@ -79,29 +66,20 @@ def size(bytes, system=byte):
 
 
 def is_file_size(value):
-    global systems
     try:
         float(str(value))
         return True
     except ValueError:
         pass  # continue
 
-    def isnumeric_helper(suffix):
-        tmp_value = value.replace(suffix, "")
-        tmp_value.strip()
+    suffixes = [suffix for system in systems for _, suffix in system]
+    suffixes.extend(legacy_byte_suffixes)
+
+    for suffix in suffixes:
         try:
-            float(tmp_value)
+            float(str(value).replace(suffix, ""))
             return True
         except ValueError:
-            return False
+            continue
 
-    for system in systems:
-        for factor, suffix in system:
-            if type(suffix) is str:
-                if isnumeric_helper(suffix):
-                    return True
-            else:
-                for name in suffix:
-                    if isnumeric_helper(name):
-                        return True
     return False

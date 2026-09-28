@@ -1024,7 +1024,7 @@ class CliViewTest(unittest.TestCase):
    16.  Data Memory              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    17.  Data Device              :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    18.  Data Pmem                :  Total 1.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   19.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   19.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B Max: 4.000 B Avg: 5.000 B
    20.  Active Namespaces        :  2 of 2
    21.  Active Features          :  Compression, Depression
 
@@ -1249,7 +1249,7 @@ class CliViewTest(unittest.TestCase):
    11.  Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    12.  Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    13.  Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B Max: 4.000 B Avg: 5.000 B
    15.  Replication Factor       :  1
    16.  Post-Write-Queue Hit-Rate:  1.000  
    17.  Rack-aware               :  True
@@ -1271,7 +1271,7 @@ class CliViewTest(unittest.TestCase):
    11.  Data Memory              :  Total 5.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    12.  Data Device              :  Total 6.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    13.  Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
-   14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B  Max: 4.000 B  Avg: 5.000 B 
+   14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B Max: 4.000 B Avg: 5.000 B
    15.  Replication Factor       :  1
    16.  Post-Write-Queue Hit-Rate:  1.000  
    17.  Rack-aware               :  False
@@ -1650,8 +1650,8 @@ class CliViewTest(unittest.TestCase):
         self.assertIn("Namespace Usage Information (test-stamp)", output)
         self.assertIn("test", output)
         self.assertIn("node1", output)
-        self.assertIn("244.141 KB", output)  # index used bytes
-        self.assertIn("488.281 KB", output)  # sindex used bytes
+        self.assertIn("244.141 KiB", output)  # index used bytes
+        self.assertIn("488.281 KiB", output)  # sindex used bytes
         self.assertIn("25.0 %", output)  # index used %
         self.assertIn("50.0 %", output)  # sindex used %
 
@@ -1699,8 +1699,8 @@ class CliViewTest(unittest.TestCase):
         self.assertIn("Namespace Usage Information (test-stamp)", output)
         self.assertIn("test", output)
         self.assertIn("node2", output)
-        self.assertIn("292.969 KB", output)  # index used bytes
-        self.assertIn("97.656 KB", output)  # sindex used bytes
+        self.assertIn("292.969 KiB", output)  # index used bytes
+        self.assertIn("97.656 KiB", output)  # sindex used bytes
         self.assertIn("38.46 %", output)  # index used %
         self.assertIn("46.15 %", output)  # sindex used %
 
@@ -1743,8 +1743,8 @@ class CliViewTest(unittest.TestCase):
         self.assertIn("Namespace Usage Information (test-stamp)", output)
         self.assertIn("test", output)
         self.assertIn("node2", output)
-        self.assertIn("292.969 KB", output)  # index used bytes
-        self.assertIn("97.656 KB", output)  # sindex used bytes
+        self.assertIn("292.969 KiB", output)  # index used bytes
+        self.assertIn("97.656 KiB", output)  # sindex used bytes
         # Should not have a Used% column for sindex
         self.assertNotIn("Used%", output)
         self.assertNotIn("SIndex Used%", output)
@@ -2472,23 +2472,23 @@ class SummaryLicenseLineTest(unittest.TestCase):
             "latest_time": datetime.datetime(
                 2023, 10, 4, 20, 35, 42, tzinfo=datetime.timezone.utc
             ),
-            "latest": 1048576,  # 1 MB
-            "min": 524288,  # 512 KB
-            "max": 2097152,  # 2 MB
-            "avg": 1048576,  # 1 MB
+            "latest": 1048576,  # 1 MiB
+            "min": 524288,  # 512 KiB
+            "max": 2097152,  # 2 MiB
+            "avg": 1048576,  # 1 MiB
         }
 
         line = CliView.SummaryLicenseLine(license_dict, compression_enabled=False)
         line_str = str(line)
 
         # Should contain the license values without compression indicators
-        self.assertIn("1.000 MB", line_str)
-        self.assertIn("512.000 KB", line_str)
-        self.assertIn("2.000 MB", line_str)
+        self.assertIn("1.000 MiB", line_str)
+        self.assertIn("512.000 KiB", line_str)
+        self.assertIn("2.000 MiB", line_str)
         # Should NOT have parentheses around latest value or question mark
-        self.assertNotIn("(1.000 MB) ?", line_str)
+        self.assertNotIn("(1.000 MiB) ?", line_str)
         # Should have the value directly without parentheses
-        self.assertIn("Latest (2023-10-04T20:35:42+00:00): 1.000 MB", line_str)
+        self.assertIn("Latest (2023-10-04T20:35:42+00:00): 1.000 MiB", line_str)
 
     def test_license_line_with_compression_enabled(self):
         """Test license line display with compression enabled"""
@@ -2496,10 +2496,10 @@ class SummaryLicenseLineTest(unittest.TestCase):
             "latest_time": datetime.datetime(
                 2023, 10, 4, 20, 35, 42, tzinfo=datetime.timezone.utc
             ),
-            "latest": 1048576,  # 1 MB
-            "min": 524288,  # 512 KB
-            "max": 2097152,  # 2 MB
-            "avg": 1048576,  # 1 MB
+            "latest": 1048576,  # 1 MiB
+            "min": 524288,  # 512 KiB
+            "max": 2097152,  # 2 MiB
+            "avg": 1048576,  # 1 MiB
         }
 
         line = CliView.SummaryLicenseLine(license_dict, compression_enabled=True)
@@ -2510,9 +2510,9 @@ class SummaryLicenseLineTest(unittest.TestCase):
         self.assertIn("?", line_str)
         self.assertIn(terminal.fg_clear(), line_str)
         # Should still contain the actual values
-        self.assertIn("1.000 MB", line_str)
-        self.assertIn("512.000 KB", line_str)
-        self.assertIn("2.000 MB", line_str)
+        self.assertIn("1.000 MiB", line_str)
+        self.assertIn("512.000 KiB", line_str)
+        self.assertIn("2.000 MiB", line_str)
 
     def test_license_line_with_compression_zero_value(self):
         """Test license line with compression enabled but zero license value"""
@@ -2539,21 +2539,21 @@ class SummaryLicenseLineTest(unittest.TestCase):
     def test_license_line_manual_computation(self):
         """Test license line with manually computed license data (no timestamp)"""
         license_dict = {
-            "latest": 1048576,  # 1 MB
+            "latest": 1048576,  # 1 MiB
         }
 
         line = CliView.SummaryLicenseLine(license_dict, compression_enabled=False)
         line_str = str(line)
 
         # Should contain only the latest value
-        self.assertIn("Latest: 1.000 MB", line_str)
+        self.assertIn("Latest: 1.000 MiB", line_str)
         self.assertNotIn("Min:", line_str)
         self.assertNotIn("Max:", line_str)
 
     def test_license_line_manual_computation_with_compression(self):
         """Test license line with manual computation and compression enabled"""
         license_dict = {
-            "latest": 1048576,  # 1 MB
+            "latest": 1048576,  # 1 MiB
         }
 
         line = CliView.SummaryLicenseLine(license_dict, compression_enabled=True)
@@ -2563,7 +2563,7 @@ class SummaryLicenseLineTest(unittest.TestCase):
         self.assertIn(terminal.fg_red(), line_str)
         self.assertIn("?", line_str)
         self.assertIn(terminal.fg_clear(), line_str)
-        self.assertIn("1.000 MB", line_str)
+        self.assertIn("1.000 MiB", line_str)
 
 
 class PrintSummaryCompressionWarningTest(unittest.TestCase):
