@@ -124,7 +124,7 @@ class ShowConfigController(CollectinfoCommandController):
         "Displays security, service, network, and namespace configuration",
     )
     def _do_default(self, line):
-        self.do_security(line[:])
+        self.do_security(line[:], default=True)
         self.do_service(line[:])
         self.do_network(line[:])
         self.do_namespace(line[:])
@@ -139,7 +139,7 @@ class ShowConfigController(CollectinfoCommandController):
             like_config_modifier_help,
         ),
     )
-    def do_security(self, line):
+    def do_security(self, line, default=False):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -167,7 +167,7 @@ class ShowConfigController(CollectinfoCommandController):
             stanza=constants.CONFIG_SECURITY
         )
 
-        if not has_node_data(security_configs):
+        if not default and not has_node_data(security_configs):
             warn_no_data("show config security", "security configuration")
 
         for timestamp in sorted(security_configs.keys()):
@@ -416,24 +416,20 @@ class ShowConfigXDRController(CollectinfoCommandController):
         self.modifiers = set(["like", "diff", "for"])
         self.getter = GetConfigController(self.log_handler)
 
-    def _check_ns_stats_and_warn(self, xdr_ns_stats):
-        for ts_stats in xdr_ns_stats.values():
-            for node_stats in ts_stats.values():
-                if not node_stats:
-                    logger.warning(
-                        "XDR namespace subcontexts were introduced in server 5.0. Try 'show config namespace'"
-                    )
-                    return
-
     @CommandHelp(
         "Displays xdr, xdr datacenter, and xdr namespace configuration",
     )
     def _do_default(self, line):
-        self._do_xdr(line[:])
-        self.do_dc(line[:])
-        self.do_namespace(line[:])
+        shown = self._do_xdr(line[:], default=True)
+        shown = self.do_dc(line[:], default=True) or shown
+        shown = self.do_namespace(line[:], default=True) or shown
 
-    def _do_xdr(self, line):
+        if not shown:
+            warn_no_data(
+                "show config xdr", "XDR configuration", " ".join(self.mods["for"])
+            )
+
+    def _do_xdr(self, line, default=False):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -458,8 +454,9 @@ class ShowConfigXDRController(CollectinfoCommandController):
         )
 
         xdr_configs = self.getter.get_xdr()
+        shown = has_node_data(xdr_configs)
 
-        if not has_node_data(xdr_configs):
+        if not default and not shown:
             warn_no_data("show config xdr", "XDR configuration")
 
         for timestamp in xdr_configs.keys():
@@ -475,6 +472,8 @@ class ShowConfigXDRController(CollectinfoCommandController):
                 **self.mods,
             )
 
+        return shown
+
     @CommandHelp(
         "Displays xdr datacenter configuration",
         short_msg="Displays xdr datacenter configuration",
@@ -487,7 +486,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
         ),
         usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>] [{like_config_usage}]",
     )
-    def do_dc(self, line):
+    def do_dc(self, line, default=False):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -512,8 +511,9 @@ class ShowConfigXDRController(CollectinfoCommandController):
         )
 
         xdr_dc_configs = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
+        shown = has_node_data(xdr_dc_configs)
 
-        if not has_node_data(xdr_dc_configs):
+        if not default and not shown:
             warn_no_data(
                 "show config xdr dc",
                 "XDR DC configuration",
@@ -531,6 +531,8 @@ class ShowConfigXDRController(CollectinfoCommandController):
                 **self.mods,
             )
 
+        return shown
+
     @CommandHelp(
         "Displays xdr namespace configuration",
         modifiers=(
@@ -545,7 +547,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
         ),
         usage=f"[-r] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <ns-substring> [<dc-substring>]] [{like_config_usage}]",
     )
-    def do_namespace(self, line):
+    def do_namespace(self, line, default=False):
         title_every_nth = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-r",
@@ -570,8 +572,9 @@ class ShowConfigXDRController(CollectinfoCommandController):
         )
 
         xdr_ns_configs = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
+        shown = has_node_data(xdr_ns_configs)
 
-        if not has_node_data(xdr_ns_configs):
+        if not default and not shown:
             warn_no_data(
                 "show config xdr namespace",
                 "XDR namespace configuration",
@@ -588,6 +591,8 @@ class ShowConfigXDRController(CollectinfoCommandController):
                 timestamp=timestamp,
                 **self.mods,
             )
+
+        return shown
 
     @CommandHelp(
         "Displays configured xdr filters",
@@ -863,7 +868,7 @@ class ShowStatisticsController(CollectinfoCommandController):
         "Displays bin, set, service, and namespace statistics",
     )
     def _do_default(self, line):
-        self.do_sets(line[:])
+        self.do_sets(line[:], default=True)
         self.do_service(line[:])
         self.do_namespace(line[:])
 
@@ -1005,7 +1010,7 @@ class ShowStatisticsController(CollectinfoCommandController):
             like_stat_modifier_help,
         ),
     )
-    def do_sets(self, line):
+    def do_sets(self, line, default=False):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -1035,7 +1040,7 @@ class ShowStatisticsController(CollectinfoCommandController):
 
         set_stats = self.getter.get_sets(for_mods=self.mods["for"], flip=True)
 
-        if not any(set_stats.values()):
+        if not default and not any(set_stats.values()):
             warn_no_data(
                 "show statistics sets", "set statistics", " ".join(self.mods["for"])
             )
@@ -1323,22 +1328,18 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
         self.modifiers = set(["like", "for"])
         self.getter = GetStatisticsController(self.log_handler)
 
-    def _check_ns_stats_and_warn(self, xdr_ns_stats):
-        for ts_stats in xdr_ns_stats.values():
-            for node_stats in ts_stats.values():
-                if not node_stats:
-                    logger.warning(
-                        "XDR namespace statistics were introduced in server 5.0 and not added to the collectinfo file until asadm 2.13.0"
-                    )
-                    return
-
     @CommandHelp(
         "Displays xdr, xdr datacenter, and xdr namespace statistics",
     )
     def _do_default(self, line):
-        self._do_xdr(line[:])
-        self.do_dc(line[:])
-        self.do_namespace(line[:])
+        shown = self._do_xdr(line[:])
+        shown = self.do_dc(line[:], default=True) or shown
+        shown = self.do_namespace(line[:], default=True) or shown
+
+        if not shown:
+            warn_no_data(
+                "show statistics xdr", "XDR statistics", " ".join(self.mods["for"])
+            )
 
     def _do_xdr(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -1385,6 +1386,8 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
                 **self.mods,
             )
 
+        return has_node_data(xdr_stats)
+
     @CommandHelp(
         "Displays xdr datacenter statistics",
         usage=f"[-rt] [--flip] [{Modifiers.DIFF}] [{Modifiers.FOR} <dc-substring>]] [{ModifierUsage.LIKE}]",
@@ -1397,7 +1400,7 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
             ModifierHelp(Modifiers.FOR, "Filter by datacenter substring match"),
         ),
     )
-    def do_dc(self, line):
+    def do_dc(self, line, default=False):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -1425,8 +1428,9 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
         )
 
         xdr_dc_stats = self.getter.get_xdr_dcs(for_mods=self.mods["for"])
+        shown = has_node_data(xdr_dc_stats)
 
-        if not has_node_data(xdr_dc_stats):
+        if not default and not shown:
             warn_no_data(
                 "show statistics xdr dc",
                 "XDR DC statistics",
@@ -1445,6 +1449,8 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
                 timestamp=timestamp,
                 **self.mods,
             )
+
+        return shown
 
     @CommandHelp(
         "Displays xdr namespace statistics",
@@ -1466,7 +1472,7 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
             ),
         ),
     )
-    def do_namespace(self, line):
+    def do_namespace(self, line, default=False):
         show_total = util.check_arg_and_delete_from_mods(
             line=line, arg="-t", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -1502,8 +1508,9 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
         )
 
         xdr_ns_stats = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
+        shown = has_node_data(xdr_ns_stats)
 
-        if not has_node_data(xdr_ns_stats):
+        if not default and not shown:
             warn_no_data(
                 "show statistics xdr namespace",
                 "XDR namespace statistics",
@@ -1524,7 +1531,7 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
                 **self.mods,
             )
 
-        self._check_ns_stats_and_warn(xdr_ns_stats)
+        return shown
 
 
 @CommandHelp("Displays partition map analysis of Aerospike cluster.")
@@ -1534,24 +1541,19 @@ class ShowPmapController(CollectinfoCommandController):
 
     def _do_default(self, line):
         pmap_data = self.log_handler.info_pmap()
-        rendered = False
 
         if not has_node_data(pmap_data):
             warn_no_data("show pmap", "partition map data")
 
         for timestamp in sorted(pmap_data.keys()):
-            if not pmap_data[timestamp]:
+            if not has_node_data({timestamp: pmap_data[timestamp]}):
                 continue
 
-            rendered = True
             self.view.show_pmap(
                 pmap_data[timestamp],
                 self.log_handler.get_cinfo_log_at(timestamp=timestamp),
                 timestamp=timestamp,
             )
-
-        if not rendered:
-            logger.warning("show pmap: no partition map data in this collectinfo.")
 
 
 @CommandHelp(
@@ -1815,9 +1817,15 @@ class ShowJobsController(CollectinfoCommandController):
         "Displays scans, queries, and sindex-builder jobs.",
     )
     def _do_default(self, line):
-        self.do_scans(line[:], default=True)
-        self.do_queries(line[:])
-        self.do_sindex_builder(line[:], default=True)
+        shown = self.do_scans(line[:], default=True)
+        shown = self.do_queries(line[:], default=True) or shown
+        shown = self.do_sindex_builder(line[:], default=True) or shown
+
+        if not shown:
+            filtered = self.mods[Modifiers.FOR] or any(
+                arg in line for arg in ("-where", "--where")
+            )
+            warn_no_data("show jobs", "jobs", "the given filters" if filtered else "")
 
     def _job_helper(self, module, title, line, default=False):
         flip_output, where = parse_jobs_mods(line, self.modifiers, self.mods)
@@ -1852,6 +1860,8 @@ class ShowJobsController(CollectinfoCommandController):
                 "the given filters" if for_mods or where else "",
             )
 
+        return shown
+
     @CommandHelp(
         f'Displays scan jobs. For easier viewing run "page on" first. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later.',
         modifiers=(
@@ -1865,7 +1875,7 @@ class ShowJobsController(CollectinfoCommandController):
         short_msg=f"Displays scan jobs. Removed in server v. {constants.SERVER_QUERIES_ABORT_ALL_FIRST_VERSION} and later",
     )
     def do_scans(self, line, default=False):
-        self._job_helper(constants.JobType.SCAN, "Scan Jobs", line, default)
+        return self._job_helper(constants.JobType.SCAN, "Scan Jobs", line, default)
 
     @CommandHelp(
         'Displays query jobs. For easier viewing run "page on" first.',
@@ -1879,8 +1889,8 @@ class ShowJobsController(CollectinfoCommandController):
         usage=f"{jobs_usage_extras} [trid <trid1> [<trid2>]]",
         short_msg="Displays query jobs",
     )
-    def do_queries(self, line):
-        self._job_helper(constants.JobType.QUERY, "Query Jobs", line)
+    def do_queries(self, line, default=False):
+        return self._job_helper(constants.JobType.QUERY, "Query Jobs", line, default)
 
     # TODO: Should be removed eventually. "sindex-builder" was removed in server 5.7.
     # So should probably be removed when server 7.0 is supported.
@@ -1902,7 +1912,7 @@ class ShowJobsController(CollectinfoCommandController):
     )
     @CommandName("sindex-builder")
     def do_sindex_builder(self, line, default=False):
-        self._job_helper(
+        return self._job_helper(
             constants.JobType.SINDEX_BUILDER, "SIndex Builder Jobs", line, default
         )
 

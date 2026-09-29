@@ -29,6 +29,25 @@ def _has_node_data(data) -> bool:
     return any(value and not isinstance(value, Exception) for value in data.values())
 
 
+def _all_failed(*datasets) -> bool:
+    values = [value for data in datasets for value in data.values()]
+    return bool(values) and all(isinstance(value, Exception) for value in values)
+
+
+def _warn_no_data(command, what, *datasets, filter_desc=""):
+    """One line on stderr when a command has nothing to show. A cluster that
+    answered nothing is reported as such, not as having none of the thing."""
+    if any(_has_node_data(data) for data in datasets):
+        return
+
+    if _all_failed(*datasets):
+        logger.warning("%s: %s could not be retrieved from any node.", command, what)
+    elif filter_desc:
+        logger.warning("%s: no %s match %s.", command, what, filter_desc)
+    else:
+        logger.warning("%s: no %s found.", command, what)
+
+
 Modifiers = constants.Modifiers
 ModifierUsageHelp = constants.ModifierUsage
 
@@ -187,8 +206,7 @@ class InfoController(LiveClusterCommandController):
     async def do_set(self, line):
         stats = await self.cluster.info_all_set_statistics(nodes=self.nodes)
 
-        if not _has_node_data(stats):
-            logger.warning("info set: no sets found.")
+        _warn_no_data("info set", "sets", stats)
 
         return util.callable(self.view.info_set, stats, self.cluster, **self.mods)
 
@@ -250,8 +268,7 @@ class InfoController(LiveClusterCommandController):
         futures = []
 
         if nodes_running_v49_or_lower:
-            if not _has_node_data(stats):
-                logger.warning("info dc: no XDR DC statistics found.")
+            _warn_no_data("info dc", "XDR DC statistics", stats)
 
             futures.append(
                 util.callable(self.view.info_dc, stats, self.cluster, **self.mods)
@@ -284,14 +301,14 @@ class InfoController(LiveClusterCommandController):
             self.cluster.info_build(nodes=self.nodes),
         )
 
-        if not default and not (_has_node_data(new_stats) or _has_node_data(old_stats)):
-            if self.mods["for"]:
-                logger.warning(
-                    "info xdr: no XDR statistics match %s.",
-                    " ".join(self.mods["for"]),
-                )
-            else:
-                logger.warning("info xdr: no XDR statistics found.")
+        if not default:
+            _warn_no_data(
+                "info xdr",
+                "XDR statistics",
+                new_stats,
+                old_stats,
+                filter_desc=" ".join(self.mods["for"]),
+            )
 
         xdr5_stats = {}
         old_xdr_stats = {}
@@ -341,8 +358,7 @@ class InfoController(LiveClusterCommandController):
             self.stat_getter.get_sindex(), self.config_getter.get_namespace()
         )
 
-        if not _has_node_data(sindex_stats):
-            logger.warning("info sindex: no secondary indexes found.")
+        _warn_no_data("info sindex", "secondary indexes", sindex_stats)
 
         return util.callable(
             self.view.info_sindex, sindex_stats, ns_configs, self.cluster, **self.mods
@@ -379,8 +395,7 @@ class InfoController(LiveClusterCommandController):
 
         release_data = await self.cluster.info_release(nodes=self.nodes)
 
-        if not _has_node_data(release_data):
-            logger.warning("info release: no release data found.")
+        _warn_no_data("info release", "release data", release_data)
 
         return util.callable(
             self.view.info_release, release_data, self.cluster, **self.mods
@@ -423,8 +438,7 @@ class InfoNamespaceController(LiveClusterCommandController):
             self.stats_getter.get_namespace(nodes=self.nodes),
         )  # Includes stats and configs
 
-        if not _has_node_data(ns_stats):
-            logger.warning("info namespace usage: no namespace statistics found.")
+        _warn_no_data("info namespace usage", "namespace statistics", ns_stats)
 
         return util.callable(
             self.view.info_namespace_usage,
@@ -448,8 +462,7 @@ class InfoNamespaceController(LiveClusterCommandController):
             config_getter.get_rack_ids(nodes=self.nodes),
         )
 
-        if not _has_node_data(stats):
-            logger.warning("info namespace object: no namespace statistics found.")
+        _warn_no_data("info namespace object", "namespace statistics", stats)
 
         return util.callable(
             self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods
@@ -472,9 +485,13 @@ class InfoTransactionsController(LiveClusterCommandController):
     )
     async def _do_default(self, line):
         tasks = await asyncio.gather(
-            self.do_monitors(line),
-            self.do_provisionals(line),
+            self.do_monitors(line, default=True),
+            self.do_provisionals(line, default=True),
         )
+
+        if all(task is None for task in tasks):
+            logger.warning("info transactions: no strong-consistency namespaces found.")
+
         if self.get_futures:
             # Wrapped to prevent base class from calling result.
             return dict(futures=tasks)
@@ -486,7 +503,7 @@ class InfoTransactionsController(LiveClusterCommandController):
         usage=f"[{ModifierUsageHelp.WITH}]",
         modifiers=(with_modifier_help,),
     )
-    async def do_monitors(self, line):
+    async def do_monitors(self, line, default=False):
         # Get namespace statistics which contain MRT metrics
         ns_stats = await self.stats_getter.get_strong_consistency_namespace(
             nodes=self.nodes
@@ -499,9 +516,10 @@ class InfoTransactionsController(LiveClusterCommandController):
 
         # If no namespaces with strong consistency enabled were found, return
         if not namespaces:
-            logger.warning(
-                "info transactions monitors: no strong-consistency namespaces found."
-            )
+            if not default:
+                logger.warning(
+                    "info transactions monitors: no strong-consistency namespaces found."
+                )
             return
 
         # Get <ERO~MRT set statistics for all namespaces from all nodes concurrently
@@ -548,7 +566,7 @@ class InfoTransactionsController(LiveClusterCommandController):
         usage=f"[{ModifierUsageHelp.WITH}]",
         modifiers=(with_modifier_help,),
     )
-    async def do_provisionals(self, line):
+    async def do_provisionals(self, line, default=False):
         # Get namespace statistics which contain MRT metrics
         ns_stats = await self.stats_getter.get_strong_consistency_namespace(
             nodes=self.nodes
@@ -560,9 +578,10 @@ class InfoTransactionsController(LiveClusterCommandController):
             namespaces.update(node_stats.keys())
 
         if not namespaces:
-            logger.warning(
-                "info transactions provisionals: no strong-consistency namespaces found."
-            )
+            if not default:
+                logger.warning(
+                    "info transactions provisionals: no strong-consistency namespaces found."
+                )
             return
 
         return util.callable(

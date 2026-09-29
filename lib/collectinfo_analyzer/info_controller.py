@@ -366,6 +366,8 @@ class InfoController(CollectinfoCommandController):
     def do_release(self, line):
         release_data = self.log_handler.info_release()
         builds = self.log_handler.info_meta_data(stanza="asd_build")
+        supported = False
+        shown = False
 
         for timestamp in sorted(release_data.keys()):
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
@@ -395,18 +397,21 @@ class InfoController(CollectinfoCommandController):
                 )
                 continue
 
-            if not has_node_data({timestamp: release_data[timestamp]}):
-                warn_no_data("info release", "release data")
+            supported = True
 
-            if not release_data[timestamp]:
+            if not has_node_data({timestamp: release_data[timestamp]}):
                 continue
 
+            shown = True
             self.view.info_release(
                 release_data[timestamp],
                 cinfo_log,
                 timestamp=timestamp,
                 **self.mods,
             )
+
+        if not shown and (supported or not release_data):
+            warn_no_data("info release", "release data")
 
 
 @CommandHelp(
@@ -478,17 +483,21 @@ class InfoTransactionsController(CollectinfoCommandController):
         "Displays monitors and provisionals information for transactions in each 'strong-consistency' enabled namespace.",
     )
     def _do_default(self, line):
-        self.do_monitors(line)
-        self.do_provisionals(line)
+        shown = self.do_monitors(line, default=True)
+        shown = self.do_provisionals(line, default=True) or shown
+
+        if not shown:
+            warn_no_data("info transactions", "strong-consistency namespaces")
 
     @CommandHelp(
         "Displays monitor-related transaction metrics for each 'strong-consistency' enabled namespace.",
     )
-    def do_monitors(self, line):
+    def do_monitors(self, line, default=False):
         # Get namespace statistics which contain MRT metrics
         ns_stats = self.stats_getter.get_strong_consistency_namespace()
+        shown = has_node_data(ns_stats)
 
-        if not has_node_data(ns_stats):
+        if not default and not shown:
             warn_no_data("info transactions monitors", "strong-consistency namespaces")
 
         for timestamp in sorted(ns_stats.keys()):
@@ -544,14 +553,17 @@ class InfoTransactionsController(CollectinfoCommandController):
                 **self.mods,
             )
 
+        return shown
+
     @CommandHelp(
         "Displays provisional-related transaction metrics for each 'strong-consistency' enabled namespace.",
     )
-    def do_provisionals(self, line):
+    def do_provisionals(self, line, default=False):
         # Get namespace statistics which contain MRT metrics
         ns_stats = self.stats_getter.get_strong_consistency_namespace()
+        shown = has_node_data(ns_stats)
 
-        if not has_node_data(ns_stats):
+        if not default and not shown:
             warn_no_data(
                 "info transactions provisionals", "strong-consistency namespaces"
             )
@@ -577,3 +589,5 @@ class InfoTransactionsController(CollectinfoCommandController):
                 timestamp=timestamp,
                 **self.mods,
             )
+
+        return shown

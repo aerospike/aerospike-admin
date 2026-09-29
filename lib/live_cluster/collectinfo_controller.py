@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import contextlib
 import copy
 import functools
 import json
@@ -68,6 +69,26 @@ from .info_controller import InfoController
 from .show_controller import ShowController
 
 logger = logging.getLogger(__name__)
+
+_COMMAND_LOGGER_NAMES = (InfoController.__module__, ShowController.__module__)
+
+
+@contextlib.contextmanager
+def _command_warnings_silenced():
+    """Only stdout is captured from the info and show commands collectinfo runs
+    for its logs, so their no-data warnings would land on the operator's terminal."""
+    command_loggers = [logging.getLogger(name) for name in _COMMAND_LOGGER_NAMES]
+    levels = [command_logger.level for command_logger in command_loggers]
+
+    for command_logger in command_loggers:
+        command_logger.setLevel(logging.ERROR)
+
+    try:
+        yield
+    finally:
+        for command_logger, level in zip(command_loggers, levels):
+            command_logger.setLevel(level)
+
 
 # The default 1s per-node timeout is too tight for the high-fanout parallel bursts that
 # collectinfo issues, causing transient timeouts that drop nodes from the bundle. Raise it
@@ -630,7 +651,8 @@ class CollectinfoController(LiveClusterCommandController):
         set_style_json(False)
 
         try:
-            o = await util.capture_stdout(func, param[:])
+            with _command_warnings_silenced():
+                o = await util.capture_stdout(func, param[:])
         finally:
             set_style_json(old_style_json)
 
