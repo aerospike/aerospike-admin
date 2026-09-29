@@ -27,14 +27,24 @@ from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (
 from lib.collectinfo_analyzer.show_controller import (
     ShowBestPracticesController,
     ShowConfigController,
+    ShowConfigXDRController,
     ShowController,
+    ShowDistributionController,
     ShowJobsController,
+    ShowLatenciesController,
     ShowMaskingController,
     ShowPmapController,
     ShowRacksController,
+    ShowRolesController,
+    ShowRosterController,
+    ShowSIndexController,
     ShowStatisticsController,
+    ShowStatisticsXDRController,
+    ShowStopWritesController,
+    ShowUdfsController,
     ShowUserAgentsController,
     ShowUsersController,
+    ShowUsersStatsController,
 )
 from lib.base_controller import ShellException
 from lib.utils import constants
@@ -424,42 +434,44 @@ class ShowJobsControllerTest(unittest.TestCase):
                 constants.JobType.QUERY, "Query Jobs", ["-where"]
             )
 
+    def test_show_jobs_without_any_jobs_warns_once(self):
+        self._set_jobs_data({"1.1.1.1": {}})
 
-class ShowPmapControllerTest(unittest.TestCase):
-    """A bundle with no pmap stanza, from an older asadm or a collection that failed
-    on every node, must not render as a cluster with no partitions."""
-
-    LOGGER_NAME = "lib.collectinfo_analyzer.show_controller"
-
-    def setUp(self):
-        self.log_handler = create_autospec(CollectinfoLogHandler)
-        self.view_mock = patch("lib.base_controller.BaseController.view").start()
-        self.controller = ShowPmapController()
-        self.controller.log_handler = self.log_handler
-        self.controller.mods = {}
-        self.addCleanup(patch.stopall)
-
-    def test_do_default_renders_each_populated_timestamp(self):
-        pmap = {"1.1.1.1:3000": {"test": {"master_partition_count": 4096}}}
-        self.log_handler.info_pmap.return_value = {"2026-01-01 00:00:00 UTC": pmap}
-
-        self.controller._do_default([])
-
-        self.view_mock.show_pmap.assert_called_once()
-
-    def test_do_default_warns_when_no_timestamp_has_pmap(self):
-        self.log_handler.info_pmap.return_value = {"2026-01-01 00:00:00 UTC": {}}
-
-        with self.assertLogs(self.LOGGER_NAME, level="WARNING") as cm:
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING") as cm:
             self.controller._do_default([])
 
-        self.view_mock.show_pmap.assert_not_called()
-        self.assertTrue(
-            any(
-                "show pmap: no partition map data in this collectinfo." in msg
-                for msg in cm.output
-            ),
-            cm.output,
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            ["show jobs: no jobs in this collectinfo."],
+        )
+
+    def test_show_jobs_with_only_queries_logs_nothing(self):
+        self._set_jobs_data(
+            {"1.1.1.1": {constants.JobType.QUERY: {"1": {"ns": "test"}}}}
+        )
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+        self.assertEqual(self.view_mock.show_jobs.call_count, 3)
+
+    def test_show_jobs_where_matches_nothing_warns_once(self):
+        self._set_jobs_data(
+            {
+                "1.1.1.1": {
+                    constants.JobType.QUERY: {
+                        "1": {"ns": "test", "status": "done(ok)"},
+                    }
+                }
+            }
+        )
+
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING") as cm:
+            self.controller._do_default(["-where", "status=active"])
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            ["show jobs: no jobs match the given filters in this collectinfo."],
         )
 
 
@@ -494,6 +506,14 @@ class ShowUserAgentsControllerTest(AnalyzerControllerTestCase):
     def _run(self, user_agents_data):
         self.getter_mock.return_value.get_user_agents.return_value = user_agents_data
         asyncio.run(self.controller._do_default([]))
+
+    def test_no_snapshots_warns(self):
+        warnings = self.no_data_warnings(lambda: self._run({}))
+
+        self.assertEqual(
+            warnings, ["show user-agents: no user agents in this collectinfo."]
+        )
+        self.view_mock.show_user_agents.assert_not_called()
 
     @parameterized.expand(
         [
@@ -646,3 +666,422 @@ class ShowBestPracticesNoDataTest(AnalyzerControllerTestCase):
             warnings,
             ["show best-practices: no best-practices data in this collectinfo."],
         )
+
+
+class ShowPmapControllerTest(AnalyzerControllerTestCase):
+    """A bundle with no pmap stanza, from an older asadm or a collection that failed
+    on every node, must not render as a cluster with no partitions."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowPmapController()
+        self.controller.mods = {}
+
+    def test_do_default_renders_each_populated_timestamp(self):
+        pmap = {"1.1.1.1:3000": {"test": {"master_partition_count": 4096}}}
+        self.log_handler.info_pmap.return_value = {"2026-01-01 00:00:00 UTC": pmap}
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+        self.view_mock.show_pmap.assert_called_once()
+
+    @parameterized.expand(
+        [
+            ("no_snapshot_has_pmap", {"2026-01-01 00:00:00 UTC": {}}),
+            ("no_node_has_pmap", {"2026-01-01 00:00:00 UTC": {"1.1.1.1:3000": {}}}),
+        ]
+    )
+    def test_do_default_warns_once_and_renders_nothing(self, _, pmap_data):
+        self.log_handler.info_pmap.return_value = pmap_data
+
+        warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings, ["show pmap: no partition map data in this collectinfo."]
+        )
+        self.view_mock.show_pmap.assert_not_called()
+
+
+class ShowConfigDefaultTest(AnalyzerControllerTestCase):
+    """Plain `show config` fans out to sub-commands; a section that is normally
+    empty, like security on a CE bundle, must not warn under the aggregate."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowConfigController()
+        self.controller.mods = {"like": [], "diff": [], "for": []}
+
+    def test_plain_show_config_stays_quiet_about_missing_security(self):
+        def getconfig(stanza, **kwargs):
+            if stanza == constants.CONFIG_SECURITY:
+                return {"ts": {"n1": {}}}
+
+            if stanza == constants.CONFIG_NAMESPACE:
+                return {"ts": {"test": {"n1": {"replication-factor": "2"}}}}
+
+            return {"ts": {"n1": {"key": "value"}}}
+
+        self.log_handler.info_getconfig.side_effect = getconfig
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+    def test_show_config_security_alone_warns(self):
+        self.log_handler.info_getconfig.return_value = {"ts": {"n1": {}}}
+
+        warnings = self.no_data_warnings(lambda: self.controller.do_security([]))
+
+        self.assertEqual(
+            warnings,
+            ["show config security: no security configuration in this collectinfo."],
+        )
+
+
+class ShowConfigXDRDefaultTest(AnalyzerControllerTestCase):
+    """`show config xdr` runs three sub-commands; a bundle without XDR gets one
+    line, not one per sub-command."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowConfigXDRController()
+        self.controller.mods = {"like": [], "diff": [], "for": []}
+        self.controller.getter = MagicMock()
+
+    def _set_xdr(self, xdr, dcs, namespaces):
+        self.controller.getter.get_xdr.return_value = xdr
+        self.controller.getter.get_xdr_dcs.return_value = dcs
+        self.controller.getter.get_xdr_namespaces.return_value = namespaces
+
+    def test_bundle_without_xdr_warns_once(self):
+        self._set_xdr({"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}})
+
+        warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings, ["show config xdr: no XDR configuration in this collectinfo."]
+        )
+
+    def test_bundle_with_only_dc_config_logs_nothing(self):
+        self._set_xdr(
+            {"ts": {"n1": {}}}, {"ts": {"n1": {"dc1": {}}}}, {"ts": {"n1": {}}}
+        )
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+    def test_sub_command_alone_still_warns(self):
+        self._set_xdr({"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}})
+
+        warnings = self.no_data_warnings(lambda: self.controller.do_dc([]))
+
+        self.assertEqual(
+            warnings,
+            ["show config xdr dc: no XDR DC configuration in this collectinfo."],
+        )
+
+
+class ShowStatisticsDefaultTest(AnalyzerControllerTestCase):
+    """Plain `show statistics` must not warn about sets when every record is in
+    the null set."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowStatisticsController()
+        self.controller.mods = {"like": [], "for": []}
+        self.controller.getter = MagicMock()
+        self.controller.getter.get_sets.return_value = {"ts": {}}
+
+    def test_plain_show_statistics_stays_quiet_about_missing_sets(self):
+        def statistics(stanza, flip=False):
+            if stanza == constants.STAT_NAMESPACE:
+                return {"ts": {"test": {"n1": {"objects": "1"}}}}
+
+            return {"ts": {"n1": {"uptime": "1"}}}
+
+        self.log_handler.info_statistics.side_effect = statistics
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+    def test_show_statistics_sets_alone_warns(self):
+        warnings = self.no_data_warnings(lambda: self.controller.do_sets([]))
+
+        self.assertEqual(
+            warnings, ["show statistics sets: no set statistics in this collectinfo."]
+        )
+
+
+class ShowStatisticsXDRDefaultTest(AnalyzerControllerTestCase):
+    """`show statistics xdr` runs three sub-commands; a bundle without XDR gets
+    one neutral line, and the old server-version guess is gone."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowStatisticsXDRController()
+        self.controller.mods = {"like": [], "for": []}
+        self.controller.getter = MagicMock()
+
+    def _set_xdr(self, xdr, dcs, namespaces):
+        self.controller.getter.get_xdr.return_value = xdr
+        self.controller.getter.get_xdr_dcs.return_value = dcs
+        self.controller.getter.get_xdr_namespaces.return_value = namespaces
+
+    def test_bundle_without_xdr_warns_once(self):
+        self._set_xdr({"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}})
+
+        with self.assertNoLogs(
+            "lib.collectinfo_analyzer.show_controller", level="WARNING"
+        ):
+            warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings, ["show statistics xdr: no XDR statistics in this collectinfo."]
+        )
+
+    def test_bundle_with_only_namespace_stats_logs_nothing(self):
+        self._set_xdr(
+            {"ts": {"n1": {}}},
+            {"ts": {"n1": {}}},
+            {"ts": {"n1": {"dc1": {"test": {"lag": "0"}}}}},
+        )
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+    def test_sub_command_alone_still_warns(self):
+        self._set_xdr({"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}})
+
+        warnings = self.no_data_warnings(lambda: self.controller.do_namespace([]))
+
+        self.assertEqual(
+            warnings,
+            [
+                "show statistics xdr namespace: no XDR namespace statistics in this collectinfo."
+            ],
+        )
+
+
+EMPTY_NODE = {"ts": {"n1": {}}}
+EMPTY_SNAPSHOT = {"ts": {}}
+CONFIG_MODS = {"like": [], "diff": [], "for": []}
+STAT_MODS = {"like": [], "for": []}
+
+
+class AnalyzerShowNoDataSweepTest(AnalyzerControllerTestCase):
+    """Every routed analyzer show command names itself when the bundle holds
+    nothing for it, whether the section is absent or every node is empty."""
+
+    def _controller(self, controller_class, mods, overrides):
+        controller = controller_class()
+        controller.mods = dict(mods)
+
+        getter = MagicMock()
+        for name in (
+            "get_xdr",
+            "get_xdr_dcs",
+            "get_xdr_namespaces",
+            "get_xdr_filters",
+            "get_users",
+            "get_namespace",
+            "get_sets",
+        ):
+            getattr(getter, name).return_value = EMPTY_NODE
+        getter.get_service.return_value = EMPTY_SNAPSHOT
+        getter.get_builds.return_value = {"ts": {"n1": "6.0.0"}}
+
+        for attr in ("getter", "stat_getter", "config_getter", "meta_getter"):
+            if hasattr(controller, attr):
+                setattr(controller, attr, getter)
+
+        self.log_handler.info_getconfig.return_value = EMPTY_NODE
+        self.log_handler.info_statistics.return_value = EMPTY_SNAPSHOT
+        self.log_handler.info_histogram.return_value = EMPTY_NODE
+        self.log_handler.info_latency.return_value = EMPTY_SNAPSHOT
+        self.log_handler.admin_acl.return_value = EMPTY_SNAPSHOT
+        self.log_handler.info_meta_data.return_value = EMPTY_SNAPSHOT
+
+        for name, value in overrides.items():
+            getattr(self.log_handler, name).return_value = value
+
+        return controller
+
+    @staticmethod
+    def _run(controller, method):
+        result = getattr(controller, method)([])
+
+        if asyncio.iscoroutine(result):
+            asyncio.run(result)
+
+    @parameterized.expand(
+        [
+            (
+                "config_network",
+                ShowConfigController,
+                "do_network",
+                CONFIG_MODS,
+                {},
+                "show config network: no network configuration in this collectinfo.",
+            ),
+            (
+                "config_namespace",
+                ShowConfigController,
+                "do_namespace",
+                CONFIG_MODS,
+                {"info_getconfig": EMPTY_SNAPSHOT},
+                "show config namespace: no namespace configuration in this collectinfo.",
+            ),
+            (
+                "config_dc",
+                ShowConfigController,
+                "do_dc",
+                CONFIG_MODS,
+                {},
+                "show config dc: no XDR DC configuration in this collectinfo.",
+            ),
+            (
+                "config_xdr",
+                ShowConfigXDRController,
+                "_do_xdr",
+                CONFIG_MODS,
+                {},
+                "show config xdr: no XDR configuration in this collectinfo.",
+            ),
+            (
+                "config_xdr_namespace",
+                ShowConfigXDRController,
+                "do_namespace",
+                CONFIG_MODS,
+                {},
+                "show config xdr namespace: no XDR namespace configuration in this collectinfo.",
+            ),
+            (
+                "config_xdr_filter",
+                ShowConfigXDRController,
+                "do_filter",
+                CONFIG_MODS,
+                {},
+                "show config xdr filter: no XDR filters in this collectinfo.",
+            ),
+            (
+                "distribution_time_to_live",
+                ShowDistributionController,
+                "do_time_to_live",
+                {"for": []},
+                {},
+                "show distribution time_to_live: no ttl distribution data in this collectinfo.",
+            ),
+            (
+                "distribution_object_size",
+                ShowDistributionController,
+                "do_object_size",
+                {"for": []},
+                {},
+                "show distribution object_size: no object size distribution data in this collectinfo.",
+            ),
+            (
+                "latencies",
+                ShowLatenciesController,
+                "_do_default",
+                STAT_MODS,
+                {},
+                "show latencies: no latency data in this collectinfo.",
+            ),
+            (
+                "statistics_service",
+                ShowStatisticsController,
+                "do_service",
+                STAT_MODS,
+                {},
+                "show statistics service: no service statistics in this collectinfo.",
+            ),
+            (
+                "statistics_bins",
+                ShowStatisticsController,
+                "do_bins",
+                STAT_MODS,
+                {},
+                "show statistics bins: no bin statistics in this collectinfo.",
+            ),
+            (
+                "statistics_dc",
+                ShowStatisticsController,
+                "do_dc",
+                STAT_MODS,
+                {},
+                "show statistics dc: no XDR DC statistics in this collectinfo.",
+            ),
+            (
+                "statistics_sindex",
+                ShowStatisticsController,
+                "do_sindex",
+                STAT_MODS,
+                {},
+                "show statistics sindex: no sindex statistics in this collectinfo.",
+            ),
+            (
+                "statistics_xdr_dc",
+                ShowStatisticsXDRController,
+                "do_dc",
+                STAT_MODS,
+                {},
+                "show statistics xdr dc: no XDR DC statistics in this collectinfo.",
+            ),
+            (
+                "users_statistics",
+                ShowUsersStatsController,
+                "_do_default",
+                {"like": []},
+                {},
+                "show users statistics: no users in this collectinfo.",
+            ),
+            (
+                "roles",
+                ShowRolesController,
+                "_do_default",
+                {"like": []},
+                {},
+                "show roles: no roles in this collectinfo.",
+            ),
+            (
+                "udfs",
+                ShowUdfsController,
+                "_do_default",
+                {"like": []},
+                {},
+                "show udfs: no UDF modules in this collectinfo.",
+            ),
+            (
+                "sindex",
+                ShowSIndexController,
+                "_do_default",
+                {"like": []},
+                {},
+                "show sindex: no secondary indexes in this collectinfo.",
+            ),
+            (
+                "roster",
+                ShowRosterController,
+                "_do_default",
+                CONFIG_MODS,
+                {},
+                "show roster: no roster data in this collectinfo.",
+            ),
+            (
+                "stop_writes",
+                ShowStopWritesController,
+                "_do_default",
+                {"for": []},
+                {},
+                "show stop-writes: no service statistics in this collectinfo.",
+            ),
+        ]
+    )
+    def test_command_names_itself_when_the_bundle_has_nothing(
+        self, _, controller_class, method, mods, overrides, expected
+    ):
+        controller = self._controller(controller_class, mods, overrides)
+
+        warnings = self.no_data_warnings(lambda: self._run(controller, method))
+
+        self.assertEqual(warnings, [expected])

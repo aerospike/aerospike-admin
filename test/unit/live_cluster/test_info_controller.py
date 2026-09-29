@@ -432,3 +432,79 @@ class InfoControllerNoDataTest(unittest.IsolatedAsyncioTestCase):
             self.warnings(),
             [f"info transactions {name}: no strong-consistency namespaces found."],
         )
+
+    async def test_transactions_default_warns_once_for_both_sub_commands(self):
+        controller = self._controller(InfoTransactionsController, {"with": []})
+        controller.stats_getter.get_strong_consistency_namespace.return_value = {}
+
+        await controller._do_default([])
+
+        self.assertEqual(
+            self.warnings(),
+            ["info transactions: no strong-consistency namespaces found."],
+        )
+
+    async def test_do_set_every_node_failed(self):
+        controller = self._controller(InfoController)
+        controller.cluster.info_all_set_statistics = AsyncMock(
+            return_value={
+                "1.1.1.1": Exception("timeout"),
+                "2.2.2.2": Exception("timeout"),
+            }
+        )
+
+        await controller.do_set([])
+
+        self.assertEqual(
+            self.warnings(), ["info set: sets could not be retrieved from any node."]
+        )
+
+    async def test_do_set_one_node_failed_and_the_other_has_no_sets(self):
+        controller = self._controller(InfoController)
+        controller.cluster.info_all_set_statistics = AsyncMock(
+            return_value={"1.1.1.1": Exception("timeout"), "2.2.2.2": {}}
+        )
+
+        await controller.do_set([])
+
+        self.assertEqual(self.warnings(), ["info set: no sets found."])
+
+    async def test_do_xdr_every_node_failed(self):
+        controller = self._xdr_controller([])
+        controller.stat_getter.get_xdr_dcs.return_value = {
+            "1.1.1.1": Exception("timeout")
+        }
+        controller.stat_getter.get_xdr.return_value = {"1.1.1.1": Exception("timeout")}
+
+        await controller.do_xdr([])
+
+        self.assertEqual(
+            self.warnings(),
+            ["info xdr: XDR statistics could not be retrieved from any node."],
+        )
+
+    async def test_do_sindex_every_node_failed(self):
+        controller = self._controller(InfoController)
+        controller.stat_getter.get_sindex.return_value = {
+            "1.1.1.1": Exception("timeout")
+        }
+        controller.config_getter.get_namespace.return_value = {"1.1.1.1": {}}
+
+        await controller.do_sindex([])
+
+        self.assertEqual(
+            self.warnings(),
+            ["info sindex: secondary indexes could not be retrieved from any node."],
+        )
+
+    async def test_do_dc_no_datacenters_on_a_pre_5_server(self):
+        controller = self._controller(InfoController)
+        controller.cluster.info_all_dc_statistics = AsyncMock(
+            return_value={"1.1.1.1": {}}
+        )
+        controller.config_getter.get_xdr_dcs.return_value = {"1.1.1.1": {}}
+        controller.cluster.info_build = AsyncMock(return_value={"1.1.1.1": "4.9.0"})
+
+        await controller.do_dc([])
+
+        self.assertEqual(self.warnings(), ["info dc: no XDR DC statistics found."])

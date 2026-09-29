@@ -3105,6 +3105,60 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("roster:", self.captured)
 
 
+class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
+    """collectinfo fills its logs by running info and show commands and capturing
+    only their stdout; a no-data warning from one must not reach the terminal."""
+
+    COMMAND_LOGGER = "lib.live_cluster.info_controller"
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.write_output = patch.object(
+            CollectinfoController, "_write_func_output_to_file"
+        ).start()
+        self.addCleanup(patch.stopall)
+        command_logger = logging.getLogger(self.COMMAND_LOGGER)
+        self.addCleanup(command_logger.setLevel, command_logger.level)
+
+    async def test_command_warning_is_not_emitted_during_capture(self):
+        def command(line):
+            logging.getLogger(self.COMMAND_LOGGER).warning("info set: no sets found.")
+            print("table")
+
+        with self.assertNoLogs(self.COMMAND_LOGGER, level="WARNING"):
+            await self.controller._collectinfo_capture_and_write_to_file(
+                "file", command, []
+            )
+
+        _, _, content = self.write_output.call_args[0]
+        self.assertEqual(content.strip(), "table")
+
+    async def test_logger_level_is_restored_after_capture(self):
+        command_logger = logging.getLogger(self.COMMAND_LOGGER)
+        command_logger.setLevel(logging.INFO)
+
+        await self.controller._collectinfo_capture_and_write_to_file(
+            "file", lambda line: None, []
+        )
+
+        self.assertEqual(command_logger.level, logging.INFO)
+
+    async def test_logger_level_is_restored_when_the_command_raises(self):
+        command_logger = logging.getLogger(self.COMMAND_LOGGER)
+        level = command_logger.level
+
+        def command(line):
+            raise Exception("boom")
+
+        with self.assertRaises(Exception):
+            await self.controller._collectinfo_capture_and_write_to_file(
+                "file", command, []
+            )
+
+        self.assertEqual(command_logger.level, level)
+
+
 class CaptureParamTest(unittest.IsolatedAsyncioTestCase):
     async def test_default_param_does_not_accumulate_across_calls(self):
         controller = CollectinfoController()
