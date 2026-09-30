@@ -29,7 +29,11 @@ from lib.collectinfo_analyzer.get_controller import (
     GetStatisticsController,
 )
 from lib.base_controller import ShellException
-from lib.collectinfo_analyzer.info_controller import InfoController
+from lib.collectinfo_analyzer.info_controller import (
+    InfoController,
+    InfoNamespaceController,
+    InfoTransactionsController,
+)
 
 NODE = "1.1.1.1"
 
@@ -328,3 +332,234 @@ class CollectinfoInfoControllerMemoryTest(unittest.TestCase):
             self.controller.do_memory([])
 
         self.view_mock.info_memory.assert_not_called()
+
+
+NO_DATA_LOGGER = "lib.collectinfo_analyzer.collectinfo_command_controller"
+TS = "2025-01-01T00:00:00"
+
+
+class CollectinfoInfoNoDataTest(unittest.TestCase):
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        patch.object(
+            CollectinfoCommandController,
+            "log_handler",
+            self.log_handler,
+            create=True,
+        ).start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.addCleanup(patch.stopall)
+
+        cinfo_log_mock = MagicMock()
+        cinfo_log_mock.get_asd_build.return_value = {NODE: "8.2.0"}
+        self.log_handler.get_cinfo_log_at.return_value = cinfo_log_mock
+
+    def _info_controller(self, mods=None):
+        controller = InfoController()
+        controller.mods = mods if mods is not None else {"for": []}
+        controller.stats_getter = create_autospec(GetStatisticsController)
+        controller.config_getter = create_autospec(GetConfigController)
+        return controller
+
+    def no_data_warnings(self, run):
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING") as cm:
+            run()
+
+        return [r.getMessage() for r in cm.records]
+
+    def test_do_set_no_sets(self):
+        controller = self._info_controller()
+        controller.stats_getter.get_sets.return_value = {TS: {NODE: {}}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_set([]))
+
+        self.assertEqual(warnings, ["info set: no set statistics in this collectinfo."])
+
+    def test_do_set_sets_present_logs_nothing(self):
+        controller = self._info_controller()
+        controller.stats_getter.get_sets.return_value = {
+            TS: {NODE: {("test", "demo"): {"objects": "1"}}}
+        }
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            controller.do_set([])
+
+        self.view_mock.info_set.assert_called_once()
+
+    @parameterized.expand(
+        [
+            ([], "info xdr: no XDR statistics in this collectinfo."),
+            (["dc9"], "info xdr: no XDR statistics match dc9 in this collectinfo."),
+        ]
+    )
+    def test_do_xdr_no_datacenters(self, for_mods, expected):
+        controller = self._info_controller({"for": for_mods})
+        controller.stats_getter.get_xdr.return_value = {TS: {NODE: {}}}
+        controller.stats_getter.get_xdr_dcs.return_value = {TS: {NODE: {}}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_xdr([]))
+
+        self.assertEqual(warnings, [expected])
+
+    def test_do_xdr_quiet_under_plain_info(self):
+        controller = self._info_controller()
+        controller.stats_getter.get_xdr.return_value = {TS: {NODE: {}}}
+        controller.stats_getter.get_xdr_dcs.return_value = {TS: {NODE: {}}}
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            controller.do_xdr([], default=True)
+
+    def test_do_release_supported_but_empty(self):
+        controller = self._info_controller()
+        self.log_handler.info_release.return_value = {TS: {NODE: {}}}
+        self.log_handler.info_meta_data.return_value = {TS: {NODE: "8.2.0"}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_release([]))
+
+        self.assertEqual(
+            warnings, ["info release: no release data in this collectinfo."]
+        )
+
+    @parameterized.expand([("do_monitors",), ("do_provisionals",)])
+    def test_transactions_without_strong_consistency_namespaces(self, method):
+        controller = InfoTransactionsController()
+        controller.mods = {}
+        controller.stats_getter = create_autospec(GetStatisticsController)
+        controller.stats_getter.get_strong_consistency_namespace.return_value = {
+            TS: {NODE: {}}
+        }
+        command = "info transactions " + method[len("do_") :]
+
+        warnings = self.no_data_warnings(lambda: getattr(controller, method)([]))
+
+        self.assertEqual(
+            warnings,
+            [f"{command}: no strong-consistency namespaces in this collectinfo."],
+        )
+
+    def test_transactions_default_warns_once_for_both_sub_commands(self):
+        controller = InfoTransactionsController()
+        controller.mods = {}
+        controller.stats_getter = create_autospec(GetStatisticsController)
+        controller.stats_getter.get_strong_consistency_namespace.return_value = {
+            TS: {NODE: {}}
+        }
+
+        warnings = self.no_data_warnings(lambda: controller._do_default([]))
+
+        self.assertEqual(
+            warnings,
+            [
+                "info transactions: no strong-consistency namespaces in this collectinfo."
+            ],
+        )
+
+    def test_do_release_empty_snapshots_warn_once_and_render_nothing(self):
+        controller = self._info_controller()
+        later = "2025-01-02T00:00:00"
+        self.log_handler.info_release.return_value = {
+            TS: {NODE: {}},
+            later: {NODE: {}},
+        }
+        self.log_handler.info_meta_data.return_value = {
+            TS: {NODE: "8.2.0"},
+            later: {NODE: "8.2.0"},
+        }
+
+        warnings = self.no_data_warnings(lambda: controller.do_release([]))
+
+        self.assertEqual(
+            warnings, ["info release: no release data in this collectinfo."]
+        )
+        self.view_mock.info_release.assert_not_called()
+
+    def test_do_release_renders_the_snapshot_with_data_and_skips_the_empty_one(
+        self,
+    ):
+        controller = self._info_controller()
+        later = "2025-01-02T00:00:00"
+        self.log_handler.info_release.return_value = {
+            TS: {NODE: {}},
+            later: {NODE: {"edition": "Enterprise"}},
+        }
+        self.log_handler.info_meta_data.return_value = {
+            TS: {NODE: "8.2.0"},
+            later: {NODE: "8.2.0"},
+        }
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            controller.do_release([])
+
+        self.view_mock.info_release.assert_called_once()
+
+    def test_do_release_unsupported_server_does_not_also_warn_no_data(self):
+        controller = self._info_controller()
+        self.log_handler.info_release.return_value = {TS: {NODE: {}}}
+        self.log_handler.info_meta_data.return_value = {TS: {NODE: "7.0.0"}}
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            controller.do_release([])
+
+        self.view_mock.info_release.assert_not_called()
+
+    def test_do_network_no_service_stats(self):
+        controller = self._info_controller()
+        self.log_handler.info_statistics.return_value = {TS: {NODE: {}}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_network([]))
+
+        self.assertEqual(
+            warnings, ["info network: no service statistics in this collectinfo."]
+        )
+
+    def test_do_dc_no_datacenters(self):
+        controller = self._info_controller()
+        self.log_handler.info_statistics.return_value = {TS: {}}
+        self.log_handler.info_getconfig.return_value = {TS: {}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_dc([]))
+
+        self.assertEqual(
+            warnings, ["info dc: no XDR DC statistics in this collectinfo."]
+        )
+
+    def test_do_sindex_no_indexes(self):
+        controller = self._info_controller()
+        controller.stats_getter.get_sindex.return_value = {TS: {NODE: {}}}
+        controller.config_getter.get_namespace.return_value = {TS: {}}
+
+        warnings = self.no_data_warnings(lambda: controller.do_sindex([]))
+
+        self.assertEqual(
+            warnings, ["info sindex: no secondary indexes in this collectinfo."]
+        )
+
+    def _namespace_controller(self):
+        controller = InfoNamespaceController()
+        controller.mods = {}
+        controller.stat_getter = create_autospec(GetStatisticsController)
+        controller.config_getter = create_autospec(GetConfigController)
+        controller.stat_getter.get_namespace.return_value = {TS: {NODE: {}}}
+        controller.stat_getter.get_service.return_value = {TS: {}}
+        controller.config_getter.get_rack_ids.return_value = {}
+        return controller
+
+    @parameterized.expand([("do_usage", "usage"), ("do_object", "object")])
+    def test_namespace_commands_without_namespaces(self, method, name):
+        controller = self._namespace_controller()
+
+        warnings = self.no_data_warnings(lambda: getattr(controller, method)([]))
+
+        self.assertEqual(
+            warnings,
+            [f"info namespace {name}: no namespace statistics in this collectinfo."],
+        )
+
+    def test_namespace_default_warns_once_for_both_sub_commands(self):
+        controller = self._namespace_controller()
+
+        warnings = self.no_data_warnings(lambda: controller._do_default([]))
+
+        self.assertEqual(
+            warnings, ["info namespace: no namespace statistics in this collectinfo."]
+        )

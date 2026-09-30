@@ -1684,6 +1684,28 @@ class ShowUserAgentsControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Error processing user agent data from node1", str(cm.exception))
         self.getter_mock.get_user_agents.assert_called_with(nodes="all")
 
+    async def test_do_default_no_agents(self):
+        self.getter_mock.get_user_agents.return_value = {"node1": [], "node2": []}
+
+        with self.assertLogs("lib.live_cluster.show_controller", "WARNING") as cm:
+            await self.controller.execute([])
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            ["show user-agents: no user agents found."],
+        )
+        self.view_mock.show_user_agents.assert_called_with(
+            self.cluster_mock, {"node1": [], "node2": []}, **self.controller.mods
+        )
+
+    async def test_do_default_agents_present_logs_nothing(self):
+        self.getter_mock.get_user_agents.return_value = {
+            "node1": [{"user-agent": "MS4wLDIuMCx0ZXN0LWFwcA==", "count": "5"}]
+        }
+
+        with self.assertNoLogs("lib.live_cluster.show_controller", "WARNING"):
+            await self.controller.execute([])
+
 
 class ShowUdfsControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -2133,12 +2155,45 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         # Return empty list for a node (no masking rules)
         self.getter_mock.get_masking_rules.return_value = {"node1": []}
 
-        result = await self.controller._do_default(line)
+        with self.assertLogs("lib.live_cluster.show_controller", "WARNING") as cm:
+            result = await self.controller._do_default(line)
 
         # Should call view with empty list
         self.view_mock.show_masking_rules.assert_called_once_with(
             [], **self.controller.mods
         )
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            ["show masking: no masking rules found."],
+        )
+
+    @parameterized.expand(
+        [
+            (["namespace", "test"], "namespace test"),
+            (["namespace", "test", "set", "demo"], "namespace test set demo"),
+        ]
+    )
+    async def test_do_default_filter_matches_nothing(self, line, filter_desc):
+        self.getter_mock.get_masking_rules.return_value = {"node1": []}
+
+        with self.assertLogs("lib.live_cluster.show_controller", "WARNING") as cm:
+            await self.controller._do_default(line)
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [], **self.controller.mods
+        )
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            [f"show masking: no masking rules match {filter_desc}."],
+        )
+
+    async def test_do_default_rules_present_logs_nothing(self):
+        self.getter_mock.get_masking_rules.return_value = {
+            "node1": [{"ns": "test", "set": "demo", "bin": "ssn"}]
+        }
+
+        with self.assertNoLogs("lib.live_cluster.show_controller", "WARNING"):
+            await self.controller._do_default([])
 
 
 class InfoControllerTest(unittest.IsolatedAsyncioTestCase):
