@@ -560,7 +560,7 @@ class ShowUsersControllerTest(AnalyzerControllerTestCase):
         warnings = self.no_data_warnings(lambda: self.controller._do_default(["bob"]))
 
         self.assertEqual(
-            warnings, ["show users: no users match bob in this collectinfo."]
+            warnings, ["show users: no user named 'bob' in this collectinfo."]
         )
         self.view_mock.show_users.assert_not_called()
 
@@ -573,6 +573,65 @@ class ShowUsersControllerTest(AnalyzerControllerTestCase):
             self.controller._do_default([])
 
         self.view_mock.show_users.assert_called_once()
+
+    def test_like_is_a_filter_not_a_username(self):
+        """`show users like acs` reaches the command with the modifier still in
+        line; taking it as the username asked the bundle for a user called like."""
+        self.log_handler.admin_acl.return_value = {
+            "ts": {"n1": {"acs-admin": {"roles": ["read"]}}}
+        }
+        self.controller.mods = {"like": ["acs"]}
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default(["like", "acs"])
+
+        self.view_mock.show_users.assert_called_once_with(
+            {"acs-admin": {"roles": ["read"]}}, timestamp="ts", like=["acs"]
+        )
+
+    def test_like_matching_no_user_warns(self):
+        self.log_handler.admin_acl.return_value = {
+            "ts": {"n1": {"acs-admin": {"roles": ["read"]}}}
+        }
+        self.controller.mods = {"like": ["zzz"]}
+
+        warnings = self.no_data_warnings(
+            lambda: self.controller._do_default(["like", "zzz"])
+        )
+
+        self.assertEqual(
+            warnings, ["show users: no users match zzz in this collectinfo."]
+        )
+        self.view_mock.show_users.assert_called_once()
+
+
+class ShowUsersStatsControllerTest(AnalyzerControllerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowUsersStatsController()
+        self.controller.mods = {"like": []}
+        self.log_handler.admin_acl.return_value = {
+            "ts": {"n1": {"acs-admin": {"conns-in-use": 1}}}
+        }
+
+    def test_like_is_a_filter_not_a_username(self):
+        self.controller.mods = {"like": ["acs"]}
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            asyncio.run(self.controller._do_default(["like", "acs"]))
+
+        self.view_mock.show_users_stats.assert_called_once()
+
+    def test_named_user_not_in_bundle(self):
+        warnings = self.no_data_warnings(
+            lambda: asyncio.run(self.controller._do_default(["bob"]))
+        )
+
+        self.assertEqual(
+            warnings,
+            ["show users statistics: no user named 'bob' in this collectinfo."],
+        )
+        self.view_mock.show_users_stats.assert_not_called()
 
 
 class ShowRacksControllerTest(AnalyzerControllerTestCase):
@@ -770,6 +829,29 @@ class ShowConfigXDRDefaultTest(AnalyzerControllerTestCase):
         with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
             self.controller._do_default([])
 
+    def test_bundle_with_only_xdr_context_logs_nothing(self):
+        self._set_xdr(
+            {"ts": {"n1": {"src-id": "1"}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}}
+        )
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+    def test_for_filter_matching_nothing_warns_despite_the_xdr_context(self):
+        """The xdr context is never empty on a 5.x bundle and has no dc or
+        namespace for a for filter to match, so it cannot vouch for one."""
+        self._set_xdr(
+            {"ts": {"n1": {"src-id": "1"}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}}
+        )
+        self.controller.mods["for"] = ["nope"]
+
+        warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings,
+            ["show config xdr: no XDR configuration match nope in this collectinfo."],
+        )
+
     def test_sub_command_alone_still_warns(self):
         self._set_xdr({"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}})
 
@@ -849,6 +931,27 @@ class ShowStatisticsXDRDefaultTest(AnalyzerControllerTestCase):
         with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
             self.controller._do_default([])
 
+    def test_bundle_with_only_xdr_context_stats_logs_nothing(self):
+        self._set_xdr(
+            {"ts": {"n1": {"uptime": "1"}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}}
+        )
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+    def test_for_filter_matching_nothing_warns_despite_the_xdr_context(self):
+        self._set_xdr(
+            {"ts": {"n1": {"uptime": "1"}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}}
+        )
+        self.controller.mods["for"] = ["nope"]
+
+        warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings,
+            ["show statistics xdr: no XDR statistics match nope in this collectinfo."],
+        )
+
     def test_sub_command_alone_still_warns(self):
         self._set_xdr({"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}})
 
@@ -860,6 +963,61 @@ class ShowStatisticsXDRDefaultTest(AnalyzerControllerTestCase):
                 "show statistics xdr namespace: no XDR namespace statistics in this collectinfo."
             ],
         )
+
+
+class ShowDistributionDefaultTest(AnalyzerControllerTestCase):
+    """Plain `show distribution` runs ttl and object size over the same
+    histogram snapshot; an empty one gets one line, and a for filter that
+    matches no namespace is reported rather than rendering nothing."""
+
+    HISTOGRAM = {"ts": {"n1": {"test": {"data": [1, 0], "width": 10}}}}
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowDistributionController()
+        self.controller.mods = {"for": []}
+
+    def test_empty_bundle_warns_once(self):
+        self.log_handler.info_histogram.return_value = {"ts": {"n1": {}}}
+
+        warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings, ["show distribution: no distribution data in this collectinfo."]
+        )
+
+    def test_sub_command_alone_still_warns(self):
+        self.log_handler.info_histogram.return_value = {"ts": {"n1": {}}}
+
+        warnings = self.no_data_warnings(lambda: self.controller.do_time_to_live([]))
+
+        self.assertEqual(
+            warnings,
+            [
+                "show distribution time_to_live: no ttl distribution data in this collectinfo."
+            ],
+        )
+
+    def test_for_filter_matching_no_namespace_warns(self):
+        self.log_handler.info_histogram.return_value = self.HISTOGRAM
+        self.controller.mods = {"for": ["nope"]}
+
+        warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings,
+            ["show distribution: no distribution data match nope in this collectinfo."],
+        )
+        self.assertEqual(self.view_mock.show_distribution.call_count, 2)
+
+    def test_for_filter_matching_a_namespace_logs_nothing(self):
+        self.log_handler.info_histogram.return_value = self.HISTOGRAM
+        self.controller.mods = {"for": ["te"]}
+
+        with self.assertNoLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+        self.assertEqual(self.view_mock.show_distribution.call_count, 2)
 
 
 EMPTY_NODE = {"ts": {"n1": {}}}

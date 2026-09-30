@@ -312,6 +312,14 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         self.assertEqual(command_lines, [], self.collect_cp.stderr)
 
+    def test_debug_log_keeps_the_command_warnings(self):
+        """Only the terminal is spared. The bundle's debug log is where support
+        reads what the captured commands had to say."""
+        with open(self._find_file(self.bundle_dir, "collectinfo_debug.log")) as f:
+            debug_log = f.read()
+
+        self.assertIn("info sindex: no secondary indexes found.", debug_log)
+
     def test_show_jobs_on_an_idle_cluster_warns_once(self):
         """The aggregate speaks for its three sub-commands, not each in turn."""
         cp = util.run_asadm(f"-cf {self.bundle_dir} -e 'show jobs'")

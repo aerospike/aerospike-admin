@@ -534,8 +534,7 @@ class CollectinfoInfoNoDataTest(unittest.TestCase):
             warnings, ["info sindex: no secondary indexes in this collectinfo."]
         )
 
-    @parameterized.expand([("do_usage", "usage"), ("do_object", "object")])
-    def test_namespace_commands_without_namespaces(self, method, name):
+    def _namespace_controller(self):
         controller = InfoNamespaceController()
         controller.mods = {}
         controller.stat_getter = create_autospec(GetStatisticsController)
@@ -543,10 +542,24 @@ class CollectinfoInfoNoDataTest(unittest.TestCase):
         controller.stat_getter.get_namespace.return_value = {TS: {NODE: {}}}
         controller.stat_getter.get_service.return_value = {TS: {}}
         controller.config_getter.get_rack_ids.return_value = {}
+        return controller
+
+    @parameterized.expand([("do_usage", "usage"), ("do_object", "object")])
+    def test_namespace_commands_without_namespaces(self, method, name):
+        controller = self._namespace_controller()
 
         warnings = self.no_data_warnings(lambda: getattr(controller, method)([]))
 
         self.assertEqual(
             warnings,
             [f"info namespace {name}: no namespace statistics in this collectinfo."],
+        )
+
+    def test_namespace_default_warns_once_for_both_sub_commands(self):
+        controller = self._namespace_controller()
+
+        warnings = self.no_data_warnings(lambda: controller._do_default([]))
+
+        self.assertEqual(
+            warnings, ["info namespace: no namespace statistics in this collectinfo."]
         )

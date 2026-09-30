@@ -469,32 +469,118 @@ class InfoControllerNoDataTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.warnings(), ["info set: no sets found."])
 
-    async def test_do_xdr_every_node_failed(self):
-        controller = self._xdr_controller([])
-        controller.stat_getter.get_xdr_dcs.return_value = {
-            "1.1.1.1": Exception("timeout")
-        }
-        controller.stat_getter.get_xdr.return_value = {"1.1.1.1": Exception("timeout")}
+    def _controller_with_real_stat_getter(self, controller_class, mods=None):
+        """The getters strip failed nodes before a view sees them, so the
+        all-nodes-failed cases must go through the real ones."""
+        controller = self._controller(controller_class, mods)
+        controller.stat_getter = GetStatisticsController(controller.cluster)
+        controller.stats_getter = controller.stat_getter
+        return controller
 
-        await controller.do_xdr([])
+    async def test_do_xdr_every_node_failed(self):
+        """On XDR 5 the xdr context has no statistics of its own, so an empty
+        answer there says nothing; the failed dc fetch is what counts."""
+        exc = Exception("timeout")
+        controller = self._controller_with_real_stat_getter(
+            InfoController, {"with": [], "for": []}
+        )
+        controller.cluster.info_dcs = AsyncMock(return_value={"1.1.1.1": exc})
+        controller.cluster.info_all_dc_statistics = AsyncMock(
+            return_value={"1.1.1.1": {}}
+        )
+        controller.cluster.info_XDR_statistics = AsyncMock(return_value={"1.1.1.1": {}})
+        controller.cluster.is_XDR_enabled = AsyncMock(return_value={"1.1.1.1": True})
+        controller.cluster.info_build = AsyncMock(return_value={"1.1.1.1": "8.0.0"})
+
+        for render in await controller.do_xdr([]):
+            render()
 
         self.assertEqual(
             self.warnings(),
             ["info xdr: XDR statistics could not be retrieved from any node."],
         )
+        controller.view.info_XDR.assert_called_once_with(
+            {"1.1.1.1": {}},
+            {"1.1.1.1": True},
+            controller.cluster,
+            **{"with": [], "for": []},
+        )
 
     async def test_do_sindex_every_node_failed(self):
-        controller = self._controller(InfoController)
-        controller.stat_getter.get_sindex.return_value = {
-            "1.1.1.1": Exception("timeout")
-        }
+        exc = Exception("timeout")
+        controller = self._controller_with_real_stat_getter(InfoController)
+        controller.cluster.info_sindex = AsyncMock(
+            return_value={"1.1.1.1": exc, "2.2.2.2": exc}
+        )
         controller.config_getter.get_namespace.return_value = {"1.1.1.1": {}}
 
-        await controller.do_sindex([])
+        (await controller.do_sindex([]))()
 
         self.assertEqual(
             self.warnings(),
             ["info sindex: secondary indexes could not be retrieved from any node."],
+        )
+        controller.view.info_sindex.assert_called_once_with(
+            {}, {"1.1.1.1": {}}, controller.cluster, **{"with": [], "for": []}
+        )
+
+    async def test_do_sindex_one_node_failed_and_the_other_has_no_indexes(self):
+        controller = self._controller_with_real_stat_getter(InfoController)
+        controller.cluster.info_sindex = AsyncMock(
+            return_value={"1.1.1.1": Exception("timeout"), "2.2.2.2": []}
+        )
+        controller.config_getter.get_namespace.return_value = {"1.1.1.1": {}}
+
+        await controller.do_sindex([])
+
+        self.assertEqual(self.warnings(), ["info sindex: no secondary indexes found."])
+
+    @parameterized.expand([("do_usage", "usage"), ("do_object", "object")])
+    async def test_namespace_commands_every_node_failed(self, method, name):
+        exc = Exception("timeout")
+        controller = self._controller_with_real_stat_getter(
+            InfoNamespaceController, {"with": []}
+        )
+        controller.cluster.info_namespaces = AsyncMock(
+            return_value={"1.1.1.1": exc, "2.2.2.2": exc}
+        )
+        controller.cluster.info_statistics = AsyncMock(return_value={})
+
+        with patch(
+            "lib.live_cluster.info_controller.GetStatisticsController",
+            return_value=controller.stats_getter,
+        ), patch(
+            "lib.live_cluster.info_controller.GetConfigController"
+        ) as config_class:
+            config_class.return_value.get_rack_ids = AsyncMock(return_value={})
+            (await getattr(controller, method)([]))()
+
+        self.assertEqual(
+            self.warnings(),
+            [
+                f"info namespace {name}: namespace statistics could not be "
+                "retrieved from any node."
+            ],
+        )
+        view = getattr(controller.view, f"info_namespace_{name}")
+        self.assertEqual(view.call_args.args[0], {})
+
+    async def test_namespace_default_warns_once_for_both_sub_commands(self):
+        controller = self._controller(InfoNamespaceController, {"with": []})
+        controller.stats_getter.get_service.return_value = {}
+        controller.stats_getter.get_namespace.return_value = {}
+
+        with patch(
+            "lib.live_cluster.info_controller.GetStatisticsController"
+        ) as stat_class, patch(
+            "lib.live_cluster.info_controller.GetConfigController"
+        ) as config_class:
+            stat_class.return_value.get_namespace = AsyncMock(return_value={})
+            config_class.return_value.get_rack_ids = AsyncMock(return_value={})
+            await controller._do_default([])
+
+        self.assertEqual(
+            self.warnings(), ["info namespace: no namespace statistics found."]
         )
 
     async def test_do_dc_no_datacenters_on_a_pre_5_server(self):
