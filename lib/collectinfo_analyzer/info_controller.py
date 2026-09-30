@@ -426,15 +426,19 @@ class InfoNamespaceController(CollectinfoCommandController):
 
     @CommandHelp("Displays usage and objects information for each namespace")
     def _do_default(self, line):
-        self.do_usage(line)
-        self.do_object(line)
+        shown = self.do_usage(line, default=True)
+        shown = self.do_object(line, default=True) or shown
+
+        if not shown:
+            warn_no_data("info namespace", "namespace statistics")
 
     @CommandHelp("Displays usage information for each namespace")
-    def do_usage(self, line):
+    def do_usage(self, line, default=False):
         ns_stats = self.stat_getter.get_namespace()
         service_stats = self.stat_getter.get_service()
+        shown = has_node_data(ns_stats)
 
-        if not has_node_data(ns_stats):
+        if not default and not shown:
             warn_no_data("info namespace usage", "namespace statistics")
 
         for timestamp in sorted(ns_stats.keys()):
@@ -449,13 +453,16 @@ class InfoNamespaceController(CollectinfoCommandController):
                 **self.mods,
             )
 
+        return shown
+
     @CommandHelp("Displays object information for each namespace.")
-    def do_object(self, line):
+    def do_object(self, line, default=False):
         # In SC mode effective rack-id is different from that in namespace config.
         ns_stats = self.stat_getter.get_namespace()
         rack_ids = self.config_getter.get_rack_ids()
+        shown = has_node_data(ns_stats)
 
-        if not has_node_data(ns_stats):
+        if not default and not shown:
             warn_no_data("info namespace object", "namespace statistics")
 
         for timestamp in sorted(ns_stats.keys()):
@@ -469,6 +476,8 @@ class InfoNamespaceController(CollectinfoCommandController):
                 timestamp=timestamp,
                 **self.mods,
             )
+
+        return shown
 
 
 @CommandHelp(

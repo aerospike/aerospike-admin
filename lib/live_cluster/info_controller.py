@@ -30,8 +30,11 @@ def _has_node_data(data) -> bool:
 
 
 def _all_failed(*datasets) -> bool:
-    values = [value for data in datasets for value in data.values()]
-    return bool(values) and all(isinstance(value, Exception) for value in values)
+    """Whether some dataset came back as nothing but failures."""
+    return any(
+        bool(data) and all(isinstance(value, Exception) for value in data.values())
+        for data in datasets
+    )
 
 
 def _warn_no_data(command, what, *datasets, filter_desc=""):
@@ -46,6 +49,23 @@ def _warn_no_data(command, what, *datasets, filter_desc=""):
         logger.warning("%s: no %s match %s.", command, what, filter_desc)
     else:
         logger.warning("%s: no %s found.", command, what)
+
+
+def _collected(data):
+    """What the getter returns without keep_exceptions: failed and empty nodes dropped."""
+    return {
+        node: value
+        for node, value in data.items()
+        if value and not isinstance(value, Exception)
+    }
+
+
+def _blanked(data):
+    """What the getter returns without keep_exceptions: a failed node holds {}."""
+    return {
+        node: {} if isinstance(value, Exception) else value
+        for node, value in data.items()
+    }
 
 
 Modifiers = constants.Modifiers
@@ -295,8 +315,10 @@ class InfoController(LiveClusterCommandController):
     )
     async def do_xdr(self, line, default=False):
         new_stats, old_stats, xdr_enabled, builds = await asyncio.gather(
-            self.stat_getter.get_xdr_dcs(for_mods=self.mods["for"], nodes=self.nodes),
-            self.stat_getter.get_xdr(nodes=self.nodes),
+            self.stat_getter.get_xdr_dcs(
+                for_mods=self.mods["for"], nodes=self.nodes, keep_exceptions=True
+            ),
+            self.stat_getter.get_xdr(nodes=self.nodes, keep_exceptions=True),
             self.cluster.is_XDR_enabled(nodes=self.nodes),
             self.cluster.info_build(nodes=self.nodes),
         )
@@ -310,6 +332,8 @@ class InfoController(LiveClusterCommandController):
                 filter_desc=" ".join(self.mods["for"]),
             )
 
+        new_stats = _blanked(new_stats)
+        old_stats = _blanked(old_stats)
         xdr5_stats = {}
         old_xdr_stats = {}
 
@@ -355,10 +379,12 @@ class InfoController(LiveClusterCommandController):
     )
     async def do_sindex(self, line):
         sindex_stats, ns_configs = await asyncio.gather(
-            self.stat_getter.get_sindex(), self.config_getter.get_namespace()
+            self.stat_getter.get_sindex(keep_exceptions=True),
+            self.config_getter.get_namespace(),
         )
 
         _warn_no_data("info sindex", "secondary indexes", sindex_stats)
+        sindex_stats = _collected(sindex_stats)
 
         return util.callable(
             self.view.info_sindex, sindex_stats, ns_configs, self.cluster, **self.mods
@@ -418,8 +444,8 @@ class InfoNamespaceController(LiveClusterCommandController):
     )
     async def _do_default(self, line):
         tasks = await asyncio.gather(
-            self.do_usage(line),
-            self.do_object(line),
+            self.do_usage(line, command="info namespace"),
+            self.do_object(line, default=True),
         )
         if self.get_futures:
             # Wrapped to prevent base class from calling result.
@@ -432,13 +458,14 @@ class InfoNamespaceController(LiveClusterCommandController):
         usage=f"[{ModifierUsageHelp.WITH}]",
         modifiers=(with_modifier_help,),
     )
-    async def do_usage(self, line):
+    async def do_usage(self, line, command="info namespace usage"):
         service_stats, ns_stats = await asyncio.gather(
             self.stats_getter.get_service(nodes=self.nodes),
-            self.stats_getter.get_namespace(nodes=self.nodes),
+            self.stats_getter.get_namespace(nodes=self.nodes, keep_exceptions=True),
         )  # Includes stats and configs
 
-        _warn_no_data("info namespace usage", "namespace statistics", ns_stats)
+        _warn_no_data(command, "namespace statistics", ns_stats)
+        ns_stats = _collected(ns_stats)
 
         return util.callable(
             self.view.info_namespace_usage,
@@ -453,16 +480,19 @@ class InfoNamespaceController(LiveClusterCommandController):
         usage=f"[{ModifierUsageHelp.WITH}]",
         modifiers=(with_modifier_help,),
     )
-    async def do_object(self, line):
+    async def do_object(self, line, default=False):
         # In SC mode effective rack-id is different from that in namespace config.
         config_getter = GetConfigController(self.cluster)
         stat_getter = GetStatisticsController(self.cluster)
         stats, rack_ids = await asyncio.gather(
-            stat_getter.get_namespace(nodes=self.nodes),
+            stat_getter.get_namespace(nodes=self.nodes, keep_exceptions=True),
             config_getter.get_rack_ids(nodes=self.nodes),
         )
 
-        _warn_no_data("info namespace object", "namespace statistics", stats)
+        if not default:
+            _warn_no_data("info namespace object", "namespace statistics", stats)
+
+        stats = _collected(stats)
 
         return util.callable(
             self.view.info_namespace_object, stats, rack_ids, self.cluster, **self.mods

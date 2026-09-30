@@ -420,7 +420,8 @@ class ShowConfigXDRController(CollectinfoCommandController):
         "Displays xdr, xdr datacenter, and xdr namespace configuration",
     )
     def _do_default(self, line):
-        shown = self._do_xdr(line[:], default=True)
+        """A for filter names a dc or namespace, which the xdr context has none of."""
+        shown = self._do_xdr(line[:], default=True) and not self.mods["for"]
         shown = self.do_dc(line[:], default=True) or shown
         shown = self.do_namespace(line[:], default=True) or shown
 
@@ -661,14 +662,26 @@ class ShowDistributionController(CollectinfoCommandController):
 
     @CommandHelp("Shows the distributions of Time to Live and Object Size")
     def _do_default(self, line):
-        self.do_time_to_live(line)
-        self.do_object_size(line)
+        shown = self.do_time_to_live(line, default=True)
+        shown = self.do_object_size(line, default=True) or shown
 
-    def _do_distribution(self, command, histogram_name, title, unit):
+        if not shown:
+            warn_no_data(
+                "show distribution", "distribution data", " ".join(self.mods["for"])
+            )
+
+    def _namespaces_shown(self, hist_output) -> bool:
+        """Whether the view, which keeps only the namespaces matching for, renders any."""
+        namespaces = util.filter_list(list(hist_output.keys()), self.mods["for"])
+
+        return any(
+            hist_output[namespace] and not isinstance(hist_output[namespace], Exception)
+            for namespace in namespaces
+        )
+
+    def _do_distribution(self, command, histogram_name, title, unit, default=False):
         histogram = self.log_handler.info_histogram(histogram_name)
-
-        if not has_node_data(histogram):
-            warn_no_data(command, f"{title.lower()} data")
+        shown = False
 
         for timestamp in sorted(histogram.keys()):
             if not histogram[timestamp]:
@@ -676,6 +689,7 @@ class ShowDistributionController(CollectinfoCommandController):
             hist_output = common.create_histogram_output(
                 histogram_name, histogram[timestamp]
             )
+            shown = self._namespaces_shown(hist_output) or shown
             self.view.show_distribution(
                 title,
                 hist_output,
@@ -686,15 +700,24 @@ class ShowDistributionController(CollectinfoCommandController):
                 like=self.mods["for"],
             )
 
+        if not default and not shown:
+            warn_no_data(command, f"{title.lower()} data", " ".join(self.mods["for"]))
+
+        return shown
+
     @CommandHelp(
         "Shows the distribution of TTLs for namespaces",
         modifiers=(for_ns_modifier_help,),
         short_msg="Displays the distribution of Object sizes for namespace",
         usage=f"[{Modifiers.FOR} <ns-substring>]",
     )
-    def do_time_to_live(self, line):
+    def do_time_to_live(self, line, default=False):
         return self._do_distribution(
-            "show distribution time_to_live", "ttl", "TTL Distribution", "Seconds"
+            "show distribution time_to_live",
+            "ttl",
+            "TTL Distribution",
+            "Seconds",
+            default,
         )
 
     @CommandHelp(
@@ -715,7 +738,7 @@ class ShowDistributionController(CollectinfoCommandController):
         short_msg="Displays the distribution of Object sizes for namespace",
         usage=f"[-b] [-k <num-buckets>] [{Modifiers.FOR} <ns-substring>]",
     )
-    def do_object_size(self, line):
+    def do_object_size(self, line, default=False):
         byte_distribution = util.check_arg_and_delete_from_mods(
             line=line, arg="-b", default=False, modifiers=self.modifiers, mods=self.mods
         )
@@ -732,27 +755,31 @@ class ShowDistributionController(CollectinfoCommandController):
         histogram_name = "objsz"
         if not byte_distribution:
             return self._do_distribution(
-                command, histogram_name, "Object Size Distribution", "Record Blocks"
+                command,
+                histogram_name,
+                "Object Size Distribution",
+                "Record Blocks",
+                default,
             )
 
         histogram = self.log_handler.info_histogram(
             histogram_name, byte_distribution=True
         )
         builds = self.log_handler.info_meta_data(stanza="asd_build")
-
-        if not has_node_data(histogram):
-            warn_no_data(command, "object size distribution data")
+        shown = False
 
         for timestamp in histogram:
+            hist_output = common.create_histogram_output(
+                histogram_name,
+                histogram[timestamp],
+                byte_distribution=True,
+                bucket_count=bucket_count,
+                builds=builds,
+            )
+            shown = self._namespaces_shown(hist_output) or shown
             self.view.show_object_distribution(
                 "Object Size Distribution",
-                common.create_histogram_output(
-                    histogram_name,
-                    histogram[timestamp],
-                    byte_distribution=True,
-                    bucket_count=bucket_count,
-                    builds=builds,
-                ),
+                hist_output,
                 "Bytes",
                 "objsz",
                 bucket_count,
@@ -762,6 +789,13 @@ class ShowDistributionController(CollectinfoCommandController):
                 loganalyzer_mode=True,
                 like=self.mods["for"],
             )
+
+        if not default and not shown:
+            warn_no_data(
+                command, "object size distribution data", " ".join(self.mods["for"])
+            )
+
+        return shown
 
 
 @CommandHelp(
@@ -1332,7 +1366,8 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
         "Displays xdr, xdr datacenter, and xdr namespace statistics",
     )
     def _do_default(self, line):
-        shown = self._do_xdr(line[:])
+        """A for filter names a dc or namespace, which the xdr context has none of."""
+        shown = self._do_xdr(line[:]) and not self.mods["for"]
         shown = self.do_dc(line[:], default=True) or shown
         shown = self.do_namespace(line[:], default=True) or shown
 
@@ -1573,7 +1608,7 @@ class ShowUsersController(CollectinfoCommandController):
     def _do_default(self, line):
         user = None
 
-        if line:
+        if line and line[0] not in self.modifiers:
             user = line.pop(0)
 
         users_data = None
@@ -1583,15 +1618,23 @@ class ShowUsersController(CollectinfoCommandController):
         else:
             users_data = self.getter.get_user(user, nodes="principal")
 
-        if not has_node_data(users_data):
-            warn_no_data("show users", "users", user or "")
+        shown = False
 
         for timestamp in sorted(users_data.keys()):
             if not users_data[timestamp]:
                 continue
 
             data = list(users_data[timestamp].values())[0]
+            shown = shown or any(util.filter_list(list(data), self.mods["like"]))
             self.view.show_users(data, timestamp=timestamp, **self.mods)
+
+        if shown:
+            return
+
+        if user:
+            warn_no_data("show users", f"user named '{user}'")
+        else:
+            warn_no_data("show users", "users", " ".join(self.mods["like"]))
 
 
 @CommandHelp(
@@ -1608,7 +1651,7 @@ class ShowUsersStatsController(CollectinfoCommandController):
     async def _do_default(self, line):
         user = None
 
-        if line:
+        if line and line[0] not in self.modifiers:
             user = line.pop(0)
 
         users_data = None
@@ -1619,7 +1662,10 @@ class ShowUsersStatsController(CollectinfoCommandController):
             users_data = self.getter.get_user(user)
 
         if not has_node_data(users_data):
-            warn_no_data("show users statistics", "users", user or "")
+            if user:
+                warn_no_data("show users statistics", f"user named '{user}'")
+            else:
+                warn_no_data("show users statistics", "users")
 
         for timestamp in sorted(users_data.keys()):
             if not users_data[timestamp]:

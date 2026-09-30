@@ -73,21 +73,21 @@ logger = logging.getLogger(__name__)
 _COMMAND_LOGGER_NAMES = (InfoController.__module__, ShowController.__module__)
 
 
+def _not_a_command_warning(record: logging.LogRecord) -> bool:
+    return record.levelno >= logging.ERROR or record.name not in _COMMAND_LOGGER_NAMES
+
+
 @contextlib.contextmanager
 def _command_warnings_silenced():
     """Only stdout is captured from the info and show commands collectinfo runs
-    for its logs, so their no-data warnings would land on the operator's terminal."""
-    command_loggers = [logging.getLogger(name) for name in _COMMAND_LOGGER_NAMES]
-    levels = [command_logger.level for command_logger in command_loggers]
-
-    for command_logger in command_loggers:
-        command_logger.setLevel(logging.ERROR)
+    for its logs, so their warnings would land on the operator's terminal. Only
+    the stderr handler is filtered: collectinfo_debug.log still records them."""
+    stderr_log_handler.addFilter(_not_a_command_warning)
 
     try:
         yield
     finally:
-        for command_logger, level in zip(command_loggers, levels):
-            command_logger.setLevel(level)
+        stderr_log_handler.removeFilter(_not_a_command_warning)
 
 
 # The default 1s per-node timeout is too tight for the high-fanout parallel bursts that
