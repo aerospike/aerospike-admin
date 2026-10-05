@@ -66,7 +66,7 @@ class WarnNoDataTest(unittest.TestCase):
 
         self.assertEqual(
             cm.records[0].getMessage(),
-            "show masking: no masking rules match namespace test set demo in this collectinfo.",
+            "show masking: no masking rules matching namespace test set demo in this collectinfo.",
         )
 
     def test_logs_at_warning_so_it_reaches_stderr_without_failing_the_command(self):

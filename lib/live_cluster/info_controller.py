@@ -46,7 +46,7 @@ def _warn_no_data(command, what, *datasets, filter_desc=""):
     if _all_failed(*datasets):
         logger.warning("%s: %s could not be retrieved from any node.", command, what)
     elif filter_desc:
-        logger.warning("%s: no %s match %s.", command, what, filter_desc)
+        logger.warning("%s: no %s matching %s.", command, what, filter_desc)
     else:
         logger.warning("%s: no %s found.", command, what)
 

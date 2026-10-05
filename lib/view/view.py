@@ -1313,17 +1313,20 @@ class CliView(object):
 
         if like:
             likes = util.compile_likes(like)
-            filtered_keys = list(filter(likes.search, users_data.keys()))
-        else:
-            filtered_keys = users_data.keys()
+            users_data = {
+                node: {
+                    name: stats
+                    for name, stats in node_users.items()
+                    if likes.search(name)
+                }
+                for node, node_users in users_data.items()
+            }
 
         node_names = cluster.get_node_names(with_)
         node_ids = cluster.get_node_ids(with_)
         common = CliView._common(cluster)
         title_timestamp = CliView._get_timestamp_suffix(timestamp)
         title = "Users Statistics{}".format(title_timestamp)
-
-        users_data = {k: v for k, v in users_data.items() if k in filtered_keys}
 
         sources = dict(data=users_data, node_names=node_names, node_ids=node_ids)
         CliView.print_result(

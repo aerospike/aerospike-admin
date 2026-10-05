@@ -2096,7 +2096,9 @@ class ShowMaskingController(LiveClusterCommandController):
                 filter_desc = f"namespace {namespace}"
                 if set_name:
                     filter_desc += f" set {set_name}"
-                logger.warning("show masking: no masking rules match %s.", filter_desc)
+                logger.warning(
+                    "show masking: no masking rules matching %s.", filter_desc
+                )
             else:
                 logger.warning("show masking: no masking rules found.")
 

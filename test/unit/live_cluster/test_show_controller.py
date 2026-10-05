@@ -2184,7 +2184,7 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [r.getMessage() for r in cm.records],
-            [f"show masking: no masking rules match {filter_desc}."],
+            [f"show masking: no masking rules matching {filter_desc}."],
         )
 
     async def test_do_default_rules_present_logs_nothing(self):

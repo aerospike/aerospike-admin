@@ -374,7 +374,7 @@ class InfoControllerNoDataTest(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             ([], "info xdr: no XDR statistics found."),
-            (["dc9"], "info xdr: no XDR statistics match dc9."),
+            (["dc9"], "info xdr: no XDR statistics matching dc9."),
         ]
     )
     async def test_do_xdr_no_datacenters(self, for_mods, expected):

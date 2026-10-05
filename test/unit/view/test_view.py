@@ -900,6 +900,21 @@ class CliViewTest(unittest.TestCase):
             common=common,
         )
 
+    def test_show_users_stats_like_filters_usernames_not_nodes(self):
+        users_data = {
+            "1.1.1.1": {"acs-admin": {"connections": 1}, "bob": {"connections": 2}},
+            "2.2.2.2": {"bob": {"connections": 3}},
+        }
+        self.cluster_mock.get_node_names.return_value = {}
+        self.cluster_mock.get_node_ids.return_value = {}
+
+        CliView.show_users_stats(self.cluster_mock, users_data, like=["acs"])
+
+        self.assertEqual(
+            self.render_mock.call_args[0][2]["data"],
+            {"1.1.1.1": {"acs-admin": {"connections": 1}}, "2.2.2.2": {}},
+        )
+
     def test_summary_cluster_list_view(self):
         cluster_data: SummaryClusterDict = {
             "active_features": ["Compression"],

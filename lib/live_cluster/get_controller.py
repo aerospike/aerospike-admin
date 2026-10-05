@@ -877,7 +877,8 @@ class GetStatisticsController:
             for node in stats:
                 result.setdefault(node, {})
 
-            result.update(failures)
+            for node, exc in failures.items():
+                result.setdefault(node, exc)
 
         return result
 

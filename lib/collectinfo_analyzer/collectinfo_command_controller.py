@@ -36,7 +36,7 @@ def warn_no_data(command: str, what: str, filter_desc: str = "") -> None:
     """Say on stderr that the bundle has nothing for a command to show."""
     if filter_desc:
         logger.warning(
-            "%s: no %s match %s in this collectinfo.", command, what, filter_desc
+            "%s: no %s matching %s in this collectinfo.", command, what, filter_desc
         )
     else:
         logger.warning("%s: no %s in this collectinfo.", command, what)

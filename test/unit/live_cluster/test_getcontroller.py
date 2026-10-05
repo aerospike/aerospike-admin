@@ -749,6 +749,21 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(actual, {"1.1.1.1": exc, "2.2.2.2": {}})
 
+    async def test_get_sindex_keep_exceptions_keeps_stats_when_only_list_failed(self):
+        self.cluster_mock.info_sindex.return_value = {
+            "1.1.1.1": Exception("timeout"),
+            "2.2.2.2": [{"ns": "test", "set": "s", "indexname": "idx"}],
+        }
+        self.cluster_mock.info_sindex_statistics.return_value = {
+            "1.1.1.1": {"keys": "1"},
+            "2.2.2.2": {"keys": "2"},
+        }
+
+        actual = await self.controller.get_sindex(keep_exceptions=True)
+
+        self.assertEqual(actual["1.1.1.1"]["test s idx"]["keys"], "1")
+        self.assertEqual(actual["2.2.2.2"]["test s idx"]["keys"], "2")
+
     async def test_get_sindex_drops_failed_and_empty_nodes_by_default(self):
         self.cluster_mock.info_sindex.return_value = {
             "1.1.1.1": Exception("timeout"),

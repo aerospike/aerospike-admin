@@ -351,7 +351,7 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
         self._assert_single_no_data_line(
             cp,
             "show statistics sets",
-            "show statistics sets: no set statistics match nope in this collectinfo.",
+            "show statistics sets: no set statistics matching nope in this collectinfo.",
         )
 
     def test_show_masking_never_returns_silently(self):

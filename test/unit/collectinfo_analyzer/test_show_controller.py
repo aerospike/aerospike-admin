@@ -237,7 +237,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         self.assertEqual(
             [r.getMessage() for r in cm.records],
             [
-                f"show masking: no masking rules match {filter_desc} in this collectinfo."
+                f"show masking: no masking rules matching {filter_desc} in this collectinfo."
             ],
         )
         self.view_mock.show_masking_rules.assert_called_once_with(
@@ -347,7 +347,9 @@ class ShowJobsControllerTest(unittest.TestCase):
 
         self.assertEqual(
             [r.getMessage() for r in cm.records],
-            ["show jobs: no query jobs match the given filters in this collectinfo."],
+            [
+                "show jobs: no query jobs matching the given filters in this collectinfo."
+            ],
         )
         self.view_mock.show_jobs.assert_called_once()
 
@@ -471,7 +473,7 @@ class ShowJobsControllerTest(unittest.TestCase):
 
         self.assertEqual(
             [r.getMessage() for r in cm.records],
-            ["show jobs: no jobs match the given filters in this collectinfo."],
+            ["show jobs: no jobs matching the given filters in this collectinfo."],
         )
 
 
@@ -600,9 +602,23 @@ class ShowUsersControllerTest(AnalyzerControllerTestCase):
         )
 
         self.assertEqual(
-            warnings, ["show users: no users match zzz in this collectinfo."]
+            warnings, ["show users: no users matching zzz in this collectinfo."]
         )
         self.view_mock.show_users.assert_called_once()
+
+    def test_named_user_filtered_out_by_like_names_the_filter(self):
+        self.log_handler.admin_acl.return_value = {
+            "ts": {"n1": {"acs-admin": {"roles": ["read"]}}}
+        }
+        self.controller.mods = {"like": ["zzz"]}
+
+        warnings = self.no_data_warnings(
+            lambda: self.controller._do_default(["acs-admin", "like", "zzz"])
+        )
+
+        self.assertEqual(
+            warnings, ["show users: no users matching zzz in this collectinfo."]
+        )
 
 
 class ShowUsersStatsControllerTest(AnalyzerControllerTestCase):
@@ -632,6 +648,33 @@ class ShowUsersStatsControllerTest(AnalyzerControllerTestCase):
             ["show users statistics: no user named 'bob' in this collectinfo."],
         )
         self.view_mock.show_users_stats.assert_not_called()
+
+    def test_like_matching_no_user_warns_and_renders_nothing(self):
+        self.controller.mods = {"like": ["zzz"]}
+
+        warnings = self.no_data_warnings(
+            lambda: asyncio.run(self.controller._do_default(["like", "zzz"]))
+        )
+
+        self.assertEqual(
+            warnings,
+            ["show users statistics: no users matching zzz in this collectinfo."],
+        )
+        self.view_mock.show_users_stats.assert_not_called()
+
+    def test_named_user_filtered_out_by_like_names_the_filter(self):
+        self.controller.mods = {"like": ["zzz"]}
+
+        warnings = self.no_data_warnings(
+            lambda: asyncio.run(
+                self.controller._do_default(["acs-admin", "like", "zzz"])
+            )
+        )
+
+        self.assertEqual(
+            warnings,
+            ["show users statistics: no users matching zzz in this collectinfo."],
+        )
 
 
 class ShowRacksControllerTest(AnalyzerControllerTestCase):
@@ -667,7 +710,7 @@ class ShowStatisticsNamespaceNoDataTest(AnalyzerControllerTestCase):
         self.assertEqual(
             warnings,
             [
-                "show statistics namespace: no namespace statistics match nope in this collectinfo."
+                "show statistics namespace: no namespace statistics matching nope in this collectinfo."
             ],
         )
         self.view_mock.show_stats.assert_not_called()
@@ -849,7 +892,9 @@ class ShowConfigXDRDefaultTest(AnalyzerControllerTestCase):
 
         self.assertEqual(
             warnings,
-            ["show config xdr: no XDR configuration match nope in this collectinfo."],
+            [
+                "show config xdr: no XDR DC or namespace configuration matching nope in this collectinfo."
+            ],
         )
 
     def test_sub_command_alone_still_warns(self):
@@ -949,7 +994,9 @@ class ShowStatisticsXDRDefaultTest(AnalyzerControllerTestCase):
 
         self.assertEqual(
             warnings,
-            ["show statistics xdr: no XDR statistics match nope in this collectinfo."],
+            [
+                "show statistics xdr: no XDR DC or namespace statistics matching nope in this collectinfo."
+            ],
         )
 
     def test_sub_command_alone_still_warns(self):
@@ -994,7 +1041,7 @@ class ShowDistributionDefaultTest(AnalyzerControllerTestCase):
         self.assertEqual(
             warnings,
             [
-                "show distribution time_to_live: no ttl distribution data in this collectinfo."
+                "show distribution time_to_live: no TTL distribution data in this collectinfo."
             ],
         )
 
@@ -1006,7 +1053,9 @@ class ShowDistributionDefaultTest(AnalyzerControllerTestCase):
 
         self.assertEqual(
             warnings,
-            ["show distribution: no distribution data match nope in this collectinfo."],
+            [
+                "show distribution: no distribution data matching nope in this collectinfo."
+            ],
         )
         self.assertEqual(self.view_mock.show_distribution.call_count, 2)
 
@@ -1127,7 +1176,7 @@ class AnalyzerShowNoDataSweepTest(AnalyzerControllerTestCase):
                 "do_time_to_live",
                 {"for": []},
                 {},
-                "show distribution time_to_live: no ttl distribution data in this collectinfo.",
+                "show distribution time_to_live: no TTL distribution data in this collectinfo.",
             ),
             (
                 "distribution_object_size",

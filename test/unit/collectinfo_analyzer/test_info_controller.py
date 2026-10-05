@@ -389,7 +389,7 @@ class CollectinfoInfoNoDataTest(unittest.TestCase):
     @parameterized.expand(
         [
             ([], "info xdr: no XDR statistics in this collectinfo."),
-            (["dc9"], "info xdr: no XDR statistics match dc9 in this collectinfo."),
+            (["dc9"], "info xdr: no XDR statistics matching dc9 in this collectinfo."),
         ]
     )
     def test_do_xdr_no_datacenters(self, for_mods, expected):

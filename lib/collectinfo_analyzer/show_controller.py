@@ -425,10 +425,15 @@ class ShowConfigXDRController(CollectinfoCommandController):
         shown = self.do_dc(line[:], default=True) or shown
         shown = self.do_namespace(line[:], default=True) or shown
 
-        if not shown:
-            warn_no_data(
-                "show config xdr", "XDR configuration", " ".join(self.mods["for"])
-            )
+        if shown:
+            return
+
+        if self.mods["for"]:
+            what = "XDR DC or namespace configuration"
+        else:
+            what = "XDR configuration"
+
+        warn_no_data("show config xdr", what, " ".join(self.mods["for"]))
 
     def _do_xdr(self, line, default=False):
         title_every_nth = util.get_arg_and_delete_from_mods(
@@ -679,7 +684,9 @@ class ShowDistributionController(CollectinfoCommandController):
             for namespace in namespaces
         )
 
-    def _do_distribution(self, command, histogram_name, title, unit, default=False):
+    def _do_distribution(
+        self, command, what, histogram_name, title, unit, default=False
+    ):
         histogram = self.log_handler.info_histogram(histogram_name)
         shown = False
 
@@ -701,7 +708,7 @@ class ShowDistributionController(CollectinfoCommandController):
             )
 
         if not default and not shown:
-            warn_no_data(command, f"{title.lower()} data", " ".join(self.mods["for"]))
+            warn_no_data(command, what, " ".join(self.mods["for"]))
 
         return shown
 
@@ -714,6 +721,7 @@ class ShowDistributionController(CollectinfoCommandController):
     def do_time_to_live(self, line, default=False):
         return self._do_distribution(
             "show distribution time_to_live",
+            "TTL distribution data",
             "ttl",
             "TTL Distribution",
             "Seconds",
@@ -752,10 +760,12 @@ class ShowDistributionController(CollectinfoCommandController):
         )
 
         command = "show distribution object_size"
+        what = "object size distribution data"
         histogram_name = "objsz"
         if not byte_distribution:
             return self._do_distribution(
                 command,
+                what,
                 histogram_name,
                 "Object Size Distribution",
                 "Record Blocks",
@@ -791,9 +801,7 @@ class ShowDistributionController(CollectinfoCommandController):
             )
 
         if not default and not shown:
-            warn_no_data(
-                command, "object size distribution data", " ".join(self.mods["for"])
-            )
+            warn_no_data(command, what, " ".join(self.mods["for"]))
 
         return shown
 
@@ -1371,10 +1379,15 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
         shown = self.do_dc(line[:], default=True) or shown
         shown = self.do_namespace(line[:], default=True) or shown
 
-        if not shown:
-            warn_no_data(
-                "show statistics xdr", "XDR statistics", " ".join(self.mods["for"])
-            )
+        if shown:
+            return
+
+        if self.mods["for"]:
+            what = "XDR DC or namespace statistics"
+        else:
+            what = "XDR statistics"
+
+        warn_no_data("show statistics xdr", what, " ".join(self.mods["for"]))
 
     def _do_xdr(self, line):
         show_total = util.check_arg_and_delete_from_mods(
@@ -1631,7 +1644,7 @@ class ShowUsersController(CollectinfoCommandController):
         if shown:
             return
 
-        if user:
+        if user and not has_node_data(users_data):
             warn_no_data("show users", f"user named '{user}'")
         else:
             warn_no_data("show users", "users", " ".join(self.mods["like"]))
@@ -1661,21 +1674,32 @@ class ShowUsersStatsController(CollectinfoCommandController):
         else:
             users_data = self.getter.get_user(user)
 
-        if not has_node_data(users_data):
-            if user:
-                warn_no_data("show users statistics", f"user named '{user}'")
-            else:
-                warn_no_data("show users statistics", "users")
+        shown = False
 
         for timestamp in sorted(users_data.keys()):
-            if not users_data[timestamp]:
+            usernames = [
+                name
+                for node_users in users_data[timestamp].values()
+                for name in node_users
+            ]
+
+            if not any(util.filter_list(usernames, self.mods["like"])):
                 continue
 
+            shown = True
             cinfo_log = self.log_handler.get_cinfo_log_at(timestamp=timestamp)
 
             self.view.show_users_stats(
                 cinfo_log, users_data[timestamp], timestamp=timestamp, **self.mods
             )
+
+        if shown:
+            return
+
+        if user and not has_node_data(users_data):
+            warn_no_data("show users statistics", f"user named '{user}'")
+        else:
+            warn_no_data("show users statistics", "users", " ".join(self.mods["like"]))
 
 
 @CommandHelp(
