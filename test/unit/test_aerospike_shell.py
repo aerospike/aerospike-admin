@@ -2,10 +2,14 @@ from asadm import AerospikeShell
 import asadm
 
 import asyncio
+import io
 import os
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch, call
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from lib.base_controller import ShellException
 from lib.utils import async_object
 from lib.utils.constants import AdminMode
@@ -936,6 +940,17 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code, 0)
         self.assertEqual(asinfo.call_args.kwargs["password"], "s3cr3t")
 
+    async def test_asinfo_mode_resolves_with_an_analyzer_flag(self):
+        """Mixing modes is only logged, and asinfo still connects."""
+        for mode in ("collectinfo", "log_analyzer"):
+            with self.subTest(mode=mode):
+                args = self._make_args(asinfo_mode=True, **{mode: True})
+
+                code, _, _, _, asinfo = await self._run_main(args)
+
+                self.assertEqual(code, 0)
+                self.assertEqual(asinfo.call_args.kwargs["password"], "s3cr3t")
+
     async def test_analyzer_modes_do_not_resolve(self):
         for mode in ("collectinfo", "log_analyzer"):
             with self.subTest(mode=mode):
@@ -1015,6 +1030,7 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
     def test_tls_keyfile_stdin_password_is_literal(self):
         args = SimpleNamespace(
             collectinfo=False,
+            log_analyzer=False,
             tls_enable=True,
             tls_cafile=None,
             tls_capath=None,
@@ -1034,6 +1050,74 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             ssl_context.call_args.kwargs["keyfile_password"], "env:AS_PASS"
+        )
+
+
+class LogAnalyzerSkipsTlsTest(unittest.IsolatedAsyncioTestCase):
+    """-l never connects, so a TLS keyfile in astools.conf must not be loaded or prompted for."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        env = patch.dict(os.environ, {"KP": "kp-s3cr3t"})
+        env.start()
+        self.addCleanup(env.stop)
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.keyfile = self.write(
+            "key.pem",
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.BestAvailableEncryption(b"kp-s3cr3t"),
+            ).decode(),
+        )
+
+    def write(self, name, content):
+        path = os.path.join(self.tmpdir.name, name)
+        with open(path, "w") as f:
+            f.write(content)
+        return path
+
+    async def _run_log_analyzer(self, config, *argv):
+        conf_path = self.write("astools.conf", config)
+        shell = AsyncMock()
+        shell.connected = True
+        shell._has_admin_nodes = Mock(return_value=False)
+        shell_cls = Mock(side_effect=AsyncMock(return_value=shell))
+        stdin = Mock()
+        stdin.isatty.return_value = True
+        sys_argv = ["asadm", "--only-config-file", conf_path, "-l", "-f"]
+        sys_argv += [self.tmpdir.name, "-e", "info", *argv]
+
+        with patch("sys.argv", sys_argv), patch("sys.stdin", stdin), patch(
+            "sys.stderr", io.StringIO()
+        ), patch("asadm.getpass.getpass") as getpass_mock, patch(
+            "asadm.AerospikeShell", shell_cls
+        ), patch(
+            "asadm.logger"
+        ) as logger:
+            with self.assertRaises(SystemExit):
+                await asadm.main()
+
+        logger.error.assert_not_called()
+        getpass_mock.assert_not_called()
+        stdin.readline.assert_not_called()
+        shell_cls.assert_called_once()
+        self.assertIsNone(shell_cls.call_args.kwargs["ssl_context"])
+        self.assertEqual(shell_cls.call_args.kwargs["mode"], AdminMode.LOG_ANALYZER)
+
+    async def test_keyfile_password_source_in_config(self):
+        await self._run_log_analyzer(
+            "[cluster]\ntls-enable = true\n"
+            'tls-keyfile = "{}"\n'
+            'tls-keyfile-password = "env:KP"\n'.format(self.keyfile)
+        )
+
+    async def test_bare_keyfile_password_does_not_prompt(self):
+        await self._run_log_analyzer(
+            '[cluster]\ntls-enable = true\ntls-keyfile = "{}"\n'.format(self.keyfile),
+            "--tls-keyfile-password",
         )
 
 

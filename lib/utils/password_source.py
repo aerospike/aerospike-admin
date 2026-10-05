@@ -69,6 +69,9 @@ def _read_env(name: str, option: str) -> str:
             "{}: environment variable {} is not set or empty".format(option, name)
         )
 
+    if not _is_utf8(value):
+        raise _not_utf8(option, "environment variable " + name)
+
     return value
 
 
@@ -92,14 +95,10 @@ def _read_file(path: str, option: str) -> bytes:
 
 def _decode_b64(payload: str, option: str, source: str) -> str:
     # Go's base64.StdEncoding skips CR and LF, so wrapped input still decodes.
-    payload = payload.replace("\r", "").replace("\n", "")
+    data = _b64decode(payload.replace("\r", "").replace("\n", ""))
 
-    try:
-        data = base64.b64decode(payload, validate=True)
-    except ValueError:
-        raise PasswordSourceError(
-            "{}: invalid base64 in {}".format(option, source)
-        ) from None
+    if data is None:
+        raise PasswordSourceError("{}: invalid base64 in {}".format(option, source))
 
     if data.endswith(b"\n"):
         data = data[:-1]
@@ -108,9 +107,39 @@ def _decode_b64(payload: str, option: str, source: str) -> str:
 
 
 def _to_text(data: bytes, option: str, source: str) -> str:
+    text = _utf8_decode(data)
+
+    if text is None:
+        raise _not_utf8(option, source)
+
+    return text
+
+
+def _not_utf8(option: str, source: str) -> PasswordSourceError:
+    return PasswordSourceError(
+        "{}: password from {} is not valid UTF-8".format(option, source)
+    )
+
+
+# Their exceptions hold the secret, so callers raise outside the except block.
+def _b64decode(payload: str) -> bytes | None:
+    try:
+        return base64.b64decode(payload, validate=True)
+    except ValueError:
+        return None
+
+
+def _utf8_decode(data: bytes) -> str | None:
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
-        raise PasswordSourceError(
-            "{}: password from {} is not valid UTF-8".format(option, source)
-        ) from None
+        return None
+
+
+def _is_utf8(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+
+    return True

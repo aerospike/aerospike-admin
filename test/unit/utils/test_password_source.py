@@ -15,6 +15,7 @@
 import base64
 import os
 import tempfile
+import traceback
 import unittest
 from unittest.mock import patch
 
@@ -83,6 +84,20 @@ class ResolveEnvTest(unittest.TestCase):
             str(cm.exception),
             "--tls-keyfile-password: environment variable AS_PASS is not set or empty",
         )
+
+    @unittest.skipUnless(os.supports_bytes_environ, "needs a bytes environment")
+    def test_env_not_utf8(self):
+        for value in ("env:AS_BAD", "env-b64:AS_BAD"):
+            with self.subTest(value=value), patch.dict(os.environ):
+                os.environb[b"AS_BAD"] = b"\xff" + SECRET.encode()
+
+                with self.assertRaises(PasswordSourceError) as cm:
+                    resolve(value, "--password")
+
+            self.assertEqual(
+                str(cm.exception),
+                "--password: password from environment variable AS_BAD is not valid UTF-8",
+            )
 
 
 class ResolveEnvB64Test(unittest.TestCase):
@@ -270,20 +285,59 @@ class ResolveFileTest(unittest.TestCase):
 
 
 class ResolveErrorsHideSecretTest(unittest.TestCase):
-    def test_errors_never_carry_the_secret(self):
-        cases = [
-            ("b64:" + SECRET, {}),
-            ("env-b64:KP_B64", {"KP_B64": SECRET}),
-        ]
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
 
-        for value, env in cases:
-            with self.subTest(value=value), patch.dict(os.environ, env):
-                with self.assertRaises(PasswordSourceError) as cm:
-                    resolve(value, "--password")
+    def write(self, name, data: bytes, mode=0o600) -> str:
+        path = os.path.join(self.tmpdir.name, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        os.chmod(path, mode)
+        return path
 
-                self.assertNotIn(SECRET, str(cm.exception))
-                self.assertIsNone(cm.exception.__cause__)
-                self.assertTrue(cm.exception.__suppress_context__)
+    def assert_secret_hidden(self, value, env=None):
+        with patch.dict(os.environ, env or {}):
+            with self.assertRaises(PasswordSourceError) as cm:
+                resolve(value, "--password")
+
+        err = cm.exception
+        self.assertIsNone(err.__cause__)
+        self.assertTrue(err.__context__ is None or err.__suppress_context__)
+
+        shown = "".join(traceback.format_exception(err))
+        chained = err.__context__
+        while chained is not None:
+            shown += repr(chained)
+            chained = chained.__cause__ or chained.__context__
+
+        self.assertNotIn(SECRET, shown)
+        self.assertNotIn(SECRET_B64, shown)
+
+    def test_b64_errors(self):
+        self.assert_secret_hidden("b64:" + SECRET)
+        self.assert_secret_hidden("b64:" + SECRET_B64 + "é")
+        self.assert_secret_hidden("b64:" + b64(b"\xff" + SECRET.encode()))
+
+    def test_env_b64_errors(self):
+        self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": SECRET})
+        self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": SECRET_B64 + "é"})
+        self.assert_secret_hidden(
+            "env-b64:KP_B64", {"KP_B64": b64(b"\xff" + SECRET.encode())}
+        )
+
+    def test_env_not_utf8_error(self):
+        bad = os.fsdecode(b"\xff" + SECRET.encode())
+        self.assert_secret_hidden("env:AS_BAD", {"AS_BAD": bad})
+
+    def test_file_not_utf8_error(self):
+        path = self.write("pw", b"\xff" + SECRET.encode() + b"\n")
+        self.assert_secret_hidden("file:" + path)
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read any file")
+    def test_file_read_error(self):
+        path = self.write("pw", SECRET.encode(), mode=0)
+        self.assert_secret_hidden("file:" + path)
 
     def test_error_carries_its_own_message(self):
         self.assertTrue(PasswordSourceError.carries_its_own_message)

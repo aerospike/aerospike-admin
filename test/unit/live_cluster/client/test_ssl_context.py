@@ -1145,6 +1145,60 @@ class TestCreateSSLContext(unittest.TestCase):
             os.unlink(keypath)
 
 
+class TestKeyfilePasswordIsLiteral(unittest.TestCase):
+    """Sources resolve in conf before SSLContext, which takes the password as given."""
+
+    PASSPHRASE = "s3cr3t-kp"
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        env = patch.dict(os.environ, {"ASADM_TEST_KP": self.PASSPHRASE})
+        env.start()
+        self.addCleanup(env.stop)
+        self.passphrase_file = self.write("kp", (self.PASSPHRASE + "\n").encode())
+
+    def write(self, name, data):
+        path = os.path.join(self.tmpdir.name, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def encrypted_key(self, passphrase):
+        pem = _generate_key().private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.BestAvailableEncryption(passphrase.encode()),
+        )
+        return self.write("key.pem", pem)
+
+    def load(self, keyfile, keyfile_password):
+        SSLContext.__new__(SSLContext)._create_ssl_context(
+            enable_tls=True, keyfile=keyfile, keyfile_password=keyfile_password
+        )
+
+    def sources(self):
+        return ("env:ASADM_TEST_KP", "file:" + self.passphrase_file)
+
+    def test_literal_passphrase_loads_key(self):
+        self.load(self.encrypted_key(self.PASSPHRASE), self.PASSPHRASE)
+
+    def test_source_string_is_used_as_the_passphrase(self):
+        for value in self.sources():
+            with self.subTest(value=value):
+                self.load(self.encrypted_key(value), value)
+
+    def test_source_string_is_not_resolved(self):
+        keyfile = self.encrypted_key(self.PASSPHRASE)
+
+        for value in self.sources():
+            with self.subTest(value=value):
+                with self.assertRaises(Exception) as cm:
+                    self.load(keyfile, value)
+
+                self.assertIn("Invalid key file or bad passphrase", str(cm.exception))
+
+
 class TestSSLContextInit(unittest.TestCase):
     def test_tls_disabled_ctx_is_none(self):
         ctx = SSLContext(enable_tls=False)

@@ -678,7 +678,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
 
 def parse_tls_input(cli_args):
-    if cli_args.collectinfo:
+    if cli_args.collectinfo or cli_args.log_analyzer:
         return None
 
     try:
