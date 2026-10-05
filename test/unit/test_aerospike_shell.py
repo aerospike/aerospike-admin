@@ -1121,5 +1121,51 @@ class LogAnalyzerSkipsTlsTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class ConfigModeFlagsKeepTlsTest(unittest.IsolatedAsyncioTestCase):
+    """The mode comes from the command line, so analyzer flags in astools.conf must not drop TLS from a live session."""
+
+    async def _run_live(self, asadm_section):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conf_path = os.path.join(tmpdir, "astools.conf")
+            with open(conf_path, "w") as f:
+                f.write(
+                    "[cluster]\ntls-enable = true\n"
+                    'tls-keyfile = "/k.pem"\n'
+                    'tls-keyfile-password = "env:KP"\n'
+                    "[asadm]\n" + asadm_section
+                )
+
+            shell = AsyncMock()
+            shell.connected = True
+            shell._has_admin_nodes = Mock(return_value=False)
+            shell_cls = Mock(side_effect=AsyncMock(return_value=shell))
+            sys_argv = ["asadm", "--only-config-file", conf_path, "-e", "info"]
+
+            with patch("sys.argv", sys_argv), patch.dict(
+                os.environ, {"KP": "kp-s3cr3t"}
+            ), patch("sys.stderr", io.StringIO()), patch(
+                "asadm.SSLContext"
+            ) as ssl_context, patch(
+                "asadm.AerospikeShell", shell_cls
+            ), patch(
+                "asadm.logger"
+            ):
+                with self.assertRaises(SystemExit):
+                    await asadm.main()
+
+        ssl_context.assert_called_once()
+        self.assertEqual(ssl_context.call_args.kwargs["keyfile_password"], "kp-s3cr3t")
+        self.assertIs(
+            shell_cls.call_args.kwargs["ssl_context"], ssl_context.return_value.ctx
+        )
+        self.assertEqual(shell_cls.call_args.kwargs["mode"], AdminMode.LIVE_CLUSTER)
+
+    async def test_log_analyzer_in_config(self):
+        await self._run_live("log-analyzer = true\n")
+
+    async def test_collectinfo_in_config(self):
+        await self._run_live("collectinfo = true\n")
+
+
 if __name__ == "__main__":
     unittest.main()

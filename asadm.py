@@ -678,9 +678,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
 
 def parse_tls_input(cli_args):
-    if cli_args.collectinfo or cli_args.log_analyzer:
-        return None
-
     try:
         keyfile_password = cli_args.tls_keyfile_password
 
@@ -827,7 +824,10 @@ async def main():
 
     cli_args, seeds = conf.loadconfig(cli_args)
 
-    if cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER:
+    # The mode comes from the command line; the merged config must not change it.
+    connects = cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER
+
+    if connects:
         try:
             conf.resolve_password_sources(cli_args)
         except PasswordSourceError as e:
@@ -844,7 +844,7 @@ async def main():
     ):
         logger.critical("TLS is required for authentication mode: " + cli_args.auth)
 
-    ssl_context = parse_tls_input(cli_args)
+    ssl_context = parse_tls_input(cli_args) if connects else None
 
     if cli_args.asinfo_mode:
         if mode == AdminMode.COLLECTINFO_ANALYZER or mode == AdminMode.LOG_ANALYZER:
