@@ -63,6 +63,7 @@ from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf
+from lib.utils.password_source import PasswordSourceError
 from lib.utils.constants import (
     ADMIN_HOME,
     AdminMode,
@@ -825,6 +826,13 @@ async def main():
             logger.warning("Cannot create history directory %s: %s", ADMIN_HOME, e)
 
     cli_args, seeds = conf.loadconfig(cli_args)
+
+    if cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER:
+        try:
+            conf.resolve_password_sources(cli_args)
+        except PasswordSourceError as e:
+            logger.critical(e)
+            sys.exit(1)
 
     if cli_args.services_alumni and cli_args.services_alternate:
         logger.critical(

@@ -101,6 +101,21 @@ class TestTLS(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertIn("Network Information", cp.stdout)
 
+    def test_password_from_env(self):
+        """--password env: prefix resolves before login"""
+        os.environ["ASADM_E2E_PASS"] = "admin"
+        try:
+            cp = test_util.run_asadm(
+                f"-h {self.host} --tls-enable --tls-name localhost "
+                f"--tls-cafile {self.ca} -Uadmin -P env:ASADM_E2E_PASS "
+                f"-e 'info network'",
+                strip_header=False,
+            )
+            self.assertEqual(cp.returncode, 0, cp.stderr)
+            self.assertIn("Network Information", cp.stdout)
+        finally:
+            del os.environ["ASADM_E2E_PASS"]
+
     def test_tls_protocol_tlsv12(self):
         """_parse_protocols with explicit TLSv1.2"""
         cp = self._run('--tls-protocols "TLSv1.2"')

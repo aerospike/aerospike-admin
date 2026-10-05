@@ -346,57 +346,6 @@ class TestParseCrlCert(unittest.TestCase):
         self.assertIn(0xABCD, result)
 
 
-class TestReadKeyfilePassword(unittest.TestCase):
-    def setUp(self):
-        self.ssl_ctx = SSLContext.__new__(SSLContext)
-
-    def test_none_password(self):
-        result = self.ssl_ctx._read_keyfile_password(None)
-        self.assertIsNone(result)
-
-    def test_plain_password(self):
-        result = self.ssl_ctx._read_keyfile_password("my-password")
-        self.assertEqual(result, "my-password")
-
-    def test_password_with_whitespace(self):
-        result = self.ssl_ctx._read_keyfile_password("  my-password  ")
-        self.assertEqual(result, "my-password")
-
-    def test_env_password(self):
-        os.environ["TEST_SSL_PASSWORD"] = "env-password"
-        try:
-            result = self.ssl_ctx._read_keyfile_password("env:TEST_SSL_PASSWORD")
-            self.assertEqual(result, "env-password")
-        finally:
-            del os.environ["TEST_SSL_PASSWORD"]
-
-    def test_env_password_missing_raises(self):
-        with self.assertRaises(KeyError) as ctx:
-            self.ssl_ctx._read_keyfile_password("env:NONEXISTENT_VAR_12345")
-        self.assertIn("Failed to read environment variable", str(ctx.exception))
-
-    def test_file_password(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("file-password\n")
-            f.flush()
-            path = f.name
-        try:
-            result = self.ssl_ctx._read_keyfile_password("file:" + path)
-            self.assertEqual(result, "file-password")
-        finally:
-            os.unlink(path)
-
-    def test_file_password_missing_raises(self):
-        with self.assertRaises(OSError) as ctx:
-            self.ssl_ctx._read_keyfile_password("file:/nonexistent/path.txt")
-        self.assertIn("Failed to read file", str(ctx.exception))
-
-    def test_non_string_raises(self):
-        with self.assertRaises(TypeError) as ctx:
-            self.ssl_ctx._read_keyfile_password(12345)
-        self.assertIn("not string", str(ctx.exception))
-
-
 class TestGetCertShortName(unittest.TestCase):
     def test_common_name(self):
         attr = x509.NameAttribute(NameOID.COMMON_NAME, "test")
@@ -1139,7 +1088,8 @@ class TestCreateSSLContext(unittest.TestCase):
     @patch("lib.live_cluster.client.ssl_context.SSL")
     @patch("lib.live_cluster.client.ssl_context.load_pem_private_key")
     @patch("lib.live_cluster.client.ssl_context.crypto")
-    def test_keyfile_password_from_env(self, mock_crypto, mock_load_key, mock_ssl):
+    def test_keyfile_password_is_not_parsed(self, mock_crypto, mock_load_key, mock_ssl):
+        """Sources resolve in conf, and a prompted password must reach the key as typed."""
         mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
         mock_ssl.VERIFY_PEER = 1
         mock_ssl.VERIFY_CLIENT_ONCE = 2
@@ -1158,10 +1108,10 @@ class TestCreateSSLContext(unittest.TestCase):
                 enable_tls=True,
                 encrypt_only=False,
                 keyfile=keypath,
-                keyfile_password="env:_TEST_SSL_KEY_PWD",
+                keyfile_password=" env:_TEST_SSL_KEY_PWD ",
             )
             _, kwargs = mock_load_key.call_args
-            self.assertEqual(kwargs["password"], b"env-secret")
+            self.assertEqual(kwargs["password"], b" env:_TEST_SSL_KEY_PWD ")
         finally:
             del os.environ["_TEST_SSL_KEY_PWD"]
             os.unlink(keypath)
