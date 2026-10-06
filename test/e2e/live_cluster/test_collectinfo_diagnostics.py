@@ -29,6 +29,7 @@ import tarfile
 import tempfile
 import time
 import unittest
+import zipfile
 
 from lib.utils import constants
 from test.e2e import lib, util
@@ -312,13 +313,26 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         self.assertEqual(command_lines, [], self.collect_cp.stderr)
 
+    def _read_debug_log(self):
+        """collectinfo zips any bundle file of 1 MB or more, the debug log included."""
+        path = self._find_file(
+            self.bundle_dir, ("collectinfo_debug.log", "collectinfo_debug.log.zip")
+        )
+
+        if not path.endswith(".zip"):
+            with open(path) as f:
+                return f.read()
+
+        with zipfile.ZipFile(path) as archive:
+            (name,) = archive.namelist()
+            return archive.read(name).decode()
+
     def test_debug_log_keeps_the_command_warnings(self):
         """Only the terminal is spared. The bundle's debug log is where support
         reads what the captured commands had to say."""
-        with open(self._find_file(self.bundle_dir, "collectinfo_debug.log")) as f:
-            debug_log = f.read()
-
-        self.assertIn("info sindex: no secondary indexes found.", debug_log)
+        self.assertIn(
+            "info sindex: no secondary indexes found.", self._read_debug_log()
+        )
 
     def test_show_jobs_on_an_idle_cluster_warns_once(self):
         """The aggregate speaks for its three sub-commands, not each in turn."""
