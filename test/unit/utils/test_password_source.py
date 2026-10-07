@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 from parameterized import parameterized
 
+from lib.secret_agent import RequestFailedError
 from lib.utils.password_source import PasswordSourceError, resolve
 
 PW = "s3cr3t-pw"
@@ -341,6 +342,59 @@ class ResolveErrorsHideSecretTest(unittest.TestCase):
 
     def test_error_carries_its_own_message(self):
         self.assertTrue(PasswordSourceError.carries_its_own_message)
+
+
+class ResolveSecretTest(unittest.TestCase):
+    REF = "secrets:aql:pw"
+
+    def resolve(self, fetch):
+        return resolve(self.REF, "--password", fetch)
+
+    def test_secret_is_fetched(self):
+        refs = []
+
+        def fetch(ref):
+            refs.append(ref)
+            return PW
+
+        self.assertEqual(self.resolve(fetch), PW)
+        self.assertEqual(refs, [self.REF])
+
+    def test_fetched_value_is_not_parsed_again(self):
+        self.assertEqual(self.resolve(lambda _: "env:AS_PASS"), "env:AS_PASS")
+
+    def test_agent_error_names_the_option(self):
+        def fetch(_):
+            raise RequestFailedError("agent error for secrets:aql:pw: not found")
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.resolve(fetch)
+
+        self.assertEqual(
+            str(cm.exception), "--password: agent error for secrets:aql:pw: not found"
+        )
+
+    def test_settings_error_passes_through(self):
+        def fetch(_):
+            raise PasswordSourceError("--sa-port: invalid value 0")
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.resolve(fetch)
+
+        self.assertEqual(str(cm.exception), "--sa-port: invalid value 0")
+
+    def test_unexpected_error_still_fails_without_detail(self):
+        def fetch(_):
+            raise RuntimeError(PW)
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.resolve(fetch)
+
+        self.assertEqual(
+            str(cm.exception),
+            "--password: secret agent request for secrets:aql:pw failed",
+        )
+        self.assertNotIn(PW, "".join(traceback.format_exception(cm.exception)))
 
 
 if __name__ == "__main__":

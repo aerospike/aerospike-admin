@@ -23,7 +23,7 @@ import copy
 from jsonschema import validate
 from collections.abc import Mapping
 
-from lib.utils import password_source
+from lib.utils import password_source, secret_agent_conf
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
@@ -86,6 +86,7 @@ _confspec = """{
     "properties": {
        "cluster" : { "$ref" : "#/definitions/instance" },
        "asadm" : { "$ref" : "#/definitions/asadm" },
+       "secret-agent" : { "$ref" : "#/definitions/secret-agent" },
        "include" : {
             "type" : "object",
             "additionalProperties" : false,
@@ -97,9 +98,20 @@ _confspec = """{
     },
     "patternProperties": {
         "^cluster_.*$" : { "$ref" : "#/definitions/instance" },
-        "^asadm_.*$" : { "$ref" : "#/definitions/asadm" }
+        "^asadm_.*$" : { "$ref" : "#/definitions/asadm" },
+        "^secret-agent_.*$" : { "$ref" : "#/definitions/secret-agent" }
     },
     "definitions" : {
+        "secret-agent" : {
+            "type" : "object",
+            "additionalProperties" : false,
+            "properties" : {
+                "sa-address" : { "type" : "string" },
+                "sa-port" : { "type" : ["integer", "string"] },
+                "sa-timeout" : { "type" : "integer" },
+                "sa-cafile" : { "type" : "string" }
+            }
+        },
         "asadm" : {
             "type" : "object",
             "properties" : {
@@ -408,6 +420,12 @@ def loadconfig(cli_args):
     except Exception:
         logger.critical("Wrong authentication mode: " + str(asadm_dict["auth"]))
 
+    # Kept apart from the merged options: the agent address precedence needs to
+    # know which values came from the config file.
+    asadm_dict["secret_agent_section"] = secret_agent_conf.file_section(
+        conf_dict, cli_args.instance
+    )
+
     # Find seed nods
     seeds = _getseeds(asadm_dict)
     args = _Namespace(asadm_dict)
@@ -434,9 +452,13 @@ def loadconfig(cli_args):
 
 
 def resolve_password_sources(args):
+    fetch_secret = secret_agent_conf.fetcher(args)
+
     # DEFAULTPASSWORD means prompt later, and prompted input is never parsed.
     if args.user is not None and args.password not in (None, DEFAULTPASSWORD):
-        args.password = password_source.resolve(args.password, "--password")
+        args.password = password_source.resolve(
+            args.password, "--password", fetch_secret
+        )
 
     if (
         args.tls_enable
@@ -444,7 +466,7 @@ def resolve_password_sources(args):
         and args.tls_keyfile_password not in (None, DEFAULTPASSWORD)
     ):
         args.tls_keyfile_password = password_source.resolve(
-            args.tls_keyfile_password, "--tls-keyfile-password"
+            args.tls_keyfile_password, "--tls-keyfile-password", fetch_secret
         )
 
 
@@ -516,7 +538,8 @@ def print_config_file_option():
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>'\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given."
     )
@@ -565,7 +588,8 @@ def print_config_file_option():
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>'\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"
         "                      password is given."
@@ -585,6 +609,8 @@ def print_config_file_option():
         "                      tls_capath."
     )
     print("")
+    print_secret_agent_options()
+    print("")
     print("[asadm]")
     print(
         " -s --services-alumni\n"
@@ -600,12 +626,37 @@ def print_config_file_option():
     )
 
 
+def print_secret_agent_options():
+    print("[secret-agent]")
+    print(" Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.")
+    print(
+        ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".\n'
+        "                      Secret Agent hostname or IP address.\n"
+        "                      Default: 127.0.0.1:3005"
+    )
+    print(
+        " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n"
+        "                      Default: 3005"
+    )
+    print(
+        " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It\n"
+        "                      covers the TCP connect, the TLS handshake and the request,\n"
+        "                      but not the name lookup. Default: 1000"
+    )
+    print(
+        " --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret\n"
+        "                      Agent and verifies its certificate against this CA. The\n"
+        "                      agent's hostname or IP address must be in the certificate.\n"
+        "                      Default: none"
+    )
+
+
 def config_file_help():
     print("\n\n")
     print(
         "Default configuration files are read from the following files in the given order:\n"
         "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
-        "The following sections are read: (cluster asadm include)\n"
+        "The following sections are read: (cluster asadm secret-agent include)\n"
         "The following options effect configuration file behavior\n"
     )
     print(
@@ -615,7 +666,8 @@ def config_file_help():
     print(
         " --instance=name\n"
         "                      Section with these instance is read. e.g in case instance \n"
-        "                      `a` is specified sections cluster_a, asadm_a is read."
+        "                      `a` is specified sections cluster_a, asadm_a,\n"
+        "                      secret-agent_a is read."
     )
     print(
         " --config-file=path\n"
@@ -697,6 +749,11 @@ def get_cli_args():
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
     add_fn("--timeout", type=float)
+
+    add_fn("--sa-address")
+    add_fn("--sa-port")
+    add_fn("--sa-timeout")
+    add_fn("--sa-cafile")
 
     add_fn("--config-file")
     add_fn("--instance")

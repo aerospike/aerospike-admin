@@ -19,6 +19,8 @@ The forms match the PasswordFlag in tools-common-go:
     env-b64:<VAR>   base64 decoded value of environment variable VAR
     b64:<VALUE>     base64 decoded VALUE
     file:<PATH>     contents of PATH, less one trailing line ending
+    secrets:...     fetched from the Aerospike Secret Agent, when the caller
+                    passes fetch_secret
     anything else   the literal password
 
 Error messages name the option and the source but never the password.
@@ -26,13 +28,18 @@ Error messages name the option and the source but never the password.
 
 import base64
 import os
+from typing import Callable
+
+from lib.secret_agent import SecretAgentError
 
 
 class PasswordSourceError(Exception):
     carries_its_own_message = True
 
 
-def resolve(value: str, option: str) -> str:
+def resolve(
+    value: str, option: str, fetch_secret: Callable[[str], str] | None = None
+) -> str:
     kind, sep, rest = value.partition(":")
 
     if not sep:
@@ -50,6 +57,9 @@ def resolve(value: str, option: str) -> str:
     elif kind == "file":
         source = "file " + rest
         password = _to_text(_read_file(rest, option), option, source)
+    elif kind == "secrets" and fetch_secret is not None:
+        source = value
+        password = _fetch_secret(fetch_secret, value, option)
     else:
         return value
 
@@ -59,6 +69,20 @@ def resolve(value: str, option: str) -> str:
         )
 
     return password
+
+
+def _fetch_secret(fetch_secret: Callable[[str], str], ref: str, option: str) -> str:
+    try:
+        return fetch_secret(ref)
+    except PasswordSourceError:
+        raise
+    except SecretAgentError as e:
+        raise PasswordSourceError("{}: {}".format(option, e)) from None
+    except Exception:
+        # asadm exits silently on unexpected errors; never lose this one.
+        raise PasswordSourceError(
+            "{}: secret agent request for {} failed".format(option, ref)
+        ) from None
 
 
 def _read_env(name: str, option: str) -> str:
