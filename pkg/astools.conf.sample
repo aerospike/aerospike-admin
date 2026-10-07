@@ -34,6 +34,8 @@
 # password = "b64:c2VjcmV0"
 # File: "file:<PATH>"
 # password = "file:/etc/aerospike/aspwd.txt"
+# Aerospike Secret Agent: "secrets:<resource>:<key>", see [secret-agent] below
+# password = "secrets:aerospike:password"
 # String: "<PASSWORD>"
 # password = ""
 
@@ -61,6 +63,8 @@
 # tls-keyfile-password = "b64:c2VjcmV0"
 # File: "file:<PATH>"
 # tls-keyfile-password = "file:/etc/aerospike/x509_certificates/MultiServer/keypwd.txt"
+# Aerospike Secret Agent: "secrets:<resource>:<key>", see [secret-agent] below
+# tls-keyfile-password = "secrets:tls:keypwd"
 # String: "<PASSWORD>"
 # tls-keyfile-password = ""
 
@@ -91,6 +95,23 @@
 # tls-capath = "/etc/aerospike/x509_certificates/Platinum"
 # tls-certfile = "/etc/aerospike/x509_certificates/multi_chain.pem"
 # tls-cert-blacklist = "/etc/aerospike/x509_certificates/blacklist.txt"
+
+#------------------------------------------------------------------------------
+# Aerospike Secret Agent
+#
+# Used by asadm, asbackup, asrestore, aql and asconfig to fetch values given
+# as "secrets:<resource>:<key>". With --instance, a [secret-agent_<instance>]
+# section replaces this one if it exists.
+#------------------------------------------------------------------------------
+[secret-agent]
+# sa-address = "127.0.0.1"            # "<host>[:<port>]" or "[<ipv6>][:<port>]"
+# sa-port = "3005"                    # overrides a port in sa-address
+# sa-timeout covers the TCP connect, the TLS handshake and the request, but not
+# the name lookup.
+# sa-timeout = 1000                   # in ms, 1 or more
+# sa-cafile enables TLS to the agent and verifies the agent's certificate against
+# this CA. The hostname or IP address in sa-address must be in the certificate.
+# sa-cafile = "/etc/aerospike/secret-agent/cacert.pem"
 
 
 # Following are tools specific options

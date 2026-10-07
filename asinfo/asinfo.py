@@ -92,7 +92,8 @@ def print_config_file_option():
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>'\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given."
     )
@@ -148,7 +149,8 @@ def print_config_file_option():
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>'\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"
         "                      password is given."
@@ -169,6 +171,29 @@ def print_config_file_option():
         "                      tls_capath."
     )
     print("")
+    print("[secret-agent]")
+    print(" Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.")
+    print(
+        ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".\n'
+        "                      Secret Agent hostname or IP address.\n"
+        "                      Default: 127.0.0.1:3005"
+    )
+    print(
+        " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n"
+        "                      Default: 3005"
+    )
+    print(
+        " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It\n"
+        "                      covers the TCP connect, the TLS handshake and the request,\n"
+        "                      but not the name lookup. Default: 1000"
+    )
+    print(
+        " --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret\n"
+        "                      Agent and verifies its certificate against this CA. The\n"
+        "                      agent's hostname or IP address must be in the certificate.\n"
+        "                      Default: none"
+    )
+    print("")
 
 
 def config_file_help():
@@ -176,7 +201,7 @@ def config_file_help():
     print(
         "Default configuration files are read from the following files in the given order:\n"
         "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
-        "The following sections are read: (cluster include)\n"
+        "The following sections are read: (cluster secret-agent include)\n"
         "The following options effect configuration file behavior\n"
     )
     print(
@@ -186,7 +211,7 @@ def config_file_help():
     print(
         " --instance <name>\n"
         "                      Section with these instance is read. e.g in case instance \n"
-        "                      `a` is specified section cluster_a is read."
+        "                      `a` is specified sections cluster_a, secret-agent_a are read."
     )
     print(
         " --config-file <path>\n"
@@ -230,6 +255,11 @@ def get_cli_args():
     add_fn("--tls-certfile", dest="tls-certfile")
     add_fn("--tls-crl-check", dest="tls-crl-check", action="store_true")
     add_fn("--tls-crl-check-all", dest="tls-crl-check-all", action="store_true")
+
+    add_fn("--sa-address", dest="sa-address")
+    add_fn("--sa-port", dest="sa-port")
+    add_fn("--sa-timeout", dest="sa-timeout")
+    add_fn("--sa-cafile", dest="sa-cafile")
 
     add_fn("--config-file", dest="config-file")
     add_fn("--instance")
