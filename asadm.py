@@ -62,7 +62,7 @@ from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
-from lib.utils import common, util, conf
+from lib.utils import common, util, conf, secret_agent_conf
 from lib.utils.password_source import PasswordSourceError
 from lib.utils.constants import (
     ADMIN_HOME,
@@ -691,7 +691,9 @@ def parse_tls_input(cli_args):
             else:
                 keyfile_password = sys.stdin.readline().strip()
 
-            keyfile_password = conf.resolve_keyfile_password(keyfile_password)
+            keyfile_password = conf.resolve_keyfile_password(
+                keyfile_password, secret_agent_conf.fetcher(cli_args)
+            )
 
         return SSLContext(
             enable_tls=cli_args.tls_enable,

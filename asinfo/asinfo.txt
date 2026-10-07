@@ -38,7 +38,8 @@ Configuration File Allowed Options
                       2) Base64 encoded environment variable: 'env-b64:<VAR>'
                       3) Base64 encoded string: 'b64:<BASE64>'
                       4) File: 'file:<PATH>'
-                      5) String: 'PASSWORD'
+                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'
+                      6) String: 'PASSWORD'
                       User will be prompted on command line if -P specified and no
                       password is given.
  --auth=AUTHENTICATION_MODE 
@@ -74,7 +75,8 @@ Configuration File Allowed Options
                       2) Base64 encoded environment variable: 'env-b64:<VAR>'
                       3) Base64 encoded string: 'b64:<BASE64>'
                       4) File: 'file:<PATH>'
-                      5) String: 'PASSWORD'
+                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'
+                      6) String: 'PASSWORD'
                       Default: none
                       User will be prompted on command line if --tls-keyfile-password specified and no
                       password is given.
@@ -88,19 +90,34 @@ Configuration File Allowed Options
                       error occurs if a valid CRL files cannot be found in
                       tls_capath.
 
+[secret-agent]
+ Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.
+ --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".
+                      Secret Agent hostname or IP address.
+                      Default: 127.0.0.1:3005
+ --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.
+                      Default: 3005
+ --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It
+                      covers the TCP connect, the TLS handshake and the request,
+                      but not the name lookup. Default: 1000
+ --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret
+                      Agent and verifies its certificate against this CA. The
+                      agent's hostname or IP address must be in the certificate.
+                      Default: none
+
 
 
 
 Default configuration files are read from the following files in the given order:
 /etc/aerospike/astools.conf ~/.aerospike/astools.conf
-The following sections are read: (cluster include)
+The following sections are read: (cluster secret-agent include)
 The following options effect configuration file behavior
 
  --no-config-file
                       Do not read any config file. Default: disabled
  --instance <name>
                       Section with these instance is read. e.g in case instance 
-                      `a` is specified section cluster_a is read.
+                      `a` is specified sections cluster_a, secret-agent_a are read.
  --config-file <path>
                       Read this file after default configuration file.
  --only-config-file <path>

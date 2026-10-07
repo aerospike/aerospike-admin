@@ -2,6 +2,7 @@ from asadm import AerospikeShell
 import asadm
 
 import asyncio
+import base64
 import io
 import os
 import tempfile
@@ -11,6 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch, call
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from lib.base_controller import ShellException
+from lib.secret_agent.testing import FakeSecretAgent
 from lib.utils import async_object
 from lib.utils.constants import AdminMode
 
@@ -1037,8 +1039,9 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
         self.addCleanup(env.stop)
         os.environ.pop("ASADM_TEST_UNSET", None)
 
-    def _keyfile_password(self, tty, typed):
+    def _keyfile_password(self, tty, typed, **extra_args):
         args = SimpleNamespace(
+            **extra_args,
             tls_enable=True,
             tls_cafile=None,
             tls_capath=None,
@@ -1069,6 +1072,16 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
 
     def test_getpass_literal_is_stripped(self):
         self.assertEqual(self._keyfile_password(True, "  kp-s3cr3t \t"), "kp-s3cr3t")
+
+    def test_getpass_secret_is_fetched(self):
+        secrets = {"aql": {"keypass": base64.b64encode(b"kp-s3cr3t").decode()}}
+
+        with FakeSecretAgent(secrets) as agent:
+            password = self._keyfile_password(
+                True, " secrets:aql:keypass ", sa_address=agent.address
+            )
+
+        self.assertEqual(password, "kp-s3cr3t")
 
     def test_resolution_error_exits(self):
         with patch("asadm.logger") as logger, self.assertRaises(SystemExit) as cm:
