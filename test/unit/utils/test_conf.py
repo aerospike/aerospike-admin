@@ -22,8 +22,8 @@ from unittest.mock import patch
 from lib.utils import conf
 from lib.utils.password_source import PasswordSourceError
 
-SECRET = "s3cr3t-pw"
-SECRET_B64 = base64.b64encode(SECRET.encode()).decode()
+PW = "s3cr3t-pw"
+PW_B64 = base64.b64encode(PW.encode()).decode()
 UNSET = "ASADM_TEST_UNSET_PASSWORD_VAR"
 
 
@@ -32,7 +32,7 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmpdir.cleanup)
 
-        env = patch.dict(os.environ, {"AS_PASS": SECRET, "KP": SECRET})
+        env = patch.dict(os.environ, {"AS_PASS": PW, "KP": PW})
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop(UNSET, None)
@@ -64,20 +64,20 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
 
     def test_password_env_space_separated(self):
         args = self.load("-U", "admin", "-P", "env:AS_PASS")
-        self.assertEqual(args.password, SECRET)
+        self.assertEqual(args.password, PW)
 
     def test_password_attached_forms(self):
         for argv in (
-            ("-U", "admin", "-Pb64:" + SECRET_B64),
-            ("-U", "admin", "--password=b64:" + SECRET_B64),
+            ("-U", "admin", "-Pb64:" + PW_B64),
+            ("-U", "admin", "--password=b64:" + PW_B64),
         ):
             with self.subTest(argv=argv):
-                self.assertEqual(self.load(*argv).password, SECRET)
+                self.assertEqual(self.load(*argv).password, PW)
 
     def test_password_file(self):
-        path = self.write_file("pw", SECRET + "\n")
+        path = self.write_file("pw", PW + "\n")
         args = self.load("-U", "admin", "--password", "file:" + path)
-        self.assertEqual(args.password, SECRET)
+        self.assertEqual(args.password, PW)
 
     def test_password_literal(self):
         args = self.load("-U", "admin", "-P", "secrets:resource:key")
@@ -85,17 +85,15 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
 
     def test_password_from_config_file(self):
         args = self.load(config='[cluster]\nuser = "admin"\npassword = "env:AS_PASS"\n')
-        self.assertEqual(args.password, SECRET)
+        self.assertEqual(args.password, PW)
 
     def test_password_from_config_instance(self):
         args = self.load(
             "--instance",
             "a",
-            config='[cluster_a]\nuser = "admin"\npassword = "b64:{}"\n'.format(
-                SECRET_B64
-            ),
+            config='[cluster_a]\nuser = "admin"\npassword = "b64:{}"\n'.format(PW_B64),
         )
-        self.assertEqual(args.password, SECRET)
+        self.assertEqual(args.password, PW)
 
     def test_password_resolved_after_merge(self):
         args = self.load(
@@ -103,7 +101,7 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             "env:AS_PASS",
             config='[cluster]\nuser = "admin"\npassword = "env:{}"\n'.format(UNSET),
         )
-        self.assertEqual(args.password, SECRET)
+        self.assertEqual(args.password, PW)
 
     def test_bare_password_left_for_prompt(self):
         args = self.load("-U", "admin", "-P")
@@ -140,10 +138,10 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             "--tls-keyfile-password",
             "env:KP",
         )
-        self.assertEqual(args.tls_keyfile_password, SECRET)
+        self.assertEqual(args.tls_keyfile_password, PW)
 
     def test_keyfile_password_env_b64_from_config_file(self):
-        with patch.dict(os.environ, {"KP_B64": SECRET_B64}):
+        with patch.dict(os.environ, {"KP_B64": PW_B64}):
             args = self.load(
                 config=(
                     "[cluster]\ntls-enable = true\n"
@@ -151,10 +149,10 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
                     'tls-keyfile-password = "env-b64:KP_B64"\n'
                 )
             )
-        self.assertEqual(args.tls_keyfile_password, SECRET)
+        self.assertEqual(args.tls_keyfile_password, PW)
 
     def test_keyfile_password_file(self):
-        path = self.write_file("kp", SECRET + "\r\n")
+        path = self.write_file("kp", PW + "\r\n")
         args = self.load(
             "--tls-enable",
             "--tls-keyfile",
@@ -162,7 +160,7 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             "--tls-keyfile-password",
             "file:" + path,
         )
-        self.assertEqual(args.tls_keyfile_password, SECRET)
+        self.assertEqual(args.tls_keyfile_password, PW)
 
     def test_bare_keyfile_password_left_for_prompt(self):
         args = self.load(

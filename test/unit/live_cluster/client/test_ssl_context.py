@@ -1148,15 +1148,15 @@ class TestCreateSSLContext(unittest.TestCase):
 class TestKeyfilePasswordIsLiteral(unittest.TestCase):
     """Sources resolve in conf before SSLContext, which takes the password as given."""
 
-    PASSPHRASE = "s3cr3t-kp"
+    KEY_PW = "s3cr3t-kp"
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmpdir.cleanup)
-        env = patch.dict(os.environ, {"ASADM_TEST_KP": self.PASSPHRASE})
+        env = patch.dict(os.environ, {"ASADM_TEST_KP": self.KEY_PW})
         env.start()
         self.addCleanup(env.stop)
-        self.passphrase_file = self.write("kp", (self.PASSPHRASE + "\n").encode())
+        self.passphrase_file = self.write("kp", (self.KEY_PW + "\n").encode())
 
     def write(self, name, data):
         path = os.path.join(self.tmpdir.name, name)
@@ -1181,7 +1181,7 @@ class TestKeyfilePasswordIsLiteral(unittest.TestCase):
         return ("env:ASADM_TEST_KP", "file:" + self.passphrase_file)
 
     def test_literal_passphrase_loads_key(self):
-        self.load(self.encrypted_key(self.PASSPHRASE), self.PASSPHRASE)
+        self.load(self.encrypted_key(self.KEY_PW), self.KEY_PW)
 
     def test_source_string_is_used_as_the_passphrase(self):
         for value in self.sources():
@@ -1189,7 +1189,7 @@ class TestKeyfilePasswordIsLiteral(unittest.TestCase):
                 self.load(self.encrypted_key(value), value)
 
     def test_source_string_is_not_resolved(self):
-        keyfile = self.encrypted_key(self.PASSPHRASE)
+        keyfile = self.encrypted_key(self.KEY_PW)
 
         for value in self.sources():
             with self.subTest(value=value):

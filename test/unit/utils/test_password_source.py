@@ -23,14 +23,14 @@ from parameterized import parameterized
 
 from lib.utils.password_source import PasswordSourceError, resolve
 
-SECRET = "s3cr3t-pw"
+PW = "s3cr3t-pw"
 
 
 def b64(data: bytes) -> str:
     return base64.b64encode(data).decode()
 
 
-SECRET_B64 = b64(SECRET.encode())
+PW_B64 = b64(PW.encode())
 
 
 class ResolveLiteralTest(unittest.TestCase):
@@ -43,22 +43,22 @@ class ResolveLiteralTest(unittest.TestCase):
             ("unknown_prefix", "secrets:resource:key"),
             ("prefix_is_case_sensitive", "ENV:AS_PASS"),
             ("prefix_needs_exact_match", " env:AS_PASS"),
-            ("b64_prefix_is_case_sensitive", "B64:" + SECRET_B64),
+            ("b64_prefix_is_case_sensitive", "B64:" + PW_B64),
             ("file_prefix_is_case_sensitive", "File:/nonexistent"),
         ]
     )
     def test_literal_is_returned_unchanged(self, _, value):
-        with patch.dict(os.environ, {"AS_PASS": SECRET}):
+        with patch.dict(os.environ, {"AS_PASS": PW}):
             self.assertEqual(resolve(value, "--password"), value)
 
 
 class ResolveEnvTest(unittest.TestCase):
     def test_env(self):
-        with patch.dict(os.environ, {"AS_PASS": SECRET}):
-            self.assertEqual(resolve("env:AS_PASS", "--password"), SECRET)
+        with patch.dict(os.environ, {"AS_PASS": PW}):
+            self.assertEqual(resolve("env:AS_PASS", "--password"), PW)
 
     def test_env_value_is_not_parsed_again(self):
-        with patch.dict(os.environ, {"AS_PASS": "env:OTHER", "OTHER": SECRET}):
+        with patch.dict(os.environ, {"AS_PASS": "env:OTHER", "OTHER": PW}):
             self.assertEqual(resolve("env:AS_PASS", "--password"), "env:OTHER")
 
     def test_env_value_is_used_as_is(self):
@@ -89,7 +89,7 @@ class ResolveEnvTest(unittest.TestCase):
     def test_env_not_utf8(self):
         for value in ("env:AS_BAD", "env-b64:AS_BAD"):
             with self.subTest(value=value), patch.dict(os.environ):
-                os.environb[b"AS_BAD"] = b"\xff" + SECRET.encode()
+                os.environb[b"AS_BAD"] = b"\xff" + PW.encode()
 
                 with self.assertRaises(PasswordSourceError) as cm:
                     resolve(value, "--password")
@@ -102,8 +102,8 @@ class ResolveEnvTest(unittest.TestCase):
 
 class ResolveEnvB64Test(unittest.TestCase):
     def test_env_b64(self):
-        with patch.dict(os.environ, {"AS_PASS_B64": SECRET_B64}):
-            self.assertEqual(resolve("env-b64:AS_PASS_B64", "--password"), SECRET)
+        with patch.dict(os.environ, {"AS_PASS_B64": PW_B64}):
+            self.assertEqual(resolve("env-b64:AS_PASS_B64", "--password"), PW)
 
     def test_env_b64_drops_one_trailing_newline(self):
         with patch.dict(os.environ, {"AS_PASS_B64": b64(b"pw\n")}):
@@ -120,7 +120,7 @@ class ResolveEnvB64Test(unittest.TestCase):
         )
 
     def test_env_b64_invalid(self):
-        with patch.dict(os.environ, {"KP_B64": SECRET}):
+        with patch.dict(os.environ, {"KP_B64": PW}):
             with self.assertRaises(PasswordSourceError) as cm:
                 resolve("env-b64:KP_B64", "--tls-keyfile-password")
 
@@ -142,7 +142,7 @@ class ResolveEnvB64Test(unittest.TestCase):
 
 class ResolveB64Test(unittest.TestCase):
     def test_b64(self):
-        self.assertEqual(resolve("b64:" + SECRET_B64, "--password"), SECRET)
+        self.assertEqual(resolve("b64:" + PW_B64, "--password"), PW)
 
     def test_b64_drops_only_one_trailing_newline(self):
         self.assertEqual(resolve("b64:" + b64(b"pw\n\n"), "--password"), "pw\n")
@@ -151,18 +151,18 @@ class ResolveB64Test(unittest.TestCase):
         self.assertEqual(resolve("b64:" + b64(b"pw\r"), "--password"), "pw\r")
 
     def test_b64_ignores_line_wrapping(self):
-        wrapped = SECRET_B64[:8] + "\r\n" + SECRET_B64[8:]
-        self.assertEqual(resolve("b64:" + wrapped, "--password"), SECRET)
+        wrapped = PW_B64[:8] + "\r\n" + PW_B64[8:]
+        self.assertEqual(resolve("b64:" + wrapped, "--password"), PW)
 
     def test_b64_decoded_value_is_not_parsed_again(self):
-        with patch.dict(os.environ, {"AS_PASS": SECRET}):
+        with patch.dict(os.environ, {"AS_PASS": PW}):
             self.assertEqual(
                 resolve("b64:" + b64(b"env:AS_PASS"), "--password"), "env:AS_PASS"
             )
 
     @parameterized.expand(
         [
-            ("not_base64", "b64:" + SECRET),
+            ("not_base64", "b64:" + PW),
             ("missing_padding", "b64:cHc"),
             ("url_safe_alphabet", "b64:-_-_"),
             ("data_after_padding", "b64:cHc=cHc="),
@@ -208,13 +208,13 @@ class ResolveFileTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("no_line_ending", b"s3cr3t-pw", SECRET),
-            ("lf", b"s3cr3t-pw\n", SECRET),
-            ("crlf", b"s3cr3t-pw\r\n", SECRET),
-            ("only_one_lf", b"s3cr3t-pw\n\n", SECRET + "\n"),
-            ("only_one_crlf", b"s3cr3t-pw\r\n\r\n", SECRET + "\r\n"),
-            ("lone_cr_kept", b"s3cr3t-pw\r", SECRET + "\r"),
-            ("spaces_kept", b"  s3cr3t-pw  \n", "  " + SECRET + "  "),
+            ("no_line_ending", b"s3cr3t-pw", PW),
+            ("lf", b"s3cr3t-pw\n", PW),
+            ("crlf", b"s3cr3t-pw\r\n", PW),
+            ("only_one_lf", b"s3cr3t-pw\n\n", PW + "\n"),
+            ("only_one_crlf", b"s3cr3t-pw\r\n\r\n", PW + "\r\n"),
+            ("lone_cr_kept", b"s3cr3t-pw\r", PW + "\r"),
+            ("spaces_kept", b"  s3cr3t-pw  \n", "  " + PW + "  "),
             ("inner_crlf_kept", b"a\r\nb\n", "a\r\nb"),
             ("utf8", "päss\n".encode("utf-8"), "päss"),
         ]
@@ -225,7 +225,7 @@ class ResolveFileTest(unittest.TestCase):
 
     def test_file_contents_are_not_parsed_again(self):
         path = self.write(b"env:AS_PASS\n")
-        with patch.dict(os.environ, {"AS_PASS": SECRET}):
+        with patch.dict(os.environ, {"AS_PASS": PW}):
             self.assertEqual(resolve("file:" + path, "--password"), "env:AS_PASS")
 
     def test_file_missing(self):
@@ -251,7 +251,7 @@ class ResolveFileTest(unittest.TestCase):
 
     @unittest.skipIf(os.geteuid() == 0, "root can read any file")
     def test_file_unreadable(self):
-        path = self.write(SECRET.encode())
+        path = self.write(PW.encode())
         os.chmod(path, 0)
 
         with self.assertRaises(PasswordSourceError) as cm:
@@ -311,32 +311,32 @@ class ResolveErrorsHideSecretTest(unittest.TestCase):
             shown += repr(chained)
             chained = chained.__cause__ or chained.__context__
 
-        self.assertNotIn(SECRET, shown)
-        self.assertNotIn(SECRET_B64, shown)
+        self.assertNotIn(PW, shown)
+        self.assertNotIn(PW_B64, shown)
 
     def test_b64_errors(self):
-        self.assert_secret_hidden("b64:" + SECRET)
-        self.assert_secret_hidden("b64:" + SECRET_B64 + "é")
-        self.assert_secret_hidden("b64:" + b64(b"\xff" + SECRET.encode()))
+        self.assert_secret_hidden("b64:" + PW)
+        self.assert_secret_hidden("b64:" + PW_B64 + "é")
+        self.assert_secret_hidden("b64:" + b64(b"\xff" + PW.encode()))
 
     def test_env_b64_errors(self):
-        self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": SECRET})
-        self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": SECRET_B64 + "é"})
+        self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": PW})
+        self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": PW_B64 + "é"})
         self.assert_secret_hidden(
-            "env-b64:KP_B64", {"KP_B64": b64(b"\xff" + SECRET.encode())}
+            "env-b64:KP_B64", {"KP_B64": b64(b"\xff" + PW.encode())}
         )
 
     def test_env_not_utf8_error(self):
-        bad = os.fsdecode(b"\xff" + SECRET.encode())
+        bad = os.fsdecode(b"\xff" + PW.encode())
         self.assert_secret_hidden("env:AS_BAD", {"AS_BAD": bad})
 
     def test_file_not_utf8_error(self):
-        path = self.write("pw", b"\xff" + SECRET.encode() + b"\n")
+        path = self.write("pw", b"\xff" + PW.encode() + b"\n")
         self.assert_secret_hidden("file:" + path)
 
     @unittest.skipIf(os.geteuid() == 0, "root can read any file")
     def test_file_read_error(self):
-        path = self.write("pw", SECRET.encode(), mode=0)
+        path = self.write("pw", PW.encode(), mode=0)
         self.assert_secret_hidden("file:" + path)
 
     def test_error_carries_its_own_message(self):
