@@ -39,6 +39,18 @@ from .collectinfo_command_controller import (
 
 logger = logging.getLogger(__name__)
 
+
+def _has_xdr_namespace_data(data: dict) -> bool:
+    """Whether any dc holds a namespace; a for filter keeps a dc whose namespaces it removed."""
+    return any(
+        namespaces and not isinstance(namespaces, Exception)
+        for nodes in data.values()
+        for dcs in nodes.values()
+        if isinstance(dcs, dict)
+        for namespaces in dcs.values()
+    )
+
+
 Modifiers = constants.Modifiers
 ModifierUsage = constants.ModifierUsage
 
@@ -578,7 +590,7 @@ class ShowConfigXDRController(CollectinfoCommandController):
         )
 
         xdr_ns_configs = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
-        shown = has_node_data(xdr_ns_configs)
+        shown = _has_xdr_namespace_data(xdr_ns_configs)
 
         if not default and not shown:
             warn_no_data(
@@ -1556,7 +1568,7 @@ class ShowStatisticsXDRController(CollectinfoCommandController):
         )
 
         xdr_ns_stats = self.getter.get_xdr_namespaces(for_mods=self.mods["for"])
-        shown = has_node_data(xdr_ns_stats)
+        shown = _has_xdr_namespace_data(xdr_ns_stats)
 
         if not default and not shown:
             warn_no_data(

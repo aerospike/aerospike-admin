@@ -897,6 +897,24 @@ class ShowConfigXDRDefaultTest(AnalyzerControllerTestCase):
             ],
         )
 
+    def test_for_filter_leaving_dcs_without_namespaces_warns(self):
+        """The getter keeps a dc whose namespaces the filter removed."""
+        self._set_xdr(
+            {"ts": {"n1": {"src-id": "1"}}},
+            {"ts": {"n1": {}}},
+            {"ts": {"n1": {"dc1": {}}}},
+        )
+        self.controller.mods["for"] = ["nope"]
+
+        warnings = self.no_data_warnings(lambda: self.controller._do_default([]))
+
+        self.assertEqual(
+            warnings,
+            [
+                "show config xdr: no XDR DC or namespace configuration matching nope in this collectinfo."
+            ],
+        )
+
     def test_sub_command_alone_still_warns(self):
         self._set_xdr({"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {}}})
 
@@ -996,6 +1014,22 @@ class ShowStatisticsXDRDefaultTest(AnalyzerControllerTestCase):
             warnings,
             [
                 "show statistics xdr: no XDR DC or namespace statistics matching nope in this collectinfo."
+            ],
+        )
+
+    def test_namespace_filter_leaving_dcs_without_namespaces_warns(self):
+        """The getter keeps a dc whose namespaces the filter removed."""
+        self._set_xdr(
+            {"ts": {"n1": {}}}, {"ts": {"n1": {}}}, {"ts": {"n1": {"dc1": {}}}}
+        )
+        self.controller.mods["for"] = ["nope"]
+
+        warnings = self.no_data_warnings(lambda: self.controller.do_namespace([]))
+
+        self.assertEqual(
+            warnings,
+            [
+                "show statistics xdr namespace: no XDR namespace statistics matching nope in this collectinfo."
             ],
         )
 
