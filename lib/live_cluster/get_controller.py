@@ -697,8 +697,14 @@ class GetStatisticsController:
 
         return util.filter_exceptions(service_stats)
 
-    async def get_namespace(self, flip=False, nodes="all", for_mods=[]):
-        namespace_set = set(await _get_all_namespaces(self.cluster, nodes))
+    async def get_namespace(
+        self, flip=False, nodes="all", for_mods=[], keep_exceptions=False
+    ):
+        """keep_exceptions gives every queried node an entry in the unflipped result:
+        the Exception when a call failed and it contributed nothing, else {}. A caller
+        can then tell a cluster with no statistics from one that did not answer."""
+        namespaces_per_node = await self.cluster.info_namespaces(nodes=nodes)
+        namespace_set = _union_iterable(namespaces_per_node.values())
         namespace_list = list(util.filter_list(namespace_set, for_mods))
         tasks = [
             asyncio.create_task(
@@ -707,6 +713,7 @@ class GetStatisticsController:
             for namespace in namespace_list
         ]
         ns_stats = {}
+        failures = {}
 
         for namespace, stat_task in zip(namespace_list, tasks):
             ns_stats[namespace] = await stat_task
@@ -720,11 +727,27 @@ class GetStatisticsController:
                 )
                 continue
 
+            for node, node_stats in ns_stats[namespace].items():
+                if isinstance(node_stats, Exception):
+                    failures[node] = node_stats
+
             _remove_and_log_failed_nodes(namespace, ns_stats[namespace])
 
+        if flip:
+            return ns_stats
+
         # Inverted match common structure of other getters, i.e. host is top level key
-        if not flip:
-            return util.flip_keys(ns_stats)
+        ns_stats = util.flip_keys(ns_stats)
+
+        if keep_exceptions:
+            for node, namespaces in namespaces_per_node.items():
+                if node in ns_stats:
+                    continue
+
+                if isinstance(namespaces, Exception):
+                    ns_stats[node] = namespaces
+                else:
+                    ns_stats[node] = failures.get(node, {})
 
         return ns_stats
 
@@ -779,9 +802,18 @@ class GetStatisticsController:
         return ns_stats
 
     async def get_sindex(
-        self, flip=False, nodes="all", for_mods: list[str] | None = None
+        self,
+        flip=False,
+        nodes="all",
+        for_mods: list[str] | None = None,
+        keep_exceptions=False,
     ):
+        """keep_exceptions gives every queried node an entry in the unflipped result:
+        the Exception when its sindex call failed, else {} when it has no sindexes."""
         stats = await self.cluster.info_sindex(nodes=nodes)
+        failures = {
+            node: resp for node, resp in stats.items() if isinstance(resp, Exception)
+        }
         stats = util.filter_exceptions(stats)
 
         result = {}
@@ -835,9 +867,18 @@ class GetStatisticsController:
                         for key, value in stat.items():
                             result[sindex_key][node][key] = value
 
+        if flip:
+            return result
+
         # Inverted match common structure of other getters, i.e. host is top level key
-        if not flip:
-            return util.flip_keys(result)
+        result = util.flip_keys(result)
+
+        if keep_exceptions:
+            for node in stats:
+                result.setdefault(node, {})
+
+            for node, exc in failures.items():
+                result.setdefault(node, exc)
 
         return result
 
@@ -878,10 +919,15 @@ class GetStatisticsController:
 
         return new_bin_stats
 
-    async def get_xdr(self, nodes="all"):
+    async def get_xdr(self, nodes="all", keep_exceptions=False):
+        """keep_exceptions leaves a failed node's Exception in place of the {} it
+        is otherwise blanked to."""
         xdr_stats = await self.cluster.info_XDR_statistics(nodes=nodes)
 
         for host, host_stats in xdr_stats.items():
+            if keep_exceptions and isinstance(host_stats, Exception):
+                continue
+
             if not host_stats or isinstance(host_stats, Exception):
                 xdr_stats[host] = {}
                 continue
@@ -889,16 +935,29 @@ class GetStatisticsController:
         return xdr_stats
 
     async def get_xdr_dcs(
-        self, flip=False, nodes="all", for_mods: list[str] | None = None
+        self,
+        flip=False,
+        nodes="all",
+        for_mods: list[str] | None = None,
+        keep_exceptions=False,
     ):
-        all_dcs = await _get_all_dcs(self.cluster, nodes)
+        """keep_exceptions leaves a failed node's Exception in place of the {} it
+        is otherwise blanked to, whether its dcs or its dc statistics call failed."""
+        dcs_per_node = await self.cluster.info_dcs(nodes=nodes)
+        all_dcs = _union_iterable(dcs_per_node.values())
         filter_dcs = list(util.filter_list(list(all_dcs), for_mods))
 
         result = await self.cluster.info_all_dc_statistics(nodes=nodes, dcs=filter_dcs)
 
         for host, host_stats in result.items():
             if not host_stats or isinstance(host_stats, Exception):
-                result[host] = {}
+                failure = host_stats if host_stats else dcs_per_node.get(host)
+
+                if keep_exceptions and isinstance(failure, Exception):
+                    result[host] = failure
+                else:
+                    result[host] = {}
+
                 continue
 
             for dc, dc_stats in host_stats.items():

@@ -16,6 +16,7 @@ import asyncio
 import copy
 import json
 import logging
+import logging.handlers
 import os
 import shutil
 import tempfile
@@ -3103,6 +3104,99 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("connection", self.captured)
         self.assertIn("service-clear-std", self.captured)
         self.assertIn("roster:", self.captured)
+
+
+class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
+    """collectinfo fills its logs by running info and show commands and capturing
+    only their stdout. Their warnings stay off the terminal but not out of
+    collectinfo_debug.log, which hangs off the same logger at DEBUG."""
+
+    COMMAND_LOGGER = "lib.live_cluster.info_controller"
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.write_output = patch.object(
+            CollectinfoController, "_write_func_output_to_file"
+        ).start()
+        self.stderr_emit = patch.object(logger_util.stderr_log_handler, "emit").start()
+        self.addCleanup(patch.stopall)
+
+        self.debug_log = logging.handlers.BufferingHandler(100)
+        self.debug_log.setLevel(logging.DEBUG)
+        logger_util.logger.addHandler(self.debug_log)
+        self.addCleanup(logger_util.logger.removeHandler, self.debug_log)
+        self.addCleanup(logger_util.logger.setLevel, logger_util.logger.level)
+        logger_util.logger.setLevel(logging.DEBUG)
+
+    async def _capture(self, log):
+        def command(line):
+            log()
+            print("table")
+
+        await self.controller._collectinfo_capture_and_write_to_file(
+            "file", command, []
+        )
+
+    def _debug_messages(self):
+        return [record.getMessage() for record in self.debug_log.buffer]
+
+    async def test_command_warning_stays_off_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.COMMAND_LOGGER).warning(
+                "info set: no sets found."
+            )
+        )
+
+        self.stderr_emit.assert_not_called()
+        _, _, content = self.write_output.call_args[0]
+        self.assertEqual(content.strip(), "table")
+
+    async def test_command_warning_still_reaches_the_debug_log(self):
+        await self._capture(
+            lambda: logging.getLogger(self.COMMAND_LOGGER).warning(
+                "info set: no sets found."
+            )
+        )
+
+        self.assertEqual(self._debug_messages(), ["info set: no sets found."])
+
+    async def test_command_debug_output_still_reaches_the_debug_log(self):
+        await self._capture(
+            lambda: logging.getLogger(self.COMMAND_LOGGER).debug("fetched sets")
+        )
+
+        self.assertEqual(self._debug_messages(), ["fetched sets"])
+
+    async def test_command_error_still_reaches_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.COMMAND_LOGGER).log(logging.ERROR, "boom")
+        )
+
+        self.stderr_emit.assert_called_once()
+
+    async def test_collectinfo_warnings_still_reach_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(LOGGER_NAME).warning("Failed to collect.")
+        )
+
+        self.stderr_emit.assert_called_once()
+
+    async def test_terminal_filter_is_removed_after_capture(self):
+        await self._capture(lambda: None)
+
+        self.assertEqual(logger_util.stderr_log_handler.filters, [])
+
+    async def test_terminal_filter_is_removed_when_the_command_raises(self):
+        def command(line):
+            raise Exception("boom")
+
+        with self.assertRaises(Exception):
+            await self.controller._collectinfo_capture_and_write_to_file(
+                "file", command, []
+            )
+
+        self.assertEqual(logger_util.stderr_log_handler.filters, [])
 
 
 class CaptureParamTest(unittest.IsolatedAsyncioTestCase):

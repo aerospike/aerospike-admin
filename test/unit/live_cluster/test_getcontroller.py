@@ -654,9 +654,11 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertDictEqual(actual, expected)
 
-    @patch("lib.live_cluster.get_controller._get_all_dcs")
-    async def test_get_xdr_dcs_with_filter(self, _get_all_dcs_mock: AsyncMock):
-        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+    def _requested_dcs(self):
+        return self.cluster_mock.info_all_dc_statistics.call_args.kwargs["dcs"]
+
+    async def test_get_xdr_dcs_with_filter(self):
+        self.cluster_mock.info_dcs.return_value = {"1.1.1.1": ["aaa", "aab", "abc"]}
         self.cluster_mock.info_all_dc_statistics.return_value = {
             "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
             "2.2.2.2": {"aaa": {"c"}, "aab": Exception()},
@@ -670,14 +672,11 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.controller.get_xdr_dcs(for_mods=["aa"])
 
-        self.cluster_mock.info_all_dc_statistics.assert_called_with(
-            nodes="all", dcs=["aaa", "aab"]
-        )
+        self.assertCountEqual(self._requested_dcs(), ["aaa", "aab"])
         self.assertDictEqual(actual, expected)
 
-    @patch("lib.live_cluster.get_controller._get_all_dcs")
-    async def test_get_xdr_dcs(self, _get_all_dcs_mock: AsyncMock):
-        _get_all_dcs_mock.return_value = ["aaa", "aab", "abc"]
+    async def test_get_xdr_dcs(self):
+        self.cluster_mock.info_dcs.return_value = {"1.1.1.1": ["aaa", "aab", "abc"]}
         self.cluster_mock.info_all_dc_statistics.return_value = {
             "1.1.1.1": {"aaa": {"a"}, "aab": {"b"}},
             "2.2.2.2": {"aaa": {"c"}, "aab": Exception()},
@@ -691,10 +690,148 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.controller.get_xdr_dcs()
 
-        self.cluster_mock.info_all_dc_statistics.assert_called_with(
-            nodes="all", dcs=["aaa", "aab", "abc"]
-        )
+        self.assertCountEqual(self._requested_dcs(), ["aaa", "aab", "abc"])
         self.assertDictEqual(actual, expected)
+
+    async def test_get_xdr_dcs_keep_exceptions_keeps_a_failed_dc_statistics_call(self):
+        exc = Exception("timeout")
+        self.cluster_mock.info_dcs.return_value = {
+            "1.1.1.1": ["aaa"],
+            "2.2.2.2": ["aaa"],
+        }
+        self.cluster_mock.info_all_dc_statistics.return_value = {
+            "1.1.1.1": {"aaa": {"a"}},
+            "2.2.2.2": exc,
+        }
+
+        actual = await self.controller.get_xdr_dcs(keep_exceptions=True)
+
+        self.assertEqual(actual, {"1.1.1.1": {"aaa": {"a"}}, "2.2.2.2": exc})
+
+    async def test_get_xdr_dcs_keep_exceptions_keeps_a_failed_dcs_call(self):
+        """With no node able to list its dcs nothing is asked for, and every node
+        comes back empty; the dcs failure is what explains the empty answer."""
+        exc = Exception("timeout")
+        self.cluster_mock.info_dcs.return_value = {"1.1.1.1": exc, "2.2.2.2": exc}
+        self.cluster_mock.info_all_dc_statistics.return_value = {
+            "1.1.1.1": {},
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_xdr_dcs(keep_exceptions=True)
+
+        self.assertEqual(actual, {"1.1.1.1": exc, "2.2.2.2": exc})
+
+    async def test_get_xdr_dcs_keep_exceptions_blanks_a_node_with_no_dcs(self):
+        self.cluster_mock.info_dcs.return_value = {"1.1.1.1": []}
+        self.cluster_mock.info_all_dc_statistics.return_value = {"1.1.1.1": {}}
+
+        actual = await self.controller.get_xdr_dcs(keep_exceptions=True)
+
+        self.assertEqual(actual, {"1.1.1.1": {}})
+
+    async def test_get_xdr_keep_exceptions(self):
+        exc = Exception("timeout")
+        self.cluster_mock.info_XDR_statistics.return_value = {
+            "1.1.1.1": exc,
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_xdr(keep_exceptions=True)
+
+        self.assertEqual(actual, {"1.1.1.1": exc, "2.2.2.2": {}})
+
+    async def test_get_sindex_keep_exceptions_gives_every_node_an_entry(self):
+        exc = Exception("timeout")
+        self.cluster_mock.info_sindex.return_value = {"1.1.1.1": exc, "2.2.2.2": []}
+
+        actual = await self.controller.get_sindex(keep_exceptions=True)
+
+        self.assertEqual(actual, {"1.1.1.1": exc, "2.2.2.2": {}})
+
+    async def test_get_sindex_keep_exceptions_keeps_stats_when_only_list_failed(self):
+        self.cluster_mock.info_sindex.return_value = {
+            "1.1.1.1": Exception("timeout"),
+            "2.2.2.2": [{"ns": "test", "set": "s", "indexname": "idx"}],
+        }
+        self.cluster_mock.info_sindex_statistics.return_value = {
+            "1.1.1.1": {"keys": "1"},
+            "2.2.2.2": {"keys": "2"},
+        }
+
+        actual = await self.controller.get_sindex(keep_exceptions=True)
+
+        self.assertEqual(actual["1.1.1.1"]["test s idx"]["keys"], "1")
+        self.assertEqual(actual["2.2.2.2"]["test s idx"]["keys"], "2")
+
+    async def test_get_sindex_drops_failed_and_empty_nodes_by_default(self):
+        self.cluster_mock.info_sindex.return_value = {
+            "1.1.1.1": Exception("timeout"),
+            "2.2.2.2": [],
+        }
+
+        actual = await self.controller.get_sindex()
+
+        self.assertEqual(actual, {})
+
+    async def test_get_namespace_keep_exceptions_keeps_a_failed_namespaces_call(self):
+        exc = Exception("timeout")
+        self.cluster_mock.info_namespaces.return_value = {
+            "1.1.1.1": exc,
+            "2.2.2.2": exc,
+        }
+
+        actual = await self.controller.get_namespace(keep_exceptions=True)
+
+        self.assertEqual(actual, {"1.1.1.1": exc, "2.2.2.2": exc})
+        self.cluster_mock.info_namespace_statistics.assert_not_called()
+
+    async def test_get_namespace_keep_exceptions_keeps_a_failed_statistics_call(self):
+        exc = Exception("timeout")
+        self.cluster_mock.info_namespaces.return_value = {
+            "1.1.1.1": ["test"],
+            "2.2.2.2": ["test"],
+        }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"objects": "1"},
+            "2.2.2.2": exc,
+        }
+
+        actual = await self.controller.get_namespace(keep_exceptions=True)
+
+        self.assertEqual(
+            actual, {"1.1.1.1": {"test": {"objects": "1"}}, "2.2.2.2": exc}
+        )
+
+    async def test_get_namespace_keep_exceptions_blanks_a_node_that_answered_empty(
+        self,
+    ):
+        self.cluster_mock.info_namespaces.return_value = {
+            "1.1.1.1": ["test"],
+            "2.2.2.2": [],
+        }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": {"objects": "1"},
+            "2.2.2.2": {},
+        }
+
+        actual = await self.controller.get_namespace(keep_exceptions=True)
+
+        self.assertEqual(actual, {"1.1.1.1": {"test": {"objects": "1"}}, "2.2.2.2": {}})
+
+    async def test_get_namespace_drops_failed_nodes_by_default(self):
+        self.cluster_mock.info_namespaces.return_value = {
+            "1.1.1.1": Exception("timeout"),
+            "2.2.2.2": ["test"],
+        }
+        self.cluster_mock.info_namespace_statistics.return_value = {
+            "1.1.1.1": Exception("timeout"),
+            "2.2.2.2": {"objects": "1"},
+        }
+
+        actual = await self.controller.get_namespace()
+
+        self.assertEqual(actual, {"2.2.2.2": {"test": {"objects": "1"}}})
 
     @patch("lib.live_cluster.get_controller._get_all_dcs")
     @patch("lib.live_cluster.get_controller._get_all_namespaces")

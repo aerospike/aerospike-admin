@@ -23,11 +23,13 @@ import calendar
 import copy
 import json
 import os
+import re
 import shutil
 import tarfile
 import tempfile
 import time
 import unittest
+import zipfile
 
 from lib.utils import constants
 from test.e2e import lib, util
@@ -45,12 +47,12 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
         cls.asadm_version = cls._get_asadm_version()
 
-        collect_cp = util.run_asadm(
+        cls.collect_cp = util.run_asadm(
             f"-h {lib.SERVER_IP}:{lib.PORT} -Uadmin -Padmin --timeout 20 "
             f"-e 'collectinfo --output-prefix {COLLECTINFO_PREFIX}'"
         )
         cls.bundle_tgz = util.get_collectinfo_path(
-            collect_cp, "/tmp/" + COLLECTINFO_PREFIX
+            cls.collect_cp, "/tmp/" + COLLECTINFO_PREFIX
         )
         cls.extract_dir = tempfile.mkdtemp(prefix="asadm_diag_extract_")
 
@@ -280,6 +282,106 @@ class TestCollectinfoDiagnostics(unittest.TestCase):
 
     ###########################################################################
     # What the analyzer says when it reads the bundle back.
+
+    ###########################################################################
+    # What the analyzer says when a section is empty (TOOLS-4479). This cluster
+    # holds no records, sindexes, jobs or masking rules, so these lines fire.
+
+    @staticmethod
+    def _lines_naming(stderr, command):
+        return [
+            util.remove_escape_sequence(line)
+            for line in stderr.splitlines()
+            if command + ":" in line
+        ]
+
+    def _assert_single_no_data_line(self, cp, command, expected):
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        lines = self._lines_naming(cp.stderr, command)
+        self.assertEqual(len(lines), 1, cp.stderr)
+        self.assertTrue(lines[0].endswith(expected), cp.stderr)
+
+    def test_collection_prints_no_command_warnings(self):
+        """collectinfo fills its logs by running info and show commands and
+        capturing only their stdout. Whatever those commands have to say about
+        an empty section belongs to the bundle, not the operator's terminal."""
+        command_lines = [
+            line
+            for line in self.collect_cp.stderr.splitlines()
+            if re.search(r"WARNING: '?(info|show) ", line)
+        ]
+
+        self.assertEqual(command_lines, [], self.collect_cp.stderr)
+
+    def _read_debug_log(self):
+        """collectinfo zips any bundle file of 1 MB or more, the debug log included."""
+        path = self._find_file(
+            self.bundle_dir, ("collectinfo_debug.log", "collectinfo_debug.log.zip")
+        )
+
+        if not path.endswith(".zip"):
+            with open(path) as f:
+                return f.read()
+
+        with zipfile.ZipFile(path) as archive:
+            (name,) = archive.namelist()
+            return archive.read(name).decode()
+
+    def test_debug_log_keeps_the_command_warnings(self):
+        """Only the terminal is spared. The bundle's debug log is where support
+        reads what the captured commands had to say."""
+        self.assertIn(
+            "info sindex: no secondary indexes found.", self._read_debug_log()
+        )
+
+    def test_show_jobs_on_an_idle_cluster_warns_once(self):
+        """The aggregate speaks for its three sub-commands, not each in turn."""
+        cp = util.run_asadm(f"-cf {self.bundle_dir} -e 'show jobs'")
+
+        self._assert_single_no_data_line(
+            cp, "show jobs", "show jobs: no jobs in this collectinfo."
+        )
+
+    def test_plain_show_statistics_stays_quiet_about_sets_under_a_filter(self):
+        """A namespace filter that matches nothing is reported once, by the
+        namespace sub-command; the sets sub-command stays quiet under the
+        aggregate."""
+        cp = util.run_asadm(f"-cf {self.bundle_dir} -e 'show statistics for nope'")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("Service Statistics", cp.stdout)
+        self.assertEqual(
+            len(self._lines_naming(cp.stderr, "show statistics namespace")),
+            1,
+            cp.stderr,
+        )
+        self.assertEqual(
+            self._lines_naming(cp.stderr, "show statistics sets"), [], cp.stderr
+        )
+
+    def test_show_statistics_sets_names_the_filter_that_matched_nothing(self):
+        cp = util.run_asadm(f"-cf {self.bundle_dir} -e 'show statistics sets for nope'")
+
+        self._assert_single_no_data_line(
+            cp,
+            "show statistics sets",
+            "show statistics sets: no set statistics matching nope in this collectinfo.",
+        )
+
+    def test_show_masking_never_returns_silently(self):
+        cp = util.run_asadm(f"-cf {self.bundle_dir} -e 'show masking'")
+
+        self._assert_single_no_data_line(
+            cp, "show masking", "show masking: no masking rules in this collectinfo."
+        )
+
+    def test_no_data_line_stays_off_json_stdout(self):
+        cp = util.run_asadm(f"-cf {self.bundle_dir} --json -e 'show sindex'")
+
+        self._assert_single_no_data_line(
+            cp, "show sindex", "show sindex: no secondary indexes in this collectinfo."
+        )
+        self.assertNotIn("show sindex:", cp.stdout)
 
     def test_meta_file_does_not_break_analysis_of_the_tgz(self):
         """A released asadm ignores collectinfo_meta.json; so must this one."""
