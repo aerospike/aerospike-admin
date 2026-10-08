@@ -5172,6 +5172,97 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to remove masking rule")
 
+    @parameterized.expand(
+        [
+            (
+                "",
+                "JC5wcm9maWxlLnNzbg==",
+                "masking:namespace=test;set=demo;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=redact;position=0",
+            ),
+            (
+                "ssn",
+                "JC5wcm9maWxlLnNzbg==",
+                "masking:namespace=test;set=demo;bin=ssn;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=redact;position=0",
+            ),
+            (
+                "",
+                "",
+                "masking:namespace=test;set=demo;ael_b64=;type=string;function=redact;position=0",
+            ),
+            (
+                "",
+                None,
+                "masking:namespace=test;set=demo;type=string;function=redact;position=0",
+            ),
+        ]
+    )
+    async def test_info_masking_add_rule_sends_target_as_given(
+        self, bin_, ael_b64, expected_req
+    ):
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_add_rule(
+            "test", "demo", bin_, "string", "redact", {"position": "0"}, ael_b64
+        )
+
+        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_remove_rule_with_ael_b64(self):
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_remove_rule(
+            "test", "demo", "", "string", "JC5wcm9maWxlLnNzbg=="
+        )
+
+        self.info_mock.assert_called_with(
+            "masking:namespace=test;set=demo;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=remove",
+            self.ip,
+        )
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_add_rule_keeps_whole_server_error(self):
+        self.info_mock.return_value = (
+            "ERROR:4:bad path '$.p.x +', at offset 6: unexpected '+'"
+        )
+
+        result = await self.node.info_masking_add_rule(
+            "test", "demo", "", "string", "redact", {}, "JC5wLnggKw=="
+        )
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(
+            result.response, "bad path '$.p.x +', at offset 6: unexpected '+'"
+        )
+
+    async def test_info_masking_list_rules_with_path_rule(self):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=ssn;type=string;function=redact"
+            ":namespace=test;set=demo;type=string;function=redact;ael_b64=JC5wcm9maWxlLnNzbg=="
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "ael_b64": "JC5wcm9maWxlLnNzbg==",
+                },
+            ],
+        )
+
     async def test_info_masking_list_rules_success(self):
         """Test successful masking rules listing"""
         self.info_mock.return_value = "ns=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*:ns=test;set=demo;bin=email;type=string;function=constant;value=REDACTED"

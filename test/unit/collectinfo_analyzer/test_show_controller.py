@@ -165,6 +165,30 @@ class ShowMaskingControllerTest(unittest.TestCase):
         self.assertIsNone(result)
         getter_mock.get_masking_rules.assert_called_once_with()
 
+    @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
+    def test_do_default_filters_path_rules_by_namespace_and_set(
+        self, getter_class_mock
+    ):
+        getter_mock = MagicMock()
+        getter_class_mock.return_value = getter_mock
+        path_rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "ael_b64": "JC5wcm9maWxlLnNzbg==",
+        }
+        other_set_rule = dict(path_rule, set="other")
+        getter_mock.get_masking_rules.return_value = {
+            "2023-01-01": {"192.168.1.1:3000": [path_rule, other_set_rule]}
+        }
+
+        self.controller._do_default(["namespace", "test", "set", "demo"])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [path_rule], timestamp="2023-01-01", **{}
+        )
+
     def test_do_default_set_without_namespace_raises_error(self):
         """Test error when set is specified without namespace"""
         line = ["set", "demo"]
