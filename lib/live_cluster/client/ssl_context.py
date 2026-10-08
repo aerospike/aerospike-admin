@@ -392,17 +392,10 @@ class SSLContext(object):
                 pwd = None
 
                 if keyfile_password:
-                    try:
-                        pwd = self._read_keyfile_password(keyfile_password)
+                    if not util.is_str(keyfile_password):
+                        raise Exception("Invalid keyfile_password: not string")
 
-                        if pwd is not None:
-                            pwd = util.str_to_bytes(pwd)
-                    except (TypeError, KeyError, OSError) as e:
-                        raise Exception(
-                            "Invalid keyfile_password {0} \n{1}".format(
-                                keyfile_password, e
-                            )
-                        )
+                    pwd = util.str_to_bytes(keyfile_password)
 
                 try:
                     with open(keyfile, "rb") as key_fh:
@@ -435,37 +428,3 @@ class SSLContext(object):
 
         if cipher_suite:
             self.ctx.set_cipher_list(cipher_suite)
-
-    def _read_keyfile_password(self, keyfile_password):
-        """
-        Fetches and returns actual password from input keyfile_password.
-        If keyfile_password is "env:<VAR>" then it reads password from environment variable VAR
-        If keyfile_password is "file:<PATH>" then it reads password from file
-        Else it returns keyfile_password
-
-        :param keyfile_password: input password string
-        :return: password to read tls keyfile
-        """
-
-        if keyfile_password is None:
-            return keyfile_password
-
-        if not util.is_str(keyfile_password):
-            raise TypeError("Bad keyfile_password: not string")
-
-        keyfile_password = keyfile_password.strip()
-
-        if keyfile_password.startswith("env:"):
-            try:
-                return os.environ[keyfile_password[4:]]
-            except KeyError as e:
-                raise KeyError("Failed to read environment variable: {}".format(e))
-
-        if keyfile_password.startswith("file:"):
-            try:
-                with open(keyfile_password[5:], "r") as pwd_file:
-                    return pwd_file.read().strip()
-            except OSError as e:
-                raise OSError("Failed to read file: {}".format(e))
-
-        return keyfile_password.strip()

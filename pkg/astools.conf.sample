@@ -24,6 +24,17 @@
 [cluster]
 # host = "localhost:cluster_a:3000"                     # host = "<host>[:<tls-name>][:<port>][,...]"
 # user = ""
+
+# password can be one of the following formats
+# Environment variable: "env:<VAR>"
+# password = "env:ASPWD"
+# Base64 encoded environment variable: "env-b64:<VAR>"
+# password = "env-b64:ASPWD_B64"
+# Base64 encoded string: "b64:<BASE64>"
+# password = "b64:c2VjcmV0"
+# File: "file:<PATH>"
+# password = "file:/etc/aerospike/aspwd.txt"
+# String: "<PASSWORD>"
 # password = ""
 
 #------------------------------------------------------------------------------
@@ -41,9 +52,13 @@
 # tls-keyfile = "/etc/aerospike/x509_certificates/MultiServer/key.pem"
 
 # tls-keyfile-password required if tls-keyfile is password protected
-# It can be one of following three format
+# It can be one of the following formats
 # Environment variable: "env:<VAR>"
 # tls-keyfile-password = "env:PEMPWD"
+# Base64 encoded environment variable: "env-b64:<VAR>"
+# tls-keyfile-password = "env-b64:PEMPWD_B64"
+# Base64 encoded string: "b64:<BASE64>"
+# tls-keyfile-password = "b64:c2VjcmV0"
 # File: "file:<PATH>"
 # tls-keyfile-password = "file:/etc/aerospike/x509_certificates/MultiServer/keypwd.txt"
 # String: "<PASSWORD>"

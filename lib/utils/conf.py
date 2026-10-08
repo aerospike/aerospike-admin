@@ -23,6 +23,7 @@ import copy
 from jsonschema import validate
 from collections.abc import Mapping
 
+from lib.utils import password_source
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
@@ -432,6 +433,21 @@ def loadconfig(cli_args):
     return args, seeds
 
 
+def resolve_password_sources(args):
+    # DEFAULTPASSWORD means prompt later, and prompted input is never parsed.
+    if args.user is not None and args.password not in (None, DEFAULTPASSWORD):
+        args.password = password_source.resolve(args.password, "--password")
+
+    if (
+        args.tls_enable
+        and args.tls_keyfile
+        and args.tls_keyfile_password not in (None, DEFAULTPASSWORD)
+    ):
+        args.tls_keyfile_password = password_source.resolve(
+            args.tls_keyfile_password, "--tls-keyfile-password"
+        )
+
+
 def print_config_help():
     print("\n")
     print("Usage: asadm [OPTIONS]")
@@ -495,6 +511,12 @@ def print_config_file_option():
     )
     print(
         " -P, --password       Password used to authenticate with cluster. Default: none\n"
+        "                      It can be one of the following:\n"
+        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
+        "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
+        "                      4) File: 'file:<PATH>'\n"
+        "                      5) String: 'PASSWORD'\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given."
     )
@@ -539,9 +561,11 @@ def print_config_file_option():
         " --tls-keyfile-password=password\n"
         "                      Password to load protected tls-keyfile.\n"
         "                      It can be one of the following:\n"
-        "                      1) Environment varaible: 'env:<VAR>'\n"
-        "                      2) File: 'file:<PATH>'\n"
-        "                      3) String: 'PASSWORD'\n"
+        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
+        "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
+        "                      4) File: 'file:<PATH>'\n"
+        "                      5) String: 'PASSWORD'\n"
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"
         "                      password is given."

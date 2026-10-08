@@ -63,6 +63,7 @@ from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf
+from lib.utils.password_source import PasswordSourceError
 from lib.utils.constants import (
     ADMIN_HOME,
     AdminMode,
@@ -677,9 +678,6 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
 
 
 def parse_tls_input(cli_args):
-    if cli_args.collectinfo:
-        return None
-
     try:
         keyfile_password = cli_args.tls_keyfile_password
 
@@ -826,6 +824,16 @@ async def main():
 
     cli_args, seeds = conf.loadconfig(cli_args)
 
+    # The mode comes from the command line; the merged config must not change it.
+    connects = cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER
+
+    if connects:
+        try:
+            conf.resolve_password_sources(cli_args)
+        except PasswordSourceError as e:
+            logger.critical(e)
+            sys.exit(1)
+
     if cli_args.services_alumni and cli_args.services_alternate:
         logger.critical(
             "Aerospike does not support alternate address for alumni services. Please enable only one of services_alumni or services_alternate."
@@ -836,7 +844,7 @@ async def main():
     ):
         logger.critical("TLS is required for authentication mode: " + cli_args.auth)
 
-    ssl_context = parse_tls_input(cli_args)
+    ssl_context = parse_tls_input(cli_args) if connects else None
 
     if cli_args.asinfo_mode:
         if mode == AdminMode.COLLECTINFO_ANALYZER or mode == AdminMode.LOG_ANALYZER:

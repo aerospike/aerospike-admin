@@ -2,9 +2,14 @@ from asadm import AerospikeShell
 import asadm
 
 import asyncio
+import io
+import os
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch, call
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from lib.base_controller import ShellException
 from lib.utils import async_object
 from lib.utils.constants import AdminMode
@@ -461,6 +466,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.collectinfo = False
                 mock_args.log_analyzer = False
                 mock_args.json = False
+                mock_args.user = None
+                mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -497,6 +504,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.collectinfo = False
                 mock_args.log_analyzer = False
                 mock_args.json = False
+                mock_args.user = None
+                mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -546,6 +555,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.collectinfo = False
                 mock_args.log_analyzer = False
                 mock_args.json = False
+                mock_args.user = None
+                mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -814,6 +825,346 @@ class ExecuteModeDoubleRunTest(unittest.IsolatedAsyncioTestCase):
         shell.onecmd = Mock()
         self.assertIsNone(shell.emptyline())
         shell.onecmd.assert_not_called()
+
+
+class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        env = patch.dict(os.environ, {"AS_PASS": "s3cr3t", "KP": "kp-s3cr3t"})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("ASADM_TEST_UNSET", None)
+
+    def _make_args(self, **overrides):
+        args = SimpleNamespace(
+            execute="info",
+            debug=False,
+            help=False,
+            version=False,
+            no_color=False,
+            pmap=False,
+            collectinfo=False,
+            log_analyzer=False,
+            json=False,
+            asinfo_mode=False,
+            services_alumni=False,
+            services_alternate=False,
+            tls_enable=False,
+            tls_keyfile=None,
+            tls_keyfile_password=None,
+            auth=None,
+            profile=False,
+            out_file=None,
+            user="admin",
+            password="env:AS_PASS",
+            log_path=None,
+            line_separator=False,
+            single_node=False,
+            enable=False,
+            timeout=5,
+        )
+        args.__dict__.update(overrides)
+        return args
+
+    async def _run_main(self, args):
+        shell = AsyncMock()
+        shell.connected = False
+        shell.close = AsyncMock()
+        shell_cls = Mock(side_effect=AsyncMock(return_value=shell))
+        tls = Mock(return_value=None)
+        asinfo = AsyncMock()
+
+        with patch("asadm.conf.get_cli_args", return_value=args), patch(
+            "asadm.conf.loadconfig", return_value=(args, [("1.1.1.1", 3000, None)])
+        ), patch("asadm.parse_tls_input", tls), patch(
+            "asadm.AerospikeShell", shell_cls
+        ), patch(
+            "asadm.execute_asinfo_commands", asinfo
+        ), patch(
+            "os.path.isfile", return_value=False
+        ), patch(
+            "asadm.logger"
+        ) as logger:
+            with self.assertRaises(SystemExit) as cm:
+                await asadm.main()
+
+        return cm.exception.code, logger, tls, shell_cls, asinfo
+
+    async def test_resolution_error_exits_before_connecting(self):
+        args = self._make_args(password="env:ASADM_TEST_UNSET")
+
+        code, logger, tls, shell_cls, _ = await self._run_main(args)
+
+        self.assertEqual(code, 1)
+        logger.critical.assert_called_once()
+        err = logger.critical.call_args[0][0]
+        self.assertEqual(
+            str(err),
+            "--password: environment variable ASADM_TEST_UNSET is not set or empty",
+        )
+        tls.assert_not_called()
+        shell_cls.assert_not_called()
+
+    async def test_keyfile_resolution_error_exits_before_connecting(self):
+        args = self._make_args(
+            tls_enable=True,
+            tls_keyfile="/k.pem",
+            tls_keyfile_password="b64:not base64",
+        )
+
+        code, logger, tls, shell_cls, _ = await self._run_main(args)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            str(logger.critical.call_args[0][0]),
+            "--tls-keyfile-password: invalid base64 in b64: value",
+        )
+        tls.assert_not_called()
+        shell_cls.assert_not_called()
+
+    async def test_resolved_values_reach_tls_and_shell(self):
+        args = self._make_args(
+            tls_enable=True, tls_keyfile="/k.pem", tls_keyfile_password="env:KP"
+        )
+
+        _, logger, tls, shell_cls, _ = await self._run_main(args)
+
+        logger.critical.assert_not_called()
+        self.assertEqual(tls.call_args[0][0].tls_keyfile_password, "kp-s3cr3t")
+        self.assertEqual(shell_cls.call_args.kwargs["password"], "s3cr3t")
+
+    async def test_asinfo_mode_gets_resolved_password(self):
+        args = self._make_args(asinfo_mode=True)
+
+        code, _, _, _, asinfo = await self._run_main(args)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(asinfo.call_args.kwargs["password"], "s3cr3t")
+
+    async def test_asinfo_mode_resolves_with_an_analyzer_flag(self):
+        """Mixing modes is only logged, and asinfo still connects."""
+        for mode in ("collectinfo", "log_analyzer"):
+            with self.subTest(mode=mode):
+                args = self._make_args(asinfo_mode=True, **{mode: True})
+
+                code, _, _, _, asinfo = await self._run_main(args)
+
+                self.assertEqual(code, 0)
+                self.assertEqual(asinfo.call_args.kwargs["password"], "s3cr3t")
+
+    async def test_analyzer_modes_do_not_resolve(self):
+        for mode in ("collectinfo", "log_analyzer"):
+            with self.subTest(mode=mode):
+                args = self._make_args(password="env:ASADM_TEST_UNSET", **{mode: True})
+
+                _, logger, _, shell_cls, _ = await self._run_main(args)
+
+                logger.critical.assert_not_called()
+                self.assertEqual(
+                    shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET"
+                )
+
+
+class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
+    """A value typed at the prompt or read from stdin is the password itself."""
+
+    def setUp(self):
+        env = patch.dict(os.environ, {"AS_PASS": "s3cr3t"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _stdin(self, tty, line=""):
+        stdin = Mock()
+        stdin.isatty.return_value = tty
+        stdin.readline.return_value = line
+        return patch("sys.stdin", stdin)
+
+    async def _shell_password(self):
+        seen = {}
+
+        class MockLiveClusterRootController(async_object.AsyncObject):
+            async def __init__(self, *args, **kwargs):
+                seen["password"] = args[2]
+                self.cluster = Mock()
+                self.cluster.get_live_nodes.return_value = []
+                self.cluster.get_parked_nodes.return_value = []
+
+        with patch(
+            "asadm.LiveClusterRootController", MockLiveClusterRootController
+        ), patch("asadm.logger"):
+            await AerospikeShell(
+                "test-version",
+                seeds=[("1.1.1.1", 3000, None)],
+                user="admin",
+                password=asadm.conf.DEFAULTPASSWORD,
+                execute_only_mode=True,
+            )
+
+        return seen["password"]
+
+    async def test_shell_stdin_password_is_literal(self):
+        with self._stdin(False, "env:AS_PASS\n"):
+            self.assertEqual(await self._shell_password(), "env:AS_PASS")
+
+    async def test_shell_getpass_password_is_literal(self):
+        with self._stdin(True), patch(
+            "asadm.getpass.getpass", return_value="b64:czNjcjN0"
+        ):
+            self.assertEqual(await self._shell_password(), "b64:czNjcjN0")
+
+    async def test_asinfo_stdin_password_is_literal(self):
+        assock = Mock()
+        assock.connect = AsyncMock(return_value=False)
+
+        with self._stdin(False, "file:/etc/hosts\n"), patch(
+            "asadm.ASSocket", return_value=assock
+        ) as assock_cls, patch("asadm.logger"):
+            await asadm.execute_asinfo_commands(
+                None,
+                ("1.1.1.1", 3000, None),
+                user="admin",
+                password=asadm.conf.DEFAULTPASSWORD,
+            )
+
+        self.assertEqual(assock_cls.call_args[0][4], "file:/etc/hosts")
+
+    def test_tls_keyfile_stdin_password_is_literal(self):
+        args = SimpleNamespace(
+            collectinfo=False,
+            log_analyzer=False,
+            tls_enable=True,
+            tls_cafile=None,
+            tls_capath=None,
+            tls_keyfile="/k.pem",
+            tls_keyfile_password=asadm.conf.DEFAULTPASSWORD,
+            tls_certfile=None,
+            tls_protocols=None,
+            tls_cipher_suite=None,
+            tls_crl_check=False,
+            tls_crl_check_all=False,
+        )
+
+        with self._stdin(False, "env:AS_PASS\n"), patch(
+            "asadm.SSLContext"
+        ) as ssl_context:
+            asadm.parse_tls_input(args)
+
+        self.assertEqual(
+            ssl_context.call_args.kwargs["keyfile_password"], "env:AS_PASS"
+        )
+
+
+class LogAnalyzerSkipsTlsTest(unittest.IsolatedAsyncioTestCase):
+    """-l never connects, so a TLS keyfile in astools.conf must not be loaded or prompted for."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        env = patch.dict(os.environ, {"KP": "kp-s3cr3t"})
+        env.start()
+        self.addCleanup(env.stop)
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.keyfile = self.write(
+            "key.pem",
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.BestAvailableEncryption(b"kp-s3cr3t"),
+            ).decode(),
+        )
+
+    def write(self, name, content):
+        path = os.path.join(self.tmpdir.name, name)
+        with open(path, "w") as f:
+            f.write(content)
+        return path
+
+    async def _run_log_analyzer(self, config, *argv):
+        conf_path = self.write("astools.conf", config)
+        shell = AsyncMock()
+        shell.connected = True
+        shell._has_admin_nodes = Mock(return_value=False)
+        shell_cls = Mock(side_effect=AsyncMock(return_value=shell))
+        stdin = Mock()
+        stdin.isatty.return_value = True
+        sys_argv = ["asadm", "--only-config-file", conf_path, "-l", "-f"]
+        sys_argv += [self.tmpdir.name, "-e", "info", *argv]
+
+        with patch("sys.argv", sys_argv), patch("sys.stdin", stdin), patch(
+            "sys.stderr", io.StringIO()
+        ), patch("asadm.getpass.getpass") as getpass_mock, patch(
+            "asadm.AerospikeShell", shell_cls
+        ), patch(
+            "asadm.logger"
+        ) as logger:
+            with self.assertRaises(SystemExit):
+                await asadm.main()
+
+        logger.error.assert_not_called()
+        getpass_mock.assert_not_called()
+        stdin.readline.assert_not_called()
+        shell_cls.assert_called_once()
+        self.assertIsNone(shell_cls.call_args.kwargs["ssl_context"])
+        self.assertEqual(shell_cls.call_args.kwargs["mode"], AdminMode.LOG_ANALYZER)
+
+    async def test_keyfile_password_source_in_config(self):
+        await self._run_log_analyzer(
+            "[cluster]\ntls-enable = true\n"
+            'tls-keyfile = "{}"\n'
+            'tls-keyfile-password = "env:KP"\n'.format(self.keyfile)
+        )
+
+    async def test_bare_keyfile_password_does_not_prompt(self):
+        await self._run_log_analyzer(
+            '[cluster]\ntls-enable = true\ntls-keyfile = "{}"\n'.format(self.keyfile),
+            "--tls-keyfile-password",
+        )
+
+
+class ConfigModeFlagsKeepTlsTest(unittest.IsolatedAsyncioTestCase):
+    """The mode comes from the command line, so analyzer flags in astools.conf must not drop TLS from a live session."""
+
+    async def _run_live(self, asadm_section):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conf_path = os.path.join(tmpdir, "astools.conf")
+            with open(conf_path, "w") as f:
+                f.write(
+                    "[cluster]\ntls-enable = true\n"
+                    'tls-keyfile = "/k.pem"\n'
+                    'tls-keyfile-password = "env:KP"\n'
+                    "[asadm]\n" + asadm_section
+                )
+
+            shell = AsyncMock()
+            shell.connected = True
+            shell._has_admin_nodes = Mock(return_value=False)
+            shell_cls = Mock(side_effect=AsyncMock(return_value=shell))
+            sys_argv = ["asadm", "--only-config-file", conf_path, "-e", "info"]
+
+            with patch("sys.argv", sys_argv), patch.dict(
+                os.environ, {"KP": "kp-s3cr3t"}
+            ), patch("sys.stderr", io.StringIO()), patch(
+                "asadm.SSLContext"
+            ) as ssl_context, patch(
+                "asadm.AerospikeShell", shell_cls
+            ), patch(
+                "asadm.logger"
+            ):
+                with self.assertRaises(SystemExit):
+                    await asadm.main()
+
+        ssl_context.assert_called_once()
+        self.assertEqual(ssl_context.call_args.kwargs["keyfile_password"], "kp-s3cr3t")
+        self.assertIs(
+            shell_cls.call_args.kwargs["ssl_context"], ssl_context.return_value.ctx
+        )
+        self.assertEqual(shell_cls.call_args.kwargs["mode"], AdminMode.LIVE_CLUSTER)
+
+    async def test_log_analyzer_in_config(self):
+        await self._run_live("log-analyzer = true\n")
+
+    async def test_collectinfo_in_config(self):
+        await self._run_live("collectinfo = true\n")
 
 
 if __name__ == "__main__":
