@@ -254,13 +254,16 @@ class ASInfoResponseError(ASInfoError):
         try:
             # sometimes there is a message with 'error' and sometimes not. i.e. set-config, udf-put
             if server_resp.startswith("error") or server_resp.startswith("ERROR"):
-                try:
-                    server_resp = server_resp.split("=")[1]
-                except IndexError:
-                    server_resp = server_resp.split(":")[2]
+                if server_resp[5:6] == ":":
+                    server_resp = server_resp.split(":", 2)[2]
+                else:
+                    try:
+                        server_resp = server_resp.split("=", 1)[1]
+                    except IndexError:
+                        server_resp = server_resp.split(":", 2)[2]
 
             elif server_resp.startswith("fail") or server_resp.startswith("FAIL"):
-                server_resp = server_resp.split(":")[2]
+                server_resp = server_resp.split(":", 2)[2]
 
             clean_resp = server_resp.strip(" .")
 
