@@ -1089,7 +1089,7 @@ class TestCreateSSLContext(unittest.TestCase):
     @patch("lib.live_cluster.client.ssl_context.load_pem_private_key")
     @patch("lib.live_cluster.client.ssl_context.crypto")
     def test_keyfile_password_is_not_parsed(self, mock_crypto, mock_load_key, mock_ssl):
-        """Sources resolve in conf, and a prompted password must reach the key as typed."""
+        """Sources resolve before SSLContext, which uses the password as given."""
         mock_ssl.TLSv1_2_METHOD = "TLSv1_2_METHOD"
         mock_ssl.VERIFY_PEER = 1
         mock_ssl.VERIFY_CLIENT_ONCE = 2

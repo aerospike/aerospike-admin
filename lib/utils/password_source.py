@@ -21,6 +21,9 @@ The forms match the PasswordFlag in tools-common-go:
     file:<PATH>     contents of PATH, less one trailing line ending
     anything else   the literal password
 
+With strip=True the value and file contents lose surrounding whitespace, which
+--tls-keyfile-password has always done.
+
 Error messages name the option and the source but never the password.
 """
 
@@ -32,7 +35,10 @@ class PasswordSourceError(Exception):
     carries_its_own_message = True
 
 
-def resolve(value: str, option: str) -> str:
+def resolve(value: str, option: str, *, strip: bool = False) -> str:
+    if strip:
+        value = value.strip()
+
     kind, sep, rest = value.partition(":")
 
     if not sep:
@@ -50,6 +56,9 @@ def resolve(value: str, option: str) -> str:
     elif kind == "file":
         source = "file " + rest
         password = _to_text(_read_file(rest, option), option, source)
+
+        if strip:
+            password = password.strip()
     else:
         return value
 

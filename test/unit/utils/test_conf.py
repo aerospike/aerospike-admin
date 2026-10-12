@@ -83,6 +83,10 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         args = self.load("-U", "admin", "-P", "secrets:resource:key")
         self.assertEqual(args.password, "secrets:resource:key")
 
+    def test_password_is_not_stripped(self):
+        args = self.load("-U", "admin", "-P", " env:AS_PASS ")
+        self.assertEqual(args.password, " env:AS_PASS ")
+
     def test_password_from_config_file(self):
         args = self.load(config='[cluster]\nuser = "admin"\npassword = "env:AS_PASS"\n')
         self.assertEqual(args.password, PW)
@@ -159,6 +163,27 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             "/k.pem",
             "--tls-keyfile-password",
             "file:" + path,
+        )
+        self.assertEqual(args.tls_keyfile_password, PW)
+
+    def test_keyfile_password_file_is_stripped(self):
+        path = self.write_file("kp", "  " + PW + "  \n\n")
+        args = self.load(
+            "--tls-enable",
+            "--tls-keyfile",
+            "/k.pem",
+            "--tls-keyfile-password",
+            "file:" + path,
+        )
+        self.assertEqual(args.tls_keyfile_password, PW)
+
+    def test_padded_keyfile_password_from_config_file(self):
+        args = self.load(
+            config=(
+                "[cluster]\ntls-enable = true\n"
+                'tls-keyfile = "/k.pem"\n'
+                'tls-keyfile-password = " env:KP "\n'
+            )
         )
         self.assertEqual(args.tls_keyfile_password, PW)
 

@@ -434,7 +434,7 @@ def loadconfig(cli_args):
 
 
 def resolve_password_sources(args):
-    # DEFAULTPASSWORD means prompt later, and prompted input is never parsed.
+    # DEFAULTPASSWORD means prompt later.
     if args.user is not None and args.password not in (None, DEFAULTPASSWORD):
         args.password = password_source.resolve(args.password, "--password")
 
@@ -443,9 +443,11 @@ def resolve_password_sources(args):
         and args.tls_keyfile
         and args.tls_keyfile_password not in (None, DEFAULTPASSWORD)
     ):
-        args.tls_keyfile_password = password_source.resolve(
-            args.tls_keyfile_password, "--tls-keyfile-password"
-        )
+        args.tls_keyfile_password = resolve_keyfile_password(args.tls_keyfile_password)
+
+
+def resolve_keyfile_password(value):
+    return password_source.resolve(value, "--tls-keyfile-password", strip=True)
 
 
 def print_config_help():

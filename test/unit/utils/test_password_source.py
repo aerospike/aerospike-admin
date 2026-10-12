@@ -284,6 +284,60 @@ class ResolveFileTest(unittest.TestCase):
         )
 
 
+class ResolveStripTest(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+    def write(self, data: bytes) -> str:
+        path = os.path.join(self.tmpdir.name, "pw")
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def resolve(self, value):
+        return resolve(value, "--tls-keyfile-password", strip=True)
+
+    @parameterized.expand(
+        [
+            ("literal", " \t" + PW + "  ", PW),
+            ("leading_space_before_env", " env:AS_PASS", PW),
+            ("trailing_space_after_env", "env:AS_PASS ", PW),
+            ("padded_b64", " b64:" + PW_B64 + " ", PW),
+            ("blank", "   ", ""),
+        ]
+    )
+    def test_value_is_stripped(self, _, value, expected):
+        with patch.dict(os.environ, {"AS_PASS": PW}):
+            self.assertEqual(self.resolve(value), expected)
+
+    def test_env_value_is_not_stripped(self):
+        with patch.dict(os.environ, {"AS_PASS": " pw \n"}):
+            self.assertEqual(self.resolve("env:AS_PASS"), " pw \n")
+
+    @parameterized.expand(
+        [
+            ("blank_lines", b"s3cr3t-pw\n\n"),
+            ("crlf_blank_lines", b"s3cr3t-pw\r\n\r\n"),
+            ("spaces", b"  s3cr3t-pw  \n"),
+            ("tab", b"\ts3cr3t-pw"),
+        ]
+    )
+    def test_file_contents_are_stripped(self, _, data):
+        path = self.write(data)
+        self.assertEqual(self.resolve(" file:" + path + " "), PW)
+
+    def test_whitespace_only_file_is_empty(self):
+        path = self.write(b"  \n\n")
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.resolve("file:" + path)
+
+        self.assertEqual(
+            str(cm.exception),
+            "--tls-keyfile-password: password from file {} is empty".format(path),
+        )
+
+
 class ResolveErrorsHideSecretTest(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()

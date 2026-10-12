@@ -1027,10 +1027,18 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(assock_cls.call_args[0][4], "file:/etc/hosts")
 
-    def test_tls_keyfile_stdin_password_is_literal(self):
+
+class PromptedKeyfilePasswordTest(unittest.TestCase):
+    """A prompted --tls-keyfile-password is stripped and resolved, as it always was."""
+
+    def setUp(self):
+        env = patch.dict(os.environ, {"KP": "kp-s3cr3t"})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("ASADM_TEST_UNSET", None)
+
+    def _keyfile_password(self, tty, typed):
         args = SimpleNamespace(
-            collectinfo=False,
-            log_analyzer=False,
             tls_enable=True,
             tls_cafile=None,
             tls_capath=None,
@@ -1042,14 +1050,34 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
             tls_crl_check=False,
             tls_crl_check_all=False,
         )
+        stdin = Mock()
+        stdin.isatty.return_value = tty
+        stdin.readline.return_value = typed
 
-        with self._stdin(False, "env:AS_PASS\n"), patch(
-            "asadm.SSLContext"
-        ) as ssl_context:
+        with patch("sys.stdin", stdin), patch(
+            "asadm.getpass.getpass", return_value=typed
+        ), patch("asadm.SSLContext") as ssl_context:
             asadm.parse_tls_input(args)
 
-        self.assertEqual(
-            ssl_context.call_args.kwargs["keyfile_password"], "env:AS_PASS"
+        return ssl_context.call_args.kwargs["keyfile_password"]
+
+    def test_stdin_source_is_resolved(self):
+        self.assertEqual(self._keyfile_password(False, "env:KP\n"), "kp-s3cr3t")
+
+    def test_getpass_source_is_resolved(self):
+        self.assertEqual(self._keyfile_password(True, " env:KP "), "kp-s3cr3t")
+
+    def test_getpass_literal_is_stripped(self):
+        self.assertEqual(self._keyfile_password(True, "  kp-s3cr3t \t"), "kp-s3cr3t")
+
+    def test_resolution_error_exits(self):
+        with patch("asadm.logger") as logger, self.assertRaises(SystemExit) as cm:
+            self._keyfile_password(True, "env:ASADM_TEST_UNSET")
+
+        self.assertEqual(cm.exception.code, 1)
+        logger.error.assert_called_once_with(
+            "SSLContext creation Exception: --tls-keyfile-password: "
+            "environment variable ASADM_TEST_UNSET is not set or empty"
         )
 
 
