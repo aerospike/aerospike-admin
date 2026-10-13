@@ -4211,13 +4211,13 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_masking_add_rule(
-        self, namespace, set_, bin_, bin_type, func_name, func_params
+        self, namespace, set_, bin_, bin_type, func_name, func_params, ael_b64=None
     ):
         """
-        Add a masking rule.
+        Add a masking rule on a bin, or on the element an AEL path names.
         """
-        req = "masking:namespace={};set={};bin={};type={};function={}".format(
-            namespace, set_, bin_, bin_type, func_name
+        req = "masking:namespace={};set={};{}type={};function={}".format(
+            namespace, set_, self._masking_target(bin_, ael_b64), bin_type, func_name
         )
 
         # Add function parameters to the request
@@ -4232,12 +4232,14 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_masking_remove_rule(self, namespace, set_, bin_, bin_type):
+    async def info_masking_remove_rule(
+        self, namespace, set_, bin_, bin_type, ael_b64=None
+    ):
         """
-        Remove a masking rule.
+        Remove the masking rule on a bin, or on the element an AEL path names.
         """
-        req = "masking:namespace={};set={};bin={};type={};function=remove".format(
-            namespace, set_, bin_, bin_type
+        req = "masking:namespace={};set={};{}type={};function=remove".format(
+            namespace, set_, self._masking_target(bin_, ael_b64), bin_type
         )
         resp = await self._info(req)
 
@@ -4245,6 +4247,18 @@ class Node(AsyncObject):
             raise ASInfoResponseError("Failed to remove masking rule", resp)
 
         return ASINFO_RESPONSE_OK
+
+    @staticmethod
+    def _masking_target(bin_, ael_b64):
+        fields = []
+
+        if bin_:
+            fields.append("bin={}".format(bin_))
+
+        if ael_b64 is not None:
+            fields.append("ael_b64={}".format(ael_b64))
+
+        return "".join(field + ";" for field in fields)
 
     @async_return_exceptions
     async def info_masking_list_rules(self, namespace=None, set_=None):
