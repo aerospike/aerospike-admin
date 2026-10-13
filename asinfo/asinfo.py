@@ -188,7 +188,7 @@ def print_config_file_option():
         "                      but not the name lookup. Default: 1000"
     )
     print(
-        " --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret\n"
+        " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret\n"
         "                      Agent and verifies its certificate against this CA. The\n"
         "                      agent's hostname or IP address must be in the certificate.\n"
         "                      Default: none"
@@ -259,6 +259,7 @@ def get_cli_args():
     add_fn("--sa-address", dest="sa-address")
     add_fn("--sa-port", dest="sa-port")
     add_fn("--sa-timeout", dest="sa-timeout")
+    add_fn("--sa-ca-file", dest="sa-ca-file")
     add_fn("--sa-cafile", dest="sa-cafile")
 
     add_fn("--config-file", dest="config-file")

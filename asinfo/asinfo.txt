@@ -100,7 +100,7 @@ Configuration File Allowed Options
  --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It
                       covers the TCP connect, the TLS handshake and the request,
                       but not the name lookup. Default: 1000
- --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret
+ --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret
                       Agent and verifies its certificate against this CA. The
                       agent's hostname or IP address must be in the certificate.
                       Default: none

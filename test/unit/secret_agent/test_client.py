@@ -315,6 +315,22 @@ class TLSTest(unittest.TestCase):
         with self.assertRaises(SecretAgentError):
             self.fetch()
 
+    def test_timeout_covers_the_handshake(self):
+        release = threading.Event()
+
+        with FakeSecretAgent(handler=lambda _: release.wait(5)) as agent:
+            ctx = new_ssl_context(self.pki.ca_file)
+            client = agent_client(agent, ssl_context=ctx, timeout=0.2)
+            start = time.monotonic()
+
+            with self.assertRaises(RequestFailedError) as cm:
+                client.resolve("secrets:aql:password")
+
+            release.set()
+
+        self.assertLess(time.monotonic() - start, 3)
+        self.assertIn("connect to", str(cm.exception))
+
     @parameterized.expand([("/nonexistent/ca.pem",), ("bad\x00path",)])
     def test_invalid_ca_file(self, ca_file):
         with self.assertRaises(InvalidConfigError):

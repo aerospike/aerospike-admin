@@ -399,11 +399,71 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         with self.assertRaises(PasswordSourceError) as cm:
             self.load("-U", "admin", "-P", "secrets:aql:password", "--sa-port", "0")
 
-        self.assertEqual(str(cm.exception), "--sa-port: invalid value 0")
+        self.assertEqual(
+            str(cm.exception),
+            "--sa-port: invalid value 0, expected an integer from 1 to 65535",
+        )
 
     def test_agent_options_unused_without_secrets(self):
         args = self.load("-U", "admin", "-P", "admin", "--sa-port", "0")
         self.assertEqual(args.password, "admin")
+
+    def test_expanded_value_is_not_a_reference(self):
+        ref = "secrets:aql:password"
+        os.environ["SA_REF"] = ref
+        os.environ["SA_REF_B64"] = base64.b64encode(ref.encode()).decode()
+        path = self.write_file("ref", ref + "\n")
+
+        for value in (
+            "b64:" + base64.b64encode(ref.encode()).decode(),
+            "env:SA_REF",
+            "env-b64:SA_REF_B64",
+            "file:" + path,
+        ):
+            with self.subTest(value=value):
+                args = self.load(
+                    "-U", "admin", "-P", value, "--sa-address", "127.0.0.1:1"
+                )
+                self.assertEqual(args.password, ref)
+
+    def test_expanded_config_value_is_not_a_reference(self):
+        ref = "secrets:aql:password"
+        args = self.load(
+            config=(
+                '[cluster]\nuser = "admin"\npassword = "b64:{}"\n'
+                '[secret-agent]\nsa-address = "127.0.0.1:1"\n'
+            ).format(base64.b64encode(ref.encode()).decode())
+        )
+        self.assertEqual(args.password, ref)
+
+    def test_go_cafile_spelling_in_config(self):
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load(
+                "-U",
+                "admin",
+                "-P",
+                "admin",
+                config='[secret-agent]\nsa-ca-file = "/ca.pem"\n',
+            )
+
+        logger.critical.assert_not_called()
+        self.assertEqual(args.password, "admin")
+
+    def test_c_cafile_spelling_is_deprecated_on_the_command_line(self):
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load("--sa-cafile", "/ca.pem")
+
+        logger.warning.assert_called_once_with(
+            "Argument %s is deprecated. %s", "--sa-cafile", "Use --sa-ca-file instead."
+        )
+        self.assertEqual(args.sa_cafile, "/ca.pem")
+
+    def test_c_cafile_spelling_in_config_is_not_deprecated(self):
+        with patch("lib.utils.conf.logger") as logger:
+            self.load(config='[secret-agent]\nsa-cafile = "/ca.pem"\n')
+
+        logger.warning.assert_not_called()
+        logger.critical.assert_not_called()
 
     def test_unknown_config_key_is_rejected(self):
         with patch("lib.utils.conf.logger") as logger:
@@ -426,8 +486,9 @@ class PasswordHelpTest(unittest.TestCase):
         self.assertEqual(help_text.count("'secrets:<resource>:<key>'"), 3)
         self.assertIn("[secret-agent]", help_text)
 
-        for option in ("--sa-address", "--sa-port", "--sa-timeout", "--sa-cafile"):
+        for option in ("--sa-address", "--sa-port", "--sa-timeout", "--sa-ca-file"):
             self.assertIn(option, help_text)
+        self.assertNotIn("--sa-cafile", help_text)
         self.assertNotIn("varaible", help_text)
 
 

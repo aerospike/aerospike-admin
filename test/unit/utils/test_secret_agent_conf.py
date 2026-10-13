@@ -89,6 +89,40 @@ class PrecedenceTest(unittest.TestCase):
         self.assertEqual(s.timeout_ms, 500)
         self.assertEqual(s.cafile, "/conf-ca.pem")
 
+    @parameterized.expand(
+        [
+            ("config_c_spelling", {"sa-cafile": "/c.pem"}, {}, "/c.pem"),
+            ("config_go_spelling", {"sa-ca-file": "/go.pem"}, {}, "/go.pem"),
+            ("cli_go_spelling", {}, {"sa-ca-file": "/go.pem"}, "/go.pem"),
+            (
+                "config_go_spelling_beats_c_spelling",
+                {"sa-ca-file": "/go.pem", "sa-cafile": "/c.pem"},
+                {},
+                "/go.pem",
+            ),
+            (
+                "cli_go_spelling_beats_c_spelling",
+                {},
+                {"sa-cafile": "/c.pem", "sa-ca-file": "/go.pem"},
+                "/go.pem",
+            ),
+            (
+                "cli_c_spelling_beats_config_go_spelling",
+                {"sa-ca-file": "/conf.pem"},
+                {"sa-cafile": "/cli.pem"},
+                "/cli.pem",
+            ),
+            (
+                "cli_go_spelling_beats_config_c_spelling",
+                {"sa-cafile": "/conf.pem"},
+                {"sa-ca-file": "/cli.pem"},
+                "/cli.pem",
+            ),
+        ]
+    )
+    def test_cafile_spellings(self, _, file_values, cli_values, cafile):
+        self.assertEqual(settings(file_values, cli_values).cafile, cafile)
+
 
 class ValidationTest(unittest.TestCase):
     @parameterized.expand(
@@ -96,10 +130,19 @@ class ValidationTest(unittest.TestCase):
             (
                 "address",
                 {"sa-address": "host:3005:x"},
-                "--sa-address: invalid value host:3005:x",
+                "--sa-address: invalid value host:3005:x,"
+                " expected <host>[:<port>] or [<ipv6>][:<port>]",
             ),
-            ("port", {"sa-port": "0"}, "--sa-port: invalid value 0"),
-            ("port_range", {"sa-port": "70000"}, "--sa-port: invalid value 70000"),
+            (
+                "port",
+                {"sa-port": "0"},
+                "--sa-port: invalid value 0, expected an integer from 1 to 65535",
+            ),
+            (
+                "port_range",
+                {"sa-port": "70000"},
+                "--sa-port: invalid value 70000, expected an integer from 1 to 65535",
+            ),
             (
                 "zero_timeout",
                 {"sa-timeout": "0"},
@@ -129,17 +172,19 @@ class ValidationTest(unittest.TestCase):
 
         self.assertEqual(
             str(cm.exception),
-            "invalid value 0 for sa-port in the [secret-agent_prod] config section",
+            "invalid value 0 for sa-port in the [secret-agent_prod] config section,"
+            " expected an integer from 1 to 65535",
         )
 
-    def test_bad_cafile_fails_when_the_client_is_created(self):
-        s = settings(cli_values={"sa-cafile": "/nonexistent/ca.pem"})
+    @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
+    def test_bad_cafile_fails_when_the_client_is_created(self, option):
+        s = settings(cli_values={option: "/nonexistent/ca.pem"})
 
         with self.assertRaises(PasswordSourceError) as cm:
             s.new_client()
 
         self.assertIn(
-            "--sa-cafile: cannot load TLS CA file /nonexistent/ca.pem",
+            "--sa-ca-file: cannot load TLS CA file /nonexistent/ca.pem",
             str(cm.exception),
         )
 

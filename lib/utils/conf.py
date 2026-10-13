@@ -109,7 +109,8 @@ _confspec = """{
                 "sa-address" : { "type" : "string" },
                 "sa-port" : { "type" : ["integer", "string"] },
                 "sa-timeout" : { "type" : "integer" },
-                "sa-cafile" : { "type" : "string" }
+                "sa-cafile" : { "type" : "string" },
+                "sa-ca-file" : { "type" : "string" }
             }
         },
         "asadm" : {
@@ -650,7 +651,7 @@ def print_secret_agent_options():
         "                      but not the name lookup. Default: 1000"
     )
     print(
-        " --sa-cafile=path     Path to a CA certificate file. Enables TLS to the Secret\n"
+        " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret\n"
         "                      Agent and verifies its certificate against this CA. The\n"
         "                      agent's hostname or IP address must be in the certificate.\n"
         "                      Default: none"
@@ -691,7 +692,7 @@ def create_deprecate_action(action, optional_msg=""):
     Used to create a deprecated flag action. The DeprecateAction is useful for obvious reasons
     but the need to pass a BaseClass may not be.  This allows you to deprecate a flag that already
     has an action defined.  argparse does not allow multiple actions. So you could do:
-    create_deprecate_action(argparse._Store)
+    create_deprecate_action(argparse._StoreAction)
 
     action - A argparse.Action class not an instance.
     optional_msg - Message to be printed after deprecation warning.
@@ -699,9 +700,7 @@ def create_deprecate_action(action, optional_msg=""):
 
     class DeprecateAction(action):
         def __call__(self, parser, namespace, values, option_string=None):
-            logger.warning(
-                "Argument %s is deprecated. %s", self.option_strings, optional_msg
-            )
+            logger.warning("Argument %s is deprecated. %s", option_string, optional_msg)
             super().__call__(parser, namespace, values, option_string)
 
     return DeprecateAction
@@ -759,7 +758,13 @@ def get_cli_args():
     add_fn("--sa-address")
     add_fn("--sa-port")
     add_fn("--sa-timeout")
-    add_fn("--sa-cafile")
+    add_fn("--sa-ca-file")
+    add_fn(
+        "--sa-cafile",
+        action=create_deprecate_action(
+            argparse._StoreAction, "Use --sa-ca-file instead."
+        ),
+    )
 
     add_fn("--config-file")
     add_fn("--instance")

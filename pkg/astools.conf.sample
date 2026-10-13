@@ -109,9 +109,9 @@
 # sa-timeout covers the TCP connect, the TLS handshake and the request, but not
 # the name lookup.
 # sa-timeout = 1000                   # in ms, 1 or more
-# sa-cafile enables TLS to the agent and verifies the agent's certificate against
+# sa-ca-file enables TLS to the agent and verifies the agent's certificate against
 # this CA. The hostname or IP address in sa-address must be in the certificate.
-# sa-cafile = "/etc/aerospike/secret-agent/cacert.pem"
+# sa-ca-file = "/etc/aerospike/secret-agent/cacert.pem"
 
 
 # Following are tools specific options

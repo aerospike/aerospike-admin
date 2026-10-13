@@ -28,9 +28,14 @@ from lib.secret_agent import (
 from lib.utils.password_source import PasswordSourceError
 
 SECTION = "secret-agent"
-OPTIONS = ("sa-address", "sa-port", "sa-timeout", "sa-cafile")
+OPTIONS = ("sa-address", "sa-port", "sa-timeout", "sa-ca-file", "sa-cafile")
 DEFAULT_TIMEOUT_MS = 1000
 _MAX_TIMEOUT_MS = 2**31 - 1
+_EXPECTED = {
+    "sa-address": "<host>[:<port>] or [<ipv6>][:<port>]",
+    "sa-port": "an integer from 1 to 65535",
+    "sa-timeout": "an integer from 1 to {}".format(_MAX_TIMEOUT_MS),
+}
 
 
 def fetcher(args: Any) -> Callable[[str], str]:
@@ -64,8 +69,9 @@ def file_section(conf_dict: dict, instance: str | None) -> tuple[str, dict]:
 
 class SecretAgentSettings:
     """Agent settings from the config file, then the command line. Within one
-    source an explicit sa-port beats a port in sa-address, and the command line
-    beats the config file. Invalid values raise PasswordSourceError."""
+    source an explicit sa-port beats a port in sa-address and sa-ca-file beats
+    sa-cafile, and the command line beats the config file. Invalid values raise
+    PasswordSourceError."""
 
     def __init__(self, section_name: str, file_values: dict, cli_values: dict) -> None:
         self.host = DEFAULT_HOST
@@ -92,7 +98,7 @@ class SecretAgentSettings:
             try:
                 ssl_context = new_ssl_context(self.cafile)
             except SecretAgentError as e:
-                raise PasswordSourceError("--sa-cafile: {}".format(e)) from None
+                raise PasswordSourceError("--sa-ca-file: {}".format(e)) from None
 
         return SecretAgentClient(
             self.host,
@@ -106,7 +112,7 @@ class SecretAgentSettings:
         address = values.get("sa-address")
         port = values.get("sa-port")
         timeout = values.get("sa-timeout")
-        cafile = values.get("sa-cafile")
+        cafile = values.get("sa-ca-file") or values.get("sa-cafile")
         address_port = None
 
         if address is not None:
@@ -148,15 +154,14 @@ def _parse_timeout(value: object, section: str | None) -> int:
 
 def _invalid(option: str, value: object, section: str | None) -> PasswordSourceError:
     if section is None:
-        message = "--{}: invalid value {}".format(option, value)
-
-        if option == "sa-timeout":
-            message += ", expected an integer from 1 to {}".format(_MAX_TIMEOUT_MS)
-
-        return PasswordSourceError(message)
+        return PasswordSourceError(
+            "--{}: invalid value {}, expected {}".format(
+                option, value, _EXPECTED[option]
+            )
+        )
 
     return PasswordSourceError(
-        "invalid value {} for {} in the [{}] config section".format(
-            value, option, section
+        "invalid value {} for {} in the [{}] config section, expected {}".format(
+            value, option, section, _EXPECTED[option]
         )
     )
