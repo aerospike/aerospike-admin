@@ -33,6 +33,12 @@ Configuration File Allowed Options
                       User name used to authenticate with cluster. Default: none
  -P, --password
                       Password used to authenticate with cluster. Default: none
+                      It can be one of the following:
+                      1) Environment variable: 'env:<VAR>'
+                      2) Base64 encoded environment variable: 'env-b64:<VAR>'
+                      3) Base64 encoded string: 'b64:<BASE64>'
+                      4) File: 'file:<PATH>'
+                      5) String: 'PASSWORD'
                       User will be prompted on command line if -P specified and no
                       password is given.
  --auth=AUTHENTICATION_MODE 
@@ -65,8 +71,10 @@ Configuration File Allowed Options
                       Password to load protected tls-keyfile.
                       It can be one of the following:
                       1) Environment variable: 'env:<VAR>'
-                      2) File: 'file:<PATH>'
-                      3) String: 'PASSWORD'
+                      2) Base64 encoded environment variable: 'env-b64:<VAR>'
+                      3) Base64 encoded string: 'b64:<BASE64>'
+                      4) File: 'file:<PATH>'
+                      5) String: 'PASSWORD'
                       Default: none
                       User will be prompted on command line if --tls-keyfile-password specified and no
                       password is given.
