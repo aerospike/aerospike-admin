@@ -183,9 +183,8 @@ def print_config_file_option():
         "                      Default: 3005"
     )
     print(
-        " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more. It\n"
-        "                      covers the TCP connect, the TLS handshake and the request,\n"
-        "                      but not the name lookup. Default: 1000"
+        " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more.\n"
+        "                      Default: 1000"
     )
     print(
         " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret\n"

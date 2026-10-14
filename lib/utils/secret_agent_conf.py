@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """asadm's Secret Agent settings: the --sa-* options and the [secret-agent]
-config section, merged the way asbackup and aql merge them."""
+config section."""
 
 from typing import Any, Callable, Self
 
