@@ -491,6 +491,16 @@ class PasswordHelpTest(unittest.TestCase):
         self.assertNotIn("--sa-cafile", help_text)
         self.assertNotIn("varaible", help_text)
 
+    def test_usage_hides_c_cafile_spelling(self):
+        err = io.StringIO()
+
+        with patch("sys.argv", ["asadm", "--bogus"]), patch("sys.stderr", err):
+            with self.assertRaises(SystemExit):
+                conf.get_cli_args()
+
+        self.assertIn("--sa-ca-file", err.getvalue())
+        self.assertNotIn("--sa-cafile", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

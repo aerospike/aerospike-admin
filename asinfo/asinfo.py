@@ -260,7 +260,7 @@ def get_cli_args():
     add_fn("--sa-port", dest="sa-port")
     add_fn("--sa-timeout", dest="sa-timeout")
     add_fn("--sa-ca-file", dest="sa-ca-file")
-    add_fn("--sa-cafile", dest="sa-cafile")
+    add_fn("--sa-cafile", dest="sa-cafile", help=argparse.SUPPRESS)
 
     add_fn("--config-file", dest="config-file")
     add_fn("--instance")
@@ -316,6 +316,18 @@ if args.version:
         print("Build " + build)
 
     sys.exit(0)
+
+# asadm warns on stderr, which asinfo treats as a failure, so warn here instead.
+legacy_ca_file = vars(args).pop("sa-cafile")
+
+if legacy_ca_file is not None:
+    print(
+        "WARNING: Argument --sa-cafile is deprecated. Use --sa-ca-file instead.",
+        file=sys.stderr,
+    )
+
+    if getattr(args, "sa-ca-file") is None:
+        setattr(args, "sa-ca-file", legacy_ca_file)
 
 if args.value == "stats":
     args.value = "statistics"

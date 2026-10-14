@@ -39,9 +39,8 @@ class PKI:
         return ctx
 
 
-def generate(directory: str) -> PKI:
-    """Write a CA and a server certificate for 127.0.0.1 and localhost into
-    directory."""
+def generate(directory: str, hosts: tuple = ("localhost", "127.0.0.1")) -> PKI:
+    """Write a CA and a server certificate for hosts into directory."""
     now = datetime.datetime.now(datetime.timezone.utc)
     ca_key = ec.generate_private_key(ec.SECP256R1())
     ca_name = x509.Name(
@@ -57,12 +56,7 @@ def generate(directory: str) -> PKI:
     server = (
         _builder(_name("secret agent test server"), ca_name, server_key, now)
         .add_extension(
-            x509.SubjectAlternativeName(
-                [
-                    x509.DNSName("localhost"),
-                    x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-                ]
-            ),
+            x509.SubjectAlternativeName([_san(host) for host in hosts]),
             critical=False,
         )
         .add_extension(
@@ -82,6 +76,13 @@ def generate(directory: str) -> PKI:
     _write_key(pki.server_key_file, server_key)
 
     return pki
+
+
+def _san(host: str) -> x509.GeneralName:
+    try:
+        return x509.IPAddress(ipaddress.ip_address(host))
+    except ValueError:
+        return x509.DNSName(host)
 
 
 def _name(common_name: str) -> x509.Name:

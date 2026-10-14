@@ -764,6 +764,7 @@ def get_cli_args():
         action=create_deprecate_action(
             argparse._StoreAction, "Use --sa-ca-file instead."
         ),
+        help=argparse.SUPPRESS,
     )
 
     add_fn("--config-file")
