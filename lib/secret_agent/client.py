@@ -147,7 +147,7 @@ class SecretAgentClient:
 
         try:
             sock = self._connect(deadline)
-        except OSError as e:
+        except (OSError, ValueError) as e:
             raise RequestFailedError(
                 "connect to {} for {}: {}".format(self.address, ref, _reason(e))
             ) from e

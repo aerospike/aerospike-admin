@@ -414,6 +414,7 @@ class SecretAgentClusterTests(AgentTestCase):
         cp = self.run_password(
             "secrets:asadm:wrong", f"--sa-address {self.agent.address}"
         )
+        self.assertNotIn("--password:", cp.stderr)
         self.assertNotIn("Network Information", cp.stdout)
         self.assertNotIn(WRONG_PW, cp.stdout + cp.stderr)
 
@@ -500,6 +501,8 @@ class SecretAgentTLSServerTests(AgentTestCase):
     def test_wrong_keyfile_password_from_agent(self):
         cp = self.run_info("secrets:asadm:wrong")
         self.assertNotEqual(cp.returncode, 0)
+        self.assertNotIn("--tls-keyfile-password:", cp.stderr)
+        self.assertNotIn("--password:", cp.stderr)
         self.assertNotIn("Network Information", cp.stdout)
         self.assertNotIn(WRONG_PW, cp.stdout + cp.stderr)
 

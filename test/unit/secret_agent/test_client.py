@@ -184,6 +184,18 @@ class TransportTest(unittest.TestCase):
             "connect to 127.0.0.1:1 for secrets:aql:password", str(cm.exception)
         )
 
+    def test_invalid_host_name(self):
+        host = "a" * 64 + ".com"
+        client = SecretAgentClient(host, 3005)
+
+        with self.assertRaises(RequestFailedError) as cm:
+            client.resolve("secrets:aql:password")
+
+        self.assertIn(
+            "connect to {}:3005 for secrets:aql:password".format(host),
+            str(cm.exception),
+        )
+
     def test_timeout(self):
         def never_reply(sock):
             read_message(sock)
