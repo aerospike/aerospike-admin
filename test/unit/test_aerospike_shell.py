@@ -1165,23 +1165,58 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
     def test_typed_password_limited_to_1024_bytes(self):
         self.assertEqual(self._keyfile_password(True, "x" * 1024), "x" * 1024)
 
-        with patch("asadm.logger") as logger, self.assertRaises(SystemExit):
+        with patch("asadm.logger") as logger, self.assertRaises(SystemExit) as cm:
             self._keyfile_password(True, "x" * 1025)
 
-        logger.error.assert_called_once_with(
-            "SSLContext creation Exception: --tls-keyfile-password: "
-            "password is longer than 1024 bytes"
+        self.assertEqual(cm.exception.code, 1)
+        logger.error.assert_not_called()
+        self.assertEqual(
+            str(logger.critical.call_args[0][0]),
+            "--tls-keyfile-password: password is longer than 1024 bytes",
         )
 
     def test_resolution_error_exits(self):
-        with patch("asadm.logger") as logger, self.assertRaises(SystemExit) as cm:
+        for tty, typed in (
+            (True, "env:ASADM_TEST_UNSET"),
+            (False, "env:ASADM_TEST_UNSET\n"),
+        ):
+            with self.subTest(tty=tty):
+                with patch("asadm.logger") as logger, self.assertRaises(
+                    SystemExit
+                ) as cm:
+                    self._keyfile_password(tty, typed)
+
+                self.assertEqual(cm.exception.code, 1)
+                logger.error.assert_not_called()
+                logger.critical.assert_called_once()
+                self.assertEqual(
+                    str(logger.critical.call_args[0][0]),
+                    "--tls-keyfile-password: "
+                    "environment variable ASADM_TEST_UNSET is not set or empty",
+                )
+
+    def test_resolution_error_matches_the_command_line(self):
+        args = SimpleNamespace(
+            user=None,
+            password=None,
+            auth=None,
+            tls_enable=True,
+            tls_keyfile="/k.pem",
+            tls_keyfile_password="env:ASADM_TEST_UNSET",
+            tls_keyfile_password_label="--tls-keyfile-password",
+        )
+
+        with self.assertRaises(asadm.PasswordSourceError) as command_line:
+            asadm.conf.resolve_password_sources(args)
+
+        stderr = io.StringIO()
+        with patch.object(asadm.stderr_log_handler, "stream", stderr), patch(
+            "lib.utils.logger.set_exit_code"
+        ), self.assertRaises(SystemExit):
             self._keyfile_password(True, "env:ASADM_TEST_UNSET")
 
-        self.assertEqual(cm.exception.code, 1)
-        logger.error.assert_called_once_with(
-            "SSLContext creation Exception: --tls-keyfile-password: "
-            "environment variable ASADM_TEST_UNSET is not set or empty"
-        )
+        self.assertIn("ERROR: " + str(command_line.exception), stderr.getvalue())
+        self.assertNotIn("SSLContext creation Exception", stderr.getvalue())
 
 
 class LogAnalyzerSkipsTlsTest(unittest.IsolatedAsyncioTestCase):

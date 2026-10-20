@@ -709,6 +709,9 @@ def parse_tls_input(cli_args):
             crl_check_all=cli_args.tls_crl_check_all,
         ).ctx
 
+    except PasswordSourceError as e:
+        logger.critical(e)
+        sys.exit(1)
     except Exception as e:
         logger.error("SSLContext creation Exception: " + str(e))
         sys.exit(1)

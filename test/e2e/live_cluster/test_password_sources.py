@@ -85,7 +85,10 @@ class PasswordSourceErrorTests(unittest.TestCase):
 
     def test_password_without_user_warns(self):
         cp = util.run_asadm(f"{BASE} -P env:{UNSET}")
-        self.assertIn("--password: ignored because no user is set", cp.stderr)
+        self.assertIn(
+            "WARNING: --password: ignored because no user is set",
+            cp.stderr.splitlines(),
+        )
 
     def test_tls_keyfile_password_literal_too_long(self):
         cp = util.run_asadm(

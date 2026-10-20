@@ -21,6 +21,7 @@
 #
 
 import os
+import re
 import shlex
 import sys
 from subprocess import Popen, PIPE
@@ -30,6 +31,8 @@ __version__ = "$$__version__$$"
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
 
+NO_USER_WARNING = re.compile(r"WARNING: .+: ignored because no user is set")
+
 
 def bytes_to_str(data):
     try:
@@ -38,6 +41,18 @@ def bytes_to_str(data):
         pass
 
     return data
+
+
+def split_warnings(err):
+    if not isinstance(err, str):
+        return err, []
+
+    errors, warnings = [], []
+
+    for line in err.splitlines():
+        (warnings if NO_USER_WARNING.fullmatch(line) else errors).append(line)
+
+    return "\n".join(errors), warnings
 
 
 def print_config_help():
@@ -342,7 +357,10 @@ if asinfo_cmd:
 p = Popen(cmd, stdout=PIPE, stderr=PIPE, shell=False)
 out, err = p.communicate()
 out = bytes_to_str(out)
-err = bytes_to_str(err)
+err, warnings = split_warnings(bytes_to_str(err))
+
+for warning in warnings:
+    print(warning, file=sys.stderr)
 
 if err:
     if out:
