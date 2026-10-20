@@ -52,6 +52,13 @@ class PasswordSourceErrorTests(unittest.TestCase):
         )
         self.assertNotIn("hunter2-secret", cp.stdout + cp.stderr)
 
+    @unittest.skipUnless(os.path.exists("/dev/zero"), "needs /dev/zero")
+    def test_password_file_dev_zero(self):
+        cp = util.run_asadm(f"{BASE} -U admin -P file:/dev/zero")
+        self.assert_fails_before_connecting(
+            cp, "--password: file /dev/zero contains a NUL byte"
+        )
+
     def test_tls_keyfile_password_env_unset(self):
         cp = util.run_asadm(
             f"{BASE} --tls-enable --tls-keyfile /k.pem "

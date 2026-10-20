@@ -15,13 +15,19 @@
 import base64
 import os
 import tempfile
+import threading
 import traceback
 import unittest
 from unittest.mock import patch
 
 from parameterized import parameterized
 
-from lib.utils.password_source import PasswordSourceError, resolve
+from lib.utils.password_source import (
+    PASSWORD_FILE_MAX_LEN,
+    PASSWORD_MAX_LEN,
+    PasswordSourceError,
+    resolve,
+)
 
 PW = "s3cr3t-pw"
 
@@ -136,7 +142,18 @@ class ResolveEnvB64Test(unittest.TestCase):
 
         self.assertEqual(
             str(cm.exception),
-            "--password: password from environment variable AS_PASS_B64 is empty",
+            "--password: environment variable AS_PASS_B64 decodes to an empty value",
+        )
+
+    def test_env_b64_decodes_to_nul(self):
+        with patch.dict(os.environ, {"AS_PASS_B64": b64(b"p\0w")}):
+            with self.assertRaises(PasswordSourceError) as cm:
+                resolve("env-b64:AS_PASS_B64", "--password")
+
+        self.assertEqual(
+            str(cm.exception),
+            "--password: environment variable AS_PASS_B64 decodes to a value "
+            "containing a NUL byte",
         )
 
 
@@ -183,7 +200,19 @@ class ResolveB64Test(unittest.TestCase):
             resolve(value, "--password")
 
         self.assertEqual(
-            str(cm.exception), "--password: password from b64: value is empty"
+            str(cm.exception), "--password: b64: value decodes to an empty value"
+        )
+
+    @parameterized.expand(
+        [("leading", b"\0pw"), ("inner", b"p\0w"), ("before_newline", b"pw\0\n")]
+    )
+    def test_b64_decodes_to_nul(self, _, data):
+        with self.assertRaises(PasswordSourceError) as cm:
+            resolve("b64:" + b64(data), "--password")
+
+        self.assertEqual(
+            str(cm.exception),
+            "--password: b64: value decodes to a value containing a NUL byte",
         )
 
     def test_b64_not_utf8(self):
@@ -268,9 +297,18 @@ class ResolveFileTest(unittest.TestCase):
         with self.assertRaises(PasswordSourceError) as cm:
             resolve("file:" + path, "--password")
 
+        self.assertEqual(str(cm.exception), "--password: file {} is empty".format(path))
+
+    @parameterized.expand(
+        [("leading", b"\0pw\n"), ("inner", b"p\0w\n"), ("after_newline", b"pw\n\0")]
+    )
+    def test_file_nul(self, _, data):
+        path = self.write(data)
+        with self.assertRaises(PasswordSourceError) as cm:
+            resolve("file:" + path, "--password")
+
         self.assertEqual(
-            str(cm.exception),
-            "--password: password from file {} is empty".format(path),
+            str(cm.exception), "--password: file {} contains a NUL byte".format(path)
         )
 
     def test_file_not_utf8(self):
@@ -296,7 +334,7 @@ class ResolveStripTest(unittest.TestCase):
         return path
 
     def resolve(self, value):
-        return resolve(value, "--tls-keyfile-password", strip=True)
+        return resolve(value, "--tls-keyfile-password", first_line=True, strip=True)
 
     @parameterized.expand(
         [
@@ -327,15 +365,214 @@ class ResolveStripTest(unittest.TestCase):
         path = self.write(data)
         self.assertEqual(self.resolve(" file:" + path + " "), PW)
 
-    def test_whitespace_only_file_is_empty(self):
-        path = self.write(b"  \n\n")
+    @parameterized.expand(
+        [
+            ("lf", b"s3cr3t-pw\nsecond\n"),
+            ("crlf", b"s3cr3t-pw\r\nsecond"),
+            ("lone_cr", b"s3cr3t-pw\rsecond"),
+            ("nul_after_first_line", b"s3cr3t-pw\n\0"),
+        ]
+    )
+    def test_file_uses_first_line(self, _, data):
+        path = self.write(data)
+        self.assertEqual(self.resolve("file:" + path), PW)
+
+    @parameterized.expand(
+        [
+            ("whitespace_only", b"  \n\n", "first line of file"),
+            ("empty_first_line", b"\n" + PW.encode() + b"\n", "first line of file"),
+            ("empty", b"", "file"),
+            ("spaces_no_line_ending", b"   ", "file"),
+        ]
+    )
+    def test_file_empty(self, _, data, what):
+        path = self.write(data)
         with self.assertRaises(PasswordSourceError) as cm:
             self.resolve("file:" + path)
 
         self.assertEqual(
             str(cm.exception),
-            "--tls-keyfile-password: password from file {} is empty".format(path),
+            "--tls-keyfile-password: {} {} is empty".format(what, path),
         )
+
+    def test_file_nul_in_first_line(self):
+        path = self.write(b"s3cr3t\0pw\n")
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.resolve("file:" + path)
+
+        self.assertEqual(
+            str(cm.exception),
+            "--tls-keyfile-password: file {} contains a NUL byte".format(path),
+        )
+
+    def test_file_first_line_limit(self):
+        path = self.write(b"x" * PASSWORD_FILE_MAX_LEN + b"\nsecond\n")
+        self.assertEqual(self.resolve("file:" + path), "x" * PASSWORD_FILE_MAX_LEN)
+
+        path = self.write(b"x" * (PASSWORD_FILE_MAX_LEN + 1) + b"\n")
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.resolve("file:" + path)
+
+        self.assertEqual(
+            str(cm.exception),
+            "--tls-keyfile-password: value from file {} is longer than 4999 bytes".format(
+                path
+            ),
+        )
+
+    def test_other_sources_have_no_limit(self):
+        long_pw = "x" * (PASSWORD_FILE_MAX_LEN + 1)
+        with patch.dict(os.environ, {"KP": long_pw}):
+            self.assertEqual(self.resolve("env:KP"), long_pw)
+        self.assertEqual(self.resolve("b64:" + b64(long_pw.encode())), long_pw)
+
+
+class ResolveMaxLenTest(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+    def write(self, data: bytes) -> str:
+        path = os.path.join(self.tmpdir.name, "pw")
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def resolve(self, value):
+        return resolve(value, "--password", max_len=PASSWORD_MAX_LEN)
+
+    def sources(self, pw: bytes):
+        os.environ["AS_PASS"] = pw.decode()
+        os.environ["AS_PASS_B64"] = b64(pw)
+        path = self.write(pw + b"\r\n")
+        return [
+            ("env:AS_PASS", "value from environment variable AS_PASS"),
+            (
+                "env-b64:AS_PASS_B64",
+                "decoded value from environment variable AS_PASS_B64",
+            ),
+            ("b64:" + b64(pw), "decoded b64: value"),
+            ("file:" + path, "value from file " + path),
+        ]
+
+    def test_at_limit(self):
+        pw = b"x" * PASSWORD_MAX_LEN
+        with patch.dict(os.environ):
+            for value, _ in self.sources(pw):
+                with self.subTest(value=value):
+                    self.assertEqual(self.resolve(value), pw.decode())
+
+    def test_over_limit(self):
+        for pw in (b"x" * (PASSWORD_MAX_LEN + 1), "é".encode() * 32):
+            with patch.dict(os.environ):
+                for value, what in self.sources(pw):
+                    with self.subTest(value=value, pw_len=len(pw)):
+                        with self.assertRaises(PasswordSourceError) as cm:
+                            self.resolve(value)
+
+                        self.assertEqual(
+                            str(cm.exception),
+                            "--password: {} is longer than 63 bytes".format(what),
+                        )
+
+    def test_literal_has_no_limit(self):
+        long_pw = "x" * (PASSWORD_MAX_LEN + 1)
+        self.assertEqual(self.resolve(long_pw), long_pw)
+
+    def test_no_limit_by_default(self):
+        long_pw = "x" * (PASSWORD_MAX_LEN + 1)
+        with patch.dict(os.environ, {"AS_PASS": long_pw}):
+            self.assertEqual(resolve("env:AS_PASS", "--password"), long_pw)
+
+
+@unittest.skipUnless(hasattr(os, "mkfifo"), "needs mkfifo")
+class ResolveBoundedReadTest(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+    def fifo(self, first: bytes, rest: bytes | None) -> str:
+        """Writes first, then rest forever, or holds the pipe open if rest is None."""
+        path = os.path.join(self.tmpdir.name, "fifo")
+        os.mkfifo(path)
+        done = threading.Event()
+
+        def writer():
+            try:
+                with open(path, "wb", buffering=0) as f:
+                    f.write(first)
+                    while not done.is_set():
+                        if rest is None:
+                            done.wait(0.05)
+                        else:
+                            f.write(rest)
+            except BrokenPipeError:
+                pass
+
+        thread = threading.Thread(target=writer, daemon=True)
+        thread.start()
+
+        def stop():
+            done.set()
+            thread.join(5)
+
+        self.addCleanup(stop)
+        return path
+
+    def run_with_timeout(self, fn):
+        result = {}
+
+        def target():
+            try:
+                result["value"] = fn()
+            except PasswordSourceError as e:
+                result["error"] = str(e)
+
+        thread = threading.Thread(target=target, daemon=True)
+        thread.start()
+        thread.join(5)
+        self.assertFalse(thread.is_alive(), "read did not stop")
+        return result
+
+    def test_dev_zero(self):
+        if not os.path.exists("/dev/zero"):
+            self.skipTest("needs /dev/zero")
+
+        for kwargs, option in (
+            ({"max_len": PASSWORD_MAX_LEN}, "--password"),
+            ({"first_line": True, "strip": True}, "--tls-keyfile-password"),
+        ):
+            with self.subTest(option=option):
+                result = self.run_with_timeout(
+                    lambda: resolve("file:/dev/zero", option, **kwargs)
+                )
+                self.assertEqual(
+                    result,
+                    {"error": option + ": file /dev/zero contains a NUL byte"},
+                )
+
+    def test_endless_writer(self):
+        path = self.fifo(b"x", b"x" * 1024)
+        result = self.run_with_timeout(
+            lambda: resolve("file:" + path, "--password", max_len=PASSWORD_MAX_LEN)
+        )
+        self.assertEqual(
+            result,
+            {
+                "error": "--password: value from file {} is longer than 63 bytes".format(
+                    path
+                )
+            },
+        )
+
+    def test_keyfile_writer_left_open_after_first_line(self):
+        path = self.fifo(PW.encode() + b"\n", None)
+        result = self.run_with_timeout(
+            lambda: resolve(
+                "file:" + path, "--tls-keyfile-password", first_line=True, strip=True
+            )
+        )
+        self.assertEqual(result, {"value": PW})
 
 
 class ResolveErrorsHideSecretTest(unittest.TestCase):
@@ -372,12 +609,16 @@ class ResolveErrorsHideSecretTest(unittest.TestCase):
         self.assert_secret_hidden("b64:" + PW)
         self.assert_secret_hidden("b64:" + PW_B64 + "é")
         self.assert_secret_hidden("b64:" + b64(b"\xff" + PW.encode()))
+        self.assert_secret_hidden("b64:" + b64(PW.encode() + b"\0"))
 
     def test_env_b64_errors(self):
         self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": PW})
         self.assert_secret_hidden("env-b64:KP_B64", {"KP_B64": PW_B64 + "é"})
         self.assert_secret_hidden(
             "env-b64:KP_B64", {"KP_B64": b64(b"\xff" + PW.encode())}
+        )
+        self.assert_secret_hidden(
+            "env-b64:KP_B64", {"KP_B64": b64(PW.encode() + b"\0")}
         )
 
     def test_env_not_utf8_error(self):
@@ -386,6 +627,10 @@ class ResolveErrorsHideSecretTest(unittest.TestCase):
 
     def test_file_not_utf8_error(self):
         path = self.write("pw", b"\xff" + PW.encode() + b"\n")
+        self.assert_secret_hidden("file:" + path)
+
+    def test_file_nul_error(self):
+        path = self.write("pw", PW.encode() + b"\0")
         self.assert_secret_hidden("file:" + path)
 
     @unittest.skipIf(os.geteuid() == 0, "root can read any file")

@@ -32,10 +32,11 @@
 # password = "env-b64:ASPWD_B64"
 # Base64 encoded string: "b64:<BASE64>"
 # password = "b64:c2VjcmV0"
-# File: "file:<PATH>"
+# File: "file:<PATH>", asadm uses the whole file less one trailing line ending
 # password = "file:/etc/aerospike/aspwd.txt"
 # String: "<PASSWORD>"
 # password = ""
+# asadm accepts at most 63 bytes from env:, env-b64:, b64: or file:
 
 #------------------------------------------------------------------------------
 # Transport Level Encryption
@@ -59,7 +60,7 @@
 # tls-keyfile-password = "env-b64:PEMPWD_B64"
 # Base64 encoded string: "b64:<BASE64>"
 # tls-keyfile-password = "b64:c2VjcmV0"
-# File: "file:<PATH>"
+# File: "file:<PATH>", asadm uses the first line, at most 4999 bytes
 # tls-keyfile-password = "file:/etc/aerospike/x509_certificates/MultiServer/keypwd.txt"
 # String: "<PASSWORD>"
 # tls-keyfile-password = ""

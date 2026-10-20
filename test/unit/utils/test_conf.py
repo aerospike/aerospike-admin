@@ -128,6 +128,20 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             "--password: environment variable {} is not set or empty".format(UNSET),
         )
 
+    def test_password_from_source_limited_to_63_bytes(self):
+        with patch.dict(os.environ, {"AS_LONG": "x" * 64}):
+            with self.assertRaises(PasswordSourceError) as cm:
+                self.load("-U", "admin", "-P", "env:AS_LONG")
+
+        self.assertEqual(
+            str(cm.exception),
+            "--password: value from environment variable AS_LONG is longer than 63 bytes",
+        )
+
+    def test_literal_password_not_limited(self):
+        args = self.load("-U", "admin", "-P", "x" * 64)
+        self.assertEqual(args.password, "x" * 64)
+
     def test_password_error_from_config_file(self):
         with self.assertRaises(PasswordSourceError) as cm:
             self.load(config='[cluster]\nuser = "admin"\npassword = "b64:!!"\n')
@@ -176,6 +190,28 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             "file:" + path,
         )
         self.assertEqual(args.tls_keyfile_password, PW)
+
+    def test_keyfile_password_file_uses_first_line(self):
+        path = self.write_file("kp", PW + "\nsecond line\n")
+        args = self.load(
+            "--tls-enable",
+            "--tls-keyfile",
+            "/k.pem",
+            "--tls-keyfile-password",
+            "file:" + path,
+        )
+        self.assertEqual(args.tls_keyfile_password, PW)
+
+    def test_keyfile_password_not_limited_to_63_bytes(self):
+        with patch.dict(os.environ, {"KP": "x" * 64}):
+            args = self.load(
+                "--tls-enable",
+                "--tls-keyfile",
+                "/k.pem",
+                "--tls-keyfile-password",
+                "env:KP",
+            )
+        self.assertEqual(args.tls_keyfile_password, "x" * 64)
 
     def test_padded_keyfile_password_from_config_file(self):
         args = self.load(
@@ -234,6 +270,18 @@ class PasswordHelpTest(unittest.TestCase):
         self.assertEqual(help_text.count("'b64:<BASE64>'"), 2)
         self.assertEqual(help_text.count("'file:<PATH>'"), 2)
         self.assertNotIn("varaible", help_text)
+
+    def test_help_describes_file_rule_and_limit(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        help_text = out.getvalue()
+        self.assertIn("'file:<PATH>', the whole file less one trailing", help_text)
+        self.assertIn("'file:<PATH>', the first line of the file, at", help_text)
+        self.assertIn(
+            "A password read from 1) to 4) must be at most 63 bytes.", help_text
+        )
 
 
 if __name__ == "__main__":
