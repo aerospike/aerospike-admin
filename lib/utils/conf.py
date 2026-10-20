@@ -404,8 +404,11 @@ def loadconfig(cli_args):
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
-    for key in ("password", "tls_keyfile_password"):
-        asadm_dict[key + "_label"] = _password_label(key, cli_dict, file_dict)
+    asadm_dict["config_file_options"] = [
+        key.replace("_", "-")
+        for key in ("password", "tls_keyfile_password")
+        if cli_dict.get(key) is None and file_dict.get(key) is not None
+    ]
 
     try:
         asadm_dict["auth"] = AuthMode[asadm_dict["auth"].upper()]
@@ -437,10 +440,8 @@ def loadconfig(cli_args):
     return args, seeds
 
 
-def _password_label(key, cli_dict, file_dict):
-    option = key.replace("_", "-")
-
-    if cli_dict.get(key) is None and file_dict.get(key) is not None:
+def option_label(args, option):
+    if option in getattr(args, "config_file_options", ()):
         return option + " in config file"
 
     return "--" + option
@@ -451,14 +452,16 @@ def _resolve_password(args):
     if args.auth == AuthMode.PKI or args.password in (None, DEFAULTPASSWORD):
         return
 
+    label = option_label(args, "password")
+
     if args.user is None:
         if password_source.has_source(args.password):
-            logger.warning("%s: ignored because no user is set", args.password_label)
+            logger.warning("%s: ignored because no user is set", label)
 
         return
 
     args.password = password_source.resolve(
-        args.password, args.password_label, max_len=password_source.PASSWORD_MAX_LEN
+        args.password, label, max_len=password_source.PASSWORD_MAX_LEN
     )
 
 
@@ -471,7 +474,7 @@ def resolve_password_sources(args):
         and args.tls_keyfile_password not in (None, DEFAULTPASSWORD)
     ):
         args.tls_keyfile_password = resolve_keyfile_password(
-            args.tls_keyfile_password, args.tls_keyfile_password_label
+            args.tls_keyfile_password, option_label(args, "tls-keyfile-password")
         )
 
 

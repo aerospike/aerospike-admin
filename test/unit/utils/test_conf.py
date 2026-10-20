@@ -200,9 +200,14 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             (("-P",), "--password"),
         ):
             with self.subTest(argv=argv):
-                self.assertEqual(self.load(*argv, config=config).password_label, label)
+                self.assertEqual(
+                    conf.option_label(self.load(*argv, config=config), "password"),
+                    label,
+                )
 
-        self.assertEqual(self.load("-U", "admin").password_label, "--password")
+        self.assertEqual(
+            conf.option_label(self.load("-U", "admin"), "password"), "--password"
+        )
 
     def test_command_line_password_error_overrides_config_file(self):
         with self.assertRaises(PasswordSourceError) as cm:

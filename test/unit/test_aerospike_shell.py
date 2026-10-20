@@ -859,8 +859,7 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
             out_file=None,
             user="admin",
             password="env:AS_PASS",
-            password_label="--password",
-            tls_keyfile_password_label="--tls-keyfile-password",
+            config_file_options=[],
             log_path=None,
             line_separator=False,
             single_node=False,
@@ -970,7 +969,7 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_config_file_label_in_error(self):
         args = self._make_args(
-            password="env:ASADM_TEST_UNSET", password_label="password in config file"
+            password="env:ASADM_TEST_UNSET", config_file_options=["password"]
         )
 
         code, logger, _, shell_cls, _ = await self._run_main(args)
@@ -1203,7 +1202,6 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
             tls_enable=True,
             tls_keyfile="/k.pem",
             tls_keyfile_password="env:ASADM_TEST_UNSET",
-            tls_keyfile_password_label="--tls-keyfile-password",
         )
 
         with self.assertRaises(asadm.PasswordSourceError) as command_line:
