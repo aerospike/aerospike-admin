@@ -15,7 +15,6 @@
 ####
 
 import asyncio
-import functools
 import logging
 import sys
 import struct
@@ -148,7 +147,6 @@ async def _receive_data(reader: asyncio.StreamReader, sz):
 ####### Password hashing ######
 
 
-@functools.lru_cache(maxsize=1)
 def _hash_password(password):
     if isinstance(password, str):
         password = password.encode("utf-8")
@@ -463,7 +461,7 @@ async def _authenticate(
         raise IOError("Error: %s" % str(e))
 
 
-async def authenticate_new(
+async def authenticate_with_token(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
     user,
@@ -476,23 +474,6 @@ async def authenticate_new(
         user,
         password=session_token,
         password_field_id=ASField.SESSION_TOKEN,
-        auth_mode=auth_mode,
-    )
-
-
-async def authenticate_old(
-    reader: asyncio.StreamReader,
-    writer: asyncio.StreamWriter,
-    user,
-    password,
-    auth_mode,
-):
-    return await _authenticate(
-        reader,
-        writer,
-        user,
-        password=_hash_password(password),
-        password_field_id=ASField.CREDENTIAL,
         auth_mode=auth_mode,
     )
 
@@ -1174,10 +1155,9 @@ async def login(
     writer: asyncio.StreamWriter,
     user,
     password,
+    credential,
     auth_mode,
 ):
-    credential = _hash_password(password)
-
     if auth_mode == constants.AuthMode.INTERNAL:
         field_count = 2
         # 4B = field size, 1B = field type
@@ -1214,13 +1194,6 @@ async def login(
         data_size -= _ADMIN_HEADER_SIZE
 
         if return_code != ASResponse.OK:
-            # login failed
-
-            if return_code == ASResponse.INVALID_COMMAND:
-                # login is invalid command, so cluster does not support ldap
-                return authenticate_old(reader, writer, user, password), None, 0
-
-            # login failed
             return return_code, None, 0
 
         if data_size < 0 or field_count < 1:

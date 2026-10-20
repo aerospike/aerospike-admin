@@ -1931,6 +1931,25 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_any_call("get-config:context=xdr", self.ip)
         self.assertDictEqual(actual, expected)
 
+    async def test_info_system_statistics_does_not_log_ssh_password(self):
+        """collectinfo writes DEBUG records into the bundle it hands to support, and a
+        record that fails to format prints its arguments to stderr."""
+        self.node.localhost = False
+
+        await self.node.info_system_statistics(
+            ssh_user="user", ssh_pwd="S3CRET-PWD", ssh_key_pwd="K3Y-PWD"
+        )
+
+        self.assertTrue(self.logger_mock.debug.call_args_list)
+
+        for call in self.logger_mock.debug.call_args_list:
+            msg, *args = call.args
+            rendered = msg % tuple(args)
+
+            for secret in ("S3CRET-PWD", "K3Y-PWD"):
+                self.assertNotIn(secret, rendered)
+                self.assertNotIn(secret, str(args))
+
     @patch("lib.utils.conf_parser.parse_file")
     async def test_info_get_originalconfig(self, parse_file_mock):
         self.assertDictEqual(await self.node.info_get_originalconfig(), {})
