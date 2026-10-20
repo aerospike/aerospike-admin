@@ -436,7 +436,9 @@ def loadconfig(cli_args):
 def resolve_password_sources(args):
     # DEFAULTPASSWORD means prompt later.
     if args.user is not None and args.password not in (None, DEFAULTPASSWORD):
-        args.password = password_source.resolve(args.password, "--password")
+        args.password = password_source.resolve(
+            args.password, "--password", max_len=password_source.PASSWORD_MAX_LEN
+        )
 
     if (
         args.tls_enable
@@ -447,7 +449,9 @@ def resolve_password_sources(args):
 
 
 def resolve_keyfile_password(value):
-    return password_source.resolve(value, "--tls-keyfile-password", strip=True)
+    return password_source.resolve(
+        value, "--tls-keyfile-password", first_line=True, strip=True
+    )
 
 
 def print_config_help():
@@ -517,8 +521,10 @@ def print_config_file_option():
         "                      1) Environment variable: 'env:<VAR>'\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
+        "                      4) File: 'file:<PATH>', the whole file less one trailing\n"
+        "                         line ending\n"
         "                      5) String: 'PASSWORD'\n"
+        "                      A password read from 1) to 4) must be at most 63 bytes.\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given."
     )
@@ -566,7 +572,8 @@ def print_config_file_option():
         "                      1) Environment variable: 'env:<VAR>'\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
+        "                      4) File: 'file:<PATH>', the first line of the file, at\n"
+        "                         most 4999 bytes\n"
         "                      5) String: 'PASSWORD'\n"
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"

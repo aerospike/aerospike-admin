@@ -37,8 +37,10 @@ Configuration File Allowed Options
                       1) Environment variable: 'env:<VAR>'
                       2) Base64 encoded environment variable: 'env-b64:<VAR>'
                       3) Base64 encoded string: 'b64:<BASE64>'
-                      4) File: 'file:<PATH>'
+                      4) File: 'file:<PATH>', the whole file less one trailing
+                         line ending
                       5) String: 'PASSWORD'
+                      A password read from 1) to 4) must be at most 63 bytes.
                       User will be prompted on command line if -P specified and no
                       password is given.
  --auth=AUTHENTICATION_MODE 
@@ -73,7 +75,8 @@ Configuration File Allowed Options
                       1) Environment variable: 'env:<VAR>'
                       2) Base64 encoded environment variable: 'env-b64:<VAR>'
                       3) Base64 encoded string: 'b64:<BASE64>'
-                      4) File: 'file:<PATH>'
+                      4) File: 'file:<PATH>', the first line of the file, at
+                         most 4999 bytes
                       5) String: 'PASSWORD'
                       Default: none
                       User will be prompted on command line if --tls-keyfile-password specified and no

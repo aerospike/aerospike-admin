@@ -21,8 +21,11 @@ The forms match the PasswordFlag in tools-common-go:
     file:<PATH>     contents of PATH, less one trailing line ending
     anything else   the literal password
 
-With strip=True the value and file contents lose surrounding whitespace, which
---tls-keyfile-password has always done.
+Limits and messages match the C tools. max_len caps a value read from a
+source, and file: falls back to PASSWORD_FILE_MAX_LEN without one. With
+first_line=True file: uses only the first line. With strip=True the value and
+file contents lose surrounding whitespace, which --tls-keyfile-password has
+always done.
 
 Error messages name the option and the source but never the password.
 """
@@ -30,12 +33,22 @@ Error messages name the option and the source but never the password.
 import base64
 import os
 
+PASSWORD_MAX_LEN = 63
+PASSWORD_FILE_MAX_LEN = 4999
+
 
 class PasswordSourceError(Exception):
     carries_its_own_message = True
 
 
-def resolve(value: str, option: str, *, strip: bool = False) -> str:
+def resolve(
+    value: str,
+    option: str,
+    *,
+    max_len: int = 0,
+    first_line: bool = False,
+    strip: bool = False,
+) -> str:
     if strip:
         value = value.strip()
 
@@ -45,27 +58,21 @@ def resolve(value: str, option: str, *, strip: bool = False) -> str:
         return value
 
     if kind == "env":
-        source = "environment variable " + rest
         password = _read_env(rest, option)
+        what = "value from environment variable " + rest
     elif kind == "env-b64":
         source = "environment variable " + rest
         password = _decode_b64(_read_env(rest, option), option, source)
+        what = "decoded value from " + source
     elif kind == "b64":
-        source = "b64: value"
-        password = _decode_b64(rest, option, source)
+        password = _decode_b64(rest, option, "b64: value")
+        what = "decoded b64: value"
     elif kind == "file":
-        source = "file " + rest
-        password = _to_text(_read_file(rest, option), option, source)
-
-        if strip:
-            password = password.strip()
+        return _read_file(rest, option, max_len, first_line, strip)
     else:
         return value
 
-    if not password:
-        raise PasswordSourceError(
-            "{}: password from {} is empty".format(option, source)
-        )
+    _check_len(password.encode("utf-8"), option, max_len, what)
 
     return password
 
@@ -84,22 +91,76 @@ def _read_env(name: str, option: str) -> str:
     return value
 
 
-def _read_file(path: str, option: str) -> bytes:
+def _read_file(
+    path: str, option: str, max_len: int, first_line: bool, strip: bool
+) -> str:
+    max_len = max_len or PASSWORD_FILE_MAX_LEN
+    data = _read_head(path, option, max_len + len(b"\r\n") + 1, first_line)
+    line_ended = False
+
+    if first_line:
+        line = data.split(b"\n", 1)[0].split(b"\r", 1)[0]
+        line_ended = len(line) < len(data)
+        data = line
+
+    if b"\0" in data:
+        raise PasswordSourceError(
+            "{}: file {} contains a NUL byte".format(option, path)
+        )
+
+    if data.endswith(b"\r\n"):
+        data = data[:-2]
+    elif data.endswith(b"\n"):
+        data = data[:-1]
+
+    _check_len(data, option, max_len, "value from file " + path)
+
+    password = _to_text(data, option, "file " + path)
+
+    if strip:
+        password = password.strip()
+
+    if not password:
+        raise PasswordSourceError(
+            "{}: {}file {} is empty".format(
+                option, "first line of " if line_ended else "", path
+            )
+        )
+
+    return password
+
+
+# read1 so file:/dev/zero or a FIFO whose writer stays open returns at once.
+def _read_head(path: str, option: str, cap: int, first_line: bool) -> bytes:
+    data = b""
+
     try:
         with open(path, "rb") as f:
-            data = f.read()
+            while len(data) < cap:
+                chunk = f.read1(cap - len(data))
+
+                if not chunk:
+                    break
+
+                data += chunk
+
+                if b"\0" in chunk or (
+                    first_line and (b"\n" in chunk or b"\r" in chunk)
+                ):
+                    break
     except OSError as e:
         raise PasswordSourceError(
             "{}: cannot read file {}: {}".format(option, path, e.strerror or e)
         ) from None
 
-    if data.endswith(b"\r\n"):
-        return data[:-2]
-
-    if data.endswith(b"\n"):
-        return data[:-1]
-
     return data
+
+
+def _check_len(data: bytes, option: str, max_len: int, what: str) -> None:
+    if max_len and len(data) > max_len:
+        raise PasswordSourceError(
+            "{}: {} is longer than {} bytes".format(option, what, max_len)
+        )
 
 
 def _decode_b64(payload: str, option: str, source: str) -> str:
@@ -109,8 +170,18 @@ def _decode_b64(payload: str, option: str, source: str) -> str:
     if data is None:
         raise PasswordSourceError("{}: invalid base64 in {}".format(option, source))
 
+    if b"\0" in data:
+        raise PasswordSourceError(
+            "{}: {} decodes to a value containing a NUL byte".format(option, source)
+        )
+
     if data.endswith(b"\n"):
         data = data[:-1]
+
+    if not data:
+        raise PasswordSourceError(
+            "{}: {} decodes to an empty value".format(option, source)
+        )
 
     return _to_text(data, option, source)
 
