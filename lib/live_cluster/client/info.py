@@ -15,6 +15,7 @@
 ####
 
 import asyncio
+import functools
 import logging
 import sys
 import struct
@@ -147,6 +148,7 @@ async def _receive_data(reader: asyncio.StreamReader, sz):
 ####### Password hashing ######
 
 
+@functools.lru_cache(maxsize=1)
 def _hash_password(password):
     if isinstance(password, str):
         password = password.encode("utf-8")
