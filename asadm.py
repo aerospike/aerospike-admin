@@ -180,6 +180,8 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         else:
                             password = sys.stdin.readline().strip()
 
+                        conf.check_typed_password(password, auth_mode)
+
                 # Construct user agent string using username if available, otherwise "unknown"
                 user_agent_id = user if user is not None else ASADM_APP_ID
                 user_agent = (
@@ -736,6 +738,8 @@ async def execute_asinfo_commands(
                 password = getpass.getpass("Enter Password:")
             else:
                 password = sys.stdin.readline().strip()
+
+            conf.check_typed_password(password, auth_mode)
 
         if not info.hasbcrypt:
             logger.critical("Authentication failed: bcrypt not installed.")

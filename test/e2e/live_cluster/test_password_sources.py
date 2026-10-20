@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import tempfile
 import unittest
 
 from test.e2e import util
@@ -57,6 +58,42 @@ class PasswordSourceErrorTests(unittest.TestCase):
         cp = util.run_asadm(f"{BASE} -U admin -P file:/dev/zero")
         self.assert_fails_before_connecting(
             cp, "--password: file /dev/zero contains a NUL byte"
+        )
+
+    def test_password_file_without_path(self):
+        cp = util.run_asadm(f"{BASE} -U admin -P file:")
+        self.assert_fails_before_connecting(cp, "--password: file: requires a path")
+
+    def test_password_literal_too_long(self):
+        cp = util.run_asadm(f"{BASE} -U admin -P {'x' * 64}")
+        self.assert_fails_before_connecting(
+            cp, "--password: password is longer than 63 bytes"
+        )
+
+    def test_password_from_config_file_label(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".conf") as f:
+            f.write(f'[cluster]\nuser = "admin"\npassword = "env:{UNSET}"\n')
+            f.flush()
+            cp = util.run_asadm(
+                f"--only-config-file {f.name} -h 127.0.0.1:1 -e 'info network'"
+            )
+
+        self.assert_fails_before_connecting(
+            cp,
+            f"password in config file: environment variable {UNSET} is not set or empty",
+        )
+
+    def test_password_without_user_warns(self):
+        cp = util.run_asadm(f"{BASE} -P env:{UNSET}")
+        self.assertIn("--password: ignored because no user is set", cp.stderr)
+
+    def test_tls_keyfile_password_literal_too_long(self):
+        cp = util.run_asadm(
+            f"{BASE} --tls-enable --tls-keyfile /k.pem "
+            f"--tls-keyfile-password {'x' * 1025}"
+        )
+        self.assert_fails_before_connecting(
+            cp, "--tls-keyfile-password: password is longer than 1024 bytes"
         )
 
     def test_tls_keyfile_password_env_unset(self):

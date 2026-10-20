@@ -467,6 +467,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_args.user = None
+                mock_args.password = None
                 mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -505,6 +506,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_args.user = None
+                mock_args.password = None
                 mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -556,6 +558,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_args.user = None
+                mock_args.password = None
                 mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -856,6 +859,8 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
             out_file=None,
             user="admin",
             password="env:AS_PASS",
+            password_label="--password",
+            tls_keyfile_password_label="--tls-keyfile-password",
             log_path=None,
             line_separator=False,
             single_node=False,
@@ -963,6 +968,54 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
                     shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET"
                 )
 
+    async def test_config_file_label_in_error(self):
+        args = self._make_args(
+            password="env:ASADM_TEST_UNSET", password_label="password in config file"
+        )
+
+        code, logger, _, shell_cls, _ = await self._run_main(args)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            str(logger.critical.call_args[0][0]),
+            "password in config file: environment variable ASADM_TEST_UNSET "
+            "is not set or empty",
+        )
+        shell_cls.assert_not_called()
+
+    async def test_no_user_warns_and_connects(self):
+        args = self._make_args(user=None, password="env:ASADM_TEST_UNSET")
+
+        with self.assertLogs(asadm.conf.logger, "WARNING") as logs:
+            _, logger, _, shell_cls, _ = await self._run_main(args)
+
+        self.assertEqual(
+            [r.getMessage() for r in logs.records],
+            ["--password: ignored because no user is set"],
+        )
+        logger.critical.assert_not_called()
+        self.assertEqual(shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET")
+
+    async def test_runs_that_never_connect_do_not_warn(self):
+        for mode in ("collectinfo", "log_analyzer"):
+            with self.subTest(mode=mode):
+                args = self._make_args(
+                    user=None, password="env:ASADM_TEST_UNSET", **{mode: True}
+                )
+
+                with self.assertNoLogs(asadm.conf.logger, "WARNING"):
+                    await self._run_main(args)
+
+    async def test_pki_skips_password_resolution(self):
+        args = self._make_args(
+            password="env:ASADM_TEST_UNSET", auth="PKI", tls_enable=True
+        )
+
+        _, logger, _, shell_cls, _ = await self._run_main(args)
+
+        logger.critical.assert_not_called()
+        self.assertEqual(shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET")
+
 
 class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
     """A value typed at the prompt or read from stdin is the password itself."""
@@ -978,7 +1031,7 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
         stdin.readline.return_value = line
         return patch("sys.stdin", stdin)
 
-    async def _shell_password(self):
+    async def _shell_password(self, auth_mode=asadm.AuthMode.INTERNAL):
         seen = {}
 
         class MockLiveClusterRootController(async_object.AsyncObject):
@@ -990,16 +1043,55 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
 
         with patch(
             "asadm.LiveClusterRootController", MockLiveClusterRootController
-        ), patch("asadm.logger"):
-            await AerospikeShell(
+        ), patch("asadm.logger") as logger:
+            shell = await AerospikeShell(
                 "test-version",
                 seeds=[("1.1.1.1", 3000, None)],
                 user="admin",
                 password=asadm.conf.DEFAULTPASSWORD,
+                auth_mode=auth_mode,
                 execute_only_mode=True,
             )
 
-        return seen["password"]
+        self.shell_logger = logger
+        self.shell_connected = shell.connected
+        return seen.get("password")
+
+    async def test_shell_typed_password_limited_to_63_bytes(self):
+        with self._stdin(False, "x" * 63 + "\n"):
+            self.assertEqual(await self._shell_password(), "x" * 63)
+
+        for typed in ("x" * 64, "é" * 32):
+            with self.subTest(typed=typed), self._stdin(True), patch(
+                "asadm.getpass.getpass", return_value=typed
+            ):
+                self.assertIsNone(await self._shell_password())
+
+                self.assertFalse(self.shell_connected)
+                self.assertEqual(
+                    str(self.shell_logger.critical.call_args[0][0]),
+                    "--password: password is longer than 63 bytes",
+                )
+
+    async def test_shell_typed_password_not_checked_with_pki(self):
+        with self._stdin(False, "x" * 64 + "\n"):
+            self.assertEqual(await self._shell_password(asadm.AuthMode.PKI), "x" * 64)
+
+    async def test_asinfo_typed_password_limited_to_63_bytes(self):
+        with self._stdin(False, "x" * 64 + "\n"), patch(
+            "asadm.ASSocket"
+        ) as assock_cls, self.assertRaises(asadm.PasswordSourceError) as cm:
+            await asadm.execute_asinfo_commands(
+                None,
+                ("1.1.1.1", 3000, None),
+                user="admin",
+                password=asadm.conf.DEFAULTPASSWORD,
+            )
+
+        self.assertEqual(
+            str(cm.exception), "--password: password is longer than 63 bytes"
+        )
+        assock_cls.assert_not_called()
 
     async def test_shell_stdin_password_is_literal(self):
         with self._stdin(False, "env:AS_PASS\n"):
@@ -1069,6 +1161,17 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
 
     def test_getpass_literal_is_stripped(self):
         self.assertEqual(self._keyfile_password(True, "  kp-s3cr3t \t"), "kp-s3cr3t")
+
+    def test_typed_password_limited_to_1024_bytes(self):
+        self.assertEqual(self._keyfile_password(True, "x" * 1024), "x" * 1024)
+
+        with patch("asadm.logger") as logger, self.assertRaises(SystemExit):
+            self._keyfile_password(True, "x" * 1025)
+
+        logger.error.assert_called_once_with(
+            "SSLContext creation Exception: --tls-keyfile-password: "
+            "password is longer than 1024 bytes"
+        )
 
     def test_resolution_error_exits(self):
         with patch("asadm.logger") as logger, self.assertRaises(SystemExit) as cm:
