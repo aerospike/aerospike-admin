@@ -2337,8 +2337,11 @@ class CollectinfoController(LiveClusterCommandController):
             port = 3000
 
         try:
-            self.failed_cmds = common.collect_sys_info(
-                port=port, file_header=fileHeader, outfile=complete_filename
+            self.failed_cmds = await asyncio.to_thread(
+                common.collect_sys_info,
+                port=port,
+                file_header=fileHeader,
+                outfile=complete_filename,
             )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
