@@ -18,16 +18,31 @@ import sys
 import tempfile
 import unittest
 
-ASINFO = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "asinfo", "asinfo.py"
-)
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+ASINFO = os.path.join(ROOT, "asinfo", "asinfo.py")
 
 FAKE_ASADM = """#!/bin/sh
 printf '%s' "$FAKE_ASADM_STDERR" >&2
 printf '%s\\n' "$FAKE_ASADM_STDOUT"
 """
 
+REAL_ASADM = """#!/bin/sh
+exec "$ASADM_PYTHON" "$ASADM_SCRIPT" "$@"
+"""
+
 NO_USER_WARNING = "WARNING: --password: ignored because no user is set"
+
+
+def install_asadm(test, script):
+    tmpdir = tempfile.TemporaryDirectory()
+    test.addCleanup(tmpdir.cleanup)
+
+    path = os.path.join(tmpdir.name, "asadm")
+    with open(path, "w") as f:
+        f.write(script)
+    os.chmod(path, 0o755)
+
+    return tmpdir.name
 
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
@@ -35,18 +50,12 @@ class AsinfoStderrTest(unittest.TestCase):
     """asinfo runs asadm and treats its stderr as failure, except the no-user warning."""
 
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmpdir.cleanup)
-
-        path = os.path.join(self.tmpdir.name, "asadm")
-        with open(path, "w") as f:
-            f.write(FAKE_ASADM)
-        os.chmod(path, 0o755)
+        self.bindir = install_asadm(self, FAKE_ASADM)
 
     def run_asinfo(self, stderr):
         env = dict(
             os.environ,
-            PATH=self.tmpdir.name + os.pathsep + os.environ.get("PATH", ""),
+            PATH=self.bindir + os.pathsep + os.environ.get("PATH", ""),
             FAKE_ASADM_STDOUT="build-output",
             FAKE_ASADM_STDERR=stderr,
         )
@@ -90,6 +99,35 @@ class AsinfoStderrTest(unittest.TestCase):
         self.assertIn(error, cp.stdout)
         self.assertNotIn(NO_USER_WARNING, cp.stdout)
         self.assertEqual(cp.stderr, NO_USER_WARNING + "\n")
+
+
+@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
+class AsinfoRealAsadmTest(unittest.TestCase):
+    """The warning filter matches what asadm.py itself logs."""
+
+    def test_no_user_warning_from_asadm_is_passed_through(self):
+        bindir = install_asadm(self, REAL_ASADM)
+        env = dict(
+            os.environ,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=os.path.join(ROOT, "asadm.py"),
+        )
+        env.pop("ASINFO_TEST_UNSET", None)
+
+        cp = subprocess.run(
+            [sys.executable, ASINFO, "--no-config-file", "-h", "127.0.0.1", "-p", "1"]
+            + ["-P", "env:ASINFO_TEST_UNSET", "-v", "build"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stderr, NO_USER_WARNING + "\n")
+        self.assertIn("Not able to connect any cluster", cp.stdout)
+        self.assertNotIn("ignored because no user is set", cp.stdout)
 
 
 if __name__ == "__main__":
