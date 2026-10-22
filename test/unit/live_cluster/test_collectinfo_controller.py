@@ -20,6 +20,7 @@ import logging.handlers
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1151,6 +1152,41 @@ class RunCollectinfoArchivesPartialBundleTest(unittest.IsolatedAsyncioTestCase):
         self.root_controller_mock.assert_called_once()
         self.ascollectinfo_mock.assert_awaited_once()
         self.archive_mock.assert_called_once_with(self.work_dir)
+
+
+class DumpCollectinfoSysinfoTest(unittest.IsolatedAsyncioTestCase):
+    async def test_collect_sys_info_runs_off_the_event_loop_thread(self):
+        """Its shell commands take tens of seconds on a node and would stall the loop."""
+        controller = CollectinfoController()
+        controller.cluster = MagicMock()
+        controller.cluster.get_seed_nodes.return_value = [("10.0.0.1", 3100, None)]
+        calls = []
+
+        def collect_sys_info(**kwargs):
+            calls.append((threading.get_ident(), kwargs))
+            return ["iostat"]
+
+        with patch(
+            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
+            collect_sys_info,
+        ):
+            await controller._dump_collectinfo_sysinfo("prefix_", "header")
+
+        self.assertEqual(
+            calls,
+            [
+                (
+                    mock.ANY,
+                    {
+                        "port": 3100,
+                        "file_header": "header",
+                        "outfile": "prefix_sysinfo.log",
+                    },
+                )
+            ],
+        )
+        self.assertNotEqual(calls[0][0], threading.get_ident())
+        self.assertEqual(controller.failed_cmds, ["iostat"])
 
 
 class ClassifyExceptionTest(unittest.TestCase):

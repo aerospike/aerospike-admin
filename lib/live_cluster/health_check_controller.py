@@ -825,7 +825,7 @@ class HealthCheckController(LiveClusterCommandController):
 
                 sn_ct += 1
                 logger.info("Snapshot " + str(sn_ct))
-                time.sleep(sleep)
+                await asyncio.sleep(sleep)
 
             # FEATKEY is defined during tests. This is to help debugging github actions failures.
             if os.environ.get("FEATKEY"):

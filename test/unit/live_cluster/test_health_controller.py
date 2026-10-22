@@ -14,7 +14,7 @@
 
 import unittest
 import warnings
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
 from lib.health.health_checker import HealthChecker
 from lib.live_cluster.health_check_controller import HealthCheckController
@@ -41,7 +41,7 @@ CLUSTER_INFO_METHODS = (
 )
 
 
-class HealthCheckControllerDeprecationTest(unittest.IsolatedAsyncioTestCase):
+class HealthCheckControllerTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.enterContext(warnings.catch_warnings())
         warnings.filterwarnings("error", category=RuntimeWarning)
@@ -58,6 +58,8 @@ class HealthCheckControllerDeprecationTest(unittest.IsolatedAsyncioTestCase):
         self.controller.nodes = []
         self.controller.mods = {}
 
+
+class HealthCheckControllerDeprecationTest(HealthCheckControllerTestCase):
     async def test_default_warns_deprecated_and_still_runs(self):
         with self.assertLogs(
             "lib.live_cluster.health_check_controller", level="WARNING"
@@ -67,3 +69,17 @@ class HealthCheckControllerDeprecationTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("deprecated" in msg for msg in cm.output))
         self.health_checker_mock.execute.assert_called_once()
         self.view_mock.print_health_output.assert_called_once()
+
+
+class HealthCheckControllerSnapshotSleepTest(HealthCheckControllerTestCase):
+    async def test_sleep_between_snapshots_yields_the_event_loop(self):
+        """time.sleep here stalled every in-flight request on the loop."""
+        with patch(
+            "lib.live_cluster.health_check_controller.asyncio.sleep", AsyncMock()
+        ) as async_sleep_mock, patch(
+            "lib.live_cluster.health_check_controller.time.sleep"
+        ) as time_sleep_mock:
+            await self.controller._do_default(["-n", "2", "-s", "3"])
+
+        self.assertEqual(async_sleep_mock.await_args_list, [call(3.0), call(3.0)])
+        time_sleep_mock.assert_not_called()
