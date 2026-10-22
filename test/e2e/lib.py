@@ -88,6 +88,7 @@ SETS = []
 INDEXES = []
 UDFS = []
 SERVER_IP = None
+FIRST_NODE_BRIDGE_IP = None
 
 # used for testing, disable to connect to a locally running aerospike server
 USE_DOCKER_SERVERS = True
@@ -503,11 +504,13 @@ def start_server(
     config_content=None,
     preview_features=None,
     ckpt_dir=None,
+    mesh_over_bridge=False,
 ):
     global CLIENT
     global NODES
     global RUNNING
     global SERVER_IP
+    global FIRST_NODE_BRIDGE_IP
 
     mount_dir = absolute_path(WORK_DIRECTORY)
 
@@ -526,10 +529,11 @@ def start_server(
             template_content = file_obj.read()
 
     if template_content:
+        peer_ip = FIRST_NODE_BRIDGE_IP if mesh_over_bridge else SERVER_IP
         conf_file = create_conf_file_from_template(
             template_content,
             base,
-            None if index == 1 else (SERVER_IP, first_base),
+            None if index == 1 else (peer_ip, first_base),
             True,
             index,
             access_address=access_address,
@@ -602,6 +606,10 @@ def start_server(
 
     NODES[index - 1] = container
     container.reload()
+    bridge_ip = container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
+
+    if index == 1:
+        FIRST_NODE_BRIDGE_IP = bridge_ip
 
     # For local development, use localhost since ports are mapped to host
     # For CI/CD environments, you might want to use the container IP
@@ -611,7 +619,7 @@ def start_server(
     if use_localhost:
         return "127.0.0.1"
     else:
-        return container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
+        return bridge_ip
 
 
 def start(
@@ -623,7 +631,10 @@ def start(
     config_content=None,
     preview_features=None,
     ckpt_dir=None,
+    mesh_over_bridge=False,
 ):
+    """mesh_over_bridge seeds the mesh with node 1's bridge IP. With SERVER_IP
+    127.0.0.1, each container would seed itself and form a single-node cluster."""
     global CLIENT
     global NODES
     global RUNNING
@@ -652,6 +663,7 @@ def start(
                     config_content=config_content,
                     preview_features=preview_features,
                     ckpt_dir=ckpt_dir,
+                    mesh_over_bridge=mesh_over_bridge,
                 )
                 if index == 1:
                     SERVER_IP = ip

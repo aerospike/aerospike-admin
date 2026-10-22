@@ -136,6 +136,15 @@ DUMP_DOCKER_LOGS=true FEATKEY=(base64 -i path/to/features.conf) make integration
 ```
 This will save container logs to the `docker_logs/` directory when containers are stopped.
 
+### Running Performance Tests
+```
+FEATKEY=(base64 -i path/to/features.conf) make perf
+```
+Runs asadm against a 3-node docker cluster and prints how long each scenario blocked the
+event loop and where, plus info calls, connections, logins, password hashes, timeouts and
+live nodes. A scenario fails when it goes over its budget. Not part of `make unit` or
+`make integration`.
+
 ### Running all tests with coverage
 ```
 FEATKEY=(base64 -i path/to/features.conf) make coverage
