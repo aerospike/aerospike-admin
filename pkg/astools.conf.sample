@@ -71,6 +71,7 @@
 # tls-keyfile-password = ""
 # Prefixes are case-sensitive. A password that itself begins with "env:",
 # "env-b64:", "b64:" or "file:" must be given as "b64:".
+# Surrounding whitespace is trimmed before the form is read.
 # The password must be at most 1024 bytes.
 
 # One of the tls-cafile or tls-capath is required. if both are specified

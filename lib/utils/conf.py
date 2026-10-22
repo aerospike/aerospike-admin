@@ -480,7 +480,7 @@ def resolve_password_sources(args):
 
 def resolve_keyfile_password(value, option="--tls-keyfile-password"):
     return password_source.resolve(
-        value,
+        value.strip(),
         option,
         max_len=password_source.TLS_KEYFILE_PASSWORD_MAX_LEN,
         first_line=True,
@@ -488,15 +488,14 @@ def resolve_keyfile_password(value, option="--tls-keyfile-password"):
 
 
 def read_piped_password(max_len=password_source.PASSWORD_MAX_LEN):
-    line = sys.stdin.readline(max_len + len("\r\n") + 1)
+    limit = max_len + len("\r\n") + 1
+    line = sys.stdin.readline(limit)
 
-    if line.endswith("\r\n"):
-        return line[:-2]
+    # A cut-off line stays as read so the length check rejects it.
+    if len(line) == limit and not line.endswith("\n"):
+        return line
 
-    if line.endswith("\n"):
-        return line[:-1]
-
-    return line
+    return line.strip()
 
 
 def check_typed_password(password, auth_mode):
@@ -584,7 +583,8 @@ def print_config_file_option():
         "                      The password is read only when a user is set and the auth mode is\n"
         "                      not PKI. It must be at most 63 bytes.\n"
         "                      User will be prompted on command line if -P specified and no\n"
-        "                      password is given. The typed password is used as is."
+        "                      password is given. The typed password is used as is. A password\n"
+        "                      piped on stdin has surrounding whitespace trimmed."
     )
     print(
         " --auth=AUTHENTICATION_MODE\n"
@@ -636,6 +636,7 @@ def print_config_file_option():
         "                      and one trailing newline is dropped after decoding.\n"
         "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
         "                      'file:' must be given as 'b64:'.\n"
+        "                      Surrounding whitespace is trimmed before the form is read.\n"
         "                      The password is read only when a key file is set. It must be at\n"
         "                      most 1024 bytes.\n"
         "                      Default: none\n"
