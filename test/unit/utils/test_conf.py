@@ -499,7 +499,8 @@ class TypedPasswordTest(unittest.TestCase):
     def test_typed_keyfile_password_accepts_the_forms(self):
         with patch.dict(os.environ, {"KP": PW}):
             self.assertEqual(conf.resolve_keyfile_password("env:KP"), PW)
-            self.assertEqual(conf.resolve_keyfile_password(" env:KP \t"), PW)
+            self.assertEqual(conf.resolve_keyfile_password(" \v\fenv:KP \t\r\n"), PW)
+            self.assertEqual(conf.resolve_keyfile_password(" env:KP"), " env:KP")
 
     def test_typed_keyfile_password_limited_to_1024_bytes(self):
         self.assertEqual(conf.resolve_keyfile_password("x" * 1024), "x" * 1024)

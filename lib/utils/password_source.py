@@ -34,6 +34,7 @@ import os
 PASSWORD_MAX_LEN = 63
 TLS_KEYFILE_PASSWORD_MAX_LEN = 1024
 PASSWORD_FILE_MAX_LEN = 4999
+WHITESPACE = " \t\n\v\f\r"
 
 _SOURCES = ("env", "env-b64", "b64", "file")
 

@@ -480,7 +480,7 @@ def resolve_password_sources(args):
 
 def resolve_keyfile_password(value, option="--tls-keyfile-password"):
     return password_source.resolve(
-        value.strip(),
+        value.strip(password_source.WHITESPACE),
         option,
         max_len=password_source.TLS_KEYFILE_PASSWORD_MAX_LEN,
         first_line=True,
@@ -495,7 +495,7 @@ def read_piped_password(max_len=password_source.PASSWORD_MAX_LEN):
     if len(line) == limit and not line.endswith("\n"):
         return line
 
-    return line.strip()
+    return line.strip(password_source.WHITESPACE)
 
 
 def check_typed_password(password, auth_mode):
