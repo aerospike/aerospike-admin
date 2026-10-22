@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 from lib.secret_agent.testing import FakeSecretAgent
 from lib.utils import conf
+from lib.utils.constants import AuthMode
 from lib.utils.password_source import PasswordSourceError
 
 PW = "s3cr3t-pw"
@@ -117,7 +118,9 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         self.assertEqual(args.password, conf.DEFAULTPASSWORD)
 
     def test_password_not_resolved_without_user(self):
-        args = self.load("-P", "env:" + UNSET)
+        with self.assertLogs(conf.logger, "WARNING"):
+            args = self.load("-P", "env:" + UNSET)
+
         self.assertEqual(args.password, "env:" + UNSET)
 
     def test_password_error(self):
@@ -129,11 +132,145 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
             "--password: environment variable {} is not set or empty".format(UNSET),
         )
 
+    def test_password_from_source_limited_to_63_bytes(self):
+        with patch.dict(os.environ, {"AS_LONG": "x" * 64}):
+            with self.assertRaises(PasswordSourceError) as cm:
+                self.load("-U", "admin", "-P", "env:AS_LONG")
+
+        self.assertEqual(
+            str(cm.exception),
+            "--password: value from environment variable AS_LONG is longer than 63 bytes",
+        )
+
+    def test_literal_password_limited_to_63_bytes(self):
+        args = self.load("-U", "admin", "-P", "x" * 63)
+        self.assertEqual(args.password, "x" * 63)
+
+        for password in ("x" * 64, "é" * 32):
+            with self.subTest(password=password):
+                with self.assertRaises(PasswordSourceError) as cm:
+                    self.load("-U", "admin", "-P", password)
+
+                self.assertEqual(
+                    str(cm.exception), "--password: password is longer than 63 bytes"
+                )
+
+    def test_literal_password_from_config_file_limited_to_63_bytes(self):
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.load(
+                config='[cluster]\nuser = "admin"\npassword = "{}"\n'.format("x" * 64)
+            )
+
+        self.assertEqual(
+            str(cm.exception),
+            "password in config file: password is longer than 63 bytes",
+        )
+
     def test_password_error_from_config_file(self):
         with self.assertRaises(PasswordSourceError) as cm:
             self.load(config='[cluster]\nuser = "admin"\npassword = "b64:!!"\n')
 
-        self.assertEqual(str(cm.exception), "--password: invalid base64 in b64: value")
+        self.assertEqual(
+            str(cm.exception), "password in config file: invalid base64 in b64: value"
+        )
+
+    def test_password_error_from_config_instance(self):
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.load(
+                "--instance",
+                "x",
+                config=(
+                    '[cluster]\nuser = "admin"\npassword = "env:AS_PASS"\n'
+                    '[cluster_x]\nuser = "admin"\npassword = "env:{}"\n'.format(UNSET)
+                ),
+            )
+
+        self.assertEqual(
+            str(cm.exception),
+            "password in config file: environment variable {} is not set or empty".format(
+                UNSET
+            ),
+        )
+
+    def test_password_label_follows_the_value_used(self):
+        config = '[cluster]\nuser = "admin"\npassword = "env:AS_PASS"\n'
+
+        for argv, label in (
+            ((), "password in config file"),
+            (("-P", "env:AS_PASS"), "--password"),
+            (("-P",), "--password"),
+        ):
+            with self.subTest(argv=argv):
+                self.assertEqual(
+                    conf.option_label(self.load(*argv, config=config), "password"),
+                    label,
+                )
+
+        self.assertEqual(
+            conf.option_label(self.load("-U", "admin"), "password"), "--password"
+        )
+
+    def test_command_line_password_error_overrides_config_file(self):
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.load(
+                "-P",
+                "file:",
+                config='[cluster]\nuser = "admin"\npassword = "env:AS_PASS"\n',
+            )
+
+        self.assertEqual(str(cm.exception), "--password: file: requires a path")
+
+    def test_password_with_empty_name(self):
+        for value, message in (
+            ("env:", "--password: env: requires a variable name"),
+            ("env-b64:", "--password: env-b64: requires a variable name"),
+            ("file:", "--password: file: requires a path"),
+            ("b64:", "--password: password from b64: value is empty"),
+        ):
+            with self.subTest(value=value):
+                with self.assertRaises(PasswordSourceError) as cm:
+                    self.load("-U", "admin", "-P", value)
+
+                self.assertEqual(str(cm.exception), message)
+
+    def test_no_user_warns_for_a_source(self):
+        for argv, config, label in (
+            (("-P", "env:" + UNSET), None, "--password"),
+            (("-P", "file:"), None, "--password"),
+            ((), '[cluster]\npassword = "b64:!!"\n', "password in config file"),
+        ):
+            with self.subTest(argv=argv, config=config):
+                with self.assertLogs(conf.logger, "WARNING") as logs:
+                    self.load(*argv, config=config)
+
+                self.assertEqual(
+                    [r.getMessage() for r in logs.records],
+                    [label + ": ignored because no user is set"],
+                )
+
+    def test_no_user_does_not_warn_for_a_literal(self):
+        for argv in (("-P", "x" * 64), ("-P",), ("-P", "ENV:" + UNSET), ()):
+            with self.subTest(argv=argv), self.assertNoLogs(conf.logger, "WARNING"):
+                self.load(*argv)
+
+    def test_pki_skips_password_resolution(self):
+        for argv in (
+            ("-U", "admin", "--auth", "pki", "-P", "env:" + UNSET),
+            ("-U", "admin", "--auth", "Pki", "-P", "x" * 64),
+        ):
+            with self.subTest(argv=argv), self.assertNoLogs(conf.logger, "WARNING"):
+                self.assertEqual(self.load(*argv).password, argv[-1])
+
+        with self.assertNoLogs(conf.logger, "WARNING"):
+            args = self.load(
+                config='[cluster]\nauth = "pki"\npassword = "env:{}"\n'.format(UNSET)
+            )
+
+        self.assertEqual(args.password, "env:" + UNSET)
+
+    def test_pki_leaves_bare_password_for_prompt(self):
+        args = self.load("-U", "admin", "--auth", "PKI", "-P")
+        self.assertEqual(args.password, conf.DEFAULTPASSWORD)
 
     def test_keyfile_password_env(self):
         args = self.load(
@@ -167,8 +304,38 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         )
         self.assertEqual(args.tls_keyfile_password, PW)
 
-    def test_keyfile_password_file_is_stripped(self):
+    def test_keyfile_password_file_is_not_stripped(self):
         path = self.write_file("kp", "  " + PW + "  \n\n")
+        args = self.load(
+            "--tls-enable",
+            "--tls-keyfile",
+            "/k.pem",
+            "--tls-keyfile-password",
+            "file:" + path,
+        )
+        self.assertEqual(args.tls_keyfile_password, "  " + PW + "  ")
+
+    def test_keyfile_password_file_empty_first_line(self):
+        path = self.write_file("kp", "\n" + PW + "\n")
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.load(
+                "--tls-enable",
+                "--tls-keyfile",
+                "/k.pem",
+                "--tls-keyfile-password",
+                "file:" + path,
+            )
+
+        self.assertEqual(
+            str(cm.exception),
+            "--tls-keyfile-password: password from first line of file {} is empty".format(
+                path
+            ),
+        )
+
+    def test_keyfile_password_file_uses_first_line(self):
+        path = self.write_file("kp", PW + "\nsecond line\n")
         args = self.load(
             "--tls-enable",
             "--tls-keyfile",
@@ -178,7 +345,71 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         )
         self.assertEqual(args.tls_keyfile_password, PW)
 
-    def test_padded_keyfile_password_from_config_file(self):
+    def test_keyfile_password_limited_to_1024_bytes(self):
+        tls = ("--tls-enable", "--tls-keyfile", "/k.pem", "--tls-keyfile-password")
+        path = self.write_file("kp", "x" * 1025 + "\n")
+
+        with patch.dict(os.environ, {"KP": "x" * 1024}):
+            for value in ("x" * 1024, "env:KP"):
+                with self.subTest(value=value[:8]):
+                    args = self.load(*tls, value)
+                    self.assertEqual(args.tls_keyfile_password, "x" * 1024)
+
+        with patch.dict(os.environ, {"KP": "x" * 1025}):
+            for value, message in (
+                ("x" * 1025, "password is longer than 1024 bytes"),
+                (
+                    "env:KP",
+                    "value from environment variable KP is longer than 1024 bytes",
+                ),
+                (
+                    "file:" + path,
+                    "value from file {} is longer than 1024 bytes".format(path),
+                ),
+            ):
+                with self.subTest(value=value[:8]):
+                    with self.assertRaises(PasswordSourceError) as cm:
+                        self.load(*tls, value)
+
+                    self.assertEqual(
+                        str(cm.exception), "--tls-keyfile-password: " + message
+                    )
+
+    def test_keyfile_password_label_follows_the_value_used(self):
+        config = (
+            "[cluster]\ntls-enable = true\n"
+            'tls-keyfile = "/k.pem"\n'
+            'tls-keyfile-password = "env:{}"\n'.format(UNSET)
+        )
+
+        for argv, label in (
+            ((), "tls-keyfile-password in config file"),
+            (("--tls-keyfile-password", "env:" + UNSET), "--tls-keyfile-password"),
+        ):
+            with self.subTest(argv=argv):
+                with self.assertRaises(PasswordSourceError) as cm:
+                    self.load(*argv, config=config)
+
+                self.assertEqual(
+                    str(cm.exception),
+                    "{}: environment variable {} is not set or empty".format(
+                        label, UNSET
+                    ),
+                )
+
+    def test_keyfile_password_from_command_line_overrides_config_file(self):
+        args = self.load(
+            "--tls-keyfile-password",
+            "env:KP",
+            config=(
+                "[cluster]\ntls-enable = true\n"
+                'tls-keyfile = "/k.pem"\n'
+                'tls-keyfile-password = "env:{}"\n'.format(UNSET)
+            ),
+        )
+        self.assertEqual(args.tls_keyfile_password, PW)
+
+    def test_padded_keyfile_password_from_config_file_is_literal(self):
         args = self.load(
             config=(
                 "[cluster]\ntls-enable = true\n"
@@ -186,7 +417,7 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
                 'tls-keyfile-password = " env:KP "\n'
             )
         )
-        self.assertEqual(args.tls_keyfile_password, PW)
+        self.assertEqual(args.tls_keyfile_password, " env:KP ")
 
     def test_bare_keyfile_password_left_for_prompt(self):
         args = self.load(
@@ -472,6 +703,60 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         logger.critical.assert_called_once()
 
 
+class TypedPasswordTest(unittest.TestCase):
+    def test_typed_password_limited_to_63_bytes(self):
+        conf.check_typed_password("x" * 63, AuthMode.INTERNAL)
+
+        for password in ("x" * 64, "é" * 32):
+            with self.subTest(password=password):
+                with self.assertRaises(PasswordSourceError) as cm:
+                    conf.check_typed_password(password, AuthMode.INTERNAL)
+
+                self.assertEqual(
+                    str(cm.exception), "--password: password is longer than 63 bytes"
+                )
+
+    def test_typed_password_not_checked_with_pki(self):
+        conf.check_typed_password("x" * 64, AuthMode.PKI)
+
+    def test_piped_password_drops_only_the_line_ending(self):
+        for piped, expected in (
+            (" s3cr3t \r\n", " s3cr3t "),
+            (" s3cr3t \n", " s3cr3t "),
+            (" s3cr3t ", " s3cr3t "),
+            ("s3cr3t\r", "s3cr3t\r"),
+            ("s3cr3t\nmore\n", "s3cr3t"),
+        ):
+            with self.subTest(piped=piped), patch("sys.stdin", io.StringIO(piped)):
+                self.assertEqual(conf.read_piped_password(), expected)
+
+    def test_piped_password_read_is_bounded(self):
+        for args, read in (((), 66), ((1024,), 1027)):
+            with self.subTest(args=args):
+                stdin = io.StringIO("x" * 100_000)
+
+                with patch("sys.stdin", stdin):
+                    self.assertEqual(conf.read_piped_password(*args), "x" * read)
+
+                self.assertEqual(stdin.tell(), read)
+
+    def test_typed_keyfile_password_accepts_the_forms(self):
+        with patch.dict(os.environ, {"KP": PW}):
+            self.assertEqual(conf.resolve_keyfile_password("env:KP"), PW)
+            self.assertEqual(conf.resolve_keyfile_password(" env:KP "), " env:KP ")
+
+    def test_typed_keyfile_password_limited_to_1024_bytes(self):
+        self.assertEqual(conf.resolve_keyfile_password("x" * 1024), "x" * 1024)
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            conf.resolve_keyfile_password("x" * 1025)
+
+        self.assertEqual(
+            str(cm.exception),
+            "--tls-keyfile-password: password is longer than 1024 bytes",
+        )
+
+
 class PasswordHelpTest(unittest.TestCase):
     def test_help_lists_every_form(self):
         out = io.StringIO()
@@ -500,6 +785,78 @@ class PasswordHelpTest(unittest.TestCase):
 
         self.assertIn("--sa-ca-file", err.getvalue())
         self.assertNotIn("--sa-cafile", err.getvalue())
+
+    def test_help_password_block(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        indent = "\n" + " " * 22
+        block = (
+            " -P, --password       Password used to authenticate with cluster. Default: none"
+            + indent
+            + indent.join(
+                [
+                    "It can be one of the following:",
+                    "1) Environment variable: 'env:<VAR>', used exactly as set",
+                    "2) Base64 encoded environment variable: 'env-b64:<VAR>'",
+                    "3) Base64 encoded string: 'b64:<BASE64>'",
+                    "4) File: 'file:<PATH>', the whole file less one trailing '\\n' or",
+                    "   '\\r\\n'. PATH should name a regular file.",
+                    "5) Aerospike Secret Agent: 'secrets:<resource>:<key>'",
+                    "6) String: 'PASSWORD'",
+                    "Prefixes are case-sensitive. A base64 value may be line wrapped,",
+                    "and one trailing newline is dropped after decoding. A 'b64:' value",
+                    "on the command line is as visible as a literal password.",
+                    "A password that itself begins with 'env:', 'env-b64:', 'b64:',",
+                    "'file:' or 'secrets:' must be given as 'b64:' or typed at the",
+                    "prompt.",
+                    "The password is read only when a user is set and the auth mode is",
+                    "not PKI. It must be at most 63 bytes.",
+                    "A value fetched with 'secrets:' is used as-is.",
+                    "User will be prompted on command line if -P specified and no",
+                    "password is given. The typed password is used as is.",
+                ]
+            )
+            + "\n"
+        )
+        self.assertIn(block, out.getvalue())
+
+    def test_help_keyfile_password_block(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        indent = "\n" + " " * 22
+        block = (
+            " --tls-keyfile-password=password"
+            + indent
+            + indent.join(
+                [
+                    "Password to load protected tls-keyfile.",
+                    "It can be one of the following:",
+                    "1) Environment variable: 'env:<VAR>', used exactly as set",
+                    "2) Base64 encoded environment variable: 'env-b64:<VAR>'",
+                    "3) Base64 encoded string: 'b64:<BASE64>'",
+                    "4) File: 'file:<PATH>', the first line of the file",
+                    "5) Aerospike Secret Agent: 'secrets:<resource>:<key>'",
+                    "6) String: 'PASSWORD'",
+                    "Prefixes are case-sensitive. A base64 value may be line wrapped,",
+                    "and one trailing newline is dropped after decoding.",
+                    "A password that itself begins with 'env:', 'env-b64:', 'b64:',",
+                    "'file:' or 'secrets:' must be given as 'b64:'.",
+                    "The password is read only when a key file is set. It must be at",
+                    "most 1024 bytes.",
+                    "A value fetched with 'secrets:' is used as-is.",
+                    "Default: none",
+                    "User will be prompted on command line if --tls-keyfile-password",
+                    "specified and no password is given. The typed password",
+                    "accepts the forms above.",
+                ]
+            )
+            + "\n"
+        )
+        self.assertIn(block, out.getvalue())
 
 
 if __name__ == "__main__":

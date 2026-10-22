@@ -63,7 +63,10 @@ from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf, secret_agent_conf
-from lib.utils.password_source import PasswordSourceError
+from lib.utils.password_source import (
+    PasswordSourceError,
+    TLS_KEYFILE_PASSWORD_MAX_LEN,
+)
 from lib.utils.constants import (
     ADMIN_HOME,
     AdminMode,
@@ -178,7 +181,9 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         if sys.stdin.isatty():
                             password = getpass.getpass("Enter Password:")
                         else:
-                            password = sys.stdin.readline().strip()
+                            password = conf.read_piped_password()
+
+                        conf.check_typed_password(password, auth_mode)
 
                 # Construct user agent string using username if available, otherwise "unknown"
                 user_agent_id = user if user is not None else ASADM_APP_ID
@@ -689,7 +694,9 @@ def parse_tls_input(cli_args):
             if sys.stdin.isatty():
                 keyfile_password = getpass.getpass("Enter TLS-Keyfile Password:")
             else:
-                keyfile_password = sys.stdin.readline().strip()
+                keyfile_password = conf.read_piped_password(
+                    TLS_KEYFILE_PASSWORD_MAX_LEN
+                )
 
             keyfile_password = conf.resolve_keyfile_password(
                 keyfile_password, secret_agent_conf.fetcher(cli_args)
@@ -709,6 +716,9 @@ def parse_tls_input(cli_args):
             crl_check_all=cli_args.tls_crl_check_all,
         ).ctx
 
+    except PasswordSourceError as e:
+        logger.critical(e)
+        sys.exit(1)
     except Exception as e:
         logger.error("SSLContext creation Exception: " + str(e))
         sys.exit(1)
@@ -737,7 +747,9 @@ async def execute_asinfo_commands(
             if sys.stdin.isatty():
                 password = getpass.getpass("Enter Password:")
             else:
-                password = sys.stdin.readline().strip()
+                password = conf.read_piped_password()
+
+            conf.check_typed_password(password, auth_mode)
 
         if not info.hasbcrypt:
             logger.critical("Authentication failed: bcrypt not installed.")
