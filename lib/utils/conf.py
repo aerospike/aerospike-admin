@@ -23,7 +23,7 @@ import copy
 from jsonschema import validate
 from collections.abc import Mapping
 
-from lib.utils import password_source
+from lib.utils import password_source, secret_agent_conf
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
@@ -86,6 +86,7 @@ _confspec = """{
     "properties": {
        "cluster" : { "$ref" : "#/definitions/instance" },
        "asadm" : { "$ref" : "#/definitions/asadm" },
+       "secret-agent" : { "$ref" : "#/definitions/secret-agent" },
        "include" : {
             "type" : "object",
             "additionalProperties" : false,
@@ -97,9 +98,21 @@ _confspec = """{
     },
     "patternProperties": {
         "^cluster_.*$" : { "$ref" : "#/definitions/instance" },
-        "^asadm_.*$" : { "$ref" : "#/definitions/asadm" }
+        "^asadm_.*$" : { "$ref" : "#/definitions/asadm" },
+        "^secret-agent_.*$" : { "$ref" : "#/definitions/secret-agent" }
     },
     "definitions" : {
+        "secret-agent" : {
+            "type" : "object",
+            "additionalProperties" : false,
+            "properties" : {
+                "sa-address" : { "type" : "string" },
+                "sa-port" : { "type" : ["integer", "string"] },
+                "sa-timeout" : { "type" : "integer" },
+                "sa-cafile" : { "type" : "string" },
+                "sa-ca-file" : { "type" : "string" }
+            }
+        },
         "asadm" : {
             "type" : "object",
             "properties" : {
@@ -395,7 +408,8 @@ def loadconfig(cli_args):
                     )
 
     asadm_dict = _flatten(default_conf_dict)
-    _merge(asadm_dict, _flatten(conf_dict, cli_args.instance))
+    file_dict = _flatten(conf_dict, cli_args.instance)
+    _merge(asadm_dict, file_dict)
 
     # -> Command line
     cli_dict = vars(cli_args)
@@ -403,10 +417,22 @@ def loadconfig(cli_args):
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
+    asadm_dict["config_file_options"] = [
+        key.replace("_", "-")
+        for key in ("password", "tls_keyfile_password")
+        if cli_dict.get(key) is None and file_dict.get(key) is not None
+    ]
+
     try:
         asadm_dict["auth"] = AuthMode[asadm_dict["auth"].upper()]
     except Exception:
         logger.critical("Wrong authentication mode: " + str(asadm_dict["auth"]))
+
+    # Kept apart from the merged options: the agent address precedence needs to
+    # know which values came from the config file.
+    asadm_dict["secret_agent_section"] = secret_agent_conf.file_section(
+        conf_dict, cli_args.instance
+    )
 
     # Find seed nods
     seeds = _getseeds(asadm_dict)
@@ -433,21 +459,75 @@ def loadconfig(cli_args):
     return args, seeds
 
 
-def resolve_password_sources(args):
+def option_label(args, option):
+    if option in getattr(args, "config_file_options", ()):
+        return option + " in config file"
+
+    return "--" + option
+
+
+def _resolve_password(args, fetch_secret):
     # DEFAULTPASSWORD means prompt later.
-    if args.user is not None and args.password not in (None, DEFAULTPASSWORD):
-        args.password = password_source.resolve(args.password, "--password")
+    if args.auth == AuthMode.PKI or args.password in (None, DEFAULTPASSWORD):
+        return
+
+    label = option_label(args, "password")
+
+    if args.user is None:
+        if password_source.has_source(args.password, fetch_secret):
+            logger.warning("%s: ignored because no user is set", label)
+
+        return
+
+    args.password = password_source.resolve(
+        args.password, label, fetch_secret, max_len=password_source.PASSWORD_MAX_LEN
+    )
+
+
+def resolve_password_sources(args):
+    fetch_secret = secret_agent_conf.fetcher(args)
+
+    _resolve_password(args, fetch_secret)
 
     if (
         args.tls_enable
         and args.tls_keyfile
         and args.tls_keyfile_password not in (None, DEFAULTPASSWORD)
     ):
-        args.tls_keyfile_password = resolve_keyfile_password(args.tls_keyfile_password)
+        args.tls_keyfile_password = resolve_keyfile_password(
+            args.tls_keyfile_password,
+            fetch_secret,
+            option_label(args, "tls-keyfile-password"),
+        )
 
 
-def resolve_keyfile_password(value):
-    return password_source.resolve(value, "--tls-keyfile-password", strip=True)
+def resolve_keyfile_password(value, fetch_secret=None, option="--tls-keyfile-password"):
+    return password_source.resolve(
+        value,
+        option,
+        fetch_secret,
+        max_len=password_source.TLS_KEYFILE_PASSWORD_MAX_LEN,
+        first_line=True,
+    )
+
+
+def read_piped_password(max_len=password_source.PASSWORD_MAX_LEN):
+    line = sys.stdin.readline(max_len + len("\r\n") + 1)
+
+    if line.endswith("\r\n"):
+        return line[:-2]
+
+    if line.endswith("\n"):
+        return line[:-1]
+
+    return line
+
+
+def check_typed_password(password, auth_mode):
+    if auth_mode != AuthMode.PKI:
+        password_source.check_len(
+            password, "--password", password_source.PASSWORD_MAX_LEN
+        )
 
 
 def print_config_help():
@@ -514,13 +594,24 @@ def print_config_file_option():
     print(
         " -P, --password       Password used to authenticate with cluster. Default: none\n"
         "                      It can be one of the following:\n"
-        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      4) File: 'file:<PATH>', the whole file less one trailing '\\n' or\n"
+        "                         '\\r\\n'. PATH should name a regular file.\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
+        "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+        "                      and one trailing newline is dropped after decoding. A 'b64:' value\n"
+        "                      on the command line is as visible as a literal password.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+        "                      'file:' or 'secrets:' must be given as 'b64:' or typed at the\n"
+        "                      prompt.\n"
+        "                      The password is read only when a user is set and the auth mode is\n"
+        "                      not PKI. It must be at most 63 bytes.\n"
+        "                      A value fetched with 'secrets:' is used as-is.\n"
         "                      User will be prompted on command line if -P specified and no\n"
-        "                      password is given."
+        "                      password is given. The typed password is used as is."
     )
     print(
         " --auth=AUTHENTICATION_MODE\n"
@@ -563,14 +654,23 @@ def print_config_file_option():
         " --tls-keyfile-password=password\n"
         "                      Password to load protected tls-keyfile.\n"
         "                      It can be one of the following:\n"
-        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      4) File: 'file:<PATH>', the first line of the file\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
+        "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+        "                      and one trailing newline is dropped after decoding.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+        "                      'file:' or 'secrets:' must be given as 'b64:'.\n"
+        "                      The password is read only when a key file is set. It must be at\n"
+        "                      most 1024 bytes.\n"
+        "                      A value fetched with 'secrets:' is used as-is.\n"
         "                      Default: none\n"
-        "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"
-        "                      password is given."
+        "                      User will be prompted on command line if --tls-keyfile-password\n"
+        "                      specified and no password is given. The typed password\n"
+        "                      accepts the forms above."
     )
     print(
         " --tls-certfile=path  Path to the chain file for mutual authentication (if\n"
@@ -587,6 +687,8 @@ def print_config_file_option():
         "                      tls_capath."
     )
     print("")
+    print_secret_agent_options()
+    print("")
     print("[asadm]")
     print(
         " -s --services-alumni\n"
@@ -602,12 +704,36 @@ def print_config_file_option():
     )
 
 
+def print_secret_agent_options():
+    print("[secret-agent]")
+    print(" Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.")
+    print(
+        ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".\n'
+        "                      Secret Agent hostname or IP address.\n"
+        "                      Default: 127.0.0.1:3005"
+    )
+    print(
+        " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n"
+        "                      Default: 3005"
+    )
+    print(
+        " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more.\n"
+        "                      Default: 1000"
+    )
+    print(
+        " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret\n"
+        "                      Agent and verifies its certificate against this CA. The\n"
+        "                      agent's hostname or IP address must be in the certificate.\n"
+        "                      Default: none"
+    )
+
+
 def config_file_help():
     print("\n\n")
     print(
         "Default configuration files are read from the following files in the given order:\n"
         "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
-        "The following sections are read: (cluster asadm include)\n"
+        "The following sections are read: (cluster asadm secret-agent include)\n"
         "The following options effect configuration file behavior\n"
     )
     print(
@@ -617,7 +743,8 @@ def config_file_help():
     print(
         " --instance=name\n"
         "                      Section with these instance is read. e.g in case instance \n"
-        "                      `a` is specified sections cluster_a, asadm_a is read."
+        "                      `a` is specified sections cluster_a, asadm_a,\n"
+        "                      secret-agent_a is read."
     )
     print(
         " --config-file=path\n"
@@ -635,7 +762,7 @@ def create_deprecate_action(action, optional_msg=""):
     Used to create a deprecated flag action. The DeprecateAction is useful for obvious reasons
     but the need to pass a BaseClass may not be.  This allows you to deprecate a flag that already
     has an action defined.  argparse does not allow multiple actions. So you could do:
-    create_deprecate_action(argparse._Store)
+    create_deprecate_action(argparse._StoreAction)
 
     action - A argparse.Action class not an instance.
     optional_msg - Message to be printed after deprecation warning.
@@ -643,9 +770,7 @@ def create_deprecate_action(action, optional_msg=""):
 
     class DeprecateAction(action):
         def __call__(self, parser, namespace, values, option_string=None):
-            logger.warning(
-                "Argument %s is deprecated. %s", self.option_strings, optional_msg
-            )
+            logger.warning("Argument %s is deprecated. %s", option_string, optional_msg)
             super().__call__(parser, namespace, values, option_string)
 
     return DeprecateAction
@@ -699,6 +824,18 @@ def get_cli_args():
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
     add_fn("--timeout", type=float)
+
+    add_fn("--sa-address")
+    add_fn("--sa-port")
+    add_fn("--sa-timeout")
+    add_fn("--sa-ca-file")
+    add_fn(
+        "--sa-cafile",
+        action=create_deprecate_action(
+            argparse._StoreAction, "Use --sa-ca-file instead."
+        ),
+        help=argparse.SUPPRESS,
+    )
 
     add_fn("--config-file")
     add_fn("--instance")
