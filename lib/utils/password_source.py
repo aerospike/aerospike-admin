@@ -132,7 +132,8 @@ def _read_file(path: str, option: str, max_len: int, first_line: bool) -> str:
     return _to_text(data, option, "file " + path)
 
 
-# read1 so file:/dev/zero or a FIFO whose writer stays open returns at once.
+# read1 bounds the read in size, so file:/dev/zero cannot exhaust memory. A first-line
+# read returns at the line end. A whole-file read waits for EOF.
 def _read_head(path: str, option: str, cap: int, first_line: bool) -> bytes:
     data = b""
 
