@@ -1096,6 +1096,10 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
         with self._stdin(False, "env:AS_PASS\n"):
             self.assertEqual(await self._shell_password(), "env:AS_PASS")
 
+    async def test_shell_stdin_password_drops_only_the_line_ending(self):
+        with self._stdin(False, " s3cr3t \r\n"):
+            self.assertEqual(await self._shell_password(), " s3cr3t ")
+
     async def test_shell_getpass_password_is_literal(self):
         with self._stdin(True), patch(
             "asadm.getpass.getpass", return_value="b64:czNjcjN0"
@@ -1118,9 +1122,25 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(assock_cls.call_args[0][4], "file:/etc/hosts")
 
+    async def test_asinfo_stdin_password_drops_only_the_line_ending(self):
+        assock = Mock()
+        assock.connect = AsyncMock(return_value=False)
+
+        with self._stdin(False, " s3cr3t \n"), patch(
+            "asadm.ASSocket", return_value=assock
+        ) as assock_cls, patch("asadm.logger"):
+            await asadm.execute_asinfo_commands(
+                None,
+                ("1.1.1.1", 3000, None),
+                user="admin",
+                password=asadm.conf.DEFAULTPASSWORD,
+            )
+
+        self.assertEqual(assock_cls.call_args[0][4], " s3cr3t ")
+
 
 class PromptedKeyfilePasswordTest(unittest.TestCase):
-    """A prompted --tls-keyfile-password is stripped and resolved, as it always was."""
+    """A prompted --tls-keyfile-password is resolved and otherwise used as given."""
 
     def setUp(self):
         env = patch.dict(os.environ, {"KP": "kp-s3cr3t"})
@@ -1156,10 +1176,24 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
         self.assertEqual(self._keyfile_password(False, "env:KP\n"), "kp-s3cr3t")
 
     def test_getpass_source_is_resolved(self):
-        self.assertEqual(self._keyfile_password(True, " env:KP "), "kp-s3cr3t")
+        self.assertEqual(self._keyfile_password(True, "env:KP"), "kp-s3cr3t")
 
-    def test_getpass_literal_is_stripped(self):
-        self.assertEqual(self._keyfile_password(True, "  kp-s3cr3t \t"), "kp-s3cr3t")
+    def test_getpass_literal_is_not_stripped(self):
+        self.assertEqual(
+            self._keyfile_password(True, "  kp-s3cr3t \t"), "  kp-s3cr3t \t"
+        )
+
+    def test_padded_source_is_literal(self):
+        self.assertEqual(self._keyfile_password(True, " env:KP "), " env:KP ")
+
+    def test_stdin_drops_only_the_line_ending(self):
+        for typed, expected in (
+            (" kp-s3cr3t \r\n", " kp-s3cr3t "),
+            (" kp-s3cr3t \n", " kp-s3cr3t "),
+            (" kp-s3cr3t ", " kp-s3cr3t "),
+        ):
+            with self.subTest(typed=typed):
+                self.assertEqual(self._keyfile_password(False, typed), expected)
 
     def test_typed_password_limited_to_1024_bytes(self):
         self.assertEqual(self._keyfile_password(True, "x" * 1024), "x" * 1024)

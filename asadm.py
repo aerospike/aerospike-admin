@@ -178,7 +178,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
                         if sys.stdin.isatty():
                             password = getpass.getpass("Enter Password:")
                         else:
-                            password = sys.stdin.readline().strip()
+                            password = conf.read_piped_password()
 
                         conf.check_typed_password(password, auth_mode)
 
@@ -691,7 +691,7 @@ def parse_tls_input(cli_args):
             if sys.stdin.isatty():
                 keyfile_password = getpass.getpass("Enter TLS-Keyfile Password:")
             else:
-                keyfile_password = sys.stdin.readline().strip()
+                keyfile_password = conf.read_piped_password()
 
             keyfile_password = conf.resolve_keyfile_password(keyfile_password)
 
@@ -740,7 +740,7 @@ async def execute_asinfo_commands(
             if sys.stdin.isatty():
                 password = getpass.getpass("Enter Password:")
             else:
-                password = sys.stdin.readline().strip()
+                password = conf.read_piped_password()
 
             conf.check_typed_password(password, auth_mode)
 

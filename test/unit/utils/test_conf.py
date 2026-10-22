@@ -408,7 +408,7 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         )
         self.assertEqual(args.tls_keyfile_password, PW)
 
-    def test_padded_keyfile_password_from_config_file(self):
+    def test_padded_keyfile_password_from_config_file_is_literal(self):
         args = self.load(
             config=(
                 "[cluster]\ntls-enable = true\n"
@@ -416,7 +416,7 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
                 'tls-keyfile-password = " env:KP "\n'
             )
         )
-        self.assertEqual(args.tls_keyfile_password, PW)
+        self.assertEqual(args.tls_keyfile_password, " env:KP ")
 
     def test_bare_keyfile_password_left_for_prompt(self):
         args = self.load(
@@ -469,9 +469,21 @@ class TypedPasswordTest(unittest.TestCase):
     def test_typed_password_not_checked_with_pki(self):
         conf.check_typed_password("x" * 64, AuthMode.PKI)
 
+    def test_piped_password_drops_only_the_line_ending(self):
+        for piped, expected in (
+            (" s3cr3t \r\n", " s3cr3t "),
+            (" s3cr3t \n", " s3cr3t "),
+            (" s3cr3t ", " s3cr3t "),
+            ("s3cr3t\r", "s3cr3t\r"),
+            ("s3cr3t\nmore\n", "s3cr3t"),
+        ):
+            with self.subTest(piped=piped), patch("sys.stdin", io.StringIO(piped)):
+                self.assertEqual(conf.read_piped_password(), expected)
+
     def test_typed_keyfile_password_accepts_the_forms(self):
         with patch.dict(os.environ, {"KP": PW}):
-            self.assertEqual(conf.resolve_keyfile_password(" env:KP "), PW)
+            self.assertEqual(conf.resolve_keyfile_password("env:KP"), PW)
+            self.assertEqual(conf.resolve_keyfile_password(" env:KP "), " env:KP ")
 
     def test_typed_keyfile_password_limited_to_1024_bytes(self):
         self.assertEqual(conf.resolve_keyfile_password("x" * 1024), "x" * 1024)
