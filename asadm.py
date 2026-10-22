@@ -63,7 +63,10 @@ from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf
-from lib.utils.password_source import PasswordSourceError
+from lib.utils.password_source import (
+    PasswordSourceError,
+    TLS_KEYFILE_PASSWORD_MAX_LEN,
+)
 from lib.utils.constants import (
     ADMIN_HOME,
     AdminMode,
@@ -691,7 +694,9 @@ def parse_tls_input(cli_args):
             if sys.stdin.isatty():
                 keyfile_password = getpass.getpass("Enter TLS-Keyfile Password:")
             else:
-                keyfile_password = conf.read_piped_password()
+                keyfile_password = conf.read_piped_password(
+                    TLS_KEYFILE_PASSWORD_MAX_LEN
+                )
 
             keyfile_password = conf.resolve_keyfile_password(keyfile_password)
 

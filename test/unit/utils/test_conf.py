@@ -480,6 +480,16 @@ class TypedPasswordTest(unittest.TestCase):
             with self.subTest(piped=piped), patch("sys.stdin", io.StringIO(piped)):
                 self.assertEqual(conf.read_piped_password(), expected)
 
+    def test_piped_password_read_is_bounded(self):
+        for args, read in (((), 66), ((1024,), 1027)):
+            with self.subTest(args=args):
+                stdin = io.StringIO("x" * 100_000)
+
+                with patch("sys.stdin", stdin):
+                    self.assertEqual(conf.read_piped_password(*args), "x" * read)
+
+                self.assertEqual(stdin.tell(), read)
+
     def test_typed_keyfile_password_accepts_the_forms(self):
         with patch.dict(os.environ, {"KP": PW}):
             self.assertEqual(conf.resolve_keyfile_password("env:KP"), PW)

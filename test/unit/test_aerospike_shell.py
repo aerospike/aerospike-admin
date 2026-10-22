@@ -1027,7 +1027,7 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
     def _stdin(self, tty, line=""):
         stdin = Mock()
         stdin.isatty.return_value = tty
-        stdin.readline.return_value = line
+        stdin.readline.side_effect = io.StringIO(line).readline
         return patch("sys.stdin", stdin)
 
     async def _shell_password(self, auth_mode=asadm.AuthMode.INTERNAL):
@@ -1072,25 +1072,35 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
                     "--password: password is longer than 63 bytes",
                 )
 
+    async def test_shell_endless_stdin_password_is_rejected(self):
+        with self._stdin(False, "x" * 100_000):
+            self.assertIsNone(await self._shell_password())
+
+        self.assertEqual(
+            str(self.shell_logger.critical.call_args[0][0]),
+            "--password: password is longer than 63 bytes",
+        )
+
     async def test_shell_typed_password_not_checked_with_pki(self):
         with self._stdin(False, "x" * 64 + "\n"):
             self.assertEqual(await self._shell_password(asadm.AuthMode.PKI), "x" * 64)
 
     async def test_asinfo_typed_password_limited_to_63_bytes(self):
-        with self._stdin(False, "x" * 64 + "\n"), patch(
-            "asadm.ASSocket"
-        ) as assock_cls, self.assertRaises(asadm.PasswordSourceError) as cm:
-            await asadm.execute_asinfo_commands(
-                None,
-                ("1.1.1.1", 3000, None),
-                user="admin",
-                password=asadm.conf.DEFAULTPASSWORD,
-            )
+        for piped in ("x" * 64 + "\n", "x" * 100_000):
+            with self.subTest(piped=piped[:8]), self._stdin(False, piped), patch(
+                "asadm.ASSocket"
+            ) as assock_cls, self.assertRaises(asadm.PasswordSourceError) as cm:
+                await asadm.execute_asinfo_commands(
+                    None,
+                    ("1.1.1.1", 3000, None),
+                    user="admin",
+                    password=asadm.conf.DEFAULTPASSWORD,
+                )
 
-        self.assertEqual(
-            str(cm.exception), "--password: password is longer than 63 bytes"
-        )
-        assock_cls.assert_not_called()
+            self.assertEqual(
+                str(cm.exception), "--password: password is longer than 63 bytes"
+            )
+            assock_cls.assert_not_called()
 
     async def test_shell_stdin_password_is_literal(self):
         with self._stdin(False, "env:AS_PASS\n"):
@@ -1163,7 +1173,7 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
         )
         stdin = Mock()
         stdin.isatty.return_value = tty
-        stdin.readline.return_value = typed
+        stdin.readline.side_effect = io.StringIO(typed).readline
 
         with patch("sys.stdin", stdin), patch(
             "asadm.getpass.getpass", return_value=typed
@@ -1197,16 +1207,20 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
 
     def test_typed_password_limited_to_1024_bytes(self):
         self.assertEqual(self._keyfile_password(True, "x" * 1024), "x" * 1024)
+        self.assertEqual(self._keyfile_password(False, "x" * 1024 + "\r\n"), "x" * 1024)
 
-        with patch("asadm.logger") as logger, self.assertRaises(SystemExit) as cm:
-            self._keyfile_password(True, "x" * 1025)
+        for tty, typed in ((True, "x" * 1025), (False, "x" * 100_000)):
+            with self.subTest(tty=tty), patch(
+                "asadm.logger"
+            ) as logger, self.assertRaises(SystemExit) as cm:
+                self._keyfile_password(tty, typed)
 
-        self.assertEqual(cm.exception.code, 1)
-        logger.error.assert_not_called()
-        self.assertEqual(
-            str(logger.critical.call_args[0][0]),
-            "--tls-keyfile-password: password is longer than 1024 bytes",
-        )
+            self.assertEqual(cm.exception.code, 1)
+            logger.error.assert_not_called()
+            self.assertEqual(
+                str(logger.critical.call_args[0][0]),
+                "--tls-keyfile-password: password is longer than 1024 bytes",
+            )
 
     def test_resolution_error_exits(self):
         for tty, typed in (

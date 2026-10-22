@@ -487,8 +487,8 @@ def resolve_keyfile_password(value, option="--tls-keyfile-password"):
     )
 
 
-def read_piped_password():
-    line = sys.stdin.readline()
+def read_piped_password(max_len=password_source.PASSWORD_MAX_LEN):
+    line = sys.stdin.readline(max_len + len("\r\n") + 1)
 
     if line.endswith("\r\n"):
         return line[:-2]
