@@ -66,6 +66,7 @@ from lib.utils import common, util, conf
 from lib.utils.password_source import (
     PasswordSourceError,
     TLS_KEYFILE_PASSWORD_MAX_LEN,
+    check_len,
 )
 from lib.utils.constants import (
     ADMIN_HOME,
@@ -696,6 +697,11 @@ def parse_tls_input(cli_args):
             else:
                 keyfile_password = conf.read_piped_password(
                     TLS_KEYFILE_PASSWORD_MAX_LEN
+                )
+                check_len(
+                    keyfile_password,
+                    "--tls-keyfile-password",
+                    TLS_KEYFILE_PASSWORD_MAX_LEN,
                 )
 
             keyfile_password = conf.resolve_keyfile_password(keyfile_password)

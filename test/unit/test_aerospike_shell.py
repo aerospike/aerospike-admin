@@ -1214,7 +1214,11 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
         self.assertEqual(self._keyfile_password(True, "x" * 1024), "x" * 1024)
         self.assertEqual(self._keyfile_password(False, "x" * 1024 + "\r\n"), "x" * 1024)
 
-        for tty, typed in ((True, "x" * 1025), (False, "x" * 100_000)):
+        for tty, typed in (
+            (True, "x" * 1025),
+            (False, "x" * 100_000),
+            (False, " " * 10 + "x" * 2000),
+        ):
             with self.subTest(tty=tty), patch(
                 "asadm.logger"
             ) as logger, self.assertRaises(SystemExit) as cm:
