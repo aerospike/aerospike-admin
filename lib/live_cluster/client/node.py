@@ -207,6 +207,7 @@ class Node(AsyncObject):
         consider_alumni=False,
         use_services_alt=False,
         user_agent=None,
+        credential=None,
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -226,6 +227,7 @@ class Node(AsyncObject):
         self._timeout = timeout
         self.user = user
         self.password = password
+        self.credential = credential
         self.auth_mode = auth_mode
         self.tls_name: Union[str, None] = tls_name
         self.ssl_context = ssl_context
@@ -831,6 +833,7 @@ class Node(AsyncObject):
             self.auth_mode,
             self.ssl_context,
             timeout=self._timeout,
+            credential=self.credential,
         )
 
         if not await sock.connect():
@@ -918,7 +921,7 @@ class Node(AsyncObject):
                         address, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
                     )
                 )[0][4][0],
-                get_fully_qualified_domain_name(address),
+                await asyncio.to_thread(get_fully_qualified_domain_name, address),
             )
 
         self.ip, self.fqdn = self.dns_cache[address]
@@ -1054,6 +1057,7 @@ class Node(AsyncObject):
             self.auth_mode,
             self.ssl_context,
             timeout=self._timeout,
+            credential=self.credential,
         )
 
         logger.debug("%s:%s created new sock %s", ip, port, id(sock))
@@ -4687,10 +4691,9 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         logger.debug(
-            "ssh_user=%s ssh_pwd=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
+            "%s ssh_user=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
             self.ip,
             ssh_user,
-            ssh_pwd,
             ssh_key,
             ssh_port,
             commands,
@@ -4703,7 +4706,9 @@ class Node(AsyncObject):
             cmd_list = [sys_cmd.key for sys_cmd in self.sys_cmds]
 
         if self.localhost:
-            return self._get_localhost_system_statistics(cmd_list)
+            return await asyncio.to_thread(
+                self._get_localhost_system_statistics, cmd_list
+            )
 
         if enable_ssh:
             return await self._get_remote_host_system_statistics(

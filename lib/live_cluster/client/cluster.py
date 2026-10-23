@@ -30,6 +30,7 @@ from lib.utils import util, constants
 from lib.utils.types import NodeDict
 
 from . import client_util
+from .info import _hash_password
 from .node import Node
 
 # interval time in second for cluster refreshing
@@ -79,6 +80,12 @@ class Cluster(AsyncObject):
         self.user = user
         self.password = password
         self.auth_mode = auth_mode
+        # Hashed once, off the event loop, before any node logs in.
+        self.credential = (
+            await asyncio.to_thread(_hash_password, password)
+            if user is not None and auth_mode != constants.AuthMode.PKI
+            else None
+        )
 
         self.use_services_alumni = use_services_alumni
         self.use_services_alt = use_services_alt
@@ -706,6 +713,7 @@ class Cluster(AsyncObject):
                 timeout=self._timeout,
                 user=self.user,
                 password=self.password,
+                credential=self.credential,
                 auth_mode=self.auth_mode,
                 consider_alumni=self.use_services_alumni,
                 use_services_alt=self.use_services_alt,

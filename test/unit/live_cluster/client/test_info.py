@@ -24,7 +24,7 @@ from lib.live_cluster.client.info import (
     ASPrivilege,
     ASResponse,
     add_privileges,
-    authenticate_new,
+    authenticate_with_token,
     change_password,
     create_role,
     create_user,
@@ -121,18 +121,23 @@ class SecurityTest(unittest.IsolatedAsyncioTestCase):
         )
 
         actual = await login(
-            self.reader_mock, self.writer_mock, "admin", "admin", AuthMode.INTERNAL
+            self.reader_mock,
+            self.writer_mock,
+            "admin",
+            "admin",
+            b"$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa",
+            AuthMode.INTERNAL,
         )
 
         self.writer_mock.write.assert_called_with(expected_send_buf)
         self.assertTupleEqual(actual, expected)
 
-    async def test_authenticate_new(self):
+    async def test_authenticate_with_token(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\\\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00admin\x00\x00\x00>\x05B$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa"
         self.reader_mock.read.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         expected_return_code = ASResponse.OK
 
-        actual_return_code = await authenticate_new(
+        actual_return_code = await authenticate_with_token(
             self.reader_mock,
             self.writer_mock,
             "admin",
