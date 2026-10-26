@@ -203,7 +203,7 @@ class ASSocket:
         if not self.sock:
             return False
 
-        # Login returns no token only when security is disabled on the server.
+        # Without a token there is nothing to authenticate with. Node logs in instead.
         if session_token is None:
             return True
 

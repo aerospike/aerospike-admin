@@ -156,7 +156,7 @@ def _hash_password(password):
         sys.exit(1)
 
     if password is None:
-        password = ""
+        password = b""
 
     password = bcrypt.hashpw(password, _ADMIN_SALT)
 

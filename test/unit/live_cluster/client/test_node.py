@@ -393,6 +393,41 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.node.login())
         self.logger_mock.warning.assert_not_called()
 
+    async def test_borrow_socket_closes_oldest_socket_when_pool_is_full(self):
+        """More than a pool's worth of requests in flight return more sockets than the
+        pool holds."""
+        self.node._initialize_socket_pool()
+        pool = self.node.socket_pool[self.node.port]
+        pooled = [AsyncMock() for _ in range(pool.maxlen)]
+        pool.extend(pooled)
+        returned = AsyncMock()
+
+        with patch.object(
+            self.node, "_get_connection", AsyncMock(return_value=returned)
+        ):
+            async with self.node._borrow_socket():
+                pass
+
+        pooled[0].close.assert_awaited_once()
+        returned.close.assert_not_awaited()
+        self.assertListEqual(list(pool), pooled[1:] + [returned])
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_login_closes_oldest_socket_when_pool_is_full(self, as_socket_mock):
+        self.node.user = "admin"
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.get_session_info.return_value = "token", 59
+        self.node._initialize_socket_pool()
+        pool = self.node.socket_pool[self.node.port]
+        pooled = [AsyncMock() for _ in range(pool.maxlen)]
+        pool.extend(pooled)
+
+        self.assertTrue(await self.node.login())
+
+        pooled[0].close.assert_awaited_once()
+        self.assertListEqual(list(pool), pooled[1:] + [as_socket])
+
     # TODO: Make unit tests for socket pool
     async def test_get_connection_uses_socket_pool(self):
         class ASSocket_Mock(AsyncMock):
@@ -734,6 +769,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def test_get_connection_never_hashes_password(self):
         """Every socket uses the credential hashed once at startup, including with a
         user given and security disabled."""
+        self.node.set_timeout(5)
         self.node.user = "admin"
         self.node.password = "admin"
         self.node.credential = b"hash"
