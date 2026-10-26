@@ -119,7 +119,10 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(RequestFailedError) as cm:
             self.client.resolve("secrets:aql:missing")
 
-        self.assertIn("agent error for secrets:aql:missing", str(cm.exception))
+        self.assertIn(
+            "agent error from {} for secrets:aql:missing".format(self.agent.address),
+            str(cm.exception),
+        )
 
     @parameterized.expand([("secrets:aql:",), ("secrets:",)])
     def test_invalid_reference(self, value):
@@ -318,6 +321,26 @@ class TransportTest(unittest.TestCase):
         assert_no_leak(self, cm.exception)
 
 
+class EmptyAgentErrorTest(unittest.TestCase):
+    def test_empty_error_ends_the_message(self):
+        """Any Error field fails the request, even an empty one."""
+
+        def respond(sock):
+            read_message(sock)
+            sock.sendall(_wire.encode({"Error": ""}))
+
+        with FakeSecretAgent(handler=respond) as agent:
+            address = agent.address
+
+            with self.assertRaises(RequestFailedError) as cm:
+                agent_client(agent).resolve("secrets:aql:password")
+
+        self.assertEqual(
+            str(cm.exception),
+            "agent error from {} for secrets:aql:password".format(address),
+        )
+
+
 class ErrorNamesTheAgentTest(unittest.TestCase):
     """A failure says which agent answered, not only a failed connect."""
 
@@ -424,6 +447,7 @@ class TLSTest(unittest.TestCase):
 
         self.assertLess(time.monotonic() - start, 3)
         self.assertIn("connect to", str(cm.exception))
+        self.assertTrue(str(cm.exception).endswith(": timed out"), str(cm.exception))
 
     @parameterized.expand([("/nonexistent/ca.pem",), ("bad\x00path",)])
     def test_invalid_ca_file(self, ca_file):

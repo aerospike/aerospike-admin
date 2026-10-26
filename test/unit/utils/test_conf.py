@@ -713,7 +713,9 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
 
         self.assertTrue(
             str(cm.exception).startswith(
-                "--password: agent error for secrets:aql:missing:"
+                "--password: agent error from {} for secrets:aql:missing:".format(
+                    self.agent.address
+                )
             ),
             str(cm.exception),
         )
@@ -971,7 +973,7 @@ class PasswordHelpTest(unittest.TestCase):
                     "Default: none",
                     "User will be prompted on command line if --tls-keyfile-password",
                     "specified and no password is given. The typed password",
-                    "accepts the forms above.",
+                    "accepts the forms above except 'secrets:'.",
                 ]
             )
             + "\n"

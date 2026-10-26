@@ -62,9 +62,15 @@ class RefTest(unittest.TestCase):
         self.assertFalse(is_secret("env:X"))
 
     @parameterized.expand(
-        [("secrets:res:key",), ("secrets:key",), ("secrets:a:b:key",)]
+        [
+            ("secrets:res:key",),
+            ("secrets:key",),
+            ("secrets:a:b:key",),
+            ("secrets::key",),
+        ]
     )
     def test_str_round_trips(self, value):
+        """Messages name the reference as it was given."""
         self.assertEqual(str(parse_ref(value)), value)
 
 
@@ -108,6 +114,10 @@ class AddressTest(unittest.TestCase):
             ("fe80::1%",),
             ("[localhost]:3005",),
             ("[127.0.0.1]:3005",),
+            (" 127.0.0.1:3005",),
+            ("127.0.0.1 3005",),
+            ("127.0.0.1:3005 ",),
+            ("agent\t.example.com",),
         ]
     )
     def test_invalid(self, address):

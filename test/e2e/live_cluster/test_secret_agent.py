@@ -203,7 +203,9 @@ class SecretAgentErrorTests(AgentTestCase):
             "secrets:asadm:missing", f"--sa-address {self.agent.address}"
         )
         self.assert_fails_before_connecting(
-            cp, "--password: agent error for secrets:asadm:missing"
+            cp,
+            f"--password: agent error from {self.agent.address} "
+            "for secrets:asadm:missing",
         )
 
     def test_agent_error_names_the_agent(self):
@@ -217,7 +219,9 @@ class SecretAgentErrorTests(AgentTestCase):
             "secrets:nonexistent:password", f"--sa-address {self.agent.address}"
         )
         self.assert_fails_before_connecting(
-            cp, "--password: agent error for secrets:nonexistent:password"
+            cp,
+            f"--password: agent error from {self.agent.address} "
+            "for secrets:nonexistent:password",
         )
 
     def test_secret_without_resource(self):
@@ -225,7 +229,7 @@ class SecretAgentErrorTests(AgentTestCase):
         cp = self.run_password("secrets:password", f"--sa-address {self.agent.address}")
         self.assert_fails_before_connecting(
             cp,
-            "--password: agent error for secrets:password: "
+            f"--password: agent error from {self.agent.address} for secrets:password: "
             "password not present in file /agent/asadm.json",
         )
 
@@ -248,7 +252,9 @@ class SecretAgentErrorTests(AgentTestCase):
             f"--sa-address {self.agent.address}"
         )
         self.assert_fails_before_connecting(
-            cp, "--tls-keyfile-password: agent error for secrets:asadm:missing"
+            cp,
+            f"--tls-keyfile-password: agent error from {self.agent.address} "
+            "for secrets:asadm:missing",
         )
 
     def test_invalid_agent_port(self):
@@ -290,7 +296,8 @@ class SecretAgentTLSErrorTests(AgentTestCase):
         cp = self.run_password(f"--sa-address {self.tls_address}")
         self.assert_fails_before_connecting(
             cp,
-            "--password: read response for secrets:asadm:password: "
+            f"--password: read response from {self.tls_address} "
+            "for secrets:asadm:password: "
             "connection closed by the agent",
         )
 

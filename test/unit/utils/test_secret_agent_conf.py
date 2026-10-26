@@ -21,7 +21,7 @@ from lib.utils.secret_agent_conf import SecretAgentSettings, file_section
 
 
 def settings(file_values=None, cli_values=None, section="secret-agent"):
-    return SecretAgentSettings(section, file_values or {}, cli_values or {})
+    return SecretAgentSettings([(section, file_values or {})], cli_values or {})
 
 
 class PrecedenceTest(unittest.TestCase):
