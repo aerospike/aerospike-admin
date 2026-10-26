@@ -25,11 +25,13 @@ from lib.live_cluster.get_controller import (
     GetStatisticsController,
 )
 from lib.utils import util
-from lib.base_controller import CommandHelp, ModifierHelp
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
 logger = logging.getLogger(__name__)
+
+MAX_SNAPSHOT_INTERVAL_SECONDS = 24 * 60 * 60
 
 
 @CommandHelp(
@@ -159,6 +161,11 @@ class HealthCheckController(LiveClusterCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
+
+        if not 0 <= sleep_tm <= MAX_SNAPSHOT_INTERVAL_SECONDS:
+            raise ShellException(
+                "-s must be between 0 and %d seconds." % MAX_SNAPSHOT_INTERVAL_SECONDS
+            )
 
         verbose = util.check_arg_and_delete_from_mods(
             line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods

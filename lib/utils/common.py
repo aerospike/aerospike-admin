@@ -17,6 +17,7 @@
 #############################################################################################################
 
 import datetime
+import functools
 import json
 import logging
 import operator
@@ -27,6 +28,7 @@ from typing import Any, Callable, TypedDict
 from typing_extensions import NotRequired, Required
 import distro
 import socket
+import threading
 import time
 from urllib import request
 import zipfile
@@ -2876,7 +2878,7 @@ def _collect_installed_packages(cmd=""):
     return "\n\n".join(sections), None
 
 
-def _collect_ip_link_details(cmd=""):
+def _collect_ip_link_details(cmd="", stop: threading.Event | None = None):
     out = "['ip -s link']"
 
     cmd = "ip -s link"
@@ -2884,16 +2886,27 @@ def _collect_ip_link_details(cmd=""):
     sleep_seconds = 5
 
     for i in range(0, loop_count):
-        o, e = util.shell_command([cmd])
+        if _stopped(stop):
+            break
+
+        o, e = util.shell_command([cmd], stop=stop)
 
         if o:
             out += "\n" + str(o) + "\n"
-        time.sleep(sleep_seconds)
+
+        if stop is None:
+            time.sleep(sleep_seconds)
+        else:
+            stop.wait(sleep_seconds)
 
     return out, None
 
 
-def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
+def _stopped(stop: threading.Event | None):
+    return stop is not None and stop.is_set()
+
+
+def _collectinfo_shell_cmds(cmd: str, alt_cmds=[], stop: threading.Event | None = None):
     logger.info(
         f"Collecting output from shell command '{cmd}' and writing to syslog.log"
     )
@@ -2907,7 +2920,7 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
     failed_cmds = []
 
     try:
-        o, e = util.shell_command([cmd])  # TODO make async
+        o, e = util.shell_command([cmd], stop=stop)  # TODO make async
     except Exception as e:
         return o_line + str(e), failed_cmds
 
@@ -2918,6 +2931,9 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
         if alt_cmds:
             success = False
             for alt_cmd in alt_cmds:
+                if _stopped(stop):
+                    break
+
                 if not alt_cmd:
                     continue
 
@@ -2926,7 +2942,7 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
                 )
                 alt_cmd = [alt_cmd]
                 o_line += str(alt_cmd) + "\n"
-                o_alt, e_alt = util.shell_command(alt_cmd)  # TODO make async
+                o_alt, e_alt = util.shell_command(alt_cmd, stop=stop)  # TODO make async
 
                 if e_alt:
                     e = e_alt
@@ -3187,7 +3203,10 @@ def print_collect_summary(
     terminal.enable_color(True)
 
 
-def collect_sys_info(port=3000, file_header="", outfile=""):
+def collect_sys_info(
+    port=3000, file_header="", outfile="", stop: threading.Event | None = None
+):
+    """Setting stop ends the collection early and kills the running command."""
     failed_cmds = []
 
     cluster_online = True
@@ -3206,9 +3225,13 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
 
     try:
         for cmds in get_system_commands(port=port):
+            if _stopped(stop):
+                break
+
             o, f_cmds = _collectinfo_shell_cmds(
                 cmd=cmds[0],
                 alt_cmds=cmds[1:] if len(cmds) > 1 else [],
+                stop=stop,
             )
             failed_cmds += f_cmds
             util.write_to_file(outfile, o)
@@ -3216,73 +3239,36 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         print(e)
         util.write_to_file(outfile, str(e))
 
-    try:
-        logger.info(f"Collecting output about the cpu and writing to syslog.log")
-        o = _collectinfo_content(func=_collect_cpuinfo)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
+    sections = [
+        ("Collecting output about the cpu", _collect_cpuinfo),
+        ("Checking if you are running in Cloud: AWS", _collect_aws_data),
+        ("Checking if you are running in Cloud: GCP", _collect_gce_data),
+        ("Checking if you are running in Cloud: Azure", _collect_azure_data),
+        (
+            "Collecting infomation about aerospike open file descriptors using 'lsof'",
+            _collect_lsof,
+        ),
+        (
+            "Collecting information about the environment",
+            _collect_env_variables,
+        ),
+        ("Collecting installed packages", _collect_installed_packages),
+        (
+            "Collecting infomation about network interfaces",
+            functools.partial(_collect_ip_link_details, stop=stop),
+        ),
+    ]
 
-    try:
-        logger.info(
-            f"Checking if you are running in Cloud: AWS and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_aws_data)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
+    for description, func in sections:
+        if _stopped(stop):
+            break
 
-    try:
-        logger.info(
-            f"Checking if you are running in Cloud: GCP and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_gce_data)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Checking if you are running in Cloud: Azure and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_azure_data)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Collecting infomation about aerospike open file descriptors using 'lsof' and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_lsof)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Collecting information about the environment and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_env_variables)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info("Collecting installed packages and writing to syslog.log")
-        o = _collectinfo_content(func=_collect_installed_packages)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Collecting infomation about network interfaces and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_ip_link_details)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
+        try:
+            logger.info(description + " and writing to syslog.log")
+            o = _collectinfo_content(func=func)
+            util.write_to_file(outfile, o)
+        except Exception as e:
+            util.write_to_file(outfile, str(e))
 
     if not cluster_online:
         # Cluster is offline so collecting only system info and archiving files
