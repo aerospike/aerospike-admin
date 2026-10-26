@@ -770,7 +770,9 @@ class ResolveSecretTest(unittest.TestCase):
 
         self.assertEqual(str(cm.exception), "--sa-port: invalid value 0")
 
-    def test_unexpected_error_still_fails_without_detail(self):
+    def test_unexpected_error_names_only_its_type(self):
+        """Its message can hold the secret."""
+
         def fetch(_):
             raise RuntimeError(PW)
 
@@ -779,7 +781,7 @@ class ResolveSecretTest(unittest.TestCase):
 
         self.assertEqual(
             str(cm.exception),
-            "--password: secret agent request for secrets:aql:pw failed",
+            "--password: secret agent request for secrets:aql:pw failed: RuntimeError",
         )
         self.assertNotIn(PW, "".join(traceback.format_exception(cm.exception)))
 

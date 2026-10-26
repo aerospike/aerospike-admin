@@ -184,8 +184,34 @@ class ValidationTest(unittest.TestCase):
             s.new_client()
 
         self.assertIn(
-            "--sa-ca-file: cannot load TLS CA file /nonexistent/ca.pem",
+            "--{}: cannot load TLS CA file /nonexistent/ca.pem".format(option),
             str(cm.exception),
+        )
+
+    @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
+    def test_bad_cafile_from_the_config_file_names_its_key_and_section(self, option):
+        s = settings({option: "/nonexistent/ca.pem"}, section="secret-agent_prod")
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            s.new_client()
+
+        self.assertIn(
+            "{} in the [secret-agent_prod] config section: cannot load TLS CA file"
+            " /nonexistent/ca.pem".format(option),
+            str(cm.exception),
+        )
+        self.assertNotIn("--", str(cm.exception))
+
+    def test_cafile_error_names_the_spelling_that_won(self):
+        s = settings(
+            cli_values={"sa-cafile": "/legacy.pem", "sa-ca-file": "/nonexistent.pem"}
+        )
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            s.new_client()
+
+        self.assertIn(
+            "--sa-ca-file: cannot load TLS CA file /nonexistent.pem", str(cm.exception)
         )
 
 

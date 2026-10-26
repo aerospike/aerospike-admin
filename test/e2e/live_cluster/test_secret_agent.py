@@ -20,6 +20,7 @@ import time
 import unittest
 
 import docker
+from cryptography.hazmat.primitives import serialization
 
 from lib.secret_agent import SecretAgentClient, SecretAgentError, new_ssl_context
 from test.e2e import lib, util
@@ -205,6 +206,12 @@ class SecretAgentErrorTests(AgentTestCase):
             cp, "--password: agent error for secrets:asadm:missing"
         )
 
+    def test_agent_error_names_the_agent(self):
+        cp = self.run_password(
+            "secrets:asadm:missing", f"--sa-address {self.agent.address}"
+        )
+        self.assert_fails_before_connecting(cp, self.agent.address)
+
     def test_unknown_resource(self):
         cp = self.run_password(
             "secrets:nonexistent:password", f"--sa-address {self.agent.address}"
@@ -334,6 +341,29 @@ class SecretAgentTLSErrorTests(AgentTestCase):
             cp, f"--sa-ca-file: cannot load TLS CA file {path}"
         )
 
+    def test_missing_legacy_cafile_names_its_spelling(self):
+        cp = self.run_password(
+            f"--sa-address {self.tls_address} --sa-cafile /nonexistent/ca.pem"
+        )
+        self.assert_fails_before_connecting(
+            cp, "--sa-cafile: cannot load TLS CA file /nonexistent/ca.pem"
+        )
+
+    def test_missing_cafile_in_config_file_names_its_key_and_section(self):
+        path = self.write_file(
+            "astools.conf",
+            '[cluster]\nhost = "127.0.0.1:1"\nuser = "admin"\n'
+            'password = "secrets:asadm:password"\n'
+            f'[secret-agent]\nsa-address = "{self.tls_address}"\n'
+            'sa-cafile = "/nonexistent/ca.pem"\n',
+        )
+        cp = util.run_asadm(f"--only-config-file {path} -e 'info network'")
+        self.assert_fails_before_connecting(
+            cp,
+            "sa-cafile in the [secret-agent] config section: "
+            "cannot load TLS CA file /nonexistent/ca.pem",
+        )
+
     def test_legacy_cafile_with_untrusted_ca(self):
         cp = self.run_password(
             f"--sa-address {self.tls_address} --sa-cafile {self.untrusted_ca}"
@@ -389,6 +419,51 @@ class SecretAgentClusterTests(AgentTestCase):
             f'[secret-agent]\nsa-address = "127.0.0.1"\nsa-port = {self.agent.port}\n'
         )
         self.assert_connected(self.run_info(f"--only-config-file {path}"))
+
+    def test_config_file_timeout_in_quotes(self):
+        path = self.write_config(
+            f'[secret-agent]\nsa-address = "{self.agent.address}"\n'
+            'sa-timeout = "5000"\n'
+        )
+        self.assert_connected(self.run_info(f"--only-config-file {path}"))
+
+    def test_config_file_keys_ignore_case(self):
+        """As in the C tools."""
+        path = self.write_config(
+            f'[secret-agent]\nSA-Address = "{self.agent.address}"\n'
+            "SA-TIMEOUT = 5000\n"
+        )
+        self.assert_connected(self.run_info(f"--only-config-file {path}"))
+
+    def test_include_applies_after_the_file_that_includes_it(self):
+        """Each file is applied in turn, as in the C tools."""
+        include = self.write_file(
+            "include.conf", f'[secret-agent]\nsa-address = "{self.agent.address}"\n'
+        )
+        path = self.write_config(
+            f'[secret-agent]\nsa-port = "1"\n[include]\nfile = "{include}"\n'
+        )
+        self.assert_connected(self.run_info(f"--only-config-file {path}"))
+
+    def test_asinfo_password_from_agent(self):
+        cp = util.run_asinfo(
+            f"--no-config-file -h {lib.SERVER_IP} -p {lib.PORT} -U admin "
+            f"-P secrets:asadm:password --sa-address {self.agent.address} -v build"
+        )
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn(lib.server_build(), cp.stdout)
+
+    def test_asinfo_tls_agent_legacy_cafile(self):
+        """asinfo fails on any stderr from asadm, but the deprecation warning is
+        its own."""
+        cp = util.run_asinfo(
+            f"--no-config-file -h {lib.SERVER_IP} -p {lib.PORT} -U admin "
+            f"-P secrets:asadm:password --sa-address {self.tls_address} "
+            f"--sa-cafile {self.tls_agent.ca_file} -v build"
+        )
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn(lib.server_build(), cp.stdout)
+        self.assertIn(DEPRECATED_CAFILE, cp.stderr)
 
     def test_command_line_beats_config_file(self):
         path = self.write_config('[secret-agent]\nsa-address = "127.0.0.1:1"\n')
@@ -481,22 +556,43 @@ class SecretAgentTLSServerTests(AgentTestCase):
         cls.addClassCleanup(lib.stop)
         lib.start(num_nodes=1, template_file="aerospike_tls.conf")
 
-    def run_info(self, keyfile_password):
+    def run_info(self, keyfile_password, keyfile="client_enc.key", stdin_input=None):
         certs = lib.CERTS_DIR
 
         return util.run_asadm(
             f"--no-config-file -h {lib.SERVER_IP}:{lib.TLS_PORT} --tls-enable "
             f"--tls-name localhost --tls-cafile {certs}/ca.pem "
             f"--tls-certfile {certs}/client.pem "
-            f"--tls-keyfile {certs}/client_enc.key "
+            f"--tls-keyfile {os.path.join(certs, keyfile)} "
             f"--tls-keyfile-password {keyfile_password} "
             "-U admin -P secrets:asadm:password "
             f"--sa-address {self.tls_address} --sa-ca-file {self.tls_agent.ca_file} "
-            "-e 'info network'"
+            "-e 'info network'",
+            stdin_input=stdin_input,
         )
 
     def test_keyfile_password_from_agent(self):
         self.assert_connected(self.run_info("secrets:asadm:keypass"))
+
+    def test_piped_keyfile_password_is_never_fetched(self):
+        """As in asbackup. The key is encrypted with the literal reference, so it
+        only opens if the piped value is used as typed, not swapped for the
+        agent's keypass."""
+        literal = "secrets:asadm:keypass"
+
+        with open(os.path.join(lib.CERTS_DIR, "client.key"), "rb") as f:
+            key = serialization.load_pem_private_key(f.read(), password=None)
+
+        keyfile = self.write_file(
+            "client_literal.key",
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.TraditionalOpenSSL,
+                serialization.BestAvailableEncryption(literal.encode()),
+            ).decode(),
+        )
+        cp = self.run_info("", keyfile=keyfile, stdin_input=literal + "\n")
+        self.assert_connected(cp)
 
     def test_wrong_keyfile_password_from_agent(self):
         cp = self.run_info("secrets:asadm:wrong")

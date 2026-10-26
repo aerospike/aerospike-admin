@@ -549,6 +549,42 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         )
         self.assertEqual(args.password, PW)
 
+    def test_config_file_timeout_in_quotes(self):
+        """sa-port already accepts a quoted number, and a schema failure skips the
+        whole file."""
+        args = self.load(
+            config=(
+                '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nsa-address = "{}"\nsa-timeout = "1000"\n'.format(
+                    self.agent.address
+                )
+            )
+        )
+        self.assertEqual(args.password, PW)
+
+    def test_config_file_keys_ignore_case(self):
+        """As in the C tools."""
+        args = self.load(
+            config=(
+                '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nSA-Address = "{}"\nSA-TIMEOUT = 1000\n'.format(
+                    self.agent.address
+                )
+            )
+        )
+        self.assertEqual(args.password, PW)
+
+    def test_instance_section_keys_ignore_case(self):
+        args = self.load(
+            "--instance",
+            "a",
+            config=(
+                '[cluster_a]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent_a]\nSA-ADDRESS = "{}"\n'.format(self.agent.address)
+            ),
+        )
+        self.assertEqual(args.password, PW)
+
     def test_instance_falls_back_to_secret_agent_section(self):
         args = self.load(
             "--instance",
@@ -577,6 +613,81 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         self.assertIn(
             "connect to 127.0.0.1:1 for secrets:aql:password", str(cm.exception)
         )
+
+    def load_with_user_config(self, user_config, *argv):
+        """Loads ~/.aerospike/astools.conf, then the files in argv, as asadm does
+        without --only-config-file."""
+        home = os.path.join(self.tmpdir.name, "home") + "/"
+        os.makedirs(home)
+
+        with open(home + "astools.conf", "w") as f:
+            f.write(user_config)
+
+        with patch("lib.utils.conf.ADMIN_HOME", home), patch(
+            "sys.argv", ["asadm", *argv]
+        ):
+            args, _ = conf.loadconfig(conf.get_cli_args())
+
+        conf.resolve_password_sources(args)
+        return args
+
+    def test_later_config_file_address_port_beats_earlier_port(self):
+        """Each file is applied in turn, as in the C tools: within one file an
+        explicit sa-port wins, and a later file's sa-address port wins."""
+        args = self.load_with_user_config(
+            '[secret-agent]\nsa-port = "1"\n',
+            "--config-file",
+            self.write_file(
+                "later.conf",
+                '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nsa-address = "{}"\n'.format(self.agent.address),
+            ),
+        )
+        self.assertEqual(args.password, PW)
+
+    def test_earlier_instance_section_does_not_hide_a_later_file(self):
+        args = self.load_with_user_config(
+            '[secret-agent_e]\nsa-port = "1"\n',
+            "--instance",
+            "e",
+            "--config-file",
+            self.write_file(
+                "later.conf",
+                '[cluster_e]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nsa-address = "{}"\n'.format(self.agent.address),
+            ),
+        )
+        self.assertEqual(args.password, PW)
+
+    def test_include_applies_after_the_file_that_includes_it(self):
+        include = self.write_file(
+            "include.conf",
+            '[secret-agent]\nsa-address = "{}"\n'.format(self.agent.address),
+        )
+        args = self.load(
+            config=(
+                '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nsa-port = "1"\n'
+                '[include]\nfile = "{}"\n'.format(include)
+            )
+        )
+        self.assertEqual(args.password, PW)
+
+    def test_include_cafile_beats_the_including_files_ca_file(self):
+        include = self.write_file(
+            "include.conf", '[secret-agent]\nsa-cafile = "/nonexistent/include.pem"\n'
+        )
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.load(
+                config=(
+                    '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                    '[secret-agent]\nsa-ca-file = "/nonexistent/main.pem"\n'
+                    '[include]\nfile = "{}"\n'.format(include)
+                )
+            )
+
+        self.assertIn("/nonexistent/include.pem", str(cm.exception))
 
     def test_command_line_beats_config_file(self):
         args = self.load(

@@ -1203,6 +1203,22 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
     def test_getpass_literal_is_trimmed(self):
         self.assertEqual(self._keyfile_password(True, "  kp-s3cr3t \t"), "kp-s3cr3t")
 
+    def test_typed_secrets_reference_is_literal(self):
+        """As in asbackup, a typed keyfile password is never fetched from the
+        Secret Agent."""
+        for tty, typed in (
+            (True, "secrets:tls:keypwd"),
+            (False, "secrets:tls:keypwd\n"),
+        ):
+            with self.subTest(tty=tty), patch(
+                "lib.secret_agent.SecretAgentClient.resolve",
+                side_effect=AssertionError("the agent was contacted"),
+            ):
+                self.assertEqual(
+                    self._keyfile_password(tty, typed, sa_address="127.0.0.1:1"),
+                    "secrets:tls:keypwd",
+                )
+
     def test_padded_source_is_resolved(self):
         for tty, typed in ((True, " env:KP "), (False, " env:KP \n")):
             with self.subTest(tty=tty):

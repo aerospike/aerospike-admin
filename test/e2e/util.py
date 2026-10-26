@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
 from typing import Any
 from lib.utils import util
 
@@ -60,16 +61,38 @@ class CompletedProcess:
         return get_separate_output(self.stdout)
 
 
+def _asadm_binary():
+    if "ASADM_TEST_BUNDLE" in os.environ:
+        return os.path.abspath("build/bin/asadm/asadm")
+
+    return os.path.abspath("asadm.py")
+
+
+def run_asinfo(args) -> CompletedProcess:
+    """Runs the asinfo wrapper, which execs whatever `asadm` comes first on PATH."""
+    with tempfile.TemporaryDirectory() as bin_dir:
+        os.symlink(_asadm_binary(), os.path.join(bin_dir, "asadm"))
+        env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"])
+        cmd = [os.path.abspath("asinfo/asinfo.py")] + shlex.split(args)
+        print("Running cmd: {}".format(cmd))
+
+        return CompletedProcess(
+            subprocess.run(
+                cmd,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,
+            )
+        )
+
+
 def run_asadm(args=None, strip_header=True, stdin_input=None) -> CompletedProcess:
     """
     stdin_input feeds an interactive session. -e mode skips the startup diagnostics,
     so a session opened without it is the only way to cover them.
     """
-    if "ASADM_TEST_BUNDLE" in os.environ:
-        binary = os.path.abspath("build/bin/asadm/asadm")
-    else:
-        binary = os.path.abspath("asadm.py")
-
+    binary = _asadm_binary()
     args = [] if args is None else shlex.split(args)
     cmd = [binary]
     cmd.extend(args)

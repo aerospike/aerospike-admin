@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+
+from lib.secret_agent.testing import FakeSecretAgent
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 ASINFO = os.path.join(ROOT, "asinfo", "asinfo.py")
@@ -25,6 +28,15 @@ FAKE_ASADM = """#!/bin/sh
 printf '%s' "$FAKE_ASADM_STDERR" >&2
 printf '%s\\n' "$FAKE_ASADM_STDOUT"
 """
+
+ECHO_ASADM = """#!/bin/sh
+printf '%s\\n' "$*"
+"""
+
+LEGACY_CAFILE_WARNING = (
+    "WARNING: Argument --sa-cafile is deprecated. Use --sa-ca-file instead.\n"
+)
+SECRET = "s3cr3t-from-agent"
 
 REAL_ASADM = """#!/bin/sh
 exec "$ASADM_PYTHON" "$ASADM_SCRIPT" "$@"
@@ -128,6 +140,110 @@ class AsinfoRealAsadmTest(unittest.TestCase):
         self.assertEqual(cp.stderr, NO_USER_WARNING + "\n")
         self.assertIn("Not able to connect any cluster", cp.stdout)
         self.assertNotIn("ignored because no user is set", cp.stdout)
+
+
+@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
+class AsinfoSecretAgentOptionsTest(unittest.TestCase):
+    """asinfo hands the Secret Agent options and secrets: values to asadm as given."""
+
+    def run_asinfo(self, *argv):
+        bindir = install_asadm(self, ECHO_ASADM)
+        env = dict(os.environ, PATH=bindir + os.pathsep + os.environ.get("PATH", ""))
+
+        return subprocess.run(
+            [sys.executable, ASINFO, *argv, "-v", "build"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+
+    def test_agent_options_and_secret_are_forwarded(self):
+        cp = self.run_asinfo(
+            "-U",
+            "admin",
+            "-P",
+            "secrets:aql:pw",
+            "--sa-address",
+            "agent:4000",
+            "--sa-port",
+            "4001",
+            "--sa-timeout",
+            "500",
+            "--sa-ca-file",
+            "/ca.pem",
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stderr, "")
+
+        for forwarded in (
+            "--password secrets:aql:pw",
+            "--sa-address agent:4000",
+            "--sa-port 4001",
+            "--sa-timeout 500",
+            "--sa-ca-file /ca.pem",
+        ):
+            self.assertIn(forwarded, cp.stdout)
+
+    def test_legacy_cafile_warns_without_failing(self):
+        cp = self.run_asinfo("--sa-cafile", "/ca.pem")
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stderr, LEGACY_CAFILE_WARNING)
+        self.assertIn("--sa-ca-file /ca.pem", cp.stdout)
+        self.assertNotIn("--sa-cafile", cp.stdout)
+
+    def test_ca_file_beats_legacy_cafile(self):
+        cp = self.run_asinfo("--sa-cafile", "/old.pem", "--sa-ca-file", "/new.pem")
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn("--sa-ca-file /new.pem", cp.stdout)
+        self.assertNotIn("/old.pem", cp.stdout)
+
+
+@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
+class AsinfoRealAsadmSecretTest(unittest.TestCase):
+    """asadm, run by asinfo, fetches a secrets: password before it connects."""
+
+    def setUp(self):
+        encoded = base64.b64encode(SECRET.encode()).decode()
+        self.agent = FakeSecretAgent({"aql": {"pw": encoded}}).start()
+        self.addCleanup(self.agent.stop)
+
+    def run_asinfo(self, password):
+        bindir = install_asadm(self, REAL_ASADM)
+        env = dict(
+            os.environ,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=os.path.join(ROOT, "asadm.py"),
+        )
+
+        return subprocess.run(
+            [sys.executable, ASINFO, "--no-config-file", "-h", "127.0.0.1", "-p", "1"]
+            + ["-U", "admin", "-P", password, "--sa-address", self.agent.address]
+            + ["-v", "build"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+
+    def test_fetched_password_reaches_the_cluster_connect(self):
+        cp = self.run_asinfo("secrets:aql:pw")
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertIn("Not able to connect any cluster", cp.stdout)
+        self.assertNotIn(SECRET, cp.stdout + cp.stderr)
+
+    def test_agent_error_stops_before_connecting(self):
+        cp = self.run_asinfo("secrets:aql:missing")
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertIn("agent error", cp.stdout + cp.stderr)
+        self.assertIn(self.agent.address, cp.stdout + cp.stderr)
+        self.assertNotIn("Not able to connect any cluster", cp.stdout)
 
 
 if __name__ == "__main__":
