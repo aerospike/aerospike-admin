@@ -176,7 +176,8 @@ def _loadfile(fname, loaded=None):
 
     if os.path.exists(fname):
         # file exists
-        conf_dict = _lowercase_secret_agent_keys(toml.loads(open(fname).read()))
+        conf_dict = toml.loads(open(fname).read())
+        _lowercase_agent_section_keys(conf_dict)
         files.append(copy.deepcopy(conf_dict))
 
         include_files = []
@@ -211,13 +212,12 @@ def _loadfile(fname, loaded=None):
     return conf_dict
 
 
-def _lowercase_secret_agent_keys(conf_dict):
-    """The C tools match [secret-agent] keys without regard to case."""
+def _lowercase_agent_section_keys(conf_dict):
+    """The C tools match [secret-agent] keys without regard to case. Changes
+    conf_dict in place."""
     for name, values in list(conf_dict.items()):
         if secret_agent_conf.is_section(name) and isinstance(values, dict):
             conf_dict[name] = {k.lower(): v for k, v in values.items()}
-
-    return conf_dict
 
 
 def decode(v):
