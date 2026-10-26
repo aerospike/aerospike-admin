@@ -109,10 +109,13 @@ def _fetch_secret(fetch_secret: Callable[[str], str], ref: str, option: str) -> 
         raise
     except SecretAgentError as e:
         raise PasswordSourceError("{}: {}".format(option, e)) from None
-    except Exception:
-        # asadm exits silently on unexpected errors; never lose this one.
+    except Exception as e:
+        # asadm exits silently on unexpected errors; never lose this one. Only the
+        # type is given, since the message can hold the secret.
         raise PasswordSourceError(
-            "{}: secret agent request for {} failed".format(option, ref)
+            "{}: secret agent request for {} failed: {}".format(
+                option, ref, type(e).__name__
+            )
         ) from None
 
 

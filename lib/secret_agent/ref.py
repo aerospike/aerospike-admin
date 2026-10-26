@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from lib.secret_agent.errors import InvalidConfigError
 
@@ -21,12 +21,17 @@ SECRET_PREFIX = "secrets:"
 
 @dataclass(frozen=True)
 class SecretRef:
-    """A parsed secrets:[<resource>:]<key> reference."""
+    """A parsed secrets:[<resource>:]<key> reference. text is the reference as
+    given, which messages show."""
 
     resource: str
     key: str
+    text: str = field(default="", compare=False)
 
     def __str__(self) -> str:
+        if self.text:
+            return self.text
+
         if not self.resource:
             return SECRET_PREFIX + self.key
 
@@ -73,4 +78,4 @@ def parse_ref(value: str) -> SecretRef:
     if not key:
         raise InvalidConfigError("secret reference {} has an empty key".format(value))
 
-    return SecretRef(resource, key)
+    return SecretRef(resource, key, value)

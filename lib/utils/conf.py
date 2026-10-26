@@ -108,7 +108,7 @@ _confspec = """{
             "properties" : {
                 "sa-address" : { "type" : "string" },
                 "sa-port" : { "type" : ["integer", "string"] },
-                "sa-timeout" : { "type" : "integer" },
+                "sa-timeout" : { "type" : ["integer", "string"] },
                 "sa-cafile" : { "type" : "string" },
                 "sa-ca-file" : { "type" : "string" }
             }
@@ -168,12 +168,16 @@ def _getdefault():
     return copy.deepcopy(_confdefault)
 
 
-def _loadfile(fname):
+def _loadfile(fname, loaded=None):
+    """loaded collects each file's own settings in the order they apply: a file,
+    then the files it includes. A file that fails to load adds nothing."""
     conf_dict = {}
+    files = []
 
     if os.path.exists(fname):
         # file exists
-        conf_dict = toml.loads(open(fname).read())
+        conf_dict = _lowercase_secret_agent_keys(toml.loads(open(fname).read()))
+        files.append(copy.deepcopy(conf_dict))
 
         include_files = []
         if "include" in conf_dict.keys():
@@ -193,13 +197,25 @@ def _loadfile(fname):
 
         for f in include_files:
             try:
-                _merge(conf_dict, _loadfile(f))
+                _merge(conf_dict, _loadfile(f, files))
             except Exception as e:
                 logger.error(
                     "Config file parse error: " + str(f) + " " + str(e).split("\n")[0]
                 )
 
         validate(conf_dict, json.loads(_confspec))
+
+    if loaded is not None:
+        loaded.extend(files)
+
+    return conf_dict
+
+
+def _lowercase_secret_agent_keys(conf_dict):
+    """The C tools match [secret-agent] keys without regard to case."""
+    for name, values in list(conf_dict.items()):
+        if secret_agent_conf.is_section(name) and isinstance(values, dict):
+            conf_dict[name] = {k.lower(): v for k, v in values.items()}
 
     return conf_dict
 
@@ -355,6 +371,7 @@ def loadconfig(cli_args):
 
     conf_dict = {}
     conffiles = []
+    loaded_files = []
 
     if cli_args.only_config_file is not None or not cli_args.no_config_file:
         if cli_args.only_config_file is not None:
@@ -363,7 +380,7 @@ def loadconfig(cli_args):
 
             if os.path.exists(f):
                 try:
-                    _merge(conf_dict, _loadfile(f))
+                    _merge(conf_dict, _loadfile(f, loaded_files))
                     conffiles.append(f)
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
@@ -397,7 +414,7 @@ def loadconfig(cli_args):
 
             for f in conffiles:
                 try:
-                    _merge(conf_dict, _loadfile(f))
+                    _merge(conf_dict, _loadfile(f, loaded_files))
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
                     logger.critical(
@@ -428,11 +445,12 @@ def loadconfig(cli_args):
     except Exception:
         logger.critical("Wrong authentication mode: " + str(asadm_dict["auth"]))
 
-    # Kept apart from the merged options: the agent address precedence needs to
-    # know which values came from the config file.
-    asadm_dict["secret_agent_section"] = secret_agent_conf.file_section(
-        conf_dict, cli_args.instance
-    )
+    # Kept apart from the merged options: the agent settings apply one file at a
+    # time, as in the C tools, then the command line.
+    asadm_dict["secret_agent_sections"] = [
+        secret_agent_conf.file_section(loaded, cli_args.instance)
+        for loaded in loaded_files
+    ]
 
     # Find seed nods
     seeds = _getseeds(asadm_dict)
@@ -671,7 +689,7 @@ def print_config_file_option():
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password\n"
         "                      specified and no password is given. The typed password\n"
-        "                      accepts the forms above."
+        "                      accepts the forms above except 'secrets:'."
     )
     print(
         " --tls-certfile=path  Path to the chain file for mutual authentication (if\n"

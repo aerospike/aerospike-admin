@@ -186,7 +186,7 @@ def print_config_file_option():
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password\n"
         "                      specified and no password is given. The typed password\n"
-        "                      accepts the forms above."
+        "                      accepts the forms above except 'secrets:'."
     )
     print(
         " --tls-certfile=TLS_CERTFILE <path>\n"

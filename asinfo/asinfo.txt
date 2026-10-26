@@ -97,7 +97,7 @@ Configuration File Allowed Options
                       Default: none
                       User will be prompted on command line if --tls-keyfile-password
                       specified and no password is given. The typed password
-                      accepts the forms above.
+                      accepts the forms above except 'secrets:'.
  --tls-certfile=TLS_CERTFILE <path>
                       Path to the chain file for mutual authentication (if
                       Aerospike Cluster is supporting it).

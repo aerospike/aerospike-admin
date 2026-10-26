@@ -67,29 +67,35 @@ def file_section(conf_dict: dict, instance: str | None) -> tuple[str, dict]:
     return SECTION, dict(conf_dict.get(SECTION, {}))
 
 
-class SecretAgentSettings:
-    """Agent settings from the config file, then the command line. Within one
-    source an explicit sa-port beats a port in sa-address and sa-ca-file beats
-    sa-cafile, and the command line beats the config file. Invalid values raise
-    PasswordSourceError."""
+def is_section(name: str) -> bool:
+    return name == SECTION or name.startswith(SECTION + "_")
 
-    def __init__(self, section_name: str, file_values: dict, cli_values: dict) -> None:
+
+class SecretAgentSettings:
+    """Agent settings from each config file in the order they are read, then
+    the command line, as in the C tools. Within one source an explicit sa-port
+    beats a port in sa-address and sa-ca-file beats sa-cafile, and a later
+    source beats an earlier one. Invalid values raise PasswordSourceError."""
+
+    def __init__(self, file_sections: list[tuple[str, dict]], cli_values: dict) -> None:
         self.host = DEFAULT_HOST
         self.port = DEFAULT_PORT
         self.timeout_ms = DEFAULT_TIMEOUT_MS
         self.cafile = None
+        self.cafile_option = None
 
-        self._apply(file_values, section_name)
+        for section_name, file_values in file_sections:
+            self._apply(file_values, section_name)
+
         self._apply(cli_values, None)
 
     @classmethod
     def from_args(cls, args: Any) -> Self:
-        section_name, file_values = getattr(args, "secret_agent_section", (SECTION, {}))
         cli_values = {
             option: getattr(args, option.replace("-", "_"), None) for option in OPTIONS
         }
 
-        return cls(section_name, file_values, cli_values)
+        return cls(getattr(args, "secret_agent_sections", []), cli_values)
 
     def new_client(self) -> SecretAgentClient:
         ssl_context = None
@@ -98,7 +104,9 @@ class SecretAgentSettings:
             try:
                 ssl_context = new_ssl_context(self.cafile)
             except SecretAgentError as e:
-                raise PasswordSourceError("--sa-ca-file: {}".format(e)) from None
+                raise PasswordSourceError(
+                    "{}: {}".format(self.cafile_option, e)
+                ) from None
 
         return SecretAgentClient(
             self.host,
@@ -112,7 +120,6 @@ class SecretAgentSettings:
         address = values.get("sa-address")
         port = values.get("sa-port")
         timeout = values.get("sa-timeout")
-        cafile = values.get("sa-ca-file") or values.get("sa-cafile")
         address_port = None
 
         if address is not None:
@@ -132,8 +139,18 @@ class SecretAgentSettings:
         if timeout is not None:
             self.timeout_ms = _parse_timeout(timeout, section)
 
-        if cafile:
-            self.cafile = cafile
+        for option in ("sa-ca-file", "sa-cafile"):
+            if values.get(option):
+                self.cafile = values[option]
+                self.cafile_option = _option_label(option, section)
+                break
+
+
+def _option_label(option: str, section: str | None) -> str:
+    if section is None:
+        return "--" + option
+
+    return "{} in the [{}] config section".format(option, section)
 
 
 def _parse_timeout(value: object, section: str | None) -> int:

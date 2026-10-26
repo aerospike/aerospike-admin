@@ -126,10 +126,14 @@ class SecretAgentClient:
         text = _utf8(self._fetch(ref))
 
         if text is None:
-            raise InvalidResponseError("secret for {} is not valid UTF-8".format(ref))
+            raise InvalidResponseError(
+                "secret from {} for {} is not valid UTF-8".format(self.address, ref)
+            )
 
         if "\x00" in text:
-            raise InvalidResponseError("secret for {} contains a NUL byte".format(ref))
+            raise InvalidResponseError(
+                "secret from {} for {} contains a NUL byte".format(self.address, ref)
+            )
 
         return text
 
@@ -158,24 +162,27 @@ class SecretAgentClient:
                 sock.sendall(message)
             except OSError as e:
                 raise RequestFailedError(
-                    "send request for {}: {}".format(ref, _reason(e))
+                    "send request to {} for {}: {}".format(
+                        self.address, ref, _reason(e)
+                    )
                 ) from e
 
-            header = _recv_exact(sock, _wire.HEADER.size, deadline, ref)
+            header = _recv_exact(sock, _wire.HEADER.size, deadline, self.address, ref)
 
             try:
                 size = _wire.body_size(header)
             except _wire.ProtocolError as e:
                 raise InvalidResponseError(
-                    "response for {}: {}".format(ref, e)
+                    "response from {} for {}: {}".format(self.address, ref, e)
                 ) from None
 
-            body = _recv_exact(sock, size, deadline, ref)
+            body = _recv_exact(sock, size, deadline, self.address, ref)
 
         response = _wire.decode(body)
+        malformed = "malformed response from {} for {}".format(self.address, ref)
 
         if response is None:
-            raise InvalidResponseError("malformed response for {}".format(ref))
+            raise InvalidResponseError(malformed)
 
         error = response.get("Error")
         value = response.get("SecretValue")
@@ -183,28 +190,51 @@ class SecretAgentClient:
         if not isinstance(error, (str, type(None))) or not isinstance(
             value, (str, type(None))
         ):
-            raise InvalidResponseError("malformed response for {}".format(ref))
+            raise InvalidResponseError(malformed)
 
         # Like the C client, any Error field fails the request, even an empty one.
         if error is not None:
-            raise RequestFailedError("agent error for {}: {}".format(ref, error))
+            raise RequestFailedError(
+                "agent error from {} for {}{}".format(
+                    self.address, ref, ": " + error if error else ""
+                )
+            )
 
         encoded = (value or "").rstrip(_TRAILING_WHITESPACE)
 
         if not encoded:
-            raise InvalidResponseError("empty secret for {}".format(ref))
+            raise InvalidResponseError(
+                "empty secret from {} for {}".format(self.address, ref)
+            )
 
         data = _b64decode(encoded)
 
         if data is None:
-            raise InvalidResponseError("secret for {} is not valid base64".format(ref))
+            raise InvalidResponseError(
+                "secret from {} for {} is not valid base64".format(self.address, ref)
+            )
 
         return data
 
     def _connect(self, deadline: float) -> socket.socket:
-        sock = socket.create_connection(
-            (self._host, self._port), timeout=_remaining(deadline)
-        )
+        """Like socket.create_connection, but one deadline covers every address
+        the name resolves to, not each one."""
+        error = None
+
+        for family, kind, proto, _, address in socket.getaddrinfo(
+            self._host, self._port, type=socket.SOCK_STREAM
+        ):
+            sock = socket.socket(family, kind, proto)
+
+            try:
+                _set_timeout(sock, deadline)
+                sock.connect(address)
+                break
+            except OSError as e:
+                sock.close()
+                error = e
+        else:
+            raise error or OSError("no address for {}".format(self._host))
 
         if self._ssl_context is None:
             return sock
@@ -232,7 +262,7 @@ def _set_timeout(sock: socket.socket, deadline: float) -> None:
 
 
 def _recv_exact(
-    sock: socket.socket, size: int, deadline: float, ref: SecretRef
+    sock: socket.socket, size: int, deadline: float, address: str, ref: SecretRef
 ) -> bytes:
     chunks = []
 
@@ -242,12 +272,14 @@ def _recv_exact(
             chunk = sock.recv(min(size, 65536))
         except OSError as e:
             raise RequestFailedError(
-                "read response for {}: {}".format(ref, _reason(e))
+                "read response from {} for {}: {}".format(address, ref, _reason(e))
             ) from e
 
         if not chunk:
             raise RequestFailedError(
-                "read response for {}: connection closed by the agent".format(ref)
+                "read response from {} for {}: connection closed by the agent".format(
+                    address, ref
+                )
             )
 
         chunks.append(chunk)
@@ -257,6 +289,10 @@ def _recv_exact(
 
 
 def _reason(e: BaseException) -> str:
+    # A TLS handshake timeout reads "_ssl.c:993: The handshake operation timed out".
+    if isinstance(e, TimeoutError):
+        return "timed out"
+
     return getattr(e, "strerror", None) or str(e) or type(e).__name__
 
 

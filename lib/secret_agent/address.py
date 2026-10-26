@@ -66,6 +66,9 @@ def parse_address(address: str) -> tuple[str, int | None]:
     """
     port = None
 
+    if any(c.isspace() for c in address):
+        raise _invalid(address)
+
     if address.startswith("["):
         host, bracket, rest = address[1:].partition("]")
 
