@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import shutil
+import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -4261,3 +4265,54 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         self.assertIn("package_with_underscores", result)
         self.assertIn("package.with.dots", result)
         self.assertIsNone(error)
+
+
+class CollectSysInfoStopTest(unittest.TestCase):
+    """collectinfo runs collect_sys_info in a worker thread, which a Ctrl-C cannot
+    cancel, so the worker has to stop itself."""
+
+    def setUp(self):
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        self.outfile = os.path.join(work_dir, "sysinfo.log")
+        self.commands = []
+        self.stop = threading.Event()
+
+        def shell_command(command, stop=None):
+            self.commands.append(command)
+            self.on_command()
+            return "out", ""
+
+        self.on_command = lambda: None
+        patch("lib.utils.common.util.shell_command", shell_command).start()
+        self.sleep_mock = patch("lib.utils.common.time.sleep").start()
+        self.addCleanup(patch.stopall)
+
+    def collect(self):
+        return common.collect_sys_info(
+            port=3000, file_header="header\n", outfile=self.outfile, stop=self.stop
+        )
+
+    def test_stopped_before_it_starts_runs_nothing(self):
+        self.stop.set()
+
+        self.collect()
+
+        self.assertListEqual(self.commands, [])
+        self.sleep_mock.assert_not_called()
+
+    def test_stopped_during_a_command_runs_no_more(self):
+        self.on_command = self.stop.set
+
+        self.collect()
+
+        self.assertEqual(len(self.commands), 1)
+        self.sleep_mock.assert_not_called()
+
+    def test_ip_link_sampling_waits_on_the_stop_event(self):
+        self.stop.set()
+
+        common._collect_ip_link_details(stop=self.stop)
+
+        self.assertLessEqual(len(self.commands), 1)
+        self.sleep_mock.assert_not_called()

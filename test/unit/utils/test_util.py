@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import asyncio
+import threading
+import time
 import warnings
 
 import unittest
@@ -1770,3 +1772,23 @@ class MemoryTablesAgreeTest(unittest.TestCase):
 
         self.assertEqual(headline["node1"]["allocated_shmem_bytes"], "800")
         self.assertEqual(headline["node1"]["allocated_bytes"], str(800 + 1000 * 1024))
+
+
+class ShellCommandStopTest(unittest.TestCase):
+    def test_stop_kills_the_running_command_and_its_children(self):
+        stop = threading.Event()
+        timer = threading.Timer(0.2, stop.set)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        start = time.monotonic()
+
+        out, _ = util.shell_command(["sleep 30; echo finished"], stop=stop)
+
+        self.assertLess(time.monotonic() - start, 5)
+        self.assertNotIn("finished", out)
+
+    def test_unset_stop_lets_the_command_finish(self):
+        out, err = util.shell_command(["echo done"], stop=threading.Event())
+
+        self.assertEqual(out.strip(), "done")
+        self.assertEqual(err, "")
