@@ -15,7 +15,7 @@
 import unittest
 import warnings
 from socket import error as SocketError
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from pytest import PytestUnraisableExceptionWarning
 
@@ -23,6 +23,7 @@ from lib.utils.constants import AuthMode
 from lib.live_cluster.client.info import (
     ASPrivilege,
     ASResponse,
+    _hash_password,
     add_privileges,
     authenticate_with_token,
     change_password,
@@ -131,6 +132,55 @@ class SecurityTest(unittest.IsolatedAsyncioTestCase):
 
         self.writer_mock.write.assert_called_with(expected_send_buf)
         self.assertTupleEqual(actual, expected)
+
+    @patch("lib.live_cluster.client.info._hash_password")
+    async def test_login_external_sends_credential_and_clear_password(self, hash_mock):
+        credential = b"$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa"
+        self.reader_mock.read.side_effect = [
+            b"\x02\x02\x00\x00\x00\x00\x00R\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            b"\x00\x00\x00>\x05B$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa",
+        ]
+
+        actual = await login(
+            self.reader_mock,
+            self.writer_mock,
+            "admin",
+            "admin",
+            credential,
+            AuthMode.EXTERNAL,
+        )
+
+        sent = self.writer_mock.write.call_args.args[0]
+        self.assertEqual(sent[11], 3)
+        self.assertTrue(
+            sent.endswith(
+                b"\x00\x00\x00\x06\x00admin"
+                + b"\x00\x00\x00=\x03"
+                + credential
+                + b"\x00\x00\x00\x06\x04admin"
+            )
+        )
+        self.assertEqual(actual[0], ASResponse.OK)
+        hash_mock.assert_not_called()
+
+    @patch("lib.live_cluster.client.info._hash_password")
+    async def test_login_without_login_command_returns_invalid_command(self, hash_mock):
+        self.reader_mock.read.return_value = b"\x02\x02\x00\x00\x00\x00\x00\x10\x00\x36\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+        actual = await login(
+            self.reader_mock,
+            self.writer_mock,
+            "admin",
+            "admin",
+            b"hash",
+            AuthMode.INTERNAL,
+        )
+
+        self.assertTupleEqual(actual, (ASResponse.INVALID_COMMAND, None, 0))
+        hash_mock.assert_not_called()
+
+    def test_hash_password_treats_none_as_empty(self):
+        self.assertEqual(_hash_password(None), _hash_password(""))
 
     async def test_authenticate_with_token(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00\\\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00admin\x00\x00\x00>\x05B$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa"

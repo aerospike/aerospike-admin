@@ -144,6 +144,34 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(await self.as_socket.login())
 
+    @patch("lib.live_cluster.client.assocket.login")
+    async def test_login_sends_credential_given_at_construction(self, login_mock):
+        login_mock.return_value = ASResponse.OK, "token", "expiration"
+        as_socket = ASSocket(
+            "1.2.3.4",
+            999,
+            "tls-name",
+            "test-user",
+            "test-password",
+            AuthMode.INTERNAL,
+            False,
+            credential=b"hash",
+        )
+        as_socket.sock = self.socket_mock
+        as_socket.reader = AsyncMock()
+        as_socket.writer = AsyncMock()
+
+        self.assertTrue(await as_socket.login())
+
+        login_mock.assert_called_with(
+            as_socket.reader,
+            as_socket.writer,
+            "test-user",
+            "test-password",
+            b"hash",
+            AuthMode.INTERNAL,
+        )
+
     async def test_login_returns_false(self):
         self.as_socket.sock = None
 

@@ -10,9 +10,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch, call
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from parameterized import parameterized
 from lib.base_controller import ShellException
 from lib.utils import async_object
-from lib.utils.constants import AdminMode
+from lib.utils.constants import AdminMode, AuthMode
 
 
 class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
@@ -1026,6 +1027,80 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(assock_cls.call_args[0][4], "file:/etc/hosts")
+
+
+class AsinfoCredentialTest(unittest.IsolatedAsyncioTestCase):
+    """asinfo mode builds its own socket, outside Cluster, so it hashes the password
+    itself."""
+
+    async def _socket_kwargs(self, **kwargs):
+        assock = Mock()
+        assock.connect = AsyncMock(return_value=False)
+
+        with patch("asadm.ASSocket", return_value=assock) as assock_cls, patch(
+            "asadm.logger"
+        ):
+            await asadm.execute_asinfo_commands(None, ("1.1.1.1", 3000, None), **kwargs)
+
+        return assock_cls.call_args.kwargs
+
+    @parameterized.expand(
+        [
+            (AuthMode.INTERNAL,),
+            (AuthMode.EXTERNAL,),
+            (AuthMode.EXTERNAL_INSECURE,),
+        ]
+    )
+    async def test_password_auth_modes_pass_credential(self, auth_mode):
+        kwargs = await self._socket_kwargs(
+            user="admin", password="admin", auth_mode=auth_mode
+        )
+
+        self.assertEqual(kwargs.get("credential"), asadm.info._hash_password("admin"))
+
+    async def test_pki_passes_no_credential(self):
+        kwargs = await self._socket_kwargs(
+            user="admin", password="admin", auth_mode=AuthMode.PKI
+        )
+
+        self.assertIsNone(kwargs.get("credential"))
+
+    async def test_no_user_passes_no_credential(self):
+        kwargs = await self._socket_kwargs()
+
+        self.assertIsNone(kwargs.get("credential"))
+
+    async def test_user_logs_in_and_runs_command(self):
+        writer = Mock()
+        writer.drain = AsyncMock()
+
+        async def connect(sock):
+            sock.sock = Mock()
+            sock.reader = AsyncMock()
+            sock.reader.read.side_effect = [
+                b"\x02\x02\x00\x00\x00\x00\x00R\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+                b"\x00\x00\x00>\x05B$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa",
+            ]
+            sock.writer = writer
+            return True
+
+        with patch.object(asadm.ASSocket, "connect", connect), patch.object(
+            asadm.ASSocket, "info", AsyncMock(return_value="8.1.0.0")
+        ), patch("asadm.view.CliView.asinfo") as asinfo_view, patch(
+            "asadm.logger"
+        ) as logger:
+            await asadm.execute_asinfo_commands(
+                "build",
+                ("1.1.1.1", 3000, None),
+                user="admin",
+                password="admin",
+            )
+
+        logger.critical.assert_not_called()
+        self.assertIn(
+            asadm.info._hash_password("admin"), writer.write.call_args.args[0]
+        )
+        self.assertEqual(asinfo_view.call_args.args[0], {"1.1.1.1:3000": "8.1.0.0"})
 
 
 class PromptedKeyfilePasswordTest(unittest.TestCase):
