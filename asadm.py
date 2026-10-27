@@ -758,7 +758,21 @@ async def execute_asinfo_commands(
         if not info.hasbcrypt:
             logger.critical("Authentication failed: bcrypt not installed.")
 
-    assock = ASSocket(seed[0], seed[1], seed[2], user, password, auth_mode, ssl_context)
+    credential = (
+        info._hash_password(password)
+        if user is not None and auth_mode != AuthMode.PKI
+        else None
+    )
+    assock = ASSocket(
+        seed[0],
+        seed[1],
+        seed[2],
+        user,
+        password,
+        auth_mode,
+        ssl_context,
+        credential=credential,
+    )
     if not await assock.connect():
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return

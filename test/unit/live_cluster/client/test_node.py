@@ -14,6 +14,7 @@
 
 import asyncio
 import socket
+import threading
 import time
 import unittest
 import warnings
@@ -392,6 +393,71 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.node.login())
         self.logger_mock.warning.assert_not_called()
 
+    async def test_borrow_socket_closes_oldest_socket_when_pool_is_full(self):
+        """More than a pool's worth of requests in flight return more sockets than the
+        pool holds."""
+        self.node._initialize_socket_pool()
+        pool = self.node.socket_pool[self.node.port]
+        pooled = [AsyncMock() for _ in range(pool.maxlen)]
+        pool.extend(pooled)
+        returned = AsyncMock()
+
+        with patch.object(
+            self.node, "_get_connection", AsyncMock(return_value=returned)
+        ):
+            async with self.node._borrow_socket():
+                pass
+
+        pooled[0].close.assert_awaited_once()
+        returned.close.assert_not_awaited()
+        self.assertListEqual(list(pool), pooled[1:] + [returned])
+
+    async def test_concurrent_returns_close_every_socket_pushed_out_of_full_pool(
+        self,
+    ):
+        """Closing a pushed out socket yields, which lets other returns run."""
+
+        async def close():
+            await asyncio.sleep(0)
+
+        def yielding_socket():
+            sock = AsyncMock()
+            sock.close.side_effect = close
+            return sock
+
+        self.node._initialize_socket_pool()
+        pool = self.node.socket_pool[self.node.port]
+        pooled = [yielding_socket() for _ in range(pool.maxlen)]
+        pool.extend(pooled)
+        returned = [yielding_socket() for _ in range(pool.maxlen)]
+
+        await asyncio.gather(
+            *(self.node._return_to_pool(self.node.port, sock) for sock in returned)
+        )
+
+        pushed_out = [sock for sock in pooled + returned if sock not in pool]
+        self.assertEqual(len(pushed_out), pool.maxlen)
+        for sock in pushed_out:
+            sock.close.assert_awaited_once()
+        for sock in pool:
+            sock.close.assert_not_awaited()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_login_closes_oldest_socket_when_pool_is_full(self, as_socket_mock):
+        self.node.user = "admin"
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.get_session_info.return_value = "token", 59
+        self.node._initialize_socket_pool()
+        pool = self.node.socket_pool[self.node.port]
+        pooled = [AsyncMock() for _ in range(pool.maxlen)]
+        pool.extend(pooled)
+
+        self.assertTrue(await self.node.login())
+
+        pooled[0].close.assert_awaited_once()
+        self.assertListEqual(list(pool), pooled[1:] + [as_socket])
+
     # TODO: Make unit tests for socket pool
     async def test_get_connection_uses_socket_pool(self):
         class ASSocket_Mock(AsyncMock):
@@ -551,6 +617,226 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.node.session_expiration, 0)
         as_socket.login.assert_awaited_once()
         as_socket.authenticate.assert_awaited_once()
+
+    async def test_init_keeps_credential(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            node = await Node(self.ip, timeout=0, credential=b"hash")
+
+        self.assertEqual(node.credential, b"hash")
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_login_passes_credential_to_socket(self, as_socket_mock):
+        self.node.user = "admin"
+        self.node.credential = b"hash"
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.get_session_info.return_value = "token", 59
+
+        self.assertTrue(await self.node.login())
+
+        self.assertEqual(as_socket_mock.call_args.kwargs["credential"], b"hash")
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_passes_credential_to_socket(self, as_socket_mock):
+        self.node.user = "admin"
+        self.node.credential = b"hash"
+        self.node.session_token = "token"
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.return_value = True
+
+        await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(as_socket_mock.call_args.kwargs["credential"], b"hash")
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_logs_in_when_security_was_enabled_after_login(
+        self, as_socket_mock
+    ):
+        """Login found security disabled, so the node has no token, and the server has
+        since been restarted with security enabled."""
+        self.node.user = "admin"
+        self.node.perform_login = False
+        self.node.session_token = None
+        self.node.session_expiration = 0
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.login.return_value = True
+        as_socket.get_session_info.return_value = "new-token", 99
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        as_socket.login.assert_awaited_once()
+        self.assertEqual(self.node.session_token, "new-token")
+        self.assertEqual(self.node.session_expiration, 99)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_recovers_after_relogin_times_out(
+        self, as_socket_mock
+    ):
+        """A restarted node rejects its old token, and the re-login can time out on a
+        loaded host."""
+        self.node.user = "admin"
+        self.node.perform_login = False
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 0
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        )
+        as_socket.login.side_effect = asyncio.TimeoutError()
+
+        with self.assertRaises(asyncio.TimeoutError):
+            await self.node._get_connection(self.node.ip, self.node.port)
+
+        as_socket.authenticate.side_effect = None
+        as_socket.login.side_effect = None
+        as_socket.login.return_value = True
+        as_socket.get_session_info.return_value = "new-token", 99
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        self.assertEqual(self.node.session_token, "new-token")
+        self.assertEqual(self.node.session_expiration, 99)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_logs_in_with_pki_when_node_has_no_token(
+        self, as_socket_mock
+    ):
+        self.node.user = None
+        self.node.auth_mode = constants.AuthMode.PKI
+        self.node.perform_login = False
+        self.node.session_token = None
+        self.node.session_expiration = 0
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.login.return_value = True
+        as_socket.get_session_info.return_value = "new-token", 99
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        as_socket.login.assert_awaited_once()
+        self.assertEqual(self.node.session_token, "new-token")
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_without_token_returns_socket_when_security_disabled(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.perform_login = False
+        self.node.session_token = None
+        self.node.session_expiration = 0
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.login.side_effect = ASProtocolError(
+            ASResponse.SECURITY_NOT_ENABLED, ""
+        )
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        as_socket.close.assert_not_awaited()
+        self.assertIsNone(self.node.session_token)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_without_user_does_not_log_in(self, as_socket_mock):
+        self.node.user = None
+        self.node.auth_mode = constants.AuthMode.INTERNAL
+        self.node.session_token = None
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.return_value = True
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        as_socket.login.assert_not_awaited()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_without_token_closes_socket_when_login_fails(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.perform_login = False
+        self.node.session_token = None
+        self.node.session_expiration = 0
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.login.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        )
+
+        with self.assertRaises(ASProtocolError):
+            await self.node._get_connection(self.node.ip, self.node.port)
+
+        as_socket.close.assert_awaited_once()
+        self.assertIsNone(self.node.session_token)
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_closes_socket_when_relogin_raises(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 1
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        )
+        as_socket.login.side_effect = asyncio.TimeoutError()
+
+        with self.assertRaises(asyncio.TimeoutError):
+            await self.node._get_connection(self.node.ip, self.node.port)
+
+        as_socket.close.assert_awaited_once()
+
+    async def test_get_connection_never_hashes_password(self):
+        """Every socket uses the credential hashed once at startup, including with a
+        user given and security disabled."""
+        self.node.set_timeout(5)
+        self.node.user = "admin"
+        self.node.password = "admin"
+        self.node.credential = b"hash"
+        self.node.session_token = None
+
+        async def connect(sock):
+            sock.sock = Mock()
+            sock.reader = AsyncMock()
+            sock.writer = Mock()
+            return True
+
+        with patch.object(ASSocket, "connect", connect), patch(
+            "lib.live_cluster.client.assocket.login",
+            AsyncMock(return_value=(ASResponse.SECURITY_NOT_ENABLED, None, 0)),
+        ), patch("lib.live_cluster.client.info._hash_password") as hash_mock:
+            sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIsInstance(sock, ASSocket)
+        hash_mock.assert_not_called()
+
+    async def test_update_ip_resolves_fqdn_off_event_loop(self):
+        loop_thread = threading.get_ident()
+        fqdn_threads = []
+
+        def fqdn(address):
+            fqdn_threads.append(threading.get_ident())
+            return "host.domain.local"
+
+        self.get_fully_qualified_domain_name.side_effect = fqdn
+        self.node.dns_cache.pop("10.0.0.1", None)
+        self.addCleanup(self.node.dns_cache.pop, "10.0.0.1", None)
+
+        await self.node._update_IP("10.0.0.1", 3000)
+
+        self.assertEqual(len(fqdn_threads), 1)
+        self.assertNotEqual(fqdn_threads[0], loop_thread)
+        self.assertEqual(self.node.fqdn, "host.domain.local")
 
     ###### Services ######
 
@@ -1930,6 +2216,45 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.info_mock.assert_any_call("get-config:context=xdr", self.ip)
         self.assertDictEqual(actual, expected)
+
+    async def test_info_system_statistics_does_not_log_ssh_password(self):
+        """collectinfo writes DEBUG records into the bundle it hands to support."""
+        self.node.localhost = False
+
+        await self.node.info_system_statistics(
+            ssh_user="user", ssh_pwd="S3CRET-PWD", ssh_key_pwd="K3Y-PWD"
+        )
+
+        self.assertTrue(self.logger_mock.debug.call_args_list)
+
+        for call in self.logger_mock.debug.call_args_list:
+            msg, *args = call.args
+            rendered = msg % tuple(args)
+
+            for secret in ("S3CRET-PWD", "K3Y-PWD"):
+                self.assertNotIn(secret, rendered)
+                self.assertNotIn(secret, str(args))
+
+    async def test_info_system_statistics_runs_localhost_commands_off_event_loop(
+        self,
+    ):
+        loop_thread = threading.get_ident()
+        stats_threads = []
+
+        def localhost_stats(commands):
+            stats_threads.append(threading.get_ident())
+            return {"uname": {"kernel": "linux"}}
+
+        self.node.localhost = True
+
+        with patch.object(
+            self.node, "_get_localhost_system_statistics", side_effect=localhost_stats
+        ):
+            actual = await self.node.info_system_statistics(commands=["uname"])
+
+        self.assertDictEqual(actual, {"uname": {"kernel": "linux"}})
+        self.assertEqual(len(stats_threads), 1)
+        self.assertNotEqual(stats_threads[0], loop_thread)
 
     @patch("lib.utils.conf_parser.parse_file")
     async def test_info_get_originalconfig(self, parse_file_mock):
@@ -5284,6 +5609,19 @@ class SyscmdTest(unittest.TestCase):
         cmds = [cmd for cmd in sys_cmd]
 
         self.assertListEqual(["sudo cmd1", "cmd2 sudo ", "cmd3"], cmds)
+
+    def test_iterations_are_independent(self):
+        """A cancelled local stats thread keeps running while a rerun walks the same
+        commands."""
+        _SysCmd.set_uid(1)
+        sys_cmd = _SysCmd("name", False, ["cmd1", "cmd2", "cmd3"], self.parse_func)
+
+        first = iter(sys_cmd)
+        self.assertEqual(next(first), "cmd1")
+        second = iter(sys_cmd)
+
+        self.assertListEqual(list(second), ["cmd1", "cmd2", "cmd3"])
+        self.assertListEqual(list(first), ["cmd2", "cmd3"])
 
     def test_parse(self):
         def parse_func(input: str) -> dict[str, Any]:
