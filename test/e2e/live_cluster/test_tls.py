@@ -226,5 +226,62 @@ class TestTLS(unittest.TestCase):
         )
 
 
+class TestPKI(unittest.TestCase):
+    """The server requires a client certificate, and PKI logs in as the user its
+    common name (asadm-client) names."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(lib.absolute_path("aerospike_tls.conf")) as f:
+            template = f.read().replace(
+                "tls-authenticate-client false", "tls-authenticate-client any"
+            )
+
+        lib.start(
+            num_nodes=1,
+            template_file="aerospike_tls.conf",
+            template_content=template,
+        )
+        lib.CLIENT.admin_create_user(
+            "asadm-client", "unused-password", ["sys-admin", "read-write"]
+        )
+        cls.build = lib.server_build()
+        certs = lib.CERTS_DIR
+        cls.tls_args = (
+            f"-h {lib.SERVER_IP}:{lib.TLS_PORT} --tls-enable --tls-name localhost "
+            f"--tls-cafile {certs}/ca.pem --tls-certfile {certs}/client.pem "
+            f"--tls-keyfile {certs}/client.key"
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        lib.stop()
+        lib.cleanup_tls_certs()
+
+    def _run(self, extra_args: str) -> test_util.CompletedProcess:
+        return test_util.run_asadm(
+            f"{self.tls_args} {extra_args}",
+            strip_header=False,
+        )
+
+    def test_pki_login(self):
+        cp = self._run("--auth PKI -e 'info network'")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("Network Information", cp.stdout)
+
+    def test_pki_asinfo_mode(self):
+        cp = self._run("--auth PKI --asinfo-mode -e build")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn(self.build, cp.stdout)
+
+    def test_password_asinfo_mode(self):
+        cp = self._run("-Uadmin -Padmin --asinfo-mode -e build")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn(self.build, cp.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

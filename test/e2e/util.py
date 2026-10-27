@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gzip
+import io
 import json
 import os
 import re
 import shlex
 import subprocess
+import tarfile
 import tempfile
+import zipfile
 from typing import Any
 from lib.utils import util
 
@@ -85,6 +89,32 @@ def run_asinfo(args) -> CompletedProcess:
                 env=env,
             )
         )
+
+
+def collectinfo_files_containing(collectinfo_path, needle: bytes) -> list[str]:
+    """Names of the files in a collectinfo bundle that contain `needle`, looking
+    inside the zip and gzip files it nests too."""
+
+    def search(name, data):
+        found = [name] if needle in data else []
+
+        if zipfile.is_zipfile(io.BytesIO(data)):
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for member in zf.namelist():
+                    found += search(name + "/" + member, zf.read(member))
+        elif data[:2] == b"\x1f\x8b":
+            found += search(name + "/<gunzip>", gzip.decompress(data))
+
+        return found
+
+    found = []
+
+    with tarfile.open(collectinfo_path) as tf:
+        for member in tf.getmembers():
+            if member.isfile():
+                found += search(member.name, tf.extractfile(member).read())
+
+    return found
 
 
 def run_asadm(args=None, strip_header=True, stdin_input=None) -> CompletedProcess:
