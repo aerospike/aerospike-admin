@@ -26,16 +26,22 @@
 # user = ""
 
 # password can be one of the following formats
-# Environment variable: "env:<VAR>"
+# Environment variable: "env:<VAR>", used exactly as set
 # password = "env:ASPWD"
 # Base64 encoded environment variable: "env-b64:<VAR>"
 # password = "env-b64:ASPWD_B64"
 # Base64 encoded string: "b64:<BASE64>"
 # password = "b64:c2VjcmV0"
-# File: "file:<PATH>"
+# File: "file:<PATH>", the whole file less one trailing "\n" or "\r\n".
+# PATH should name a regular file.
 # password = "file:/etc/aerospike/aspwd.txt"
 # String: "<PASSWORD>"
 # password = ""
+# Prefixes are case-sensitive. A base64 value may be line wrapped, and one
+# trailing newline is dropped after decoding. A password that itself begins
+# with "env:", "env-b64:", "b64:" or "file:" must be given as "b64:".
+# The password is read only when a user is set and the auth mode is not PKI.
+# It must be at most 63 bytes.
 
 #------------------------------------------------------------------------------
 # Transport Level Encryption
@@ -53,16 +59,20 @@
 
 # tls-keyfile-password required if tls-keyfile is password protected
 # It can be one of the following formats
-# Environment variable: "env:<VAR>"
+# Environment variable: "env:<VAR>", used exactly as set
 # tls-keyfile-password = "env:PEMPWD"
 # Base64 encoded environment variable: "env-b64:<VAR>"
 # tls-keyfile-password = "env-b64:PEMPWD_B64"
 # Base64 encoded string: "b64:<BASE64>"
-# tls-keyfile-password = "b64:c2VjcmV0"
-# File: "file:<PATH>"
+# tls-keyfile-password = "b64:cGFzc3dvcmQ="
+# File: "file:<PATH>", the first line of the file
 # tls-keyfile-password = "file:/etc/aerospike/x509_certificates/MultiServer/keypwd.txt"
 # String: "<PASSWORD>"
 # tls-keyfile-password = ""
+# Prefixes are case-sensitive. A password that itself begins with "env:",
+# "env-b64:", "b64:" or "file:" must be given as "b64:".
+# Surrounding whitespace is trimmed before the form is read.
+# The password must be at most 1024 bytes.
 
 # One of the tls-cafile or tls-capath is required. if both are specified
 # everything is loaded.

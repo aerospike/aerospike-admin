@@ -20,8 +20,7 @@ import asyncio
 from .types import ASProtocolExcFactory, ASResponse
 from .info import (
     add_privileges,
-    authenticate_new,
-    authenticate_old,
+    authenticate_with_token,
     change_password,
     create_role,
     create_user,
@@ -67,7 +66,16 @@ logger = logging.getLogger(__name__)
 
 class ASSocket:
     def __init__(
-        self, ip, port, tls_name, user, password, auth_mode, ssl_context, timeout=5
+        self,
+        ip,
+        port,
+        tls_name,
+        user,
+        password,
+        auth_mode,
+        ssl_context,
+        timeout=5,
+        credential=None,
     ):
         self.sock = None
         self.ip = ip
@@ -75,6 +83,7 @@ class ASSocket:
         self.tls_name = tls_name
         self.user = user
         self.password = password
+        self.credential = credential
         self.auth_mode = auth_mode
         self.ssl_context = ssl_context
         self._timeout = timeout
@@ -150,8 +159,8 @@ class ASSocket:
 
     async def _create_socket(self):
         sock = None
-        for addrinfo in socket.getaddrinfo(
-            self.ip, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM
+        for addrinfo in await asyncio.get_event_loop().getaddrinfo(
+            self.ip, self.port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
         ):
             # for DNS it will try all possible addresses
             try:
@@ -171,7 +180,14 @@ class ASSocket:
             return False
 
         resp_code, self.session_token, self.session_expiration = await asyncio.wait_for(
-            login(self.reader, self.writer, self.user, self.password, self.auth_mode),
+            login(
+                self.reader,
+                self.writer,
+                self.user,
+                self.password,
+                self.credential,
+                self.auth_mode,
+            ),
             self._timeout,
         )
 
@@ -186,22 +202,17 @@ class ASSocket:
 
         if not self.sock:
             return False
+
+        # Without a token there is nothing to authenticate with. Node logs in instead.
         if session_token is None:
-            # old authentication
-            resp_code = await asyncio.wait_for(
-                authenticate_old(
-                    self.reader, self.writer, self.user, self.password, self.auth_mode
-                ),
-                self._timeout,
-            )
-        else:
-            # new authentication with session_token
-            resp_code = await asyncio.wait_for(
-                authenticate_new(
-                    self.reader, self.writer, self.user, session_token, self.auth_mode
-                ),
-                self._timeout,
-            )
+            return True
+
+        resp_code = await asyncio.wait_for(
+            authenticate_with_token(
+                self.reader, self.writer, self.user, session_token, self.auth_mode
+            ),
+            self._timeout,
+        )
 
         if resp_code != ASResponse.OK:
             raise ASProtocolExcFactory.create_exc(resp_code, "Unable to authenticate")

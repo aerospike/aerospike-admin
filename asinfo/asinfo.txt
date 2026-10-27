@@ -34,13 +34,21 @@ Configuration File Allowed Options
  -P, --password
                       Password used to authenticate with cluster. Default: none
                       It can be one of the following:
-                      1) Environment variable: 'env:<VAR>'
+                      1) Environment variable: 'env:<VAR>', used exactly as set
                       2) Base64 encoded environment variable: 'env-b64:<VAR>'
                       3) Base64 encoded string: 'b64:<BASE64>'
-                      4) File: 'file:<PATH>'
+                      4) File: 'file:<PATH>', the whole file less one trailing '\n' or
+                         '\r\n'. PATH should name a regular file.
                       5) String: 'PASSWORD'
+                      Prefixes are case-sensitive. A base64 value may be line wrapped,
+                      and one trailing newline is dropped after decoding. A 'b64:' value
+                      on the command line is as visible as a literal password.
+                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or
+                      'file:' must be given as 'b64:' or typed at the prompt.
+                      The password is read only when a user is set and the auth mode is
+                      not PKI. It must be at most 63 bytes.
                       User will be prompted on command line if -P specified and no
-                      password is given.
+                      password is given. The typed password is used as is.
  --auth=AUTHENTICATION_MODE 
                       Authentication mode. Values: ['EXTERNAL', 'EXTERNAL_INSECURE', 'INTERNAL', 'PKI'].
                       Default: INTERNAL
@@ -70,14 +78,21 @@ Configuration File Allowed Options
  --tls-keyfile-password=password
                       Password to load protected tls-keyfile.
                       It can be one of the following:
-                      1) Environment variable: 'env:<VAR>'
+                      1) Environment variable: 'env:<VAR>', used exactly as set
                       2) Base64 encoded environment variable: 'env-b64:<VAR>'
                       3) Base64 encoded string: 'b64:<BASE64>'
-                      4) File: 'file:<PATH>'
+                      4) File: 'file:<PATH>', the first line of the file
                       5) String: 'PASSWORD'
+                      Prefixes are case-sensitive. A base64 value may be line wrapped,
+                      and one trailing newline is dropped after decoding.
+                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or
+                      'file:' must be given as 'b64:'.
+                      The password is read only when a key file is set. It must be at
+                      most 1024 bytes.
                       Default: none
-                      User will be prompted on command line if --tls-keyfile-password specified and no
-                      password is given.
+                      User will be prompted on command line if --tls-keyfile-password
+                      specified and no password is given. The typed password
+                      accepts the forms above.
  --tls-certfile=TLS_CERTFILE <path>
                       Path to the chain file for mutual authentication (if
                       Aerospike Cluster is supporting it).

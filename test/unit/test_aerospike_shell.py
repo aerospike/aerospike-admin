@@ -10,9 +10,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch, call
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from parameterized import parameterized
 from lib.base_controller import ShellException
 from lib.utils import async_object
-from lib.utils.constants import AdminMode
+from lib.utils.constants import AdminMode, AuthMode
 
 
 class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
@@ -467,6 +468,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_args.user = None
+                mock_args.password = None
                 mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -505,6 +507,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_args.user = None
+                mock_args.password = None
                 mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -556,6 +559,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.log_analyzer = False
                 mock_args.json = False
                 mock_args.user = None
+                mock_args.password = None
                 mock_args.tls_enable = False
                 mock_get_cli_args.return_value = mock_args
 
@@ -856,6 +860,7 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
             out_file=None,
             user="admin",
             password="env:AS_PASS",
+            config_file_options=[],
             log_path=None,
             line_separator=False,
             single_node=False,
@@ -963,6 +968,54 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
                     shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET"
                 )
 
+    async def test_config_file_label_in_error(self):
+        args = self._make_args(
+            password="env:ASADM_TEST_UNSET", config_file_options=["password"]
+        )
+
+        code, logger, _, shell_cls, _ = await self._run_main(args)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            str(logger.critical.call_args[0][0]),
+            "password in config file: environment variable ASADM_TEST_UNSET "
+            "is not set or empty",
+        )
+        shell_cls.assert_not_called()
+
+    async def test_no_user_warns_and_connects(self):
+        args = self._make_args(user=None, password="env:ASADM_TEST_UNSET")
+
+        with self.assertLogs(asadm.conf.logger, "WARNING") as logs:
+            _, logger, _, shell_cls, _ = await self._run_main(args)
+
+        self.assertEqual(
+            [r.getMessage() for r in logs.records],
+            ["--password: ignored because no user is set"],
+        )
+        logger.critical.assert_not_called()
+        self.assertEqual(shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET")
+
+    async def test_runs_that_never_connect_do_not_warn(self):
+        for mode in ("collectinfo", "log_analyzer"):
+            with self.subTest(mode=mode):
+                args = self._make_args(
+                    user=None, password="env:ASADM_TEST_UNSET", **{mode: True}
+                )
+
+                with self.assertNoLogs(asadm.conf.logger, "WARNING"):
+                    await self._run_main(args)
+
+    async def test_pki_skips_password_resolution(self):
+        args = self._make_args(
+            password="env:ASADM_TEST_UNSET", auth="PKI", tls_enable=True
+        )
+
+        _, logger, _, shell_cls, _ = await self._run_main(args)
+
+        logger.critical.assert_not_called()
+        self.assertEqual(shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET")
+
 
 class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
     """A value typed at the prompt or read from stdin is the password itself."""
@@ -975,10 +1028,10 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
     def _stdin(self, tty, line=""):
         stdin = Mock()
         stdin.isatty.return_value = tty
-        stdin.readline.return_value = line
+        stdin.readline.side_effect = io.StringIO(line).readline
         return patch("sys.stdin", stdin)
 
-    async def _shell_password(self):
+    async def _shell_password(self, auth_mode=asadm.AuthMode.INTERNAL):
         seen = {}
 
         class MockLiveClusterRootController(async_object.AsyncObject):
@@ -990,20 +1043,82 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
 
         with patch(
             "asadm.LiveClusterRootController", MockLiveClusterRootController
-        ), patch("asadm.logger"):
-            await AerospikeShell(
+        ), patch("asadm.logger") as logger:
+            shell = await AerospikeShell(
                 "test-version",
                 seeds=[("1.1.1.1", 3000, None)],
                 user="admin",
                 password=asadm.conf.DEFAULTPASSWORD,
+                auth_mode=auth_mode,
                 execute_only_mode=True,
             )
 
-        return seen["password"]
+        self.shell_logger = logger
+        self.shell_connected = shell.connected
+        return seen.get("password")
+
+    async def test_shell_typed_password_limited_to_63_bytes(self):
+        with self._stdin(False, "x" * 63 + "\n"):
+            self.assertEqual(await self._shell_password(), "x" * 63)
+
+        for typed in ("x" * 64, "é" * 32):
+            with self.subTest(typed=typed), self._stdin(True), patch(
+                "asadm.getpass.getpass", return_value=typed
+            ):
+                self.assertIsNone(await self._shell_password())
+
+                self.assertFalse(self.shell_connected)
+                self.assertEqual(
+                    str(self.shell_logger.critical.call_args[0][0]),
+                    "--password: password is longer than 63 bytes",
+                )
+
+    async def test_shell_endless_stdin_password_is_rejected(self):
+        with self._stdin(False, "x" * 100_000):
+            self.assertIsNone(await self._shell_password())
+
+        self.assertEqual(
+            str(self.shell_logger.critical.call_args[0][0]),
+            "--password: password is longer than 63 bytes",
+        )
+
+    async def test_shell_typed_password_not_checked_with_pki(self):
+        with self._stdin(False, "x" * 64 + "\n"):
+            self.assertEqual(await self._shell_password(asadm.AuthMode.PKI), "x" * 64)
+
+    async def test_asinfo_typed_password_limited_to_63_bytes(self):
+        for piped in ("x" * 64 + "\n", "x" * 100_000):
+            with self.subTest(piped=piped[:8]), self._stdin(False, piped), patch(
+                "asadm.ASSocket"
+            ) as assock_cls, self.assertRaises(asadm.PasswordSourceError) as cm:
+                await asadm.execute_asinfo_commands(
+                    None,
+                    ("1.1.1.1", 3000, None),
+                    user="admin",
+                    password=asadm.conf.DEFAULTPASSWORD,
+                )
+
+            self.assertEqual(
+                str(cm.exception), "--password: password is longer than 63 bytes"
+            )
+            assock_cls.assert_not_called()
 
     async def test_shell_stdin_password_is_literal(self):
         with self._stdin(False, "env:AS_PASS\n"):
             self.assertEqual(await self._shell_password(), "env:AS_PASS")
+
+    async def test_shell_stdin_password_is_trimmed(self):
+        with self._stdin(False, " s3cr3t \r\n"):
+            self.assertEqual(await self._shell_password(), "s3cr3t")
+
+    async def test_shell_cut_off_padded_stdin_password_is_rejected(self):
+        with self._stdin(False, " " * 10 + "x" * 100):
+            self.assertIsNone(await self._shell_password())
+
+        self.assertEqual(
+            str(self.shell_logger.critical.call_args[0][0]),
+            "--password: password is longer than 63 bytes",
+        )
 
     async def test_shell_getpass_password_is_literal(self):
         with self._stdin(True), patch(
@@ -1027,9 +1142,99 @@ class PromptedPasswordNotParsedTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(assock_cls.call_args[0][4], "file:/etc/hosts")
 
+    async def test_asinfo_stdin_password_is_trimmed(self):
+        assock = Mock()
+        assock.connect = AsyncMock(return_value=False)
+
+        with self._stdin(False, " s3cr3t \n"), patch(
+            "asadm.ASSocket", return_value=assock
+        ) as assock_cls, patch("asadm.logger"):
+            await asadm.execute_asinfo_commands(
+                None,
+                ("1.1.1.1", 3000, None),
+                user="admin",
+                password=asadm.conf.DEFAULTPASSWORD,
+            )
+
+        self.assertEqual(assock_cls.call_args[0][4], "s3cr3t")
+
+
+class AsinfoCredentialTest(unittest.IsolatedAsyncioTestCase):
+    """asinfo mode builds its own socket, outside Cluster, so it hashes the password
+    itself."""
+
+    async def _socket_kwargs(self, **kwargs):
+        assock = Mock()
+        assock.connect = AsyncMock(return_value=False)
+
+        with patch("asadm.ASSocket", return_value=assock) as assock_cls, patch(
+            "asadm.logger"
+        ):
+            await asadm.execute_asinfo_commands(None, ("1.1.1.1", 3000, None), **kwargs)
+
+        return assock_cls.call_args.kwargs
+
+    @parameterized.expand(
+        [
+            (AuthMode.INTERNAL,),
+            (AuthMode.EXTERNAL,),
+            (AuthMode.EXTERNAL_INSECURE,),
+        ]
+    )
+    async def test_password_auth_modes_pass_credential(self, auth_mode):
+        kwargs = await self._socket_kwargs(
+            user="admin", password="admin", auth_mode=auth_mode
+        )
+
+        self.assertEqual(kwargs.get("credential"), asadm.info._hash_password("admin"))
+
+    async def test_pki_passes_no_credential(self):
+        kwargs = await self._socket_kwargs(
+            user="admin", password="admin", auth_mode=AuthMode.PKI
+        )
+
+        self.assertIsNone(kwargs.get("credential"))
+
+    async def test_no_user_passes_no_credential(self):
+        kwargs = await self._socket_kwargs()
+
+        self.assertIsNone(kwargs.get("credential"))
+
+    async def test_user_logs_in_and_runs_command(self):
+        writer = Mock()
+        writer.drain = AsyncMock()
+
+        async def connect(sock):
+            sock.sock = Mock()
+            sock.reader = AsyncMock()
+            sock.reader.read.side_effect = [
+                b"\x02\x02\x00\x00\x00\x00\x00R\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+                b"\x00\x00\x00>\x05B$2a$10$7EqJtq98hPqEX7fNZaFWoO1mVO/4MLpGzsqojz6E9Gef6iXDjXdDa",
+            ]
+            sock.writer = writer
+            return True
+
+        with patch.object(asadm.ASSocket, "connect", connect), patch.object(
+            asadm.ASSocket, "info", AsyncMock(return_value="8.1.0.0")
+        ), patch("asadm.view.CliView.asinfo") as asinfo_view, patch(
+            "asadm.logger"
+        ) as logger:
+            await asadm.execute_asinfo_commands(
+                "build",
+                ("1.1.1.1", 3000, None),
+                user="admin",
+                password="admin",
+            )
+
+        logger.critical.assert_not_called()
+        self.assertIn(
+            asadm.info._hash_password("admin"), writer.write.call_args.args[0]
+        )
+        self.assertEqual(asinfo_view.call_args.args[0], {"1.1.1.1:3000": "8.1.0.0"})
+
 
 class PromptedKeyfilePasswordTest(unittest.TestCase):
-    """A prompted --tls-keyfile-password is stripped and resolved, as it always was."""
+    """A prompted --tls-keyfile-password is trimmed and resolved."""
 
     def setUp(self):
         env = patch.dict(os.environ, {"KP": "kp-s3cr3t"})
@@ -1052,7 +1257,7 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
         )
         stdin = Mock()
         stdin.isatty.return_value = tty
-        stdin.readline.return_value = typed
+        stdin.readline.side_effect = io.StringIO(typed).readline
 
         with patch("sys.stdin", stdin), patch(
             "asadm.getpass.getpass", return_value=typed
@@ -1065,20 +1270,83 @@ class PromptedKeyfilePasswordTest(unittest.TestCase):
         self.assertEqual(self._keyfile_password(False, "env:KP\n"), "kp-s3cr3t")
 
     def test_getpass_source_is_resolved(self):
-        self.assertEqual(self._keyfile_password(True, " env:KP "), "kp-s3cr3t")
+        self.assertEqual(self._keyfile_password(True, "env:KP"), "kp-s3cr3t")
 
-    def test_getpass_literal_is_stripped(self):
+    def test_getpass_literal_is_trimmed(self):
         self.assertEqual(self._keyfile_password(True, "  kp-s3cr3t \t"), "kp-s3cr3t")
 
+    def test_padded_source_is_resolved(self):
+        for tty, typed in ((True, " env:KP "), (False, " env:KP \n")):
+            with self.subTest(tty=tty):
+                self.assertEqual(self._keyfile_password(tty, typed), "kp-s3cr3t")
+
+    def test_stdin_is_trimmed(self):
+        for typed in (" kp-s3cr3t \r\n", " kp-s3cr3t \n", " kp-s3cr3t "):
+            with self.subTest(typed=typed):
+                self.assertEqual(self._keyfile_password(False, typed), "kp-s3cr3t")
+
+    def test_typed_password_limited_to_1024_bytes(self):
+        self.assertEqual(self._keyfile_password(True, "x" * 1024), "x" * 1024)
+        self.assertEqual(self._keyfile_password(False, "x" * 1024 + "\r\n"), "x" * 1024)
+
+        for tty, typed in (
+            (True, "x" * 1025),
+            (False, "x" * 100_000),
+            (False, " " * 10 + "x" * 2000),
+        ):
+            with self.subTest(tty=tty), patch(
+                "asadm.logger"
+            ) as logger, self.assertRaises(SystemExit) as cm:
+                self._keyfile_password(tty, typed)
+
+            self.assertEqual(cm.exception.code, 1)
+            logger.error.assert_not_called()
+            self.assertEqual(
+                str(logger.critical.call_args[0][0]),
+                "--tls-keyfile-password: password is longer than 1024 bytes",
+            )
+
     def test_resolution_error_exits(self):
-        with patch("asadm.logger") as logger, self.assertRaises(SystemExit) as cm:
+        for tty, typed in (
+            (True, "env:ASADM_TEST_UNSET"),
+            (False, "env:ASADM_TEST_UNSET\n"),
+        ):
+            with self.subTest(tty=tty):
+                with patch("asadm.logger") as logger, self.assertRaises(
+                    SystemExit
+                ) as cm:
+                    self._keyfile_password(tty, typed)
+
+                self.assertEqual(cm.exception.code, 1)
+                logger.error.assert_not_called()
+                logger.critical.assert_called_once()
+                self.assertEqual(
+                    str(logger.critical.call_args[0][0]),
+                    "--tls-keyfile-password: "
+                    "environment variable ASADM_TEST_UNSET is not set or empty",
+                )
+
+    def test_resolution_error_matches_the_command_line(self):
+        args = SimpleNamespace(
+            user=None,
+            password=None,
+            auth=None,
+            tls_enable=True,
+            tls_keyfile="/k.pem",
+            tls_keyfile_password="env:ASADM_TEST_UNSET",
+        )
+
+        with self.assertRaises(asadm.PasswordSourceError) as command_line:
+            asadm.conf.resolve_password_sources(args)
+
+        stderr = io.StringIO()
+        with patch.object(asadm.stderr_log_handler, "stream", stderr), patch(
+            "lib.utils.logger.set_exit_code"
+        ), self.assertRaises(SystemExit):
             self._keyfile_password(True, "env:ASADM_TEST_UNSET")
 
-        self.assertEqual(cm.exception.code, 1)
-        logger.error.assert_called_once_with(
-            "SSLContext creation Exception: --tls-keyfile-password: "
-            "environment variable ASADM_TEST_UNSET is not set or empty"
-        )
+        self.assertIn("ERROR: " + str(command_line.exception), stderr.getvalue())
+        self.assertNotIn("SSLContext creation Exception", stderr.getvalue())
 
 
 class LogAnalyzerSkipsTlsTest(unittest.IsolatedAsyncioTestCase):

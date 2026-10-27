@@ -395,13 +395,20 @@ def loadconfig(cli_args):
                     )
 
     asadm_dict = _flatten(default_conf_dict)
-    _merge(asadm_dict, _flatten(conf_dict, cli_args.instance))
+    file_dict = _flatten(conf_dict, cli_args.instance)
+    _merge(asadm_dict, file_dict)
 
     # -> Command line
     cli_dict = vars(cli_args)
 
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
+
+    asadm_dict["config_file_options"] = [
+        key.replace("_", "-")
+        for key in ("password", "tls_keyfile_password")
+        if cli_dict.get(key) is None and file_dict.get(key) is not None
+    ]
 
     try:
         asadm_dict["auth"] = AuthMode[asadm_dict["auth"].upper()]
@@ -433,21 +440,69 @@ def loadconfig(cli_args):
     return args, seeds
 
 
-def resolve_password_sources(args):
+def option_label(args, option):
+    if option in getattr(args, "config_file_options", ()):
+        return option + " in config file"
+
+    return "--" + option
+
+
+def _resolve_password(args):
     # DEFAULTPASSWORD means prompt later.
-    if args.user is not None and args.password not in (None, DEFAULTPASSWORD):
-        args.password = password_source.resolve(args.password, "--password")
+    if args.auth == AuthMode.PKI or args.password in (None, DEFAULTPASSWORD):
+        return
+
+    label = option_label(args, "password")
+
+    if args.user is None:
+        if password_source.has_source(args.password):
+            logger.warning("%s: ignored because no user is set", label)
+
+        return
+
+    args.password = password_source.resolve(
+        args.password, label, max_len=password_source.PASSWORD_MAX_LEN
+    )
+
+
+def resolve_password_sources(args):
+    _resolve_password(args)
 
     if (
         args.tls_enable
         and args.tls_keyfile
         and args.tls_keyfile_password not in (None, DEFAULTPASSWORD)
     ):
-        args.tls_keyfile_password = resolve_keyfile_password(args.tls_keyfile_password)
+        args.tls_keyfile_password = resolve_keyfile_password(
+            args.tls_keyfile_password, option_label(args, "tls-keyfile-password")
+        )
 
 
-def resolve_keyfile_password(value):
-    return password_source.resolve(value, "--tls-keyfile-password", strip=True)
+def resolve_keyfile_password(value, option="--tls-keyfile-password"):
+    return password_source.resolve(
+        value.strip(password_source.WHITESPACE),
+        option,
+        max_len=password_source.TLS_KEYFILE_PASSWORD_MAX_LEN,
+        first_line=True,
+    )
+
+
+def read_piped_password(max_len=password_source.PASSWORD_MAX_LEN):
+    limit = max_len + len("\r\n") + 1
+    line = sys.stdin.readline(limit)
+
+    # A cut-off line stays as read so the length check rejects it.
+    if len(line) == limit and not line.endswith("\n"):
+        return line
+
+    return line.strip(password_source.WHITESPACE)
+
+
+def check_typed_password(password, auth_mode):
+    if auth_mode != AuthMode.PKI:
+        password_source.check_len(
+            password, "--password", password_source.PASSWORD_MAX_LEN
+        )
 
 
 def print_config_help():
@@ -514,13 +569,22 @@ def print_config_file_option():
     print(
         " -P, --password       Password used to authenticate with cluster. Default: none\n"
         "                      It can be one of the following:\n"
-        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
+        "                      4) File: 'file:<PATH>', the whole file less one trailing '\\n' or\n"
+        "                         '\\r\\n'. PATH should name a regular file.\n"
         "                      5) String: 'PASSWORD'\n"
+        "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+        "                      and one trailing newline is dropped after decoding. A 'b64:' value\n"
+        "                      on the command line is as visible as a literal password.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
+        "                      'file:' must be given as 'b64:' or typed at the prompt.\n"
+        "                      The password is read only when a user is set and the auth mode is\n"
+        "                      not PKI. It must be at most 63 bytes.\n"
         "                      User will be prompted on command line if -P specified and no\n"
-        "                      password is given."
+        "                      password is given. The typed password is used as is. A password\n"
+        "                      piped on stdin has surrounding whitespace trimmed."
     )
     print(
         " --auth=AUTHENTICATION_MODE\n"
@@ -563,14 +627,22 @@ def print_config_file_option():
         " --tls-keyfile-password=password\n"
         "                      Password to load protected tls-keyfile.\n"
         "                      It can be one of the following:\n"
-        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
+        "                      4) File: 'file:<PATH>', the first line of the file\n"
         "                      5) String: 'PASSWORD'\n"
+        "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+        "                      and one trailing newline is dropped after decoding.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
+        "                      'file:' must be given as 'b64:'.\n"
+        "                      Surrounding whitespace is trimmed before the form is read.\n"
+        "                      The password is read only when a key file is set. It must be at\n"
+        "                      most 1024 bytes.\n"
         "                      Default: none\n"
-        "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"
-        "                      password is given."
+        "                      User will be prompted on command line if --tls-keyfile-password\n"
+        "                      specified and no password is given. The typed password\n"
+        "                      accepts the forms above."
     )
     print(
         " --tls-certfile=path  Path to the chain file for mutual authentication (if\n"

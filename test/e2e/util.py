@@ -12,14 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gzip
+import io
 import json
 import os
 import re
 import shlex
 import signal
 import subprocess
+import tarfile
+import tempfile
 import threading
 import time
+import zipfile
 from typing import Any
 from lib.utils import util
 
@@ -159,6 +164,51 @@ class CompletedOutput:
     def __init__(self, stdout, stderr):
         self.stdout = stdout
         self.stderr = stderr
+
+
+def run_asinfo(args) -> CompletedProcess:
+    """Runs the asinfo wrapper, which execs whatever `asadm` comes first on PATH."""
+    with tempfile.TemporaryDirectory() as bin_dir:
+        os.symlink(_asadm_binary(), os.path.join(bin_dir, "asadm"))
+        env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"])
+        cmd = [os.path.abspath("asinfo/asinfo.py")] + shlex.split(args)
+        print("Running cmd: {}".format(cmd))
+
+        return CompletedProcess(
+            subprocess.run(
+                cmd,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,
+            )
+        )
+
+
+def collectinfo_files_containing(collectinfo_path, needle: bytes) -> list[str]:
+    """Names of the files in a collectinfo bundle that contain `needle`, looking
+    inside the zip and gzip files it nests too."""
+
+    def search(name, data):
+        found = [name] if needle in data else []
+
+        if zipfile.is_zipfile(io.BytesIO(data)):
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for member in zf.namelist():
+                    found += search(name + "/" + member, zf.read(member))
+        elif data[:2] == b"\x1f\x8b":
+            found += search(name + "/<gunzip>", gzip.decompress(data))
+
+        return found
+
+    found = []
+
+    with tarfile.open(collectinfo_path) as tf:
+        for member in tf.getmembers():
+            if member.isfile():
+                found += search(member.name, tf.extractfile(member).read())
+
+    return found
 
 
 def run_asadm(args=None, strip_header=True, stdin_input=None) -> CompletedProcess:

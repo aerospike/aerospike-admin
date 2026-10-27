@@ -53,19 +53,18 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.as_socket._timeout, 9)
 
     @patch("socket.socket")
-    @patch("socket.getaddrinfo")
     @patch("asyncio.open_connection", new_callable=AsyncMock)
     @patch("asyncio.get_event_loop")
     async def test_can_connect(
         self,
         event_loop_mock,
         open_connection_mock,
-        getaddrinfo_mock,
         socket_module_mock,
     ):
         open_connection_mock.return_value = AsyncMock(), AsyncMock()
         event_loop_mock.return_value.sock_connect = AsyncMock()
-        getaddrinfo_mock.return_value = [
+        event_loop_mock.return_value.getaddrinfo = AsyncMock()
+        event_loop_mock.return_value.getaddrinfo.return_value = [
             ("family1", "socktype1", "proto1", "canonname1", "sockaddr1"),
             ("family2", "socktype2", "proto2", "canonname2", "sockaddr2"),
         ]
@@ -80,7 +79,6 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.as_socket.sock, socket_mock)
 
     @patch("socket.socket")
-    @patch("socket.getaddrinfo")
     @patch("lib.live_cluster.client.assocket._AsyncioSSLConnectionAdapter")
     @patch("asyncio.open_connection", new_callable=AsyncMock)
     @patch("asyncio.get_event_loop")
@@ -89,13 +87,13 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         event_loop_mock,
         open_connection_mock,
         ssl_connect_mock,
-        getaddrinfo_mock,
         socket_module_mock,
     ):
         open_connection_mock.return_value = AsyncMock(), AsyncMock()
         event_loop_mock.return_value.sock_connect = AsyncMock()
         self.as_socket.ssl_context = True
-        getaddrinfo_mock.return_value = [
+        event_loop_mock.return_value.getaddrinfo = AsyncMock()
+        event_loop_mock.return_value.getaddrinfo.return_value = [
             ("family1", "socktype1", "proto1", "canonname1", "sockaddr1"),
             ("family2", "socktype2", "proto2", "canonname2", "sockaddr2"),
         ]
@@ -130,6 +128,7 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
     @patch("lib.live_cluster.client.assocket.login")
     async def test_login_returns_true(self, login_mock):
         login_mock.return_value = ASResponse.OK, "token", "expiration"
+        self.as_socket.credential = b"hash"
 
         self.assertTrue(await self.as_socket.login())
         login_mock.assert_called_with(
@@ -137,12 +136,41 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             self.as_socket.writer,
             self.as_socket.user,
             self.as_socket.password,
+            b"hash",
             self.as_socket.auth_mode,
         )
 
         self.as_socket.user = None
 
         self.assertTrue(await self.as_socket.login())
+
+    @patch("lib.live_cluster.client.assocket.login")
+    async def test_login_sends_credential_given_at_construction(self, login_mock):
+        login_mock.return_value = ASResponse.OK, "token", "expiration"
+        as_socket = ASSocket(
+            "1.2.3.4",
+            999,
+            "tls-name",
+            "test-user",
+            "test-password",
+            AuthMode.INTERNAL,
+            False,
+            credential=b"hash",
+        )
+        as_socket.sock = self.socket_mock
+        as_socket.reader = AsyncMock()
+        as_socket.writer = AsyncMock()
+
+        self.assertTrue(await as_socket.login())
+
+        login_mock.assert_called_with(
+            as_socket.reader,
+            as_socket.writer,
+            "test-user",
+            "test-password",
+            b"hash",
+            AuthMode.INTERNAL,
+        )
 
     async def test_login_returns_false(self):
         self.as_socket.sock = None
@@ -152,6 +180,7 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
     @patch("lib.live_cluster.client.assocket.login")
     async def test_login_raises_exception(self, login_mock):
         login_mock.return_value = ASResponse.NOT_AUTHENTICATED, "token", "expiration"
+        self.as_socket.credential = b"hash"
 
         await util.assert_exception_async(
             self,
@@ -165,33 +194,24 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             self.as_socket.writer,
             self.as_socket.user,
             self.as_socket.password,
+            b"hash",
             self.as_socket.auth_mode,
         )
 
-    @patch("lib.live_cluster.client.assocket.authenticate_old", new_callable=AsyncMock)
-    @patch("lib.live_cluster.client.assocket.authenticate_new", new_callable=AsyncMock)
-    async def test_authenticate_returns_true(self, new_mock, old_mock):
-        new_mock.return_value = ASResponse.OK
+    @patch(
+        "lib.live_cluster.client.assocket.authenticate_with_token",
+        new_callable=AsyncMock,
+    )
+    async def test_authenticate_returns_true(self, token_mock):
+        token_mock.return_value = ASResponse.OK
 
         self.assertTrue(await self.as_socket.authenticate("token"))
 
-        new_mock.assert_called_with(
+        token_mock.assert_called_with(
             self.as_socket.reader,
             self.as_socket.writer,
             self.as_socket.user,
             "token",
-            "INTERNAL",
-        )
-
-        old_mock.return_value = ASResponse.OK
-
-        self.assertTrue(await self.as_socket.authenticate(None))
-
-        old_mock.assert_called_with(
-            self.as_socket.reader,
-            self.as_socket.writer,
-            self.as_socket.user,
-            self.as_socket.password,
             "INTERNAL",
         )
 
@@ -200,26 +220,40 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.as_socket.authenticate(None))
         self.assertTrue(await self.as_socket.authenticate("token"))
 
-    @patch("lib.live_cluster.client.assocket.authenticate_old", new_callable=AsyncMock)
-    @patch("lib.live_cluster.client.assocket.authenticate_new", new_callable=AsyncMock)
-    async def test_authenticate_returns_false(self, new_mock, old_mock):
-        new_mock.return_value = ASResponse.NOT_AUTHENTICATED
+    @patch(
+        "lib.live_cluster.client.assocket.authenticate_with_token",
+        new_callable=AsyncMock,
+    )
+    async def test_authenticate_without_token_sends_nothing(self, token_mock):
+        """Login returns no token when security is disabled, so there is nothing to
+        authenticate with."""
+        self.assertTrue(await self.as_socket.authenticate(None))
+
+        token_mock.assert_not_called()
+
+    @patch(
+        "lib.live_cluster.client.assocket.authenticate_with_token",
+        new_callable=AsyncMock,
+    )
+    async def test_authenticate_returns_false(self, token_mock):
+        token_mock.return_value = ASResponse.NOT_AUTHENTICATED
         self.as_socket.sock = None
 
         self.assertFalse(await self.as_socket.authenticate("token"))
 
-        new_mock.assert_not_called()
-        old_mock.assert_not_called()
+        token_mock.assert_not_called()
 
-    @patch("lib.live_cluster.client.assocket.authenticate_old", new_callable=AsyncMock)
-    @patch("lib.live_cluster.client.assocket.authenticate_new", new_callable=AsyncMock)
-    async def test_authenticate_raises_not_authenticated(self, new_mock, old_mock):
-        new_mock.return_value = ASResponse.NOT_AUTHENTICATED
+    @patch(
+        "lib.live_cluster.client.assocket.authenticate_with_token",
+        new_callable=AsyncMock,
+    )
+    async def test_authenticate_raises_not_authenticated(self, token_mock):
+        token_mock.return_value = ASResponse.NOT_AUTHENTICATED
 
         with self.assertRaises(ASProtocolError):
             await self.as_socket.authenticate("token")
 
-        new_mock.assert_called_with(
+        token_mock.assert_called_with(
             self.as_socket.reader,
             self.as_socket.writer,
             self.as_socket.user,

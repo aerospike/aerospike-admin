@@ -156,7 +156,6 @@ class _SysCmd:
         self.key = name
         self.ignore_error = ignore_error
         self._cmds = cmds
-        self._idx = 0
         self._parse_func = parse_func
 
     def parse(self, command_raw_output: str):
@@ -170,21 +169,12 @@ class _SysCmd:
         return self._uid == 0
 
     def __iter__(self):
-        self._idx = 0
-        return self
-
-    def __next__(self):
-        if self._idx >= len(self._cmds):
-            raise StopIteration
-
-        cmd = self._cmds[self._idx]
-        self._idx += 1
-
-        # Remove sudo if already root. Some systems do not have sudo.
-        if self._is_root():
-            return cmd.replace("sudo ", "")
-
-        return cmd
+        for cmd in self._cmds:
+            # Remove sudo if already root. Some systems do not have sudo.
+            if self._is_root():
+                yield cmd.replace("sudo ", "")
+            else:
+                yield cmd
 
 
 class Node(AsyncObject):
@@ -207,6 +197,7 @@ class Node(AsyncObject):
         consider_alumni=False,
         use_services_alt=False,
         user_agent=None,
+        credential=None,
     ) -> None:
         """
         address -- ip or fqdn for this node
@@ -226,6 +217,7 @@ class Node(AsyncObject):
         self._timeout = timeout
         self.user = user
         self.password = password
+        self.credential = credential
         self.auth_mode = auth_mode
         self.tls_name: Union[str, None] = tls_name
         self.ssl_context = ssl_context
@@ -407,6 +399,17 @@ class Node(AsyncObject):
         logger.debug("%s:%s init socket pool", self.ip, self.port)
         self.socket_pool: dict[int, deque[ASSocket]] = {}
         self.socket_pool[self.port] = deque(maxlen=MAX_SOCKET_POOL_SIZE)
+
+    async def _return_to_pool(self, port, sock: ASSocket):
+        """A full pool would drop its oldest socket without closing it. Close only after
+        the append, so a concurrent return cannot fill the pool in between."""
+        pool = self.socket_pool.setdefault(port, deque(maxlen=MAX_SOCKET_POOL_SIZE))
+        oldest = pool.popleft() if len(pool) == pool.maxlen else None
+        pool.append(sock)
+
+        if oldest is not None:
+            logger.debug("pool for port %s full, closing sock %s", port, id(oldest))
+            await oldest.close()
 
     def set_timeout(self, timeout):
         """
@@ -831,6 +834,7 @@ class Node(AsyncObject):
             self.auth_mode,
             self.ssl_context,
             timeout=self._timeout,
+            credential=self.credential,
         )
 
         if not await sock.connect():
@@ -886,7 +890,7 @@ class Node(AsyncObject):
             await sock.close()
             raise
 
-        self.socket_pool[self.port].append(sock)
+        await self._return_to_pool(self.port, sock)
         self.session_token, self.session_expiration = sock.get_session_info()
         self.perform_login = False
         logger.debug("%s:%s successful login to socket %s", self.ip, self.port, sock)
@@ -918,7 +922,7 @@ class Node(AsyncObject):
                         address, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
                     )
                 )[0][4][0],
-                get_fully_qualified_domain_name(address),
+                await asyncio.to_thread(get_fully_qualified_domain_name, address),
             )
 
         self.ip, self.fqdn = self.dns_cache[address]
@@ -1054,6 +1058,7 @@ class Node(AsyncObject):
             self.auth_mode,
             self.ssl_context,
             timeout=self._timeout,
+            credential=self.credential,
         )
 
         logger.debug("%s:%s created new sock %s", ip, port, id(sock))
@@ -1069,8 +1074,25 @@ class Node(AsyncObject):
                 self.session_token is not None,
                 self.session_expiration - time.time(),
             )
+            token = self.session_token
+
             try:
-                if await sock.authenticate(self.session_token):
+                # No token: security was disabled at login, or a re-login failed.
+                if token is None and (
+                    self.user is not None or self.auth_mode == constants.AuthMode.PKI
+                ):
+                    if await sock.login():
+                        (
+                            self.session_token,
+                            self.session_expiration,
+                        ) = sock.get_session_info()
+                        logger.debug(
+                            "sock login set token %s exp=%s",
+                            id(sock),
+                            self.session_expiration,
+                        )
+                        return sock
+                elif await sock.authenticate(token):
                     logger.debug("sock auth successful %s", id(sock))
                     return sock
             except ASProtocolError as e:
@@ -1087,10 +1109,10 @@ class Node(AsyncObject):
                     return sock
                 elif (
                     e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
+                    and token is not None
                     and self.user
                 ):
-                    # A node likely switched from security disabled to security enable.
-                    # In which case the error is caused by login never being called.
+                    # The node no longer accepts the token, e.g. it has restarted.
                     logger.debug(
                         "trying to sock login again %s ip=%s port=%s auth_mode=%s",
                         id(sock),
@@ -1102,7 +1124,14 @@ class Node(AsyncObject):
                     # invalidate cached token before retry.
                     self.session_token = None
                     self.session_expiration = 0
-                    if await sock.login():
+
+                    try:
+                        logged_in = await sock.login()
+                    except Exception:
+                        await sock.close()
+                        raise
+
+                    if logged_in:
                         (
                             self.session_token,
                             self.session_expiration,
@@ -1123,6 +1152,10 @@ class Node(AsyncObject):
                         )
 
                 logger.debug("closing sock %s as auth failed", id(sock))
+                await sock.close()
+                raise
+            except Exception:
+                logger.debug("closing sock %s as auth raised", id(sock))
                 await sock.close()
                 raise
 
@@ -1154,9 +1187,7 @@ class Node(AsyncObject):
             yield sock
             # Success path: return socket to pool
             try:
-                self.socket_pool.setdefault(
-                    port, deque(maxlen=MAX_SOCKET_POOL_SIZE)
-                ).append(sock)
+                await self._return_to_pool(port, sock)
                 logger.debug("returned sock %s to pool for port %s", id(sock), port)
             except Exception as e:
                 logger.debug(
@@ -4687,10 +4718,9 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
         logger.debug(
-            "ssh_user=%s ssh_pwd=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
+            "%s ssh_user=%s ssh_key=%s ssh_port=%s commands=%s enable_ssh=%s",
             self.ip,
             ssh_user,
-            ssh_pwd,
             ssh_key,
             ssh_port,
             commands,
@@ -4703,7 +4733,9 @@ class Node(AsyncObject):
             cmd_list = [sys_cmd.key for sys_cmd in self.sys_cmds]
 
         if self.localhost:
-            return self._get_localhost_system_statistics(cmd_list)
+            return await asyncio.to_thread(
+                self._get_localhost_system_statistics, cmd_list
+            )
 
         if enable_ssh:
             return await self._get_remote_host_system_statistics(

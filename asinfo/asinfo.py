@@ -21,6 +21,7 @@
 #
 
 import os
+import re
 import shlex
 import sys
 from subprocess import Popen, PIPE
@@ -30,6 +31,8 @@ __version__ = "$$__version__$$"
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
 
+NO_USER_WARNING = re.compile(r"WARNING: .+: ignored because no user is set")
+
 
 def bytes_to_str(data):
     try:
@@ -38,6 +41,18 @@ def bytes_to_str(data):
         pass
 
     return data
+
+
+def split_warnings(err):
+    if not isinstance(err, str):
+        return err, []
+
+    errors, warnings = [], []
+
+    for line in err.splitlines():
+        (warnings if NO_USER_WARNING.fullmatch(line) else errors).append(line)
+
+    return "\n".join(errors), warnings
 
 
 def print_config_help():
@@ -88,13 +103,21 @@ def print_config_file_option():
         " -P, --password\n"
         "                      Password used to authenticate with cluster. Default: none\n"
         "                      It can be one of the following:\n"
-        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
+        "                      4) File: 'file:<PATH>', the whole file less one trailing '\\n' or\n"
+        "                         '\\r\\n'. PATH should name a regular file.\n"
         "                      5) String: 'PASSWORD'\n"
+        "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+        "                      and one trailing newline is dropped after decoding. A 'b64:' value\n"
+        "                      on the command line is as visible as a literal password.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
+        "                      'file:' must be given as 'b64:' or typed at the prompt.\n"
+        "                      The password is read only when a user is set and the auth mode is\n"
+        "                      not PKI. It must be at most 63 bytes.\n"
         "                      User will be prompted on command line if -P specified and no\n"
-        "                      password is given."
+        "                      password is given. The typed password is used as is."
     )
     print(
         " --auth=AUTHENTICATION_MODE \n"
@@ -144,14 +167,21 @@ def print_config_file_option():
         " --tls-keyfile-password=password\n"
         "                      Password to load protected tls-keyfile.\n"
         "                      It can be one of the following:\n"
-        "                      1) Environment variable: 'env:<VAR>'\n"
+        "                      1) Environment variable: 'env:<VAR>', used exactly as set\n"
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
-        "                      4) File: 'file:<PATH>'\n"
+        "                      4) File: 'file:<PATH>', the first line of the file\n"
         "                      5) String: 'PASSWORD'\n"
+        "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
+        "                      and one trailing newline is dropped after decoding.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
+        "                      'file:' must be given as 'b64:'.\n"
+        "                      The password is read only when a key file is set. It must be at\n"
+        "                      most 1024 bytes.\n"
         "                      Default: none\n"
-        "                      User will be prompted on command line if --tls-keyfile-password specified and no\n"
-        "                      password is given."
+        "                      User will be prompted on command line if --tls-keyfile-password\n"
+        "                      specified and no password is given. The typed password\n"
+        "                      accepts the forms above."
     )
     print(
         " --tls-certfile=TLS_CERTFILE <path>\n"
@@ -327,7 +357,10 @@ if asinfo_cmd:
 p = Popen(cmd, stdout=PIPE, stderr=PIPE, shell=False)
 out, err = p.communicate()
 out = bytes_to_str(out)
-err = bytes_to_str(err)
+err, warnings = split_warnings(bytes_to_str(err))
+
+for warning in warnings:
+    print(warning, file=sys.stderr)
 
 if err:
     if out:

@@ -14,11 +14,13 @@
 
 
 import socket
+import threading
 import unittest
 import warnings
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from parameterized import parameterized
 from pytest import PytestUnraisableExceptionWarning
 
 import lib
@@ -1572,3 +1574,77 @@ class NoUsableNodesErrorTest(unittest.TestCase):
 
         self.assertIn("1.1.1.1:3000", str(error))
         self.assertIn("2.2.2.2:3000", str(error))
+
+
+class ClusterCredentialTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.node_cls = patch("lib.live_cluster.client.cluster.Node").start()
+        self.node_cls.create_key = Node.create_key
+        self.node_cls.side_effect = self._offline_node
+        self.hash_mock = patch(
+            "lib.live_cluster.client.cluster._hash_password", return_value=b"hash"
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def _offline_node(self, *args, **kwargs):
+        node = MagicMock(alive=False)
+        node.close = AsyncMock()
+        return node
+
+    async def test_hashes_password_once_off_event_loop_for_every_node(self):
+        loop_thread = threading.get_ident()
+        hash_threads = []
+
+        def hash_password(password):
+            hash_threads.append(threading.get_ident())
+            return b"hash"
+
+        self.hash_mock.side_effect = hash_password
+
+        await Cluster(
+            [("1.1.1.1", 3000, None), ("2.2.2.2", 3000, None)],
+            user="admin",
+            password="admin",
+        )
+
+        self.hash_mock.assert_called_once_with("admin")
+        self.assertNotEqual(hash_threads[0], loop_thread)
+        self.assertGreaterEqual(self.node_cls.call_count, 2)
+
+        for node_call in self.node_cls.call_args_list:
+            self.assertEqual(node_call.kwargs["credential"], b"hash")
+
+    @parameterized.expand(
+        [
+            (constants.AuthMode.INTERNAL,),
+            (constants.AuthMode.EXTERNAL,),
+            (constants.AuthMode.EXTERNAL_INSECURE,),
+        ]
+    )
+    async def test_hashes_password_for_auth_modes_that_send_it(self, auth_mode):
+        await Cluster(
+            [("1.1.1.1", 3000, None)],
+            user="admin",
+            password="admin",
+            auth_mode=auth_mode,
+        )
+
+        self.hash_mock.assert_called_once_with("admin")
+        self.assertEqual(self.node_cls.call_args.kwargs["credential"], b"hash")
+
+    async def test_pki_does_not_hash_password(self):
+        await Cluster(
+            [("1.1.1.1", 3000, None)],
+            user="admin",
+            password="admin",
+            auth_mode=constants.AuthMode.PKI,
+        )
+
+        self.hash_mock.assert_not_called()
+        self.assertIsNone(self.node_cls.call_args.kwargs["credential"])
+
+    async def test_no_user_does_not_hash_password(self):
+        await Cluster([("1.1.1.1", 3000, None)])
+
+        self.hash_mock.assert_not_called()
+        self.assertIsNone(self.node_cls.call_args.kwargs["credential"])
