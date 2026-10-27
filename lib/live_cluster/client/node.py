@@ -401,15 +401,15 @@ class Node(AsyncObject):
         self.socket_pool[self.port] = deque(maxlen=MAX_SOCKET_POOL_SIZE)
 
     async def _return_to_pool(self, port, sock: ASSocket):
-        """A full pool would drop its oldest socket without closing it."""
+        """A full pool would drop its oldest socket without closing it. Close only after
+        the append, so a concurrent return cannot fill the pool in between."""
         pool = self.socket_pool.setdefault(port, deque(maxlen=MAX_SOCKET_POOL_SIZE))
+        oldest = pool.popleft() if len(pool) == pool.maxlen else None
+        pool.append(sock)
 
-        if len(pool) == pool.maxlen:
-            oldest = pool.popleft()
+        if oldest is not None:
             logger.debug("pool for port %s full, closing sock %s", port, id(oldest))
             await oldest.close()
-
-        pool.append(sock)
 
     def set_timeout(self, timeout):
         """

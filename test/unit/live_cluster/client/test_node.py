@@ -412,6 +412,36 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         returned.close.assert_not_awaited()
         self.assertListEqual(list(pool), pooled[1:] + [returned])
 
+    async def test_concurrent_returns_close_every_socket_pushed_out_of_full_pool(
+        self,
+    ):
+        """Closing a pushed out socket yields, which lets other returns run."""
+
+        async def close():
+            await asyncio.sleep(0)
+
+        def yielding_socket():
+            sock = AsyncMock()
+            sock.close.side_effect = close
+            return sock
+
+        self.node._initialize_socket_pool()
+        pool = self.node.socket_pool[self.node.port]
+        pooled = [yielding_socket() for _ in range(pool.maxlen)]
+        pool.extend(pooled)
+        returned = [yielding_socket() for _ in range(pool.maxlen)]
+
+        await asyncio.gather(
+            *(self.node._return_to_pool(self.node.port, sock) for sock in returned)
+        )
+
+        pushed_out = [sock for sock in pooled + returned if sock not in pool]
+        self.assertEqual(len(pushed_out), pool.maxlen)
+        for sock in pushed_out:
+            sock.close.assert_awaited_once()
+        for sock in pool:
+            sock.close.assert_not_awaited()
+
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_login_closes_oldest_socket_when_pool_is_full(self, as_socket_mock):
         self.node.user = "admin"
