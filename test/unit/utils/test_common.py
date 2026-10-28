@@ -4038,7 +4038,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify shell_command was called with correct arguments
-        mock_shell_cmd.assert_called_once_with(["rpm", "-qa"])
+        mock_shell_cmd.assert_called_once_with(["rpm", "-qa"], stop=None)
         # Verify output format
         self.assertIn("['rpm -qa']", result)
         self.assertIn("package1-1.0", result)
@@ -4063,7 +4063,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify
-        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"])
+        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"], stop=None)
         self.assertIn("['dpkg-query -W']", result)
         self.assertIn("package1", result)
         self.assertIn("package2", result)
@@ -4089,7 +4089,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify
-        mock_shell_cmd.assert_called_once_with(["dpkg", "-l"])
+        mock_shell_cmd.assert_called_once_with(["dpkg", "-l"], stop=None)
         self.assertIn("['dpkg -l']", result)
         self.assertIn("package1", result)
         self.assertIsNone(error)
@@ -4215,7 +4215,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify dpkg-query was used, not dpkg -l
-        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"])
+        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"], stop=None)
         self.assertIn("['dpkg-query -W']", result)
         self.assertNotIn("['dpkg -l']", result)
         self.assertIsNone(error)

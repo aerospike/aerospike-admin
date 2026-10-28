@@ -1803,7 +1803,13 @@ class ShellCommandStopTest(unittest.TestCase):
 
         self.assertLess(time.monotonic() - start, 5)
 
-    def test_stop_lets_the_command_clean_up_before_it_is_killed(self):
+    @parameterized.expand(
+        [
+            ("a_child_of_bash", "sh -c %s; true"),
+            ("the_command_bash_became", "exec sh -c %s"),
+        ]
+    )
+    def test_stop_lets_the_command_clean_up_before_it_is_killed(self, _, command):
         """sudo restores the terminal on SIGTERM. Killed outright, it leaves echo off."""
         work_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
@@ -1811,7 +1817,7 @@ class ShellCommandStopTest(unittest.TestCase):
         child = "trap 'touch %s; exit' TERM; while :; do sleep 0.05; done" % marker
         stop = self._stop_soon()
 
-        util.shell_command(["sh -c %s; true" % shlex.quote(child)], stop=stop)
+        util.shell_command([command % shlex.quote(child)], stop=stop)
 
         self.assertTrue(os.path.exists(marker))
 

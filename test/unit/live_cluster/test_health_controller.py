@@ -66,7 +66,7 @@ class HealthCheckControllerDeprecationTest(HealthCheckControllerTestCase):
         with self.assertLogs(
             "lib.live_cluster.health_check_controller", level="WARNING"
         ) as cm:
-            await self.controller._do_default(["-s", "0"])
+            await self.controller._do_default([])
 
         self.assertTrue(any("deprecated" in msg for msg in cm.output))
         self.health_checker_mock.execute.assert_called_once()
