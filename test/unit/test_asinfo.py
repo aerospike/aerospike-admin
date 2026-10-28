@@ -20,6 +20,7 @@ import tempfile
 import unittest
 
 from lib.secret_agent.testing import FakeSecretAgent
+from test.unit.secret_agent import pki
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 ASINFO = os.path.join(ROOT, "asinfo", "asinfo.py")
@@ -201,6 +202,14 @@ class AsinfoSecretAgentOptionsTest(unittest.TestCase):
         self.assertIn("--sa-ca-file /new.pem", cp.stdout)
         self.assertNotIn("/old.pem", cp.stdout)
 
+    def test_ca_file_beats_legacy_cafile_given_first(self):
+        cp = self.run_asinfo("--sa-ca-file", "/new.pem", "--sa-cafile", "/old.pem")
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn("--sa-ca-file /new.pem", cp.stdout)
+        self.assertNotIn("/old.pem", cp.stdout)
+        self.assertEqual(cp.stderr, LEGACY_CAFILE_WARNING)
+
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
 class AsinfoRealAsadmSecretTest(unittest.TestCase):
@@ -244,6 +253,87 @@ class AsinfoRealAsadmSecretTest(unittest.TestCase):
         self.assertIn("agent error", cp.stdout + cp.stderr)
         self.assertIn(self.agent.address, cp.stdout + cp.stderr)
         self.assertNotIn("Not able to connect any cluster", cp.stdout)
+
+
+@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
+class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
+    """A [secret-agent] section asadm cannot use stops asinfo before any agent
+    is asked for a secret or the cluster is contacted."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+        encoded = base64.b64encode(SECRET.encode()).decode()
+        self.agent = FakeSecretAgent({"aql": {"pw": encoded}}).start()
+        self.addCleanup(self.agent.stop)
+        self.requests = []
+        lookup = self.agent.lookup
+
+        def record(request):
+            self.requests.append(request)
+            return lookup(request)
+
+        self.agent.lookup = record
+
+        self.cluster_connections = []
+        self.cluster = FakeSecretAgent(
+            handler=lambda sock: self.cluster_connections.append(sock.getpeername())
+        ).start()
+        self.addCleanup(self.cluster.stop)
+
+        directory = os.path.join(self.tmpdir.name, "ca")
+        os.mkdir(directory)
+        self.ca_file = pki.generate(directory).ca_file
+
+    def run_asinfo(self, config):
+        path = os.path.join(self.tmpdir.name, "astools.conf")
+
+        with open(path, "w") as f:
+            f.write(config.format(ca=self.ca_file))
+
+        bindir = install_asadm(self, REAL_ASADM)
+        env = dict(
+            os.environ,
+            HOME=self.tmpdir.name,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=os.path.join(ROOT, "asadm.py"),
+        )
+
+        return subprocess.run(
+            [sys.executable, ASINFO, "--only-config-file", path]
+            + ["-h", self.cluster.host, "-p", str(self.cluster.port)]
+            + ["-U", "admin", "-P", "secrets:aql:pw"]
+            + ["--sa-address", self.agent.address, "-v", "build"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+
+    def assert_stopped_before_any_request(self, cp):
+        output = cp.stdout + cp.stderr
+        self.assertNotEqual(cp.returncode, 0, output)
+        self.assertEqual(self.requests, [], output)
+        self.assertEqual(self.cluster_connections, [], output)
+        self.assertNotIn(SECRET, output)
+
+    def test_unknown_key_with_ca_file(self):
+        cp = self.run_asinfo('[secret-agent]\nsa-ca-file = "{ca}"\nsa-time-out = 500\n')
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn("sa-time-out", cp.stdout + cp.stderr)
+
+    def test_wrong_type_names_key_and_section(self):
+        cp = self.run_asinfo(
+            '[secret-agent]\nsa-ca-file = "{ca}"\nsa-timeout = 1000.0\n'
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn(
+            "invalid value 1000.0 for sa-timeout in the [secret-agent] config section,"
+            " expected an integer from 1 to 2147483647",
+            cp.stdout + cp.stderr,
+        )
 
 
 if __name__ == "__main__":

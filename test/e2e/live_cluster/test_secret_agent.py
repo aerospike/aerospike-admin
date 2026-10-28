@@ -277,6 +277,34 @@ class SecretAgentErrorTests(AgentTestCase):
             cp, "invalid value 0 for sa-port in the [secret-agent] config section"
         )
 
+    def write_bad_section(self):
+        return self.write_file(
+            "astools.conf",
+            f'[secret-agent]\nsa-ca-file = "{self.tls_agent.ca_file}"\n'
+            "sa-time-out = 500\n",
+        )
+
+    def test_bad_section_stops_before_fetching(self):
+        """The section's CA file must not be dropped with the rest of it, leaving
+        the secret to be fetched in plaintext."""
+        path = self.write_bad_section()
+        cp = util.run_asadm(
+            f"--only-config-file {path} -h 127.0.0.1:1 -U admin "
+            f"-P secrets:asadm:password --sa-address {self.agent.address} "
+            "-e 'info network'"
+        )
+        self.assert_fails_before_connecting(cp, "sa-time-out")
+
+    def test_asinfo_bad_section_stops_before_fetching(self):
+        path = self.write_bad_section()
+        cp = util.run_asinfo(
+            f"--only-config-file {path} -h 127.0.0.1 -p 1 -U admin "
+            f"-P secrets:asadm:password --sa-address {self.agent.address} -v build"
+        )
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertIn("sa-time-out", cp.stdout + cp.stderr)
+        self.assertNotIn("Not able to connect", cp.stdout + cp.stderr)
+
 
 class SecretAgentTLSErrorTests(AgentTestCase):
     """TLS failures between asadm and the agent stop asadm before it connects,
@@ -369,6 +397,26 @@ class SecretAgentTLSErrorTests(AgentTestCase):
             cp,
             "sa-cafile in the [secret-agent] config section: "
             "cannot load TLS CA file /nonexistent/ca.pem",
+        )
+
+    def test_empty_ca_file(self):
+        """An empty CA file path is an error, not a fallback to plaintext."""
+        for option in ("--sa-ca-file", "--sa-cafile"):
+            with self.subTest(option=option):
+                cp = self.run_password(f"--sa-address {self.agent.address} {option} ''")
+                self.assert_fails_before_connecting(cp, option)
+
+    def test_empty_ca_file_in_config_file(self):
+        path = self.write_file(
+            "astools.conf",
+            '[cluster]\nhost = "127.0.0.1:1"\nuser = "admin"\n'
+            'password = "secrets:asadm:password"\n'
+            f'[secret-agent]\nsa-address = "{self.agent.address}"\n'
+            'sa-ca-file = ""\n',
+        )
+        cp = util.run_asadm(f"--only-config-file {path} -e 'info network'")
+        self.assert_fails_before_connecting(
+            cp, "sa-ca-file in the [secret-agent] config section"
         )
 
     def test_legacy_cafile_with_untrusted_ca(self):
@@ -488,13 +536,31 @@ class SecretAgentClusterTests(AgentTestCase):
         cp = self.run_info(f"--only-config-file {path} --instance e2e")
         self.assert_connected(cp)
 
+    def test_instance_section_ignores_keys_only_in_secret_agent_section(self):
+        path = self.write_config(
+            f'[secret-agent]\nsa-ca-file = "{self.untrusted_ca}"\n'
+            f'[secret-agent_e2e]\nsa-address = "{self.agent.address}"\n',
+            cluster_section="cluster_e2e",
+        )
+        cp = self.run_info(f"--only-config-file {path} --instance e2e")
+        self.assert_connected(cp)
+
     def test_agent_options_unused_without_secrets(self):
         cp = self.run_password("admin", "--sa-port 0")
         self.assert_connected(cp)
 
     def test_fetched_value_is_the_password(self):
-        cp = self.run_password(
-            "secrets:asadm:wrong", f"--sa-address {self.agent.address}"
+        """The user's password is the reference itself, so only sending the
+        reference instead of the fetched value would log in."""
+        user = "sa-literal"
+        lib.CLIENT.admin_create_user(
+            user, "secrets:asadm:wrong", ["sys-admin", "read-write"]
+        )
+        self.addCleanup(lib.CLIENT.admin_drop_user, user)
+
+        cp = self.run_info(
+            f"--no-config-file -h {self.host} -U {user} -P secrets:asadm:wrong "
+            f"--sa-address {self.agent.address}"
         )
         self.assertNotIn("--password:", cp.stderr)
         self.assertNotIn("Network Information", cp.stdout)
@@ -541,6 +607,29 @@ class SecretAgentClusterTests(AgentTestCase):
             f"--sa-ca-file {self.tls_agent.ca_file}",
         )
         self.assert_connected(cp)
+
+    def test_tls_agent_ca_file_given_first_beats_legacy_cafile(self):
+        cp = self.run_password(
+            "secrets:asadm:password",
+            f"--sa-address {self.tls_address} --sa-ca-file {self.tls_agent.ca_file} "
+            f"--sa-cafile {self.untrusted_ca}",
+        )
+        self.assert_connected(cp)
+        self.assertIn(DEPRECATED_CAFILE, cp.stderr)
+
+    def test_asinfo_tls_agent_ca_file_beats_legacy_cafile_in_either_order(self):
+        ca_file = f"--sa-ca-file {self.tls_agent.ca_file}"
+        legacy = f"--sa-cafile {self.untrusted_ca}"
+
+        for flags in (f"{ca_file} {legacy}", f"{legacy} {ca_file}"):
+            with self.subTest(flags=flags):
+                cp = util.run_asinfo(
+                    f"--no-config-file -h {lib.SERVER_IP} -p {lib.PORT} -U admin "
+                    f"-P secrets:asadm:password --sa-address {self.tls_address} "
+                    f"{flags} -v build"
+                )
+                self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+                self.assertIn(lib.server_build(), cp.stdout)
 
     def test_tls_agent_command_line_ca_beats_config_file(self):
         path = self.write_config(

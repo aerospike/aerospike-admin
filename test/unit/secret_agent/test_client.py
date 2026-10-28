@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import base64
+import errno
 import os
 import socket
 import tempfile
@@ -239,6 +240,29 @@ class TransportTest(unittest.TestCase):
 
         self.assertLess(time.monotonic() - start, 0.6)
 
+    def test_socket_error_for_one_family_tries_the_next_address(self):
+        """As in socket.create_connection, a family the host cannot create a
+        socket for is skipped."""
+        real_socket = socket.socket
+
+        def no_ipv6(family=socket.AF_INET, *args, **kwargs):
+            if family == socket.AF_INET6:
+                raise OSError(errno.EAFNOSUPPORT, os.strerror(errno.EAFNOSUPPORT))
+
+            return real_socket(family, *args, **kwargs)
+
+        with FakeSecretAgent(AGENT_DATA) as agent:
+            addresses = [
+                (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", agent.port, 0, 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", agent.port)),
+            ]
+            client = SecretAgentClient("localhost", agent.port, timeout=10)
+
+            with patch("socket.getaddrinfo", return_value=addresses), patch(
+                "socket.socket", no_ipv6
+            ):
+                self.assertEqual(client.resolve("secrets:aql:password"), VALUE)
+
     def test_timeout_covers_the_whole_response(self):
         message = _wire.encode({"SecretValue": b64(VALUE.encode())})
 
@@ -408,6 +432,13 @@ class TLSTest(unittest.TestCase):
         os.mkdir(other)
         cls.untrusted = test_pki.generate(other)
 
+        cls.by_name = {}
+
+        for name, hosts in (("ip", ("127.0.0.1",)), ("localhost", ("localhost",))):
+            directory = os.path.join(cls.tmp.name, name)
+            os.mkdir(directory)
+            cls.by_name[name] = test_pki.generate(directory, hosts=hosts)
+
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
@@ -427,6 +458,46 @@ class TLSTest(unittest.TestCase):
 
         with self.assertRaises(RequestFailedError):
             self.fetch(ssl_context=ctx)
+
+    @parameterized.expand(
+        [
+            (
+                "ip_address",
+                "localhost",
+                "127.0.0.1",
+                "IP address mismatch, certificate is not valid for '127.0.0.1'",
+            ),
+            (
+                "host_name",
+                "ip",
+                "localhost",
+                "Hostname mismatch, certificate is not valid for 'localhost'",
+            ),
+        ]
+    )
+    def test_agent_not_in_certificate(self, _, cert, host, message):
+        pki = self.by_name[cert]
+
+        with FakeSecretAgent(AGENT_DATA, ssl_context=pki.server_context()) as agent:
+            client = SecretAgentClient(
+                host, agent.port, timeout=10, ssl_context=new_ssl_context(pki.ca_file)
+            )
+
+            with self.assertRaises(RequestFailedError) as cm:
+                client.resolve("secrets:aql:password")
+
+        self.assertIn(message, str(cm.exception))
+
+    @parameterized.expand([("ip", "127.0.0.1"), ("localhost", "localhost")])
+    def test_agent_in_certificate(self, cert, host):
+        pki = self.by_name[cert]
+
+        with FakeSecretAgent(AGENT_DATA, ssl_context=pki.server_context()) as agent:
+            client = SecretAgentClient(
+                host, agent.port, timeout=10, ssl_context=new_ssl_context(pki.ca_file)
+            )
+
+            self.assertEqual(client.resolve("secrets:aql:password"), VALUE)
 
     def test_plaintext_to_tls_agent(self):
         with self.assertRaises(SecretAgentError):

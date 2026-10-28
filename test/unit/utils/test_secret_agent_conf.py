@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import tempfile
 import unittest
 
 from parameterized import parameterized
 
 from lib.utils.password_source import PasswordSourceError
 from lib.utils.secret_agent_conf import SecretAgentSettings, file_section
+from test.unit.secret_agent import pki
 
 
 def settings(file_values=None, cli_values=None, section="secret-agent"):
@@ -88,6 +90,42 @@ class PrecedenceTest(unittest.TestCase):
         )
         self.assertEqual(s.timeout_ms, 500)
         self.assertEqual(s.cafile, "/conf-ca.pem")
+
+    def test_command_line_beats_config_per_key(self):
+        s = settings(
+            {
+                "sa-address": "conf",
+                "sa-port": 5000,
+                "sa-timeout": 250,
+                "sa-ca-file": "/conf.pem",
+            },
+            {"sa-port": "4000"},
+        )
+        self.assertEqual(
+            (s.host, s.port, s.timeout_ms, s.cafile), ("conf", 4000, 250, "/conf.pem")
+        )
+
+    def test_later_file_beats_earlier_per_key(self):
+        s = SecretAgentSettings(
+            [
+                ("secret-agent", {"sa-address": "first:4000", "sa-timeout": 250}),
+                ("secret-agent", {"sa-address": "second", "sa-ca-file": "/b.pem"}),
+            ],
+            {},
+        )
+        self.assertEqual(
+            (s.host, s.port, s.timeout_ms, s.cafile), ("second", 4000, 250, "/b.pem")
+        )
+
+    @parameterized.expand([("min", 1), ("max", 2147483647)])
+    def test_timeout_range(self, _, value):
+        for file_values, cli_values in (
+            ({"sa-timeout": value}, {}),
+            ({"sa-timeout": str(value)}, {}),
+            ({}, {"sa-timeout": str(value)}),
+        ):
+            with self.subTest(file_values=file_values, cli_values=cli_values):
+                self.assertEqual(settings(file_values, cli_values).timeout_ms, value)
 
     @parameterized.expand(
         [
@@ -166,6 +204,47 @@ class ValidationTest(unittest.TestCase):
 
         self.assertEqual(str(cm.exception), message)
 
+    @parameterized.expand(
+        [
+            ("too_large", "2147483648"),
+            ("far_too_large", "99999999999"),
+            ("decimal", "1000.0"),
+            ("signed", "+5"),
+            ("padded", " 5"),
+            ("non_ascii_digit", "５"),
+        ]
+    )
+    def test_command_line_timeout(self, _, value):
+        with self.assertRaises(PasswordSourceError) as cm:
+            settings(cli_values={"sa-timeout": value})
+
+        self.assertEqual(
+            str(cm.exception),
+            "--sa-timeout: invalid value {}, expected an integer from 1 to"
+            " 2147483647".format(value),
+        )
+
+    @parameterized.expand(
+        [
+            ("zero", 0),
+            ("negative", -5),
+            ("too_large", 2147483648),
+            ("float", 1000.0),
+            ("bool", True),
+            ("zero_string", "0"),
+            ("text", "1s"),
+        ]
+    )
+    def test_config_timeout(self, _, value):
+        with self.assertRaises(PasswordSourceError) as cm:
+            settings({"sa-timeout": value})
+
+        self.assertEqual(
+            str(cm.exception),
+            "invalid value {} for sa-timeout in the [secret-agent] config section,"
+            " expected an integer from 1 to 2147483647".format(value),
+        )
+
     def test_config_section(self):
         with self.assertRaises(PasswordSourceError) as cm:
             settings({"sa-port": 0}, section="secret-agent_prod")
@@ -175,6 +254,57 @@ class ValidationTest(unittest.TestCase):
             "invalid value 0 for sa-port in the [secret-agent_prod] config section,"
             " expected an integer from 1 to 65535",
         )
+
+    @parameterized.expand(
+        [
+            ("ca_file", {}, {"sa-ca-file": ""}, "--sa-ca-file"),
+            ("legacy_cafile", {}, {"sa-cafile": ""}, "--sa-cafile"),
+            (
+                "ca_file_with_legacy_cafile",
+                {},
+                {"sa-ca-file": "", "sa-cafile": "{ca}"},
+                "--sa-ca-file",
+            ),
+            (
+                "command_line_over_config",
+                {"sa-ca-file": "{ca}"},
+                {"sa-ca-file": ""},
+                "--sa-ca-file",
+            ),
+            (
+                "config_ca_file",
+                {"sa-ca-file": ""},
+                {},
+                "sa-ca-file in the [secret-agent] config section",
+            ),
+            (
+                "config_legacy_cafile",
+                {"sa-cafile": ""},
+                {},
+                "sa-cafile in the [secret-agent] config section",
+            ),
+            (
+                "config_ca_file_with_legacy_cafile",
+                {"sa-ca-file": "", "sa-cafile": "{ca}"},
+                {},
+                "sa-ca-file in the [secret-agent] config section",
+            ),
+        ]
+    )
+    def test_empty_cafile_is_an_error(self, _, file_values, cli_values, option):
+        """An empty CA file path is an error. It must not turn TLS off or let the
+        other spelling or an earlier source win."""
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        ca = pki.generate(tmpdir.name).ca_file
+
+        def fill(values):
+            return {k: v.format(ca=ca) for k, v in values.items()}
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            settings(fill(file_values), fill(cli_values)).new_client()
+
+        self.assertIn(option, str(cm.exception))
 
     @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
     def test_bad_cafile_fails_when_the_client_is_created(self, option):
@@ -230,6 +360,15 @@ class FileSectionTest(unittest.TestCase):
         self.assertEqual(
             file_section(self.CONF, "prod"),
             ("secret-agent_prod", {"sa-address": "prod"}),
+        )
+
+    def test_instance_section_drops_keys_only_in_default(self):
+        conf = {
+            "secret-agent": {"sa-address": "default", "sa-ca-file": "/default.pem"},
+            "secret-agent_prod": {"sa-address": "prod"},
+        }
+        self.assertEqual(
+            file_section(conf, "prod"), ("secret-agent_prod", {"sa-address": "prod"})
         )
 
     def test_instance_falls_back_to_default(self):

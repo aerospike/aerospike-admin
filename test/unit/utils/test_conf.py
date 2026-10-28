@@ -15,15 +15,23 @@
 import base64
 import io
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+
+from parameterized import parameterized
 
 from lib.secret_agent.testing import FakeSecretAgent
 from lib.utils import conf
 from lib.utils.constants import AuthMode
 from lib.utils.password_source import PasswordSourceError
+from test.unit.secret_agent import pki
 
+ASADM = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "asadm.py"
+)
 PW = "s3cr3t-pw"
 PW_B64 = base64.b64encode(PW.encode()).decode()
 UNSET = "ASADM_TEST_UNSET_PASSWORD_VAR"
@@ -814,6 +822,257 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             self.load(config='[secret-agent]\nsa-tls-name = "agent"\n')
 
         logger.critical.assert_called_once()
+
+    def record_requests(self):
+        requests = []
+        lookup = self.agent.lookup
+
+        def record(request):
+            requests.append(request)
+            return lookup(request)
+
+        self.agent.lookup = record
+        return requests
+
+    def test_user_is_never_fetched(self):
+        ref = "secrets:aql:password"
+
+        for argv, config in (
+            (("-U", ref, "-P", ref), None),
+            ((), '[cluster]\nuser = "{0}"\npassword = "{0}"\n'.format(ref)),
+        ):
+            with self.subTest(argv=argv, config=config):
+                args = self.load(
+                    *argv, "--sa-address", self.agent.address, config=config
+                )
+
+                self.assertEqual(args.user, ref)
+                self.assertEqual(args.password, PW)
+
+    def test_no_fetch_without_user(self):
+        requests = self.record_requests()
+
+        for argv, config, label in (
+            (("-P", "secrets:aql:password"), None, "--password"),
+            (
+                (),
+                '[cluster]\npassword = "secrets:aql:password"\n',
+                "password in config file",
+            ),
+        ):
+            with self.subTest(argv=argv, config=config):
+                with self.assertLogs(conf.logger, "WARNING") as logs:
+                    args = self.load(
+                        *argv, "--sa-address", self.agent.address, config=config
+                    )
+
+                self.assertEqual(args.password, "secrets:aql:password")
+                self.assertEqual(
+                    [r.getMessage() for r in logs.records],
+                    [label + ": ignored because no user is set"],
+                )
+
+        self.assertEqual(requests, [])
+
+    def test_ca_file_beats_legacy_cafile_in_either_order(self):
+        ca_file = ("--sa-ca-file", "/nonexistent/ca-file.pem")
+        legacy = ("--sa-cafile", "/nonexistent/cafile.pem")
+
+        for flags in (ca_file + legacy, legacy + ca_file):
+            with self.subTest(flags=flags):
+                with self.assertRaises(PasswordSourceError) as cm:
+                    self.load(
+                        "-U",
+                        "admin",
+                        "-P",
+                        "secrets:aql:password",
+                        "--sa-address",
+                        self.agent.address,
+                        *flags,
+                    )
+
+                self.assertTrue(
+                    str(cm.exception).startswith(
+                        "--sa-ca-file: cannot load TLS CA file /nonexistent/ca-file.pem"
+                    ),
+                    str(cm.exception),
+                )
+
+    def test_empty_ca_file_is_an_error(self):
+        """An empty CA file path is an error, not a fallback to plaintext."""
+        requests = self.record_requests()
+
+        for option in ("--sa-ca-file", "--sa-cafile"):
+            with self.subTest(option=option):
+                with self.assertRaises(PasswordSourceError) as cm:
+                    self.load(
+                        "-U",
+                        "admin",
+                        "-P",
+                        "secrets:aql:password",
+                        "--sa-address",
+                        self.agent.address,
+                        option,
+                        "",
+                    )
+
+                self.assertIn(option, str(cm.exception))
+
+        self.assertEqual(requests, [])
+
+    def test_instance_section_ignores_keys_only_in_secret_agent_section(self):
+        args = self.load(
+            "--instance",
+            "a",
+            config=(
+                '[cluster_a]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nsa-ca-file = "/nonexistent/default.pem"\n'
+                '[secret-agent_a]\nsa-address = "{}"\n'.format(self.agent.address)
+            ),
+        )
+        self.assertEqual(args.password, PW)
+
+
+@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
+class BadSecretAgentSectionTest(unittest.TestCase):
+    """A [secret-agent] section asadm cannot use stops asadm before it asks any
+    agent for a secret or connects to the cluster, as in the C tools."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+        self.agent = FakeSecretAgent({"aql": {"password": PW_B64}}).start()
+        self.addCleanup(self.agent.stop)
+        self.requests = []
+        lookup = self.agent.lookup
+
+        def record(request):
+            self.requests.append(request)
+            return lookup(request)
+
+        self.agent.lookup = record
+
+        self.cluster_connections = []
+        self.cluster = FakeSecretAgent(
+            handler=lambda sock: self.cluster_connections.append(sock.getpeername())
+        ).start()
+        self.addCleanup(self.cluster.stop)
+
+        directory = os.path.join(self.tmpdir.name, "ca")
+        os.mkdir(directory)
+        self.ca_file = pki.generate(directory).ca_file
+
+    def write_file(self, name, content):
+        path = os.path.join(self.tmpdir.name, name)
+
+        with open(path, "w") as f:
+            f.write(content)
+
+        return path
+
+    def run_asadm(self, config, *argv, password="secrets:aql:password"):
+        path = self.write_file("astools.conf", config.format(ca=self.ca_file))
+        home = os.path.join(self.tmpdir.name, "home")
+        os.makedirs(home, exist_ok=True)
+
+        return subprocess.run(
+            [sys.executable, ASADM, "--only-config-file", path]
+            + ["-h", self.cluster.address, "-U", "admin", "-P", password]
+            + ["--sa-address", self.agent.address, *argv],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, HOME=home),
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+        )
+
+    def assert_stopped_before_any_request(self, cp):
+        output = cp.stdout + cp.stderr
+        self.assertNotEqual(cp.returncode, 0, output)
+        self.assertEqual(self.requests, [], output)
+        self.assertEqual(self.cluster_connections, [], output)
+
+    @parameterized.expand(
+        [
+            ("asinfo_mode", "--asinfo-mode", "-e", "build"),
+            ("execute", "-e", "info network"),
+        ]
+    )
+    def test_unknown_key_with_ca_file(self, _, *argv):
+        cp = self.run_asadm(
+            '[secret-agent]\nsa-ca-file = "{ca}"\nsa-time-out = 500\n', *argv
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn("sa-time-out", cp.stderr)
+
+    def test_unknown_key_in_instance_section(self):
+        cp = self.run_asadm(
+            '[secret-agent_a]\nsa-ca-file = "{ca}"\nsa-time-out = 500\n',
+            "--instance",
+            "a",
+            "-e",
+            "info network",
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn("sa-time-out", cp.stderr)
+
+    def test_wrong_type_names_key_and_section(self):
+        cp = self.run_asadm(
+            '[secret-agent]\nsa-ca-file = "{ca}"\nsa-timeout = 1000.0\n',
+            "-e",
+            "info network",
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn(
+            "invalid value 1000.0 for sa-timeout in the [secret-agent] config section,"
+            " expected an integer from 1 to 2147483647",
+            cp.stderr,
+        )
+
+    @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
+    def test_empty_ca_file(self, key):
+        """An empty CA file path is an error, not a fallback to plaintext."""
+        cp = self.run_asadm(
+            '[secret-agent]\n{} = ""\n'.format(key), "-e", "info network"
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn("{} in the [secret-agent] config section".format(key), cp.stderr)
+
+    def test_unknown_key_without_secrets(self):
+        cp = self.run_asadm(
+            "[secret-agent]\nsa-time-out = 500\n",
+            "-e",
+            "info network",
+            password="admin",
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn("sa-time-out", cp.stderr)
+
+    def test_unknown_key_in_included_file(self):
+        include = self.write_file(
+            "include.conf",
+            '[secret-agent]\nsa-ca-file = "{}"\nsa-time-out = 500\n'.format(
+                self.ca_file
+            ),
+        )
+        cp = self.run_asadm(
+            '[include]\nfile = "{}"\n'.format(include), "-e", "info network"
+        )
+        self.assert_stopped_before_any_request(cp)
+
+    def test_other_section_error_does_not_drop_the_ca_file(self):
+        """The file's CA must not be lost with the rest of the file, so the
+        plaintext agent never sees a request."""
+        cp = self.run_asadm(
+            '[cluster]\nhots = "127.0.0.1"\n[secret-agent]\nsa-ca-file = "{ca}"\n',
+            "-e",
+            "info network",
+        )
+        output = cp.stdout + cp.stderr
+        self.assertNotEqual(cp.returncode, 0, output)
+        self.assertEqual([r for r in self.requests if r is not None], [], output)
+        self.assertEqual(self.cluster_connections, [], output)
 
 
 class TypedPasswordTest(unittest.TestCase):
