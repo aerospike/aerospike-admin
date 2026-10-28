@@ -4276,12 +4276,15 @@ class CollectSysInfoStopTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
         self.outfile = os.path.join(work_dir, "sysinfo.log")
         self.commands = []
+        self.stops = []
         self.stop = threading.Event()
+        self.result = ("out", "")
 
         def shell_command(command, stop=None):
             self.commands.append(command)
+            self.stops.append(stop)
             self.on_command()
-            return "out", ""
+            return self.result
 
         self.on_command = lambda: None
         patch("lib.utils.common.util.shell_command", shell_command).start()
@@ -4309,10 +4312,52 @@ class CollectSysInfoStopTest(unittest.TestCase):
         self.assertEqual(len(self.commands), 1)
         self.sleep_mock.assert_not_called()
 
+    def test_every_command_gets_the_stop_event(self):
+        """A command run without it cannot be killed and holds up the interrupt."""
+        patch("lib.utils.common.request.urlopen", side_effect=OSError).start()
+        patch("lib.utils.common.socket.setdefaulttimeout").start()
+        patch.object(self.stop, "wait", return_value=False).start()
+
+        self.collect()
+
+        self.assertGreater(len(self.commands), 1)
+        self.assertListEqual(
+            [c for c, s in zip(self.commands, self.stops) if s is not self.stop], []
+        )
+
+    def test_stopped_after_a_failed_command_skips_its_alternatives(self):
+        self.result = ("", "failed")
+        self.on_command = self.stop.set
+
+        common._collectinfo_shell_cmds(
+            "primary", alt_cmds=["alternative"], stop=self.stop
+        )
+
+        self.assertListEqual(self.commands, [["primary"]])
+
     def test_ip_link_sampling_waits_on_the_stop_event(self):
-        self.stop.set()
+        self.on_command = self.stop.set
 
         common._collect_ip_link_details(stop=self.stop)
 
-        self.assertLessEqual(len(self.commands), 1)
+        self.assertEqual(len(self.commands), 1)
         self.sleep_mock.assert_not_called()
+
+
+class ArchiveDirTest(unittest.TestCase):
+    def test_a_failed_tar_is_reported(self):
+        """A Ctrl-C during the archive kills tar too, and its partial archive must
+        not be handed to support."""
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        logdir = os.path.join(work_dir, "collect_info")
+        os.mkdir(logdir)
+
+        with open(os.path.join(logdir, "sysinfo.log"), "w") as f:
+            f.write("data")
+
+        os.mkdir(logdir + ".tgz")
+
+        _, success = common.archive_dir(logdir)
+
+        self.assertFalse(success)

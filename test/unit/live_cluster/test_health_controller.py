@@ -75,7 +75,8 @@ class HealthCheckControllerDeprecationTest(HealthCheckControllerTestCase):
 
 class HealthCheckControllerSnapshotSleepTest(HealthCheckControllerTestCase):
     async def test_sleep_between_snapshots_yields_the_event_loop(self):
-        """time.sleep here stalled every in-flight request on the loop."""
+        """time.sleep here stalled every in-flight request on the loop. There is no
+        wait after the last snapshot."""
         with patch("asyncio.sleep", AsyncMock()) as async_sleep_mock, patch(
             "time.sleep"
         ) as time_sleep_mock:
@@ -83,7 +84,7 @@ class HealthCheckControllerSnapshotSleepTest(HealthCheckControllerTestCase):
 
         self.assertEqual(
             [c for c in async_sleep_mock.await_args_list if c == call(3.0)],
-            [call(3.0), call(3.0)],
+            [call(3.0)],
         )
         time_sleep_mock.assert_not_called()
 
@@ -117,6 +118,14 @@ class HealthCheckControllerSnapshotIntervalTest(HealthCheckControllerTestCase):
     async def test_negative_interval_is_rejected(self):
         with self.assertRaises(ShellException):
             await self.controller._do_default(["-s", "-1"])
+
+        self.cluster_mock.info_statistics.assert_not_awaited()
+
+    async def test_zero_interval_is_rejected(self):
+        """0 is left on the line as a query source and fails later with a
+        misleading error."""
+        with self.assertRaisesRegex(ShellException, "between 1 and"):
+            await self.controller._do_default(["-s", "0"])
 
         self.cluster_mock.info_statistics.assert_not_awaited()
 

@@ -14,6 +14,7 @@
 
 import asyncio
 import copy
+import gc
 import json
 import logging
 import logging.handlers
@@ -1182,11 +1183,17 @@ class RunCollectinfoInterruptTest(RunCollectinfoTestCase):
 
         return asyncio.create_task(self._run(ignore_errors=ignore_errors))
 
-    async def _interrupt_during_sysinfo(self, ignore_errors=False):
+    def _patch_sysinfo(self, collect_sys_info):
         self.controller.cluster.is_localhost_a_node.return_value = True
         self.conf_mock = patch.object(
             CollectinfoController, "_dump_collectinfo_aerospike_conf", AsyncMock()
         ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
+            collect_sys_info,
+        ).start()
+
+    async def _interrupt_during_sysinfo(self, ignore_errors=False):
         started = threading.Event()
         release = threading.Event()
         self.addCleanup(release.set)
@@ -1201,16 +1208,13 @@ class RunCollectinfoInterruptTest(RunCollectinfoTestCase):
 
             return []
 
-        patch(
-            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
-            collect_sys_info,
-        ).start()
+        self._patch_sysinfo(collect_sys_info)
         task = await self._start(ignore_errors)
         self.assertTrue(await asyncio.to_thread(started.wait, 5))
         task.cancel()
 
         with self.assertRaises(asyncio.CancelledError):
-            await task
+            await asyncio.wait_for(task, 5)
 
     def _logged(self, logger_mock):
         return " ".join(str(c.args[0]) % c.args[1:] for c in logger_mock.call_args_list)
@@ -1235,6 +1239,37 @@ class RunCollectinfoInterruptTest(RunCollectinfoTestCase):
 
         self.assertListEqual(self.archived_after_sysinfo_stopped, [True])
         self.conf_mock.assert_not_awaited()
+        self.assert_interrupted_bundle_archived()
+
+    async def test_a_second_interrupt_still_waits_for_sysinfo_to_stop(self):
+        """Each Ctrl-C cancels the command again."""
+        started = threading.Event()
+        stopping = threading.Event()
+        finish = threading.Event()
+        self.addCleanup(finish.set)
+
+        def collect_sys_info(port, file_header, outfile, stop=None):
+            started.set()
+            stop.wait(5)
+            stopping.set()
+            finish.wait(5)
+            self.sysinfo_stopped.set()
+            return []
+
+        self._patch_sysinfo(collect_sys_info)
+        task = await self._start()
+        self.assertTrue(await asyncio.to_thread(started.wait, 5))
+        task.cancel()
+        self.assertTrue(await asyncio.to_thread(stopping.wait, 5))
+        task.cancel()
+        await asyncio.wait([task], timeout=0.2)
+        finish.set()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+
+        self.assertListEqual(self.archived_after_sysinfo_stopped, [True])
+        self.assertIn("sysinfo.log", self._logged(self.warning_mock))
         self.assert_interrupted_bundle_archived()
 
     async def test_an_interrupt_during_summary(self):
@@ -1290,6 +1325,39 @@ class DumpCollectinfoSysinfoTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotEqual(calls[0][0], threading.get_ident())
         self.assertEqual(controller.failed_cmds, ["iostat"])
+
+    async def test_an_error_while_stopping_is_not_left_unretrieved(self):
+        """asyncio would print it as a raw traceback once the command has ended."""
+        controller = CollectinfoController()
+        controller.cluster = MagicMock()
+        started = threading.Event()
+        unhandled = []
+        asyncio.get_running_loop().set_exception_handler(
+            lambda loop, context: unhandled.append(context["message"])
+        )
+
+        def collect_sys_info(stop, **kwargs):
+            started.set()
+            stop.wait(5)
+            raise OSError("No space left on device")
+
+        with patch(
+            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
+            collect_sys_info,
+        ):
+            task = asyncio.create_task(
+                controller._dump_collectinfo_sysinfo("prefix_", "header")
+            )
+            self.assertTrue(await asyncio.to_thread(started.wait, 5))
+            task.cancel()
+
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 5)
+
+        del task
+        gc.collect()
+
+        self.assertListEqual(unhandled, [])
 
 
 class ClassifyExceptionTest(unittest.TestCase):

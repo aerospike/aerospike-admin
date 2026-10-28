@@ -25,11 +25,14 @@ from test.e2e import lib, util
 
 COLLECTINFO_PREFIX = "asadm_test_interrupt_"
 # The sysinfo step's iostat call. Any other iostat call, such as the one in health's
-# local system stats, fails at once.
+# local system stats, fails at once. The sleep is a child, so killing the command
+# alone does not stop it.
 IOSTAT_STAND_IN = """#!/bin/sh
 if [ "$*" = "-y -x 5 4" ]; then
-  echo $$ > "{pid_file}"
-  exec sleep 120
+  sleep 120 &
+  echo $! > "{pid_file}"
+  wait
+  exit 0
 fi
 exit 1
 """
@@ -50,6 +53,7 @@ class HealthTest(unittest.TestCase):
 
     def test_interrupt_during_the_wait_between_snapshots(self):
         asadm = util.AsadmProcess("--debug " + asadm_args("health -n 2 -s 60"))
+        self.addCleanup(asadm.kill)
 
         self.assertTrue(
             asadm.wait_for_stderr("Snapshot 1", 60), asadm.output.stderr[-2000:]
@@ -118,26 +122,29 @@ class CollectinfoSysinfoInterruptTest(unittest.TestCase):
         except ProcessLookupError:
             pass
 
-    def _bundles(self, prefix):
-        """Also cleans up the directories of runs that never got archived."""
+    def _remove_bundles(self, prefix):
+        """Also removes the directories of runs that never got archived."""
         for entry in glob.glob("/tmp/%s*" % prefix):
             if os.path.isdir(entry):
-                self.addCleanup(shutil.rmtree, entry, ignore_errors=True)
+                shutil.rmtree(entry, ignore_errors=True)
             else:
-                self.addCleanup(os.remove, entry)
+                os.remove(entry)
 
+    def _bundles(self, prefix):
         return sorted(glob.glob("/tmp/%s*.tgz" % prefix))
 
     def _interrupt_during_sysinfo(
         self, command="collectinfo", sig=signal.SIGINT, group=False, repeat=1
     ):
         prefix = "%s%s_%d_" % (COLLECTINFO_PREFIX, self._testMethodName, time.time())
+        self.addCleanup(self._remove_bundles, prefix)
         asadm = util.AsadmProcess(
             asadm_args(
                 command.replace("collectinfo", "collectinfo --output-prefix " + prefix)
             ),
             env=self.env,
         )
+        self.addCleanup(asadm.kill)
         pid = self._iostat_pid(180)
         self.assertIsNotNone(pid, asadm.output.stderr[-2000:])
         self.addCleanup(self._kill_if_running, pid)

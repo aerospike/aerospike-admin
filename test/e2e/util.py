@@ -144,8 +144,7 @@ class AsadmProcess:
         try:
             returncode = self.proc.wait(timeout)
         except subprocess.TimeoutExpired:
-            os.killpg(self.proc.pid, signal.SIGKILL)
-            self.proc.wait()
+            self.kill()
             returncode = None
 
         elapsed = time.monotonic() - (self.interrupted_at or time.monotonic())
@@ -154,6 +153,15 @@ class AsadmProcess:
             reader.join(5)
 
         return returncode, elapsed
+
+    def kill(self):
+        """Kills asadm and everything it started."""
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+        self.proc.wait()
 
     @property
     def output(self):

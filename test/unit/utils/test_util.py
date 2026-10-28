@@ -13,6 +13,10 @@
 # limitations under the License.
 
 import asyncio
+import os
+import shlex
+import shutil
+import tempfile
 import threading
 import time
 import warnings
@@ -1775,17 +1779,41 @@ class MemoryTablesAgreeTest(unittest.TestCase):
 
 
 class ShellCommandStopTest(unittest.TestCase):
-    def test_stop_kills_the_running_command_and_its_children(self):
+    def _stop_soon(self):
         stop = threading.Event()
         timer = threading.Timer(0.2, stop.set)
         timer.start()
         self.addCleanup(timer.cancel)
+        return stop
+
+    def test_stop_kills_the_running_command_and_its_children(self):
+        stop = self._stop_soon()
         start = time.monotonic()
 
         out, _ = util.shell_command(["sleep 30; echo finished"], stop=stop)
 
         self.assertLess(time.monotonic() - start, 5)
         self.assertNotIn("finished", out)
+
+    def test_stop_does_not_wait_for_a_grandchild_holding_the_output(self):
+        stop = self._stop_soon()
+        start = time.monotonic()
+
+        util.shell_command(["(sleep 10; echo finished); true"], stop=stop)
+
+        self.assertLess(time.monotonic() - start, 5)
+
+    def test_stop_lets_the_command_clean_up_before_it_is_killed(self):
+        """sudo restores the terminal on SIGTERM. Killed outright, it leaves echo off."""
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        marker = os.path.join(work_dir, "cleaned_up")
+        child = "trap 'touch %s; exit' TERM; while :; do sleep 0.05; done" % marker
+        stop = self._stop_soon()
+
+        util.shell_command(["sh -c %s; true" % shlex.quote(child)], stop=stop)
+
+        self.assertTrue(os.path.exists(marker))
 
     def test_unset_stop_lets_the_command_finish(self):
         out, err = util.shell_command(["echo done"], stop=threading.Event())
