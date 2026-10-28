@@ -2351,13 +2351,23 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             self.failed_cmds = await asyncio.shield(worker)
         except asyncio.CancelledError:
-            # The thread cannot be cancelled. Stop it before anything is archived.
+            # The thread cannot be cancelled. Stop it before anything is archived,
+            # however many more Ctrl-Cs arrive meanwhile.
             stop.set()
-            await asyncio.wait([worker])
             logger.warning(
                 "Interrupted. %s is incomplete and aerospike.conf was not collected.",
                 complete_filename,
             )
+
+            while not worker.done():
+                try:
+                    await asyncio.wait([worker])
+                except asyncio.CancelledError:
+                    pass
+
+            if worker.exception():
+                util.write_to_file(complete_filename, str(worker.exception()))
+
             raise
         except Exception as e:
             util.write_to_file(complete_filename, str(e))

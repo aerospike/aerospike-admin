@@ -50,7 +50,7 @@ MAX_SNAPSHOT_INTERVAL_SECONDS = 24 * 60 * 60
         ModifierHelp("-n", "Number of snapshots", default="1"),
         ModifierHelp(
             "-s",
-            "Sleep time in seconds between each snapshot",
+            "Sleep time in seconds between each snapshot, from 1 to 86400",
             default="1 sec",
         ),
         ModifierHelp(
@@ -162,9 +162,9 @@ class HealthCheckController(LiveClusterCommandController):
             mods=self.mods,
         )
 
-        if not 0 <= sleep_tm <= MAX_SNAPSHOT_INTERVAL_SECONDS:
+        if not 1 <= sleep_tm <= MAX_SNAPSHOT_INTERVAL_SECONDS:
             raise ShellException(
-                "-s must be between 0 and %d seconds." % MAX_SNAPSHOT_INTERVAL_SECONDS
+                "-s must be between 1 and %d seconds." % MAX_SNAPSHOT_INTERVAL_SECONDS
             )
 
         verbose = util.check_arg_and_delete_from_mods(
@@ -832,7 +832,9 @@ class HealthCheckController(LiveClusterCommandController):
 
                 sn_ct += 1
                 logger.info("Snapshot " + str(sn_ct))
-                await asyncio.sleep(sleep)
+
+                if sn_ct < snap_count:
+                    await asyncio.sleep(sleep)
 
             # FEATKEY is defined during tests. This is to help debugging github actions failures.
             if os.environ.get("FEATKEY"):

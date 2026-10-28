@@ -30,7 +30,7 @@ import sys
 import logging
 import threading
 from lib.utils import constants, version
-from time import time
+from time import sleep, time
 from typing import (
     Any,
     Awaitable,
@@ -90,22 +90,34 @@ def _communicate_until(p: subprocess.Popen, stop: threading.Event):
             if not stop.is_set():
                 continue
 
-        # Freeze bash so it starts nothing more, then kill its children while they
-        # are still its children, then bash.
+        # Freeze bash so it starts nothing more, then stop its children while they
+        # are still its children, then bash or the command it became. SIGTERM first
+        # lets each clean up, as sudo restores the terminal.
         p.send_signal(signal.SIGSTOP)
+        _signal_children(p, signal.SIGTERM)
+        sleep(0.5)
+        _signal_children(p, signal.SIGKILL)
+        p.terminate()
+        p.send_signal(signal.SIGCONT)
 
         try:
-            subprocess.run(
-                ["pkill", "-KILL", "-P", str(p.pid)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except OSError:
-            pass
+            return p.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            # It ignored SIGTERM, or a grandchild still holds the output open.
+            p.kill()
+            p.wait()
+            return b"", b""
 
-        p.kill()
 
-        return p.communicate()
+def _signal_children(p: subprocess.Popen, sig: signal.Signals):
+    try:
+        subprocess.run(
+            ["pkill", "-%d" % sig, "-P", str(p.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
 
 
 async def async_shell_command(command: str) -> Process | None:

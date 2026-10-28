@@ -28,6 +28,7 @@ from typing import Any, Callable, TypedDict
 from typing_extensions import NotRequired, Required
 import distro
 import socket
+import subprocess
 import threading
 import time
 from urllib import request
@@ -2557,10 +2558,10 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
     return aws_c
 
 
-def _check_cmds_for_str(cmds, strings):
+def _check_cmds_for_str(cmds, strings, stop: threading.Event | None = None):
     for cmd in cmds:
         try:
-            output, _ = util.shell_command([cmd])
+            output, _ = util.shell_command([cmd], stop=stop)
 
             for string in strings:
                 if string in output:
@@ -2572,7 +2573,7 @@ def _check_cmds_for_str(cmds, strings):
     return False
 
 
-def _collect_aws_data(cmd=""):
+def _collect_aws_data(cmd="", stop: threading.Event | None = None):
     aws_rsp = ""
     aws_timeout = 1
     socket.setdefaulttimeout(aws_timeout)
@@ -2595,7 +2596,7 @@ def _collect_aws_data(cmd=""):
         else:
             out += "\nFailed! Response Code: {0}".format(r.code)
             out += "\nChecking {0} for '{1}'".format(extra_cmds_to_check, grep_for)
-            if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
+            if _check_cmds_for_str(extra_cmds_to_check, [grep_for], stop=stop):
                 out += "\nSuccess!"
             else:
                 out += "\nFailed!"
@@ -2604,7 +2605,7 @@ def _collect_aws_data(cmd=""):
     except Exception as e:
         out += "\nFailed! Exception: {0}".format(e)
         out += "\nChecking [{0}] for {1}".format(extra_cmds_to_check, grep_for)
-        if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
+        if _check_cmds_for_str(extra_cmds_to_check, [grep_for], stop=stop):
             out += "\nSuccess!"
         else:
             out += "\nFailed!"
@@ -2705,11 +2706,11 @@ def _collect_azure_data(cmd=""):
     return out, None
 
 
-def _collect_cpuinfo(cmd=""):
+def _collect_cpuinfo(cmd="", stop: threading.Event | None = None):
     out = "['cpuinfo']"
 
     cpu_info_cmd = 'cat /proc/cpuinfo | grep "vendor_id"'
-    o, e = util.shell_command([cpu_info_cmd])
+    o, e = util.shell_command([cpu_info_cmd], stop=stop)
 
     if o:
         o = o.strip().split("\n")
@@ -2732,14 +2733,14 @@ def _collect_cpuinfo(cmd=""):
     return out, None
 
 
-def _collect_lsof(verbose=False):
+def _collect_lsof(verbose=False, stop: threading.Event | None = None):
     # Collect lsof data
     # If verbose true then returns whole output
     # If verbose false then returns count and type of fds for aerospike process
 
     out = "['lsof']"
 
-    pids = get_asd_pids()
+    pids = get_asd_pids(stop=stop)
 
     o_dict = {}
     unidentified_protocol_count = 0
@@ -2748,7 +2749,7 @@ def _collect_lsof(verbose=False):
 
     for pid in pids:
         cmd = "sudo lsof -n -p %s" % str(pid)
-        o, e = util.shell_command([cmd])
+        o, e = util.shell_command([cmd], stop=stop)
 
         if e or not o:
             continue
@@ -2847,7 +2848,7 @@ def _collect_env_variables(cmd=""):
     return out, None
 
 
-def _collect_installed_packages(cmd=""):
+def _collect_installed_packages(cmd="", stop: threading.Event | None = None):
     package_commands: list[list[str]] = []
 
     if shutil.which("rpm"):
@@ -2868,7 +2869,7 @@ def _collect_installed_packages(cmd=""):
 
     for pkg_cmd in package_commands:
         section = f"['{' '.join(pkg_cmd)}']"
-        o, e = util.shell_command(pkg_cmd)
+        o, e = util.shell_command(pkg_cmd, stop=stop)
         if o:
             section += "\n" + o.strip()
         if e:
@@ -3122,10 +3123,10 @@ def get_system_commands(port=3000) -> list[list[str]]:
     return sys_shell_cmds
 
 
-def get_asd_pids():
+def get_asd_pids(stop: threading.Event | None = None):
     pids = []
     ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
-    ps_o, ps_e = util.shell_command([ps_cmd])
+    ps_o, ps_e = util.shell_command([ps_cmd], stop=stop)
     if ps_o:
         ps_o = ps_o.strip().split("\n")
         pids = []
@@ -3180,7 +3181,21 @@ def archive_dir(logdir):
         return archive, False
 
     _zip_files(logdir)
-    util.shell_command(["tar", "-czvf", archive, logdir])
+
+    try:
+        tar = subprocess.run(
+            ["tar", "-czf", archive, logdir],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as e:
+        logger.error(e)
+        return archive, False
+
+    if tar.returncode != 0:
+        logger.error(util.bytes_to_str(tar.stderr).strip())
+        return archive, False
+
     logger.info("Files in " + logdir + " are now archived in " + archive + ".")
     return archive, True
 
@@ -3240,19 +3255,28 @@ def collect_sys_info(
         util.write_to_file(outfile, str(e))
 
     sections = [
-        ("Collecting output about the cpu", _collect_cpuinfo),
-        ("Checking if you are running in Cloud: AWS", _collect_aws_data),
+        (
+            "Collecting output about the cpu",
+            functools.partial(_collect_cpuinfo, stop=stop),
+        ),
+        (
+            "Checking if you are running in Cloud: AWS",
+            functools.partial(_collect_aws_data, stop=stop),
+        ),
         ("Checking if you are running in Cloud: GCP", _collect_gce_data),
         ("Checking if you are running in Cloud: Azure", _collect_azure_data),
         (
             "Collecting infomation about aerospike open file descriptors using 'lsof'",
-            _collect_lsof,
+            functools.partial(_collect_lsof, stop=stop),
         ),
         (
             "Collecting information about the environment",
             _collect_env_variables,
         ),
-        ("Collecting installed packages", _collect_installed_packages),
+        (
+            "Collecting installed packages",
+            functools.partial(_collect_installed_packages, stop=stop),
+        ),
         (
             "Collecting infomation about network interfaces",
             functools.partial(_collect_ip_link_details, stop=stop),
