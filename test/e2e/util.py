@@ -18,9 +18,12 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import tarfile
 import tempfile
+import threading
+import time
 import zipfile
 from typing import Any
 from lib.utils import util
@@ -70,6 +73,105 @@ def _asadm_binary():
         return os.path.abspath("build/bin/asadm/asadm")
 
     return os.path.abspath("asadm.py")
+
+
+class AsadmProcess:
+    """asadm running in the background, so a test can interrupt it mid-command."""
+
+    def __init__(self, args, env=None):
+        cmd = [_asadm_binary()] + shlex.split(args)
+        print("Running cmd: {}".format(cmd))
+        self.proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            env=os.environ if env is None else env,
+        )
+        self.stdout = []
+        self.stderr = []
+        self._readers = [
+            threading.Thread(target=self._read, args=(stream, lines), daemon=True)
+            for stream, lines in (
+                (self.proc.stdout, self.stdout),
+                (self.proc.stderr, self.stderr),
+            )
+        ]
+
+        for reader in self._readers:
+            reader.start()
+
+        self.interrupted_at = None
+
+    @staticmethod
+    def _read(stream, lines):
+        for line in iter(stream.readline, b""):
+            lines.append(line.decode(errors="replace"))
+
+    def wait_for_stderr(self, text, timeout):
+        deadline = time.monotonic() + timeout
+
+        while time.monotonic() < deadline:
+            if any(text in line for line in self.stderr):
+                return True
+
+            if self.proc.poll() is not None:
+                return False
+
+            time.sleep(0.1)
+
+        return False
+
+    def interrupt(self, sig=signal.SIGINT, group=False):
+        """Signals asadm alone by default, so its children only stop if asadm stops
+        them. group=True signals its children too, as a terminal Ctrl-C does."""
+        if self.interrupted_at is None:
+            self.interrupted_at = time.monotonic()
+
+        try:
+            if group:
+                os.killpg(self.proc.pid, sig)
+            else:
+                self.proc.send_signal(sig)
+        except (ProcessLookupError, PermissionError):
+            # Already exited. macOS answers killpg on an exited group with EPERM.
+            pass
+
+    def wait(self, timeout):
+        """Returns (exit code or None if still running at the timeout, seconds since
+        the interrupt). A process still running at the timeout is killed."""
+        try:
+            returncode = self.proc.wait(timeout)
+        except subprocess.TimeoutExpired:
+            self.kill()
+            returncode = None
+
+        elapsed = time.monotonic() - (self.interrupted_at or time.monotonic())
+
+        for reader in self._readers:
+            reader.join(5)
+
+        return returncode, elapsed
+
+    def kill(self):
+        """Kills asadm and everything it started."""
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+        self.proc.wait()
+
+    @property
+    def output(self):
+        return CompletedOutput("".join(self.stdout), "".join(self.stderr))
+
+
+class CompletedOutput:
+    def __init__(self, stdout, stderr):
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 def run_asinfo(args) -> CompletedProcess:

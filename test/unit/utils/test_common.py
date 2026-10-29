@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import shutil
+import signal
+import subprocess
+import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -4034,7 +4040,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify shell_command was called with correct arguments
-        mock_shell_cmd.assert_called_once_with(["rpm", "-qa"])
+        mock_shell_cmd.assert_called_once_with(["rpm", "-qa"], stop=None)
         # Verify output format
         self.assertIn("['rpm -qa']", result)
         self.assertIn("package1-1.0", result)
@@ -4059,7 +4065,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify
-        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"])
+        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"], stop=None)
         self.assertIn("['dpkg-query -W']", result)
         self.assertIn("package1", result)
         self.assertIn("package2", result)
@@ -4085,7 +4091,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify
-        mock_shell_cmd.assert_called_once_with(["dpkg", "-l"])
+        mock_shell_cmd.assert_called_once_with(["dpkg", "-l"], stop=None)
         self.assertIn("['dpkg -l']", result)
         self.assertIn("package1", result)
         self.assertIsNone(error)
@@ -4211,7 +4217,7 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         result, error = common._collect_installed_packages()
 
         # Verify dpkg-query was used, not dpkg -l
-        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"])
+        mock_shell_cmd.assert_called_once_with(["dpkg-query", "-W"], stop=None)
         self.assertIn("['dpkg-query -W']", result)
         self.assertNotIn("['dpkg -l']", result)
         self.assertIsNone(error)
@@ -4261,3 +4267,174 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         self.assertIn("package_with_underscores", result)
         self.assertIn("package.with.dots", result)
         self.assertIsNone(error)
+
+
+class CollectSysInfoStopTest(unittest.TestCase):
+    """collectinfo runs collect_sys_info in a worker thread, which a Ctrl-C cannot
+    cancel, so the worker has to stop itself."""
+
+    def setUp(self):
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        self.outfile = os.path.join(work_dir, "sysinfo.log")
+        self.commands = []
+        self.stops = []
+        self.stop = threading.Event()
+        self.result = ("out", "")
+
+        def shell_command(command, stop=None):
+            self.commands.append(command)
+            self.stops.append(stop)
+            self.on_command()
+            return self.result
+
+        self.on_command = lambda: None
+        patch("lib.utils.common.util.shell_command", shell_command).start()
+        self.sleep_mock = patch("lib.utils.common.time.sleep").start()
+        self.addCleanup(patch.stopall)
+
+    def collect(self):
+        return common.collect_sys_info(
+            port=3000, file_header="header\n", outfile=self.outfile, stop=self.stop
+        )
+
+    def test_stopped_before_it_starts_runs_nothing(self):
+        self.stop.set()
+
+        self.collect()
+
+        self.assertListEqual(self.commands, [])
+        self.sleep_mock.assert_not_called()
+
+    def test_stopped_during_a_command_runs_no_more(self):
+        self.on_command = self.stop.set
+
+        self.collect()
+
+        self.assertEqual(len(self.commands), 1)
+        self.sleep_mock.assert_not_called()
+
+    def test_every_command_gets_the_stop_event(self):
+        """A command run without it cannot be killed and holds up the interrupt."""
+        patch("lib.utils.common.request.urlopen", side_effect=OSError).start()
+        patch("lib.utils.common.socket.setdefaulttimeout").start()
+        patch.object(self.stop, "wait", return_value=False).start()
+
+        self.collect()
+
+        self.assertGreater(len(self.commands), 1)
+        self.assertListEqual(
+            [c for c, s in zip(self.commands, self.stops) if s is not self.stop], []
+        )
+
+    def test_stopped_after_a_failed_command_skips_its_alternatives(self):
+        self.result = ("", "failed")
+        self.on_command = self.stop.set
+
+        common._collectinfo_shell_cmds(
+            "primary", alt_cmds=["alternative"], stop=self.stop
+        )
+
+        self.assertListEqual(self.commands, [["primary"]])
+
+    def test_stopped_during_a_release_check_runs_no_more(self):
+        self.on_command = self.stop.set
+
+        common._check_cmds_for_str(["first", "second"], ["Amazon"], stop=self.stop)
+
+        self.assertListEqual(self.commands, [["first"]])
+
+    def test_stopped_while_finding_asd_runs_no_lsof(self):
+        self.result = ("root 101 0.0 asd\nroot 102 0.0 asd", "")
+        self.on_command = self.stop.set
+
+        common._collect_lsof(stop=self.stop)
+
+        self.assertEqual(len(self.commands), 1)
+
+    @patch("lib.utils.common.shutil.which", return_value="/usr/bin/rpm")
+    def test_stopped_during_a_package_query_runs_no_more(self, _):
+        self.on_command = self.stop.set
+
+        common._collect_installed_packages(stop=self.stop)
+
+        self.assertEqual(len(self.commands), 1)
+
+    def test_ip_link_sampling_waits_on_the_stop_event(self):
+        self.on_command = self.stop.set
+
+        common._collect_ip_link_details(stop=self.stop)
+
+        self.assertEqual(len(self.commands), 1)
+        self.sleep_mock.assert_not_called()
+
+
+class ArchiveDirTest(unittest.TestCase):
+    def test_a_failed_tar_is_reported(self):
+        """A Ctrl-C during the archive kills tar too, and its partial archive must
+        not be handed to support."""
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        logdir = os.path.join(work_dir, "collect_info")
+        os.mkdir(logdir)
+
+        with open(os.path.join(logdir, "sysinfo.log"), "w") as f:
+            f.write("data")
+
+        os.mkdir(logdir + ".tgz")
+
+        _, success = common.archive_dir(logdir)
+
+        self.assertFalse(success)
+
+    def _logdir(self):
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        logdir = os.path.join(work_dir, "collect_info")
+        os.mkdir(logdir)
+
+        with open(os.path.join(logdir, "sysinfo.log"), "w") as f:
+            f.write("data")
+
+        return logdir
+
+    def test_a_killed_tar_is_named_and_its_partial_archive_removed(self):
+        """tar's stderr then holds at most its leading '/' notice, which is not why
+        it failed."""
+        logdir = self._logdir()
+        archive = logdir + ".tgz"
+
+        def killed_tar(args, **kwargs):
+            with open(archive, "w") as f:
+                f.write("partial")
+
+            return subprocess.CompletedProcess(
+                args,
+                -signal.SIGINT,
+                stderr=b"tar: Removing leading '/' from member names\n",
+            )
+
+        with patch("lib.utils.common.subprocess.run", killed_tar), self.assertLogs(
+            "lib.utils.common", level="ERROR"
+        ) as cm:
+            _, success = common.archive_dir(logdir)
+
+        self.assertFalse(success)
+        self.assertFalse(os.path.exists(archive))
+        self.assertIn("SIGINT", cm.output[0])
+        self.assertIn(logdir, cm.output[0])
+
+    def test_a_missing_tar_names_the_directory_without_a_traceback(self):
+        """asadm's logger prints a traceback when the message is an exception."""
+        logdir = self._logdir()
+
+        with patch(
+            "lib.utils.common.subprocess.run",
+            side_effect=FileNotFoundError(2, "No such file or directory", "tar"),
+        ), self.assertLogs("lib.utils.common", level="ERROR") as cm:
+            _, success = common.archive_dir(logdir)
+
+        self.assertFalse(success)
+        self.assertIsInstance(cm.records[0].msg, str)
+        self.assertIn(logdir, cm.output[0])
+        self.assertIn("No such file or directory", cm.output[0])

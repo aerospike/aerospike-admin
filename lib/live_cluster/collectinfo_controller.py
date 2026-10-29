@@ -21,6 +21,7 @@ from os import path
 import pprint
 import shutil
 import socket
+import threading
 import time
 import traceback
 from dataclasses import dataclass
@@ -2336,10 +2337,38 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception:
             port = 3000
 
-        try:
-            self.failed_cmds = common.collect_sys_info(
-                port=port, file_header=fileHeader, outfile=complete_filename
+        stop = threading.Event()
+        worker = asyncio.ensure_future(
+            asyncio.to_thread(
+                common.collect_sys_info,
+                port=port,
+                file_header=fileHeader,
+                outfile=complete_filename,
+                stop=stop,
             )
+        )
+
+        try:
+            self.failed_cmds = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # The thread cannot be cancelled. Stop it before anything is archived,
+            # however many more Ctrl-Cs arrive meanwhile.
+            stop.set()
+            logger.warning(
+                "Interrupted. %s is incomplete and aerospike.conf was not collected.",
+                complete_filename,
+            )
+
+            while not worker.done():
+                try:
+                    await asyncio.wait([worker])
+                except asyncio.CancelledError:
+                    pass
+
+            if worker.exception():
+                util.write_to_file(complete_filename, str(worker.exception()))
+
+            raise
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
             logger.warning("Failed to generate %s file.", complete_filename)
@@ -2462,6 +2491,7 @@ class CollectinfoController(LiveClusterCommandController):
             # archive warning contradict the metadata the analyzer reads.
             collection_aborted = False
             derived_outputs_failed = False
+            interrupt = None
 
             try:
                 await self._dump_collectinfo_json(
@@ -2539,6 +2569,14 @@ class CollectinfoController(LiveClusterCommandController):
                     for c in coroutines:
                         try:
                             await c
+                        except asyncio.CancelledError as e:
+                            # A Ctrl-C, not a failure. It is passed on once the bundle
+                            # is archived.
+                            for c in coroutines:
+                                c.close()
+
+                            interrupt = e
+                            break
                         except:
                             # close remaining coroutines.  An error will be raised if they are not
                             # awaited.
@@ -2562,7 +2600,12 @@ class CollectinfoController(LiveClusterCommandController):
             cf_archive_path, success = common.archive_dir(cf_path_info.cf_dir)
 
             if success:
-                if collection_aborted:
+                if interrupt:
+                    logger.warning(
+                        "collectinfo was interrupted. The archive holds what was "
+                        "collected before the interrupt."
+                    )
+                elif collection_aborted:
                     logger.warning(
                         "The collection did not complete. The archive holds the "
                         "snapshots collected before the failure, and its metadata "
@@ -2582,6 +2625,9 @@ class CollectinfoController(LiveClusterCommandController):
                 logger.error(
                     "Failed to archive collectinfo logs. See earlier errors for more details."
                 )
+
+            if interrupt:
+                raise interrupt
         finally:
             # Best-effort restore before teardown (in-flight sockets may briefly retain the
             # raised timeout); wrapped so a failure here cannot skip teardown (TOOLS-3596).
