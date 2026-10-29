@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import shutil
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -4261,3 +4264,28 @@ class CollectInstalledPackagesTest(unittest.TestCase):
         self.assertIn("package_with_underscores", result)
         self.assertIn("package.with.dots", result)
         self.assertIsNone(error)
+
+
+class ZipFilesTest(unittest.TestCase):
+    def setUp(self):
+        self.cwd = os.getcwd()
+        self.addCleanup(os.chdir, self.cwd)
+        self.bundle = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.bundle, ignore_errors=True)
+        self.big = os.path.join(self.bundle, "big.json")
+
+        with open(self.big, "wb") as f:
+            f.write(b"x" * (1024 * 1024 + 1))
+
+    def test_large_files_are_zipped(self):
+        common._zip_files(self.bundle)
+
+        self.assertTrue(os.path.exists(self.big + ".zip"))
+        self.assertFalse(os.path.exists(self.big))
+
+    def test_zipping_leaves_the_working_directory_alone(self):
+        """The bundle directory is removed after archiving, which would leave asadm
+        in a directory that no longer exists."""
+        common._zip_files(self.bundle)
+
+        self.assertEqual(os.getcwd(), self.cwd)

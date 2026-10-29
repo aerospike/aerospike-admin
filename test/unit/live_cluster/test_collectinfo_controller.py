@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import asyncio
+import contextlib
 import copy
+import inspect
 import json
 import logging
 import logging.handlers
@@ -39,6 +41,7 @@ from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
 from lib.live_cluster.get_controller import GetPmapController
+from lib.live_cluster import collectinfo_controller
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
     CollectionContext,
@@ -2880,6 +2883,32 @@ class CollectinfoMetaTest(unittest.IsolatedAsyncioTestCase):
 
         return dumps
 
+    async def snapshot_waits(self, snp_count):
+        """Runs snp_count snapshots 5 seconds apart, and returns the waits between
+        them, leaving out the one-second wait for a free timestamp."""
+        self._snapshot_dump_patches(
+            timestamps=["2026-08-25 10:00:0%d UTC" % i for i in range(snp_count + 1)],
+            snapshots=[
+                ({"cluster": {"A": i}}, {"no_data_nodes": []}) for i in range(snp_count)
+            ],
+        )
+
+        await self.controller._dump_collectinfo_json(
+            "/tmp/prefix_", CollectionContext(snp_count=snp_count, wait_time=5)
+        )
+
+        return [
+            c
+            for c in collectinfo_controller.asyncio.sleep.await_args_list
+            if c.args == (5,)
+        ]
+
+    async def test_a_single_snapshot_does_not_wait(self):
+        self.assertEqual(await self.snapshot_waits(1), [])
+
+    async def test_snapshots_wait_only_between_each_other(self):
+        self.assertEqual(len(await self.snapshot_waits(3)), 2)
+
     async def test_same_second_snapshots_wait_for_a_free_timestamp(self):
         """The timestamp keys both the snapshot data and its meta. Two snapshots
         in the same second would overwrite the first's data while both metas
@@ -3268,3 +3297,159 @@ class CaptureStyleJsonTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CollectinfoSnapshotWaitFlagTest(unittest.IsolatedAsyncioTestCase):
+    """The help names -s for the wait between snapshots."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.run_mock = patch.object(
+            CollectinfoController, "_run_collectinfo", AsyncMock()
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def wait_time(self):
+        call = self.run_mock.await_args
+        return (
+            inspect.signature(RUN_COLLECTINFO)
+            .bind(None, *call.args, **call.kwargs)
+            .arguments["wait_time"]
+        )
+
+    async def test_s_sets_the_wait(self):
+        await self.controller.execute(["-s", "0"])
+
+        self.assertEqual(self.wait_time(), 0)
+
+    async def test_t_still_sets_the_wait(self):
+        await self.controller.execute(["-t", "2"])
+
+        self.assertEqual(self.wait_time(), 2)
+
+    async def test_the_wait_defaults_to_5_seconds(self):
+        await self.controller.execute([])
+
+        self.assertEqual(self.wait_time(), 5)
+
+
+RUN_COLLECTINFO = CollectinfoController._run_collectinfo
+
+
+class CollectinfoReusesSnapshotAnswersTest(unittest.IsolatedAsyncioTestCase):
+    """The logs written after the snapshots reuse the last snapshot's answers
+    instead of asking every node again, and each snapshot asks afresh."""
+
+    async def asyncSetUp(self):
+        self.events = []
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.controller.asadm_version = "test-version"
+        cluster = self.controller.cluster = MagicMock()
+        cluster._timeout = 1
+        cluster.is_localhost_a_node.return_value = False
+
+        @contextlib.contextmanager
+        def hold_info_answers():
+            self.events.append("hold")
+
+            try:
+                yield
+            finally:
+                self.events.append("release")
+
+        cluster.hold_info_answers = hold_info_answers
+        cluster.forget_info_answers = lambda: self.events.append("forget")
+
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        cf_info = MagicMock()
+        cf_info.cf_dir = work_dir
+        cf_info.files_prefix = "prefix_"
+
+        def record(event, result=None):
+            async def recorded(*args, **kwargs):
+                self.events.append(event)
+                return result
+
+            return recorded
+
+        patch.object(CollectinfoController, "setup_loggers").start()
+        patch.object(CollectinfoController, "teardown_loggers").start()
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(
+                side_effect=record(
+                    "snapshot", ({"cluster": {"A": 1}}, {"no_data_nodes": []})
+                )
+            ),
+        ).start()
+        patch.object(
+            CollectinfoController,
+            "_dump_collectinfo_ascollectinfo",
+            AsyncMock(side_effect=record("ascollectinfo")),
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_summary", AsyncMock()
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_health", AsyncMock()
+        ).start()
+        patch.object(CollectinfoController, "_dump_in_json_file").start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.get_collectinfo_path",
+            return_value=cf_info,
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.archive_dir",
+            return_value=(work_dir + ".tgz", True),
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.print_collectinfo_failed_cmds"
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.print_collect_summary"
+        ).start()
+        patch("lib.live_cluster.collectinfo_controller.terminal").start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.CollectinfoRootController"
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.asyncio.sleep", AsyncMock()
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_each_snapshot_asks_afresh_and_the_logs_reuse_the_last(self):
+        await self.controller._run_collectinfo(
+            ssh_user=None,
+            ssh_pwd=None,
+            ssh_port=None,
+            ssh_key=None,
+            ssh_key_pwd=None,
+            snp_count=2,
+            wait_time=0,
+            ignore_errors=False,
+        )
+
+        self.assertEqual(
+            self.events,
+            [
+                "hold",
+                "forget",
+                "snapshot",
+                "forget",
+                "snapshot",
+                "ascollectinfo",
+                "release",
+            ],
+        )
+
+
+class ParseNamespaceTest(unittest.TestCase):
+    def test_a_node_whose_namespaces_request_failed_is_skipped(self):
+        namespaces = CollectinfoController()._parse_namespace(
+            {"A": "test;bar", "B": asyncio.TimeoutError(), "C": "test"}
+        )
+
+        self.assertEqual(namespaces, {"test", "bar"})

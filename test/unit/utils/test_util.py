@@ -16,6 +16,7 @@ import asyncio
 import warnings
 
 import unittest
+from unittest.mock import patch
 
 from parameterized import parameterized
 
@@ -1770,3 +1771,54 @@ class MemoryTablesAgreeTest(unittest.TestCase):
 
         self.assertEqual(headline["node1"]["allocated_shmem_bytes"], "800")
         self.assertEqual(headline["node1"]["allocated_bytes"], str(800 + 1000 * 1024))
+
+
+class AsyncCachedHeldTest(unittest.IsolatedAsyncioTestCase):
+    """Answers kept while held outlive the usual half second, until released."""
+
+    async def asyncSetUp(self):
+        self.asked = []
+        self.clock = 1000.0
+        asked = self.asked
+
+        class Server:
+            @util.async_cached
+            async def ask(self, command):
+                asked.append(command)
+                return command
+
+        self.Server = Server
+        self.server = Server()
+        patch("lib.utils.util.time", side_effect=lambda: self.clock).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_held_answers_outlive_the_ttl(self):
+        with self.Server.ask.held():
+            await self.server.ask("a")
+            self.clock += 60
+            await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a"])
+
+    async def test_answers_are_forgotten_once_released(self):
+        with self.Server.ask.held():
+            await self.server.ask("a")
+
+        await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a", "a"])
+
+    async def test_forget_clears_held_answers(self):
+        with self.Server.ask.held():
+            await self.server.ask("a")
+            self.Server.ask.forget()
+            await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a", "a"])
+
+    async def test_answers_still_expire_when_not_held(self):
+        await self.server.ask("a")
+        self.clock += 1
+        await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a", "a"])
