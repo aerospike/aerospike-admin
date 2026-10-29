@@ -2980,13 +2980,14 @@ def _zip_files(dir_path, _size=1):
             file_path = os.path.join(root, _file)
             size_mb = os.path.getsize(file_path) // (1024 * 1024)
             if size_mb >= _size:
-                os.chdir(root)
                 try:
                     # TODO: Investigate changing from zip to gzip to match collectlogs.
-                    newzip = zipfile.ZipFile(_file + ".zip", "w", zipfile.ZIP_DEFLATED)
-                    newzip.write(_file)
+                    newzip = zipfile.ZipFile(
+                        file_path + ".zip", "w", zipfile.ZIP_DEFLATED
+                    )
+                    newzip.write(file_path, arcname=_file)
                     newzip.close()
-                    os.remove(_file)
+                    os.remove(file_path)
                 except Exception as e:
                     print(e)
 
