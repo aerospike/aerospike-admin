@@ -94,9 +94,11 @@ def _communicate_until(p: subprocess.Popen, stop: threading.Event):
         # are still its children, then bash or the command it became. SIGTERM first
         # lets each clean up, as sudo restores the terminal.
         p.send_signal(signal.SIGSTOP)
-        _signal_children(p, signal.SIGTERM)
-        sleep(0.5)
-        _signal_children(p, signal.SIGKILL)
+
+        if _signal_children(p, signal.SIGTERM):
+            sleep(0.5)
+            _signal_children(p, signal.SIGKILL)
+
         p.terminate()
         p.send_signal(signal.SIGCONT)
 
@@ -109,15 +111,17 @@ def _communicate_until(p: subprocess.Popen, stop: threading.Event):
             return b"", b""
 
 
-def _signal_children(p: subprocess.Popen, sig: signal.Signals):
+def _signal_children(p: subprocess.Popen, sig: signal.Signals) -> bool:
     try:
-        subprocess.run(
+        pkill = subprocess.run(
             ["pkill", "-%d" % sig, "-P", str(p.pid)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
     except OSError:
-        pass
+        return False
+
+    return pkill.returncode == 0
 
 
 async def async_shell_command(command: str) -> Process | None:

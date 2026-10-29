@@ -16,6 +16,7 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyzer / log-analyzer)
 #############################################################################################################
 
+import contextlib
 import datetime
 import functools
 import json
@@ -24,6 +25,7 @@ import operator
 import os
 import platform
 import shutil
+import signal
 from typing import Any, Callable, TypedDict
 from typing_extensions import NotRequired, Required
 import distro
@@ -2560,6 +2562,9 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
 
 def _check_cmds_for_str(cmds, strings, stop: threading.Event | None = None):
     for cmd in cmds:
+        if _stopped(stop):
+            break
+
         try:
             output, _ = util.shell_command([cmd], stop=stop)
 
@@ -2748,6 +2753,9 @@ def _collect_lsof(verbose=False, stop: threading.Event | None = None):
     desc_ljust = 20
 
     for pid in pids:
+        if _stopped(stop):
+            break
+
         cmd = "sudo lsof -n -p %s" % str(pid)
         o, e = util.shell_command([cmd], stop=stop)
 
@@ -2868,6 +2876,9 @@ def _collect_installed_packages(cmd="", stop: threading.Event | None = None):
     sections: list[str] = []
 
     for pkg_cmd in package_commands:
+        if _stopped(stop):
+            break
+
         section = f"['{' '.join(pkg_cmd)}']"
         o, e = util.shell_command(pkg_cmd, stop=stop)
         if o:
@@ -3189,11 +3200,25 @@ def archive_dir(logdir):
             stderr=subprocess.PIPE,
         )
     except OSError as e:
-        logger.error(e)
+        logger.error("Failed to archive %s: %s", logdir, e)
         return archive, False
 
     if tar.returncode != 0:
-        logger.error(util.bytes_to_str(tar.stderr).strip())
+        with contextlib.suppress(OSError):
+            os.remove(archive)
+
+        if tar.returncode < 0:
+            try:
+                reason = "tar was killed by " + signal.Signals(-tar.returncode).name
+            except ValueError:
+                reason = "tar was killed by signal %d" % -tar.returncode
+        else:
+            reason = (
+                util.bytes_to_str(tar.stderr).strip()
+                or "tar exited with %d" % tar.returncode
+            )
+
+        logger.error("Failed to archive %s: %s", logdir, reason)
         return archive, False
 
     logger.info("Files in " + logdir + " are now archived in " + archive + ".")
