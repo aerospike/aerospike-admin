@@ -2227,16 +2227,25 @@ class CollectinfoController(LiveClusterCommandController):
                     except Exception as e:
                         util.write_to_file(complete_filename, str(e))
 
-            for cmd in dignostic_aerospike_info_commands:
-                logger.info(
-                    f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+            try:
+                results = await self.cluster.info(
+                    tuple(dignostic_aerospike_info_commands)
                 )
-
-                try:
-                    result = await self.cluster.info(cmd)
-                    self._write_func_output_to_file(complete_filename, [cmd], result)
-                except Exception as e:
-                    util.write_to_file(complete_filename, str(e))
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+            else:
+                for cmd in dignostic_aerospike_info_commands:
+                    logger.info(
+                        f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+                    )
+                    self._write_func_output_to_file(
+                        complete_filename,
+                        [cmd],
+                        {
+                            node: resp.get(cmd) if isinstance(resp, dict) else resp
+                            for node, resp in results.items()
+                        },
+                    )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
             logger.warning("Failed to generate %s file.", complete_filename)
