@@ -86,7 +86,6 @@ _confspec = """{
     "properties": {
        "cluster" : { "$ref" : "#/definitions/instance" },
        "asadm" : { "$ref" : "#/definitions/asadm" },
-       "secret-agent" : { "$ref" : "#/definitions/secret-agent" },
        "include" : {
             "type" : "object",
             "additionalProperties" : false,
@@ -98,21 +97,9 @@ _confspec = """{
     },
     "patternProperties": {
         "^cluster_.*$" : { "$ref" : "#/definitions/instance" },
-        "^asadm_.*$" : { "$ref" : "#/definitions/asadm" },
-        "^secret-agent_.*$" : { "$ref" : "#/definitions/secret-agent" }
+        "^asadm_.*$" : { "$ref" : "#/definitions/asadm" }
     },
     "definitions" : {
-        "secret-agent" : {
-            "type" : "object",
-            "additionalProperties" : false,
-            "properties" : {
-                "sa-address" : { "type" : "string" },
-                "sa-port" : { "type" : ["integer", "string"] },
-                "sa-timeout" : { "type" : ["integer", "string"] },
-                "sa-cafile" : { "type" : "string" },
-                "sa-ca-file" : { "type" : "string" }
-            }
-        },
         "asadm" : {
             "type" : "object",
             "properties" : {
@@ -168,17 +155,28 @@ def _getdefault():
     return copy.deepcopy(_confdefault)
 
 
-def _loadfile(fname, loaded=None):
-    """loaded collects each file's own settings in the order they apply: a file,
-    then the files it includes. A file that fails to load adds nothing."""
+class _SecretAgentConfigError(Exception):
+    """A config file whose [secret-agent] settings are unknown or cannot be
+    used, so no secret may be fetched."""
+
+
+def _parse_error(fname, e):
+    return "Config file parse error: " + str(fname) + " " + str(e).split("\n")[0]
+
+
+def _loadfile(fname, loaded):
+    """loaded collects each file's [secret-agent] sections in the order they
+    apply: a file, then the files it includes. They are checked on their own
+    and kept when the rest of the file fails to load."""
     conf_dict = {}
-    files = []
 
     if os.path.exists(fname):
         # file exists
-        conf_dict = toml.loads(open(fname).read())
-        _lowercase_agent_section_keys(conf_dict)
-        files.append(copy.deepcopy(conf_dict))
+        try:
+            conf_dict = toml.loads(open(fname).read())
+            loaded.append(_take_agent_sections(conf_dict))
+        except Exception as e:
+            raise _SecretAgentConfigError(_parse_error(fname, e)) from None
 
         include_files = []
         if "include" in conf_dict.keys():
@@ -198,26 +196,25 @@ def _loadfile(fname, loaded=None):
 
         for f in include_files:
             try:
-                _merge(conf_dict, _loadfile(f, files))
+                _merge(conf_dict, _loadfile(f, loaded))
+            except _SecretAgentConfigError:
+                raise
             except Exception as e:
-                logger.error(
-                    "Config file parse error: " + str(f) + " " + str(e).split("\n")[0]
-                )
+                logger.error(_parse_error(f, e))
 
         validate(conf_dict, json.loads(_confspec))
-
-    if loaded is not None:
-        loaded.extend(files)
 
     return conf_dict
 
 
-def _lowercase_agent_section_keys(conf_dict):
-    """The C tools match [secret-agent] keys without regard to case. Changes
-    conf_dict in place."""
-    for name, values in list(conf_dict.items()):
-        if secret_agent_conf.is_section(name) and isinstance(values, dict):
-            conf_dict[name] = {k.lower(): v for k, v in values.items()}
+def _take_agent_sections(conf_dict):
+    """Remove the [secret-agent] sections from conf_dict and return them."""
+    names = [name for name in conf_dict if secret_agent_conf.is_section(name)]
+
+    return {
+        name: secret_agent_conf.check_section(name, conf_dict.pop(name))
+        for name in names
+    }
 
 
 def decode(v):
@@ -372,6 +369,7 @@ def loadconfig(cli_args):
     conf_dict = {}
     conffiles = []
     loaded_files = []
+    secret_agent_config_error = False
 
     if cli_args.only_config_file is not None or not cli_args.no_config_file:
         if cli_args.only_config_file is not None:
@@ -382,14 +380,12 @@ def loadconfig(cli_args):
                 try:
                     _merge(conf_dict, _loadfile(f, loaded_files))
                     conffiles.append(f)
+                except _SecretAgentConfigError as e:
+                    secret_agent_config_error = True
+                    logger.critical(str(e))
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
-                    logger.critical(
-                        "Config file parse error: "
-                        + str(f)
-                        + " "
-                        + str(e).split("\n")[0]
-                    )
+                    logger.critical(_parse_error(f, e))
             else:
                 logger.warning(
                     "Config file read error : " + str(f) + " " + "No such file"
@@ -415,14 +411,12 @@ def loadconfig(cli_args):
             for f in conffiles:
                 try:
                     _merge(conf_dict, _loadfile(f, loaded_files))
+                except _SecretAgentConfigError as e:
+                    secret_agent_config_error = True
+                    logger.critical(str(e))
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
-                    logger.critical(
-                        "Config file parse error: "
-                        + str(f)
-                        + " "
-                        + str(e).split("\n")[0]
-                    )
+                    logger.critical(_parse_error(f, e))
 
     asadm_dict = _flatten(default_conf_dict)
     file_dict = _flatten(conf_dict, cli_args.instance)
@@ -451,6 +445,7 @@ def loadconfig(cli_args):
         secret_agent_conf.file_section(loaded, cli_args.instance)
         for loaded in loaded_files
     ]
+    asadm_dict["secret_agent_config_error"] = secret_agent_config_error
 
     # Find seed nods
     seeds = _getseeds(asadm_dict)

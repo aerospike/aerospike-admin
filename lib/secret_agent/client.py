@@ -224,14 +224,17 @@ class SecretAgentClient:
         for family, kind, proto, _, address in socket.getaddrinfo(
             self._host, self._port, type=socket.SOCK_STREAM
         ):
-            sock = socket.socket(family, kind, proto)
+            sock = None
 
             try:
+                sock = socket.socket(family, kind, proto)
                 _set_timeout(sock, deadline)
                 sock.connect(address)
                 break
             except OSError as e:
-                sock.close()
+                if sock is not None:
+                    sock.close()
+
                 error = e
         else:
             raise error or OSError("no address for {}".format(self._host))

@@ -863,6 +863,9 @@ async def main():
     connects = cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER
 
     if connects:
+        if getattr(cli_args, "secret_agent_config_error", False):
+            sys.exit(1)
+
         try:
             conf.resolve_password_sources(cli_args)
         except PasswordSourceError as e:

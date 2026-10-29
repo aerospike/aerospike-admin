@@ -35,6 +35,8 @@ _EXPECTED = {
     "sa-address": "<host>[:<port>] or [<ipv6>][:<port>]",
     "sa-port": "an integer from 1 to 65535",
     "sa-timeout": "an integer from 1 to {}".format(_MAX_TIMEOUT_MS),
+    "sa-ca-file": "a path to a CA certificate file",
+    "sa-cafile": "a path to a CA certificate file",
 }
 
 
@@ -69,6 +71,30 @@ def file_section(conf_dict: dict, instance: str | None) -> tuple[str, dict]:
 
 def is_section(name: str) -> bool:
     return name == SECTION or name.startswith(SECTION + "_")
+
+
+def check_section(name: str, values: object) -> dict:
+    """Return a config file section with its keys lowercased, so they match
+    without regard to case. Raises PasswordSourceError when the section has a
+    key or value that cannot be used."""
+    if not isinstance(values, dict):
+        raise PasswordSourceError(
+            "invalid value {} for {}, expected a [{}] config section".format(
+                values, name, name
+            )
+        )
+
+    values = {k.lower(): v for k, v in values.items()}
+
+    for key in values:
+        if key not in OPTIONS:
+            raise PasswordSourceError(
+                "unknown key {} in the [{}] config section".format(key, name)
+            )
+
+    SecretAgentSettings([(name, values)], {})
+
+    return values
 
 
 class SecretAgentSettings:
@@ -123,8 +149,11 @@ class SecretAgentSettings:
         address_port = None
 
         if address is not None:
+            if not isinstance(address, str):
+                raise _invalid("sa-address", address, section)
+
             try:
-                self.host, address_port = parse_address(str(address))
+                self.host, address_port = parse_address(address)
             except SecretAgentError:
                 raise _invalid("sa-address", address, section) from None
 
@@ -139,11 +168,17 @@ class SecretAgentSettings:
         if timeout is not None:
             self.timeout_ms = _parse_timeout(timeout, section)
 
-        for option in ("sa-ca-file", "sa-cafile"):
-            if values.get(option):
-                self.cafile = values[option]
-                self.cafile_option = _option_label(option, section)
-                break
+        for option in ("sa-cafile", "sa-ca-file"):
+            cafile = values.get(option)
+
+            if cafile is None:
+                continue
+
+            if not isinstance(cafile, str) or not cafile:
+                raise _invalid(option, cafile, section)
+
+            self.cafile = cafile
+            self.cafile_option = _option_label(option, section)
 
 
 def _option_label(option: str, section: str | None) -> str:
