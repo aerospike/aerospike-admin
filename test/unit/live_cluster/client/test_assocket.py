@@ -12,14 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import socket
+import time
 import unittest
-from unittest.mock import AsyncMock, patch
+import warnings
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.live_cluster.client.assocket import ASSocket
 from lib.utils.constants import AuthMode
 from test.unit import util
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    from OpenSSL import SSL
 
 
 class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
@@ -110,20 +117,6 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         wrapped_socket_mock.set_app_data.assert_called_with("tls-name")
         wrapped_socket_mock.do_handshake.assert_called_once()
         self.assertEqual(self.as_socket.sock, wrapped_socket_mock)
-
-    @patch("lib.live_cluster.client.assocket.info")
-    async def test_is_connected_returns_false(self, info_mock):
-        info_mock.return_value = None
-
-        self.assertFalse(await self.as_socket.is_connected())
-
-        info_mock.side_effect = Exception()
-
-        self.assertFalse(await self.as_socket.is_connected())
-
-        self.sock = None
-
-        self.assertFalse(await self.as_socket.is_connected())
 
     @patch("lib.live_cluster.client.assocket.login")
     async def test_login_returns_true(self, login_mock):
@@ -260,12 +253,6 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             "token",
             "INTERNAL",
         )
-
-    @patch("lib.live_cluster.client.assocket.info")
-    async def test_is_connected_returns_true(self, info_mock):
-        info_mock.return_value = "abc"
-
-        self.assertTrue(await self.as_socket.is_connected())
 
     async def socket_security_test(
         self, func, args, mock, error_response, expected_message
@@ -489,3 +476,149 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             self.as_socket.query_role,
             *args
         )
+
+
+class ASSocketTLSHandshakeTest(unittest.IsolatedAsyncioTestCase):
+    """The TLS handshake waits for the socket, rather than retrying on a timer."""
+
+    async def asyncSetUp(self):
+        self.near, self.far = socket.socketpair()
+        self.near.setblocking(False)
+        self.addCleanup(self.near.close)
+        self.addCleanup(self.far.close)
+
+        self.tls = MagicMock()
+        self.tls.fileno.side_effect = self.near.fileno
+        self.as_socket = ASSocket(
+            "1.2.3.4", 999, "tls-name", None, None, AuthMode.INTERNAL, True, timeout=2
+        )
+
+        patch("socket.socket").start()
+        patch.object(self.as_socket, "_wrap_socket", return_value=self.tls).start()
+        patch.object(asyncio.get_running_loop(), "sock_connect", AsyncMock()).start()
+        self.addCleanup(patch.stopall)
+
+    async def connect(self):
+        return await self.as_socket._create_socket_for_addrinfo(
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.2.3.4", 999))
+        )
+
+    def peer_has_spoken(self):
+        try:
+            return self.near.recv(1, socket.MSG_PEEK) != b""
+        except BlockingIOError:
+            return False
+
+    async def test_waits_for_the_peer_instead_of_polling(self):
+        def do_handshake():
+            if not self.peer_has_spoken():
+                raise SSL.WantReadError()
+
+        self.tls.do_handshake.side_effect = do_handshake
+        asyncio.get_running_loop().call_later(0.2, self.far.send, b"x")
+
+        self.assertIs(await self.connect(), self.tls)
+        self.assertEqual(
+            self.tls.do_handshake.call_count,
+            2,
+            "the handshake was retried while the peer had sent nothing",
+        )
+
+    async def test_waits_for_room_to_write(self):
+        self.tls.do_handshake.side_effect = [SSL.WantWriteError(), None]
+
+        self.assertIs(await self.connect(), self.tls)
+        self.assertEqual(self.tls.do_handshake.call_count, 2)
+
+    async def test_gives_up_when_the_peer_never_answers(self):
+        self.as_socket.settimeout(0.2)
+        self.tls.do_handshake.side_effect = SSL.WantReadError()
+
+        self.assertIsNone(await self.connect())
+        self.tls.close.assert_called_once()
+
+
+class ASSocketReuseTest(unittest.IsolatedAsyncioTestCase):
+    """Whether a pooled socket can be reused. Checked without a request, unless it
+    sat idle long enough for a drop to go unseen."""
+
+    async def asyncSetUp(self):
+        self.near, self.far = socket.socketpair()
+        self.addCleanup(self.near.close)
+        self.addCleanup(self.far.close)
+
+        self.as_socket = ASSocket(
+            "1.2.3.4", 999, None, None, None, AuthMode.INTERNAL, None
+        )
+        self.as_socket.sock = self.near
+        self.as_socket.reader = asyncio.StreamReader()
+        self.as_socket.writer = MagicMock(spec=asyncio.StreamWriter)
+        self.as_socket.writer.is_closing.return_value = False
+        self.info_mock = patch(
+            "lib.live_cluster.client.assocket.info", AsyncMock(return_value="A0")
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def used(self, seconds_ago):
+        self.as_socket.last_used = time.monotonic() - seconds_ago
+
+    async def test_recently_used_socket_is_reused_without_a_request(self):
+        self.used(0)
+
+        self.assertTrue(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_the_server_closed_is_not_reused(self):
+        self.used(0)
+        self.far.close()
+
+        self.assertFalse(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_with_unread_bytes_is_not_reused(self):
+        self.used(0)
+        self.far.send(b"x")
+
+        self.assertFalse(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_whose_stream_ended_is_not_reused(self):
+        self.used(0)
+        self.as_socket.reader.feed_eof()
+
+        self.assertFalse(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_whose_writer_is_closing_is_not_reused(self):
+        self.used(0)
+        self.as_socket.writer.is_closing.return_value = True
+
+        self.assertFalse(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_idle_for_long_is_checked_with_a_request(self):
+        self.used(3600)
+
+        self.assertTrue(await self.as_socket.is_connected())
+        self.info_mock.assert_awaited_once()
+        self.assertEqual(self.info_mock.await_args.args[2], "node")
+
+    async def test_socket_idle_for_long_that_does_not_answer_is_not_reused(self):
+        self.used(3600)
+        self.info_mock.return_value = None
+
+        self.assertFalse(await self.as_socket.is_connected())
+
+        self.info_mock.side_effect = Exception()
+
+        self.assertFalse(await self.as_socket.is_connected())
+
+    async def test_socket_never_returned_to_the_pool_is_checked_with_a_request(self):
+        self.assertTrue(await self.as_socket.is_connected())
+        self.info_mock.assert_awaited_once()
+
+    async def test_without_a_socket_is_not_reused(self):
+        self.used(0)
+        self.as_socket.sock = None
+
+        self.assertFalse(await self.as_socket.is_connected())

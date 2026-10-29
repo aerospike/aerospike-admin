@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import asyncio
 import socket
 import threading
 import unittest
@@ -1102,6 +1103,51 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             ("192.1.1.3", 3000, None), result
         )  # Not in service addresses, so returned
+
+    async def _nodes_that_wait_for_each_other(self, step):
+        """Each node's `step` returns only once every node has started it, so a
+        refresh that handles one node at a time never finishes."""
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        nodes = {}
+        started = []
+        everyone_started = asyncio.Event()
+
+        async def wait_for_the_others():
+            started.append(1)
+
+            if len(started) == 3:
+                everyone_started.set()
+
+            await everyone_started.wait()
+            return step == "needs_refresh"
+
+        for i in range(1, 4):
+            node = await Node("192.1.1.%d" % i, 3000)
+            node.needs_refresh = AsyncMock(return_value=True)
+            node.refresh_connection = AsyncMock()
+            setattr(node, step, wait_for_the_others)
+            node.service_addresses = [("192.1.1.%d" % i, 3000, None)]
+            node.peers = []
+            nodes[node.key] = node
+
+        cluster.nodes = nodes
+        return cluster
+
+    async def test_find_new_nodes_checks_every_node_at_once(self):
+        cluster = await self._nodes_that_wait_for_each_other("needs_refresh")
+
+        try:
+            await asyncio.wait_for(cluster.find_new_nodes(), 2)
+        except asyncio.TimeoutError:
+            self.fail("needs_refresh ran one node at a time")
+
+    async def test_find_new_nodes_refreshes_every_node_at_once(self):
+        cluster = await self._nodes_that_wait_for_each_other("refresh_connection")
+
+        try:
+            await asyncio.wait_for(cluster.find_new_nodes(), 2)
+        except asyncio.TimeoutError:
+            self.fail("refresh_connection ran one node at a time")
 
     async def test_load_balancer_integration_scenario(self):
         """Test integration scenario: cluster with load balancer nodes"""
