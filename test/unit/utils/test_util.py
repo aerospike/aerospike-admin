@@ -16,12 +16,14 @@ import asyncio
 import os
 import shlex
 import shutil
+import signal
 import tempfile
 import threading
 import time
 import warnings
 
 import unittest
+from unittest.mock import patch
 
 from parameterized import parameterized
 
@@ -1820,6 +1822,47 @@ class ShellCommandStopTest(unittest.TestCase):
         util.shell_command([command % shlex.quote(child)], stop=stop)
 
         self.assertTrue(os.path.exists(marker))
+
+    def test_stop_kills_a_child_that_ignores_sigterm(self):
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        pid_file = os.path.join(work_dir, "pid")
+        child = "echo $$ > %s; trap '' TERM; while :; do sleep 0.05; done" % pid_file
+        stop = self._stop_soon()
+
+        util.shell_command(["sh -c %s; true" % shlex.quote(child)], stop=stop)
+
+        with open(pid_file) as f:
+            pid = int(f.read())
+
+        self.addCleanup(self._kill, pid)
+        deadline = time.monotonic() + 5
+
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+
+            time.sleep(0.05)
+
+        self.fail("the child that ignored SIGTERM is still running")
+
+    @staticmethod
+    def _kill(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    @patch("lib.utils.util.sleep")
+    def test_stop_skips_the_cleanup_wait_when_bash_has_no_children(self, sleep):
+        """A command bash exec'd into, such as iostat, gets its SIGTERM from bash's pid."""
+        stop = self._stop_soon()
+
+        util.shell_command(["exec sleep 30"], stop=stop)
+
+        sleep.assert_not_called()
 
     def test_unset_stop_lets_the_command_finish(self):
         out, err = util.shell_command(["echo done"], stop=threading.Event())

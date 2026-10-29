@@ -14,6 +14,8 @@
 
 import os
 import shutil
+import signal
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -4335,6 +4337,29 @@ class CollectSysInfoStopTest(unittest.TestCase):
 
         self.assertListEqual(self.commands, [["primary"]])
 
+    def test_stopped_during_a_release_check_runs_no_more(self):
+        self.on_command = self.stop.set
+
+        common._check_cmds_for_str(["first", "second"], ["Amazon"], stop=self.stop)
+
+        self.assertListEqual(self.commands, [["first"]])
+
+    def test_stopped_while_finding_asd_runs_no_lsof(self):
+        self.result = ("root 101 0.0 asd\nroot 102 0.0 asd", "")
+        self.on_command = self.stop.set
+
+        common._collect_lsof(stop=self.stop)
+
+        self.assertEqual(len(self.commands), 1)
+
+    @patch("lib.utils.common.shutil.which", return_value="/usr/bin/rpm")
+    def test_stopped_during_a_package_query_runs_no_more(self, _):
+        self.on_command = self.stop.set
+
+        common._collect_installed_packages(stop=self.stop)
+
+        self.assertEqual(len(self.commands), 1)
+
     def test_ip_link_sampling_waits_on_the_stop_event(self):
         self.on_command = self.stop.set
 
@@ -4361,3 +4386,55 @@ class ArchiveDirTest(unittest.TestCase):
         _, success = common.archive_dir(logdir)
 
         self.assertFalse(success)
+
+    def _logdir(self):
+        work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, work_dir, ignore_errors=True)
+        logdir = os.path.join(work_dir, "collect_info")
+        os.mkdir(logdir)
+
+        with open(os.path.join(logdir, "sysinfo.log"), "w") as f:
+            f.write("data")
+
+        return logdir
+
+    def test_a_killed_tar_is_named_and_its_partial_archive_removed(self):
+        """tar's stderr then holds at most its leading '/' notice, which is not why
+        it failed."""
+        logdir = self._logdir()
+        archive = logdir + ".tgz"
+
+        def killed_tar(args, **kwargs):
+            with open(archive, "w") as f:
+                f.write("partial")
+
+            return subprocess.CompletedProcess(
+                args,
+                -signal.SIGINT,
+                stderr=b"tar: Removing leading '/' from member names\n",
+            )
+
+        with patch("lib.utils.common.subprocess.run", killed_tar), self.assertLogs(
+            "lib.utils.common", level="ERROR"
+        ) as cm:
+            _, success = common.archive_dir(logdir)
+
+        self.assertFalse(success)
+        self.assertFalse(os.path.exists(archive))
+        self.assertIn("SIGINT", cm.output[0])
+        self.assertIn(logdir, cm.output[0])
+
+    def test_a_missing_tar_names_the_directory_without_a_traceback(self):
+        """asadm's logger prints a traceback when the message is an exception."""
+        logdir = self._logdir()
+
+        with patch(
+            "lib.utils.common.subprocess.run",
+            side_effect=FileNotFoundError(2, "No such file or directory", "tar"),
+        ), self.assertLogs("lib.utils.common", level="ERROR") as cm:
+            _, success = common.archive_dir(logdir)
+
+        self.assertFalse(success)
+        self.assertIsInstance(cm.records[0].msg, str)
+        self.assertIn(logdir, cm.output[0])
+        self.assertIn("No such file or directory", cm.output[0])
