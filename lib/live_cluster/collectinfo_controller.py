@@ -677,6 +677,9 @@ class CollectinfoController(LiveClusterCommandController):
         namespaces = set()
 
         for _value in namespace_data.values():
+            if isinstance(_value, Exception):
+                continue
+
             for ns in _value.split(";"):
                 namespaces.add(ns)
         return namespaces
@@ -1865,12 +1868,16 @@ class CollectinfoController(LiveClusterCommandController):
 
         try:
             for i in range(context.snp_count):
+                if i:
+                    await asyncio.sleep(context.wait_time)
+
                 snp_timestamp, observed_timestamp = await self._next_snapshot_timestamp(
                     snpshots
                 )
                 logger.info(
                     "Data collection for Snapshot: " + str(i + 1) + " in progress..."
                 )
+                self.cluster.forget_info_answers()
 
                 snpshots[snp_timestamp], snapshot_meta = (
                     await self._get_collectinfo_data_json(context)
@@ -1884,8 +1891,6 @@ class CollectinfoController(LiveClusterCommandController):
                 snapshot_metas[snp_timestamp] = snapshot_meta
 
                 logger.info("Data collection for Snapshot " + str(i + 1) + " finished.")
-
-                await asyncio.sleep(context.wait_time)
 
             aborted = False
         finally:
@@ -2463,98 +2468,99 @@ class CollectinfoController(LiveClusterCommandController):
             collection_aborted = False
             derived_outputs_failed = False
 
-            try:
-                await self._dump_collectinfo_json(
-                    individual_file_prefix,
-                    CollectionContext(
-                        enable_ssh=enable_ssh,
-                        ssh_user=ssh_user,
-                        ssh_pwd=ssh_pwd,
-                        ssh_key=ssh_key,
-                        ssh_key_pwd=ssh_key_pwd,
-                        ssh_port=ssh_port,
-                        snp_count=snp_count,
-                        wait_time=wait_time,
-                        requested_timeout=original_timeout,
-                        effective_timeout=collectinfo_timeout,
-                        output_prefix=output_prefix,
-                        asconfig_file=config_path,
-                        ignore_errors=ignore_errors,
-                    ),
-                )
-            except FileNotFoundError as e:
-                logger.error(ShellException(_describe_exception(e)))
-                logger.error(
-                    "Failed to open a local file needed by the collection. Archiving what was collected."
-                )
-                collection_aborted = True
-            except Exception as e:
-                logger.error(_describe_exception(e))
-                logger.debug(traceback.format_exc())
-                if not ignore_errors:
-                    logger.error(ignore_errors_msg)
-                    collection_aborted = True
-
-            if not collection_aborted:
-                # Must happen after json dump and before summary and health. The json data is used
-                # to generate the summary and health output.
-                live_version = BaseController.asadm_version
-                live_build = BaseController.asadm_build
-
+            with self.cluster.hold_info_answers():
                 try:
-                    self.collectinfo_root_controller = CollectinfoRootController(
-                        asadm_version=self.asadm_version,
-                        clinfo_path=cf_path_info.cf_dir,
-                        asadm_build=self.asadm_build,
+                    await self._dump_collectinfo_json(
+                        individual_file_prefix,
+                        CollectionContext(
+                            enable_ssh=enable_ssh,
+                            ssh_user=ssh_user,
+                            ssh_pwd=ssh_pwd,
+                            ssh_key=ssh_key,
+                            ssh_key_pwd=ssh_key_pwd,
+                            ssh_port=ssh_port,
+                            snp_count=snp_count,
+                            wait_time=wait_time,
+                            requested_timeout=original_timeout,
+                            effective_timeout=collectinfo_timeout,
+                            output_prefix=output_prefix,
+                            asconfig_file=config_path,
+                            ignore_errors=ignore_errors,
+                        ),
                     )
+                except FileNotFoundError as e:
+                    logger.error(ShellException(_describe_exception(e)))
+                    logger.error(
+                        "Failed to open a local file needed by the collection. Archiving what was collected."
+                    )
+                    collection_aborted = True
+                except Exception as e:
+                    logger.error(_describe_exception(e))
+                    logger.debug(traceback.format_exc())
+                    if not ignore_errors:
+                        logger.error(ignore_errors_msg)
+                        collection_aborted = True
 
-                    coroutines = [
-                        self._dump_collectinfo_ascollectinfo(
-                            individual_file_prefix, file_header
-                        ),
-                        self._dump_collectinfo_summary(
-                            individual_file_prefix, file_header
-                        ),
-                        self._dump_collectinfo_health(
-                            individual_file_prefix, file_header
-                        ),
-                    ]
+                if not collection_aborted:
+                    # Must happen after json dump and before summary and health. The json data is used
+                    # to generate the summary and health output.
+                    live_version = BaseController.asadm_version
+                    live_build = BaseController.asadm_build
 
-                    if self.cluster.is_localhost_a_node():
-                        coroutines.append(
-                            self._dump_collectinfo_sysinfo(
+                    try:
+                        self.collectinfo_root_controller = CollectinfoRootController(
+                            asadm_version=self.asadm_version,
+                            clinfo_path=cf_path_info.cf_dir,
+                            asadm_build=self.asadm_build,
+                        )
+
+                        coroutines = [
+                            self._dump_collectinfo_ascollectinfo(
                                 individual_file_prefix, file_header
-                            )
-                        )
-                        coroutines.append(
-                            self._dump_collectinfo_aerospike_conf(
-                                individual_file_prefix, config_path
-                            )
-                        )
-                    else:
-                        logger.info(
-                            "Localhost is not an Aerospike node. Skipping sysinfo.log and aerospike.conf collection."
-                        )
+                            ),
+                            self._dump_collectinfo_summary(
+                                individual_file_prefix, file_header
+                            ),
+                            self._dump_collectinfo_health(
+                                individual_file_prefix, file_header
+                            ),
+                        ]
 
-                    for c in coroutines:
-                        try:
-                            await c
-                        except:
-                            # close remaining coroutines.  An error will be raised if they are not
-                            # awaited.
-                            for c in coroutines:
-                                c.close()
+                        if self.cluster.is_localhost_a_node():
+                            coroutines.append(
+                                self._dump_collectinfo_sysinfo(
+                                    individual_file_prefix, file_header
+                                )
+                            )
+                            coroutines.append(
+                                self._dump_collectinfo_aerospike_conf(
+                                    individual_file_prefix, config_path
+                                )
+                            )
+                        else:
+                            logger.info(
+                                "Localhost is not an Aerospike node. Skipping sysinfo.log and aerospike.conf collection."
+                            )
 
-                            if not ignore_errors:
-                                logger.error(ignore_errors_msg)
-                                derived_outputs_failed = True
-                                break
-                finally:
-                    # CollectinfoRootController stores the version and build on
-                    # BaseController, so building one mid-session overwrites the live
-                    # session's.
-                    BaseController.asadm_version = live_version
-                    BaseController.asadm_build = live_build
+                        for c in coroutines:
+                            try:
+                                await c
+                            except:
+                                # close remaining coroutines.  An error will be raised if they are not
+                                # awaited.
+                                for c in coroutines:
+                                    c.close()
+
+                                if not ignore_errors:
+                                    logger.error(ignore_errors_msg)
+                                    derived_outputs_failed = True
+                                    break
+                    finally:
+                        # CollectinfoRootController stores the version and build on
+                        # BaseController, so building one mid-session overwrites the live
+                        # session's.
+                        BaseController.asadm_version = live_version
+                        BaseController.asadm_build = live_build
 
             common.print_collectinfo_failed_cmds(self.failed_cmds)
 
@@ -2602,11 +2608,20 @@ class CollectinfoController(LiveClusterCommandController):
             mods=self.mods,
         )
 
+        # -t predates the -s the help names, and scripts still pass it.
         wait_time = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-t",
             return_type=int,
             default=5,
+            modifiers=self.modifiers,
+            mods=self.mods,
+        )
+        wait_time = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="-s",
+            return_type=int,
+            default=wait_time,
             modifiers=self.modifiers,
             mods=self.mods,
         )

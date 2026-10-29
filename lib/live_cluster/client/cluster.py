@@ -263,6 +263,14 @@ class Cluster(AsyncObject):
             logger.error(e)
             return ""
 
+    def hold_info_answers(self):
+        """Nodes keep every info answer until the block ends, rather than half a
+        second."""
+        return Node._info_cinfo.held()
+
+    def forget_info_answers(self):
+        Node._info_cinfo.forget()
+
     def get_live_nodes(self) -> set[Addr_Port_TLSName]:
         # TODO: why not return a reference to Node objects instead?
         return self._live_nodes

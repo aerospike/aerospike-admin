@@ -15,6 +15,7 @@
 import asyncio
 from asyncio.subprocess import Process
 import base64
+import contextlib
 from collections import defaultdict
 import copy
 import functools
@@ -1368,7 +1369,25 @@ class async_cached(Generic[AwaitableType]):
 
     def __get__(self, obj, objtype):
         """Support instance methods."""
+        if obj is None:
+            return self
+
         return functools.partial(self.__call__, obj)
+
+    @contextlib.contextmanager
+    def held(self):
+        """Keeps every answer until the block ends, then forgets them all."""
+        ttl = self.ttl
+        self.ttl = math.inf
+
+        try:
+            yield
+        finally:
+            self.ttl = ttl
+            self.forget()
+
+    def forget(self):
+        self.cache.clear()
 
 
 def is_valid_base64(data: Union[str, bytes]) -> None:
