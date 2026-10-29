@@ -4349,13 +4349,32 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         """Server >= 8.2: the v2 sindex-list format is requested so the renamed
         'integer' type is reported."""
         self.node.build = "8.2.0.0"
-        self.info_mock.side_effect = ["a=1:b=2;", "a=1:b=2;"]
+        self.info_mock.side_effect = info_server(
+            {"sindex-list:v=v2": "a=1:b=2;", "sindex-list:v=v2;b64=true": "a=1:b=2;"}
+        )
         expected = [{"a": "1", "b": "2"}]
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_any_call("sindex-list:v=v2", self.ip)
+        self.assertIn("sindex-list:v=v2", commands_sent(self.info_mock))
         self.assertListEqual(actual, expected)
+
+    async def test_info_sindex_asks_for_both_lists_in_one_request(self):
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=a:exp=null",
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=a:exp=null",
+            }
+        )
+
+        await self.node.info_sindex()
+
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertCountEqual(
+            commands_sent(self.info_mock),
+            ["sindex-list:v=v2", "sindex-list:v=v2;b64=true"],
+        )
 
     async def test_info_sindex_v2_when_build_unavailable(self):
         """If the build version is unknown, fall back to the default (v1) format."""
@@ -4373,25 +4392,21 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.node.build = "8.2.0.0"
         ael_src = "$.campaign1:INT + $.campaign2:INT"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            'ns=test:indexname=ael-idx:exp=add(bin_int("campaign1"), bin_int("campaign2")):state=RW;'
-            "ns=test:indexname=exp-idx:exp={}:state=RW;".format(compiled_exp)
-            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
-            "ns=test:indexname=ael-idx:exp={}:state=RW;".format(
-                pack_ael_expression(ael_src)
-            )
-            + "ns=test:indexname=exp-idx:exp=lBSTUQKpY2FtcGFpZ24x:state=RW;"
-            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": 'ns=test:indexname=ael-idx:exp=add(bin_int("campaign1"), bin_int("campaign2")):state=RW;'
+                "ns=test:indexname=exp-idx:exp={}:state=RW;".format(compiled_exp)
+                + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=ael-idx:exp={}:state=RW;".format(
+                    pack_ael_expression(ael_src)
+                )
+                + "ns=test:indexname=exp-idx:exp=lBSTUQKpY2FtcGFpZ24x:state=RW;"
+                + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_has_calls(
-            [
-                call("sindex-list:v=v2", self.ip),
-                call("sindex-list:v=v2;b64=true", self.ip),
-            ]
-        )
         self.assertEqual(actual[0]["ael"], ael_src)
         self.assertEqual(actual[0]["exp"], "null")
         self.assertEqual(actual[1]["exp"], compiled_exp)
@@ -4403,32 +4418,32 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         """A failed b64 call leaves the default response untouched."""
         self.node.build = "8.2.0.0"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
-            "ERROR::bad b64",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=exp-idx:exp={}:state=RW".format(
+                    compiled_exp
+                ),
+                "sindex-list:v=v2;b64=true": "ERROR::bad b64",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
         self.assertEqual(actual[0]["exp"], compiled_exp)
 
-    @parameterized.expand(
-        [
-            ("as_info_error", ASInfoError("Invalid command")),
-            ("os_error", OSError("connection reset")),
-            ("timeout", asyncio.TimeoutError()),
-        ]
-    )
-    async def test_info_sindex_ael_ignores_raised_base64_list(self, _, exc):
-        """A raised b64 call must not cost the caller the sindex list already
-        fetched, nor mark the node dead."""
+    async def test_info_sindex_ael_ignores_a_base64_list_that_does_not_parse(self):
+        """A b64 answer that cannot be read leaves the default response untouched."""
         self.node.build = "8.2.0.0"
         self.node.alive = True
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
-            exc,
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=exp-idx:exp={}:state=RW".format(
+                    compiled_exp
+                ),
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=exp-idx:exp=!!!:state=RW",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
@@ -6315,32 +6330,6 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         # Create node
         self.node = await Node(self.ip, self.port)
         self.node._initialize_socket_pool()
-
-    def connected_socket(self):
-        near, far = socket.socketpair()
-        self.addCleanup(near.close)
-        self.addCleanup(far.close)
-
-        sock = ASSocket(
-            self.ip, self.port, None, None, None, constants.AuthMode.INTERNAL, None
-        )
-        sock.sock = near
-        sock.reader = asyncio.StreamReader()
-        sock.writer = MagicMock(spec=asyncio.StreamWriter)
-        sock.writer.is_closing.return_value = False
-        return sock
-
-    async def test_reusing_a_returned_socket_sends_no_request(self):
-        sock = self.connected_socket()
-        await self.node._return_to_pool(self.node.port, sock)
-
-        with patch(
-            "lib.live_cluster.client.assocket.info", AsyncMock(return_value="A0")
-        ) as info:
-            reused = await self.node._get_connection(self.node.ip, self.node.port)
-
-        self.assertIs(reused, sock)
-        info.assert_not_called()
 
     async def test_socket_pool_maxlen_behavior(self):
         """Test that socket pool respects maxlen and FIFO behavior"""

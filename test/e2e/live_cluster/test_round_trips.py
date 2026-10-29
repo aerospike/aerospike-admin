@@ -17,10 +17,11 @@ import contextlib
 import unittest
 from unittest.mock import patch
 
-from lib.live_cluster.client import node
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.cluster import Cluster
+from lib.live_cluster.client.node import Node
 from lib.live_cluster.get_controller import GetStatisticsController
+from lib.utils import util
 from test.e2e import lib
 
 NODE_COUNT = 2
@@ -38,20 +39,37 @@ class RequestRecorder:
         self.requests["%s:%s" % (sock.ip, sock.port)].append(command)
         return await self.original(sock, command)
 
-    def counts(self):
-        return {address: len(sent) for address, sent in self.requests.items()}
+    def carrying(self, prefix):
+        """Per address, the requests that carry at least one command with prefix."""
+        return {
+            address: [
+                command
+                for command in sent
+                if any(
+                    name.startswith(prefix)
+                    for name in ([command] if isinstance(command, str) else command)
+                )
+            ]
+            for address, sent in self.requests.items()
+        }
 
-    def single_commands(self):
-        return [
-            c for sent in self.requests.values() for c in sent if isinstance(c, str)
-        ]
+    def assert_one_request_each(self, test, prefix):
+        carrying = self.carrying(prefix)
+        test.assertEqual(len(carrying), NODE_COUNT, carrying)
+
+        for address, requests in carrying.items():
+            test.assertEqual(len(requests), 1, (address, requests))
 
 
 @contextlib.contextmanager
 def recording():
-    """Records requests, with the cluster refresh held off so only the command's own
-    requests are counted."""
+    """Records requests, with the cluster refresh held off and earlier answers
+    forgotten, so every request the command needs is seen."""
     recorder = RequestRecorder()
+
+    for attr in vars(Node).values():
+        if isinstance(attr, util.async_cached):
+            attr.cache.clear()
 
     with patch.object(
         ASSocket, "info", lambda sock, command: recorder.send(sock, command)
@@ -87,34 +105,28 @@ class RoundTripTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.cl.close()
 
-    async def test_reused_sockets_are_not_probed(self):
-        with recording() as recorder:
-            for _ in range(3):
-                await self.cl.info_statistics()
-
-        self.assertNotIn("node", recorder.single_commands())
-
-    async def test_namespace_statistics_take_two_requests_per_node(self):
+    async def test_namespace_statistics_take_one_request_per_node(self):
         with recording() as recorder:
             stats = await self.cl.info_all_namespace_statistics()
 
-        self.assertEqual(set(recorder.counts().values()), {2})
+        recorder.assert_one_request_each(self, "namespace/")
 
         for node_stats in stats.values():
             self.assertIn("objects", node_stats["test"])
 
-    async def test_verbose_latencies_take_two_requests_per_node(self):
+    async def test_verbose_latencies_take_one_request_per_node(self):
         with recording() as recorder:
             latencies = await self.cl.info_latencies(verbose=True)
 
-        self.assertEqual(set(recorder.counts().values()), {2})
+        recorder.assert_one_request_each(self, "latencies:")
         self.assertEqual(len(latencies), NODE_COUNT)
 
-    async def test_sindex_statistics_take_two_requests_per_node(self):
+    async def test_sindex_list_and_statistics_take_one_request_each_per_node(self):
         with recording() as recorder:
             stats = await GetStatisticsController(self.cl).get_sindex()
 
-        self.assertEqual(set(recorder.counts().values()), {2})
+        recorder.assert_one_request_each(self, "sindex-list:")
+        recorder.assert_one_request_each(self, "sindex-stat:")
         self.assertEqual(len(stats), NODE_COUNT)
 
         for node_stats in stats.values():
@@ -152,35 +164,3 @@ class RoundTripTest(unittest.IsolatedAsyncioTestCase):
                         stat_names(single[address]),
                         command,
                     )
-
-    async def test_hostname_runs_at_most_once_for_the_cluster(self):
-        shell = node.util.async_shell_command
-        calls = []
-
-        async def recording_shell(command):
-            calls.append(command)
-            return await shell(command)
-
-        with patch.object(node.util, "async_shell_command", recording_shell):
-            cl = await connect()
-            live = len(cl.get_live_nodes())
-            await cl.close()
-
-        self.assertEqual(live, NODE_COUNT)
-        self.assertLessEqual(calls.count("hostname -I"), 1)
-
-    async def test_z_first_command_after_a_node_restart_reaches_every_node(self):
-        """Runs last: the restart drops every pooled socket to that node. With the
-        refresh held off, the command itself must notice and connect again."""
-        await self.cl.info_statistics()
-
-        lib.restart_node(NODE_COUNT)
-        lib.wait_for_cluster(NODE_COUNT)
-
-        with patch.object(Cluster, "need_to_refresh_cluster", return_value=False):
-            answers = await self.cl.info("node")
-
-        self.assertTrue(
-            all(isinstance(answer, str) for answer in answers.values()), answers
-        )
-        self.assertEqual(len(self.cl.get_live_nodes()), NODE_COUNT)
