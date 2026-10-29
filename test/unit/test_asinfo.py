@@ -21,6 +21,7 @@ import unittest
 
 from lib.secret_agent.testing import FakeSecretAgent
 from test.unit.secret_agent import pki
+from test.unit.utils.test_conf import KEYFILE_PASSWORD_HELP, SECRET_AGENT_HELP
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 ASINFO = os.path.join(ROOT, "asinfo", "asinfo.py")
@@ -334,6 +335,31 @@ class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
             " expected an integer from 1 to 2147483647",
             cp.stdout + cp.stderr,
         )
+
+
+class AsinfoHelpTest(unittest.TestCase):
+    """asinfo -E shows asadm's key file password and Secret Agent text, and
+    asinfo/asinfo.txt holds the whole output."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.help = subprocess.run(
+            [sys.executable, ASINFO, "-E"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout
+
+    def test_help_keyfile_password_block(self):
+        self.assertIn(KEYFILE_PASSWORD_HELP, self.help)
+
+    def test_help_secret_agent_block(self):
+        self.assertIn(SECRET_AGENT_HELP, self.help)
+
+    def test_asinfo_txt_holds_the_help(self):
+        with open(os.path.join(ROOT, "asinfo", "asinfo.txt")) as f:
+            self.assertIn(self.help, f.read())
 
 
 if __name__ == "__main__":

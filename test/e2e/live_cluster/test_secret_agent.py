@@ -404,7 +404,10 @@ class SecretAgentTLSErrorTests(AgentTestCase):
         for option in ("--sa-ca-file", "--sa-cafile"):
             with self.subTest(option=option):
                 cp = self.run_password(f"--sa-address {self.agent.address} {option} ''")
-                self.assert_fails_before_connecting(cp, option)
+                self.assert_fails_before_connecting(
+                    cp,
+                    f"{option}: invalid value , expected a path to a CA certificate file",
+                )
 
     def test_empty_ca_file_in_config_file(self):
         path = self.write_file(

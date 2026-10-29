@@ -35,6 +35,57 @@ ASADM = os.path.join(
 PW = "s3cr3t-pw"
 PW_B64 = base64.b64encode(PW.encode()).decode()
 UNSET = "ASADM_TEST_UNSET_PASSWORD_VAR"
+HELP_INDENT = "\n" + " " * 22
+KEYFILE_PASSWORD_HELP = (
+    " --tls-keyfile-password=password"
+    + HELP_INDENT
+    + HELP_INDENT.join(
+        [
+            "Password to load protected tls-keyfile.",
+            "It can be one of the following:",
+            "1) Environment variable: 'env:<VAR>', used exactly as set",
+            "2) Base64 encoded environment variable: 'env-b64:<VAR>'",
+            "3) Base64 encoded string: 'b64:<BASE64>'",
+            "4) File: 'file:<PATH>', the first line of the file",
+            "5) Aerospike Secret Agent: 'secrets:<resource>:<key>'",
+            "6) String: 'PASSWORD'",
+            "Prefixes are case-sensitive. A base64 value may be line wrapped,",
+            "and one trailing newline is dropped after decoding.",
+            "A password that itself begins with 'env:', 'env-b64:', 'b64:',",
+            "'file:' or 'secrets:' must be given as 'b64:'.",
+            "Surrounding whitespace is trimmed before the form is read. A",
+            "password with surrounding whitespace must be given as 'b64:'.",
+            "The password is read only when a key file is set. It must be at",
+            "most 1024 bytes.",
+            "A value fetched with 'secrets:' is used as-is.",
+            "Default: none",
+            "User will be prompted on command line if --tls-keyfile-password",
+            "specified and no password is given. The typed password",
+            "accepts the forms above except 'secrets:'.",
+        ]
+    )
+    + "\n"
+)
+SECRET_AGENT_HELP = "\n".join(
+    [
+        "[secret-agent]",
+        " Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.",
+        ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".',
+        "                      Secret Agent hostname or IP address.",
+        "                      Default: 127.0.0.1:3005",
+        " --sa-port=PORT       Secret Agent port, 1 to 65535.",
+        "                      Overrides a port in --sa-address.",
+        "                      Default: 3005",
+        " --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an",
+        "                      integer from 1 to 2147483647.",
+        "                      Default: 1000",
+        " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret",
+        "                      Agent and verifies its certificate against this CA. The",
+        "                      agent's hostname or IP address must be in the certificate.",
+        "                      Default: none",
+        "",
+    ]
+)
 
 
 class ResolvePasswordSourcesTest(unittest.TestCase):
@@ -558,8 +609,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         self.assertEqual(args.password, PW)
 
     def test_config_file_timeout_in_quotes(self):
-        """sa-port already accepts a quoted number, and a schema failure skips the
-        whole file."""
+        """sa-timeout accepts a quoted number, as sa-port does."""
         args = self.load(
             config=(
                 '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
@@ -1207,37 +1257,14 @@ class PasswordHelpTest(unittest.TestCase):
         with patch("sys.stdout", out):
             conf.print_config_help()
 
-        indent = "\n" + " " * 22
-        block = (
-            " --tls-keyfile-password=password"
-            + indent
-            + indent.join(
-                [
-                    "Password to load protected tls-keyfile.",
-                    "It can be one of the following:",
-                    "1) Environment variable: 'env:<VAR>', used exactly as set",
-                    "2) Base64 encoded environment variable: 'env-b64:<VAR>'",
-                    "3) Base64 encoded string: 'b64:<BASE64>'",
-                    "4) File: 'file:<PATH>', the first line of the file",
-                    "5) Aerospike Secret Agent: 'secrets:<resource>:<key>'",
-                    "6) String: 'PASSWORD'",
-                    "Prefixes are case-sensitive. A base64 value may be line wrapped,",
-                    "and one trailing newline is dropped after decoding.",
-                    "A password that itself begins with 'env:', 'env-b64:', 'b64:',",
-                    "'file:' or 'secrets:' must be given as 'b64:'.",
-                    "Surrounding whitespace is trimmed before the form is read.",
-                    "The password is read only when a key file is set. It must be at",
-                    "most 1024 bytes.",
-                    "A value fetched with 'secrets:' is used as-is.",
-                    "Default: none",
-                    "User will be prompted on command line if --tls-keyfile-password",
-                    "specified and no password is given. The typed password",
-                    "accepts the forms above except 'secrets:'.",
-                ]
-            )
-            + "\n"
-        )
-        self.assertIn(block, out.getvalue())
+        self.assertIn(KEYFILE_PASSWORD_HELP, out.getvalue())
+
+    def test_help_secret_agent_block(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        self.assertIn(SECRET_AGENT_HELP, out.getvalue())
 
 
 if __name__ == "__main__":
