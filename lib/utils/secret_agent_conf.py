@@ -42,8 +42,9 @@ _EXPECTED = {
 
 def fetcher(args: Any) -> Callable[[str], str]:
     """Return a function that fetches a secrets: reference with the agent
-    settings in args. Settings are read and checked, and the client created,
-    on first use, so runs without secrets: values never touch them."""
+    settings in args. Config file sections are checked when they are loaded.
+    Command-line settings are checked, and the client created, on first use,
+    so runs without secrets: values never touch them."""
     client = None
 
     def fetch(ref: str) -> str:

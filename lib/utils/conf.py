@@ -677,7 +677,8 @@ def print_config_file_option():
         "                      and one trailing newline is dropped after decoding.\n"
         "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
         "                      'file:' or 'secrets:' must be given as 'b64:'.\n"
-        "                      Surrounding whitespace is trimmed before the form is read.\n"
+        "                      Surrounding whitespace is trimmed before the form is read. A\n"
+        "                      password with surrounding whitespace must be given as 'b64:'.\n"
         "                      The password is read only when a key file is set. It must be at\n"
         "                      most 1024 bytes.\n"
         "                      A value fetched with 'secrets:' is used as-is.\n"
@@ -727,11 +728,13 @@ def print_secret_agent_options():
         "                      Default: 127.0.0.1:3005"
     )
     print(
-        " --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.\n"
+        " --sa-port=PORT       Secret Agent port, 1 to 65535.\n"
+        "                      Overrides a port in --sa-address.\n"
         "                      Default: 3005"
     )
     print(
-        " --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more.\n"
+        " --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an\n"
+        "                      integer from 1 to 2147483647.\n"
         "                      Default: 1000"
     )
     print(

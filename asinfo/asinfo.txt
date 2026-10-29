@@ -91,6 +91,8 @@ Configuration File Allowed Options
                       and one trailing newline is dropped after decoding.
                       A password that itself begins with 'env:', 'env-b64:', 'b64:',
                       'file:' or 'secrets:' must be given as 'b64:'.
+                      Surrounding whitespace is trimmed before the form is read. A
+                      password with surrounding whitespace must be given as 'b64:'.
                       The password is read only when a key file is set. It must be at
                       most 1024 bytes.
                       A value fetched with 'secrets:' is used as-is.
@@ -113,9 +115,11 @@ Configuration File Allowed Options
  --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".
                       Secret Agent hostname or IP address.
                       Default: 127.0.0.1:3005
- --sa-port=PORT       Secret Agent port. Overrides a port in --sa-address.
+ --sa-port=PORT       Secret Agent port, 1 to 65535.
+                      Overrides a port in --sa-address.
                       Default: 3005
- --sa-timeout=ms      Set the timeout (ms) for the Secret Agent, 1 or more.
+ --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an
+                      integer from 1 to 2147483647.
                       Default: 1000
  --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret
                       Agent and verifies its certificate against this CA. The
