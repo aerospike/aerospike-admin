@@ -18,7 +18,11 @@ import unittest
 from parameterized import parameterized
 
 from lib.utils.password_source import PasswordSourceError
-from lib.utils.secret_agent_conf import SecretAgentSettings, file_section
+from lib.utils.secret_agent_conf import (
+    SecretAgentSettings,
+    check_section,
+    file_section,
+)
 from test.unit.secret_agent import pki
 
 
@@ -168,33 +172,33 @@ class ValidationTest(unittest.TestCase):
             (
                 "address",
                 {"sa-address": "host:3005:x"},
-                "--sa-address: invalid value host:3005:x,"
+                '--sa-address: invalid value "host:3005:x",'
                 " expected <host>[:<port>] or [<ipv6>][:<port>]",
             ),
             (
                 "port",
                 {"sa-port": "0"},
-                "--sa-port: invalid value 0, expected an integer from 1 to 65535",
+                '--sa-port: invalid value "0", expected an integer from 1 to 65535',
             ),
             (
                 "port_range",
                 {"sa-port": "70000"},
-                "--sa-port: invalid value 70000, expected an integer from 1 to 65535",
+                '--sa-port: invalid value "70000", expected an integer from 1 to 65535',
             ),
             (
                 "zero_timeout",
                 {"sa-timeout": "0"},
-                "--sa-timeout: invalid value 0, expected an integer from 1 to 2147483647",
+                '--sa-timeout: invalid value "0", expected an integer from 1 to 2147483647',
             ),
             (
                 "negative_timeout",
                 {"sa-timeout": "-5"},
-                "--sa-timeout: invalid value -5, expected an integer from 1 to 2147483647",
+                '--sa-timeout: invalid value "-5", expected an integer from 1 to 2147483647',
             ),
             (
                 "text_timeout",
                 {"sa-timeout": "1s"},
-                "--sa-timeout: invalid value 1s, expected an integer from 1 to 2147483647",
+                '--sa-timeout: invalid value "1s", expected an integer from 1 to 2147483647',
             ),
         ]
     )
@@ -220,7 +224,7 @@ class ValidationTest(unittest.TestCase):
 
         self.assertEqual(
             str(cm.exception),
-            "--sa-timeout: invalid value {}, expected an integer from 1 to"
+            '--sa-timeout: invalid value "{}", expected an integer from 1 to'
             " 2147483647".format(value),
         )
 
@@ -241,7 +245,7 @@ class ValidationTest(unittest.TestCase):
 
         self.assertEqual(
             str(cm.exception),
-            "invalid value {} for sa-timeout in the [secret-agent] config section,"
+            'invalid value "{}" for sa-timeout in the [secret-agent] config section,'
             " expected an integer from 1 to 2147483647".format(value),
         )
 
@@ -251,8 +255,91 @@ class ValidationTest(unittest.TestCase):
 
         self.assertEqual(
             str(cm.exception),
-            "invalid value 0 for sa-port in the [secret-agent_prod] config section,"
+            'invalid value "0" for sa-port in the [secret-agent_prod] config section,'
             " expected an integer from 1 to 65535",
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "empty_ca_file",
+                "sa-ca-file",
+                "",
+                'invalid value "" for sa-ca-file in the [secret-agent] config section,'
+                " expected a path to a CA certificate file",
+            ),
+            (
+                "empty_legacy_cafile",
+                "sa-cafile",
+                "",
+                'invalid value "" for sa-cafile in the [secret-agent] config section,'
+                " expected a path to a CA certificate file",
+            ),
+            (
+                "non_string_ca_file",
+                "sa-ca-file",
+                1,
+                'invalid value "1" for sa-ca-file in the [secret-agent] config section,'
+                " expected a path to a CA certificate file",
+            ),
+            (
+                "empty_address",
+                "sa-address",
+                "",
+                'invalid value "" for sa-address in the [secret-agent] config section,'
+                " expected <host>[:<port>] or [<ipv6>][:<port>]",
+            ),
+            (
+                "non_string_address",
+                "sa-address",
+                3005,
+                'invalid value "3005" for sa-address in the [secret-agent] config'
+                " section, expected <host>[:<port>] or [<ipv6>][:<port>]",
+            ),
+        ]
+    )
+    def test_config_value_is_quoted(self, _, key, value, message):
+        """An empty value must be visible in the error."""
+        with self.assertRaises(PasswordSourceError) as cm:
+            settings({key: value})
+
+        self.assertEqual(str(cm.exception), message)
+
+    @parameterized.expand(
+        [
+            (
+                "ca_file",
+                {"sa-ca-file": ""},
+                '--sa-ca-file: invalid value "", expected a path to a CA certificate'
+                " file",
+            ),
+            (
+                "legacy_cafile",
+                {"sa-cafile": ""},
+                '--sa-cafile: invalid value "", expected a path to a CA certificate'
+                " file",
+            ),
+            (
+                "port",
+                {"sa-port": ""},
+                '--sa-port: invalid value "", expected an integer from 1 to 65535',
+            ),
+        ]
+    )
+    def test_command_line_value_is_quoted(self, _, cli_values, message):
+        with self.assertRaises(PasswordSourceError) as cm:
+            settings(cli_values=cli_values)
+
+        self.assertEqual(str(cm.exception), message)
+
+    def test_section_that_is_not_a_table(self):
+        with self.assertRaises(PasswordSourceError) as cm:
+            check_section("secret-agent_prod", "agent:3005")
+
+        self.assertEqual(
+            str(cm.exception),
+            'invalid value "agent:3005" for secret-agent_prod, expected a'
+            " [secret-agent_prod] config section",
         )
 
     @parameterized.expand(

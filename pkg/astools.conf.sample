@@ -114,6 +114,10 @@
 # Used by asadm, asbackup, asrestore and aql to fetch values given as
 # "secrets:<resource>:<key>". With --instance, a [secret-agent_<instance>]
 # section in the same file replaces this one if it exists.
+#
+# Keys merge one at a time across config files, and a later file wins. A later
+# sa-address still uses an earlier file's sa-ca-file, and a later
+# [secret-agent] overrides an earlier file's [secret-agent_<instance>].
 #------------------------------------------------------------------------------
 [secret-agent]
 # sa-address = "127.0.0.1"            # "<host>[:<port>]" or "[<ipv6>][:<port>]"

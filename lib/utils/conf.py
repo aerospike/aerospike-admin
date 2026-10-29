@@ -164,19 +164,22 @@ def _parse_error(fname, e):
     return "Config file parse error: " + str(fname) + " " + str(e).split("\n")[0]
 
 
-def _loadfile(fname, loaded):
-    """loaded collects each file's [secret-agent] sections in the order they
-    apply: a file, then the files it includes. They are checked on their own
+def _loadfile(fname, loaded, instance):
+    """loaded collects each file's selected [secret-agent] section in the order
+    they apply: a file, then the files it includes. It is checked on its own
     and kept when the rest of the file fails to load."""
     conf_dict = {}
 
     if os.path.exists(fname):
         # file exists
         try:
-            conf_dict = toml.loads(open(fname).read())
-            loaded.append(_take_agent_sections(conf_dict))
-        except Exception as e:
-            raise _SecretAgentConfigError(_parse_error(fname, e)) from None
+            text = open(fname).read()
+        except OSError as e:
+            logger.warning("Config file read error : %s %s", fname, e.strerror or e)
+            return conf_dict
+
+        conf_dict = toml.loads(text)
+        loaded.append(_take_agent_section(conf_dict, fname, instance))
 
         include_files = []
         if "include" in conf_dict.keys():
@@ -196,7 +199,7 @@ def _loadfile(fname, loaded):
 
         for f in include_files:
             try:
-                _merge(conf_dict, _loadfile(f, loaded))
+                _merge(conf_dict, _loadfile(f, loaded, instance))
             except _SecretAgentConfigError:
                 raise
             except Exception as e:
@@ -207,14 +210,20 @@ def _loadfile(fname, loaded):
     return conf_dict
 
 
-def _take_agent_sections(conf_dict):
-    """Remove the [secret-agent] sections from conf_dict and return them."""
-    names = [name for name in conf_dict if secret_agent_conf.is_section(name)]
-
-    return {
-        name: secret_agent_conf.check_section(name, conf_dict.pop(name))
-        for name in names
+def _take_agent_section(conf_dict, fname, instance):
+    """Remove the [secret-agent] sections from conf_dict and return the one
+    --instance selects, checked. The others are ignored."""
+    sections = {
+        name: conf_dict.pop(name)
+        for name in list(conf_dict)
+        if secret_agent_conf.is_section(name)
     }
+    name, values = secret_agent_conf.file_section(sections, instance)
+
+    try:
+        return name, secret_agent_conf.check_section(name, values)
+    except password_source.PasswordSourceError as e:
+        raise _SecretAgentConfigError(_parse_error(fname, e)) from None
 
 
 def decode(v):
@@ -378,7 +387,7 @@ def loadconfig(cli_args):
 
             if os.path.exists(f):
                 try:
-                    _merge(conf_dict, _loadfile(f, loaded_files))
+                    _merge(conf_dict, _loadfile(f, loaded_files, cli_args.instance))
                     conffiles.append(f)
                 except _SecretAgentConfigError as e:
                     secret_agent_config_error = True
@@ -410,7 +419,7 @@ def loadconfig(cli_args):
 
             for f in conffiles:
                 try:
-                    _merge(conf_dict, _loadfile(f, loaded_files))
+                    _merge(conf_dict, _loadfile(f, loaded_files, cli_args.instance))
                 except _SecretAgentConfigError as e:
                     secret_agent_config_error = True
                     logger.critical(str(e))
@@ -441,10 +450,7 @@ def loadconfig(cli_args):
 
     # Kept apart from the merged options: the agent settings apply one file at a
     # time, as in the C tools, then the command line.
-    asadm_dict["secret_agent_sections"] = [
-        secret_agent_conf.file_section(loaded, cli_args.instance)
-        for loaded in loaded_files
-    ]
+    asadm_dict["secret_agent_sections"] = loaded_files
     asadm_dict["secret_agent_config_error"] = secret_agent_config_error
 
     # Find seed nods
@@ -722,6 +728,10 @@ def print_config_file_option():
 def print_secret_agent_options():
     print("[secret-agent]")
     print(" Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.")
+    print(
+        " In a config file, set these in the [secret-agent] section as sa-address,\n"
+        " sa-port, sa-timeout and sa-ca-file."
+    )
     print(
         ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".\n'
         "                      Secret Agent hostname or IP address.\n"

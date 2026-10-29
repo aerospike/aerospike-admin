@@ -259,11 +259,15 @@ class SecretAgentErrorTests(AgentTestCase):
 
     def test_invalid_agent_port(self):
         cp = self.run_password("secrets:asadm:password", "--sa-port 0")
-        self.assert_fails_before_connecting(cp, "--sa-port: invalid value 0")
+        self.assert_fails_before_connecting(cp, '--sa-port: invalid value "0"')
+
+    def test_invalid_agent_port_without_secrets(self):
+        cp = self.run_password("admin", "--sa-port 0")
+        self.assert_fails_before_connecting(cp, '--sa-port: invalid value "0"')
 
     def test_invalid_agent_timeout(self):
         cp = self.run_password("secrets:asadm:password", "--sa-timeout 0")
-        self.assert_fails_before_connecting(cp, "--sa-timeout: invalid value 0")
+        self.assert_fails_before_connecting(cp, '--sa-timeout: invalid value "0"')
 
     def test_invalid_agent_port_in_config_file(self):
         path = self.write_file(
@@ -274,7 +278,7 @@ class SecretAgentErrorTests(AgentTestCase):
         )
         cp = util.run_asadm(f"--only-config-file {path} -e 'info network'")
         self.assert_fails_before_connecting(
-            cp, "invalid value 0 for sa-port in the [secret-agent] config section"
+            cp, 'invalid value "0" for sa-port in the [secret-agent] config section'
         )
 
     def write_bad_section(self):
@@ -406,7 +410,8 @@ class SecretAgentTLSErrorTests(AgentTestCase):
                 cp = self.run_password(f"--sa-address {self.agent.address} {option} ''")
                 self.assert_fails_before_connecting(
                     cp,
-                    f"{option}: invalid value , expected a path to a CA certificate file",
+                    f'{option}: invalid value "", expected a path to a CA certificate'
+                    " file",
                 )
 
     def test_empty_ca_file_in_config_file(self):
@@ -546,10 +551,6 @@ class SecretAgentClusterTests(AgentTestCase):
             cluster_section="cluster_e2e",
         )
         cp = self.run_info(f"--only-config-file {path} --instance e2e")
-        self.assert_connected(cp)
-
-    def test_agent_options_unused_without_secrets(self):
-        cp = self.run_password("admin", "--sa-port 0")
         self.assert_connected(cp)
 
     def test_fetched_value_is_the_password(self):

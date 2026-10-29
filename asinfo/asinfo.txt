@@ -112,6 +112,8 @@ Configuration File Allowed Options
 
 [secret-agent]
  Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.
+ In a config file, set these in the [secret-agent] section as sa-address,
+ sa-port, sa-timeout and sa-ca-file.
  --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".
                       Secret Agent hostname or IP address.
                       Default: 127.0.0.1:3005

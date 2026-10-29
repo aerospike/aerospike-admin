@@ -70,6 +70,8 @@ SECRET_AGENT_HELP = "\n".join(
     [
         "[secret-agent]",
         " Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.",
+        " In a config file, set these in the [secret-agent] section as sa-address,",
+        " sa-port, sa-timeout and sa-ca-file.",
         ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".',
         "                      Secret Agent hostname or IP address.",
         "                      Default: 127.0.0.1:3005",
@@ -803,12 +805,184 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
 
         self.assertEqual(
             str(cm.exception),
-            "--sa-port: invalid value 0, expected an integer from 1 to 65535",
+            '--sa-port: invalid value "0", expected an integer from 1 to 65535',
         )
 
-    def test_agent_options_unused_without_secrets(self):
-        args = self.load("-U", "admin", "-P", "admin", "--sa-port", "0")
+    @parameterized.expand(
+        [
+            (
+                "port",
+                "--sa-port",
+                "0",
+                '--sa-port: invalid value "0", expected an integer from 1 to 65535',
+            ),
+            (
+                "timeout",
+                "--sa-timeout",
+                "0",
+                '--sa-timeout: invalid value "0", expected an integer from 1 to'
+                " 2147483647",
+            ),
+            (
+                "address",
+                "--sa-address",
+                "host:3005:x",
+                '--sa-address: invalid value "host:3005:x", expected <host>[:<port>]'
+                " or [<ipv6>][:<port>]",
+            ),
+            (
+                "empty_ca_file",
+                "--sa-ca-file",
+                "",
+                '--sa-ca-file: invalid value "", expected a path to a CA certificate'
+                " file",
+            ),
+        ]
+    )
+    def test_agent_options_checked_without_secrets(self, _, option, value, message):
+        """As in asbackup, a bad --sa-* value stops every connecting run."""
+        for argv in (("-U", "admin", "-P", "admin"), ()):
+            with self.subTest(argv=argv):
+                with self.assertRaises(PasswordSourceError) as cm:
+                    self.load(*argv, option, value)
+
+                self.assertEqual(str(cm.exception), message)
+
+    def test_ca_file_is_read_only_for_a_secret(self):
+        args = self.load(
+            "-U", "admin", "-P", "admin", "--sa-ca-file", "/nonexistent/ca.pem"
+        )
         self.assertEqual(args.password, "admin")
+
+    def test_unselected_sections_are_not_checked(self):
+        """Only the section --instance selects is read, as in asbackup and aql."""
+        for argv, config in (
+            (
+                (),
+                'secret-agent_dev = "not a table"\n'
+                '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nsa-address = "{}"\n'
+                "[secret-agent_prod]\nsa-port = 0\nsa-time-out = 1\n",
+            ),
+            (
+                ("--instance", "x"),
+                '[cluster_x]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                "[secret-agent]\nsa-port = 0\nsa-time-out = 1\n"
+                '[secret-agent_x]\nsa-address = "{}"\n',
+            ),
+        ):
+            with self.subTest(argv=argv):
+                with patch("lib.utils.conf.logger") as logger:
+                    args = self.load(*argv, config=config.format(self.agent.address))
+
+                self.assertFalse(args.secret_agent_config_error)
+                logger.critical.assert_not_called()
+                self.assertEqual(args.password, PW)
+
+    def test_secret_agent_section_checked_without_an_instance_section(self):
+        path = self.write_file("astools.conf", "[secret-agent]\nsa-port = 0\n")
+
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load_config_file(path, "--instance", "y")
+
+        self.assertTrue(args.secret_agent_config_error)
+        logger.critical.assert_called_once_with(
+            'Config file parse error: {} invalid value "0" for sa-port in the'
+            " [secret-agent] config section, expected an integer from 1 to"
+            " 65535".format(path)
+        )
+
+    def test_selected_section_that_is_not_a_table(self):
+        path = self.write_file("astools.conf", 'secret-agent_dev = "agent:3005"\n')
+
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load_config_file(path, "--instance", "dev")
+
+        self.assertTrue(args.secret_agent_config_error)
+        logger.critical.assert_called_once_with(
+            'Config file parse error: {} invalid value "agent:3005" for'
+            " secret-agent_dev, expected a [secret-agent_dev] config"
+            " section".format(path)
+        )
+
+    def load_config_file(self, path, *argv):
+        with patch("sys.argv", ["asadm", "--only-config-file", path, *argv]):
+            args, _ = conf.loadconfig(conf.get_cli_args())
+
+        conf.resolve_password_sources(args)
+        return args
+
+    def assert_config_file_error_is_not_fatal(self, path, log, message):
+        """As on master: the file is skipped or read as missing and the run goes
+        on, with or without secrets:."""
+        for password, expected in (("secrets:aql:password", PW), ("admin", "admin")):
+            with self.subTest(password=password):
+                with patch("lib.utils.conf.logger") as logger:
+                    args = self.load_config_file(
+                        path,
+                        "-U",
+                        "admin",
+                        "-P",
+                        password,
+                        "--sa-address",
+                        self.agent.address,
+                    )
+
+                self.assertFalse(args.secret_agent_config_error)
+                self.assertEqual(args.password, expected)
+                self.assertIn(message, str(getattr(logger, log).call_args_list))
+
+                if log != "critical":
+                    logger.critical.assert_not_called()
+
+    @unittest.skipIf(
+        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
+    )
+    def test_unreadable_file_is_read_as_missing(self):
+        path = self.write_file("astools.conf", "[secret-agent]\nsa-port = 1\n")
+        os.chmod(path, 0)
+        self.assert_config_file_error_is_not_fatal(path, "warning", "Permission denied")
+
+    def test_directory_is_read_as_missing(self):
+        self.assert_config_file_error_is_not_fatal(
+            self.tmpdir.name, "warning", "Is a directory"
+        )
+
+    def test_parse_error_skips_the_file(self):
+        path = self.write_file("astools.conf", "[cluster\n")
+        self.assert_config_file_error_is_not_fatal(
+            path, "critical", "Config file parse error: " + path
+        )
+
+    def test_parse_error_in_included_file_skips_it(self):
+        include = self.write_file("include.conf", "[cluster\n")
+        path = self.write_file(
+            "astools.conf", '[include]\nfile = "{}"\n'.format(include)
+        )
+        self.assert_config_file_error_is_not_fatal(
+            path, "error", "Config file parse error: " + include
+        )
+
+    def test_include_directory_skips_a_bad_entry(self):
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+
+        with open(os.path.join(directory, "README"), "w") as f:
+            f.write("Put astools.conf files here.\n")
+
+        path = self.write_file(
+            "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        self.assert_config_file_error_is_not_fatal(
+            path, "error", "Config file parse error: " + directory
+        )
+
+    def test_file_that_includes_itself(self):
+        path = os.path.join(self.tmpdir.name, "astools.conf")
+        self.write_file("astools.conf", '[include]\nfile = "{}"\n'.format(path))
+        self.assert_config_file_error_is_not_fatal(
+            path, "error", "Config file parse error: " + path
+        )
 
     def test_expanded_value_is_not_a_reference(self):
         ref = "secrets:aql:password"
@@ -986,7 +1160,8 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
 class BadSecretAgentSectionTest(unittest.TestCase):
     """A [secret-agent] section asadm cannot use stops asadm before it asks any
-    agent for a secret or connects to the cluster, as in the C tools."""
+    agent for a secret or connects to the cluster, as in the C tools. Any other
+    config file problem does not."""
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -1075,10 +1250,41 @@ class BadSecretAgentSectionTest(unittest.TestCase):
         )
         self.assert_stopped_before_any_request(cp)
         self.assertIn(
-            "invalid value 1000.0 for sa-timeout in the [secret-agent] config section,"
-            " expected an integer from 1 to 2147483647",
+            'invalid value "1000.0" for sa-timeout in the [secret-agent] config'
+            " section, expected an integer from 1 to 2147483647",
             cp.stderr,
         )
+
+    def test_bad_command_line_value_without_secrets(self):
+        cp = self.run_asadm(
+            "", "-e", "info network", "--sa-port", "0", password="admin"
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn(
+            '--sa-port: invalid value "0", expected an integer from 1 to 65535',
+            cp.stderr,
+        )
+
+    def assert_reached_the_cluster(self, cp, password):
+        output = cp.stdout + cp.stderr
+        self.assertNotEqual(self.cluster_connections, [], output)
+
+        if password.startswith("secrets:"):
+            self.assertNotEqual(self.requests, [], output)
+
+    @parameterized.expand(
+        [
+            (name, config, password)
+            for name, config in (
+                ("parse_error", "[cluster\n"),
+                ("unselected_section", "[secret-agent_dev]\nsa-time-out = 500\n"),
+            )
+            for password in ("secrets:aql:password", "admin")
+        ]
+    )
+    def test_other_config_problem_does_not_stop_the_run(self, _, config, password):
+        cp = self.run_asadm(config, "-e", "info network", password=password)
+        self.assert_reached_the_cluster(cp, password)
 
     @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
     def test_empty_ca_file(self, key):

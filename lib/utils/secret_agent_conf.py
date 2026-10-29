@@ -42,32 +42,33 @@ _EXPECTED = {
 
 def fetcher(args: Any) -> Callable[[str], str]:
     """Return a function that fetches a secrets: reference with the agent
-    settings in args. Config file sections are checked when they are loaded.
-    Command-line settings are checked, and the client created, on first use,
-    so runs without secrets: values never touch them."""
+    settings in args. The settings are checked now, as in the C tools. The CA
+    file is read, and the client created, on first use, so runs without
+    secrets: values never read it."""
+    settings = SecretAgentSettings.from_args(args)
     client = None
 
     def fetch(ref: str) -> str:
         nonlocal client
 
         if client is None:
-            client = SecretAgentSettings.from_args(args).new_client()
+            client = settings.new_client()
 
         return client.resolve(ref)
 
     return fetch
 
 
-def file_section(conf_dict: dict, instance: str | None) -> tuple[str, dict]:
+def file_section(conf_dict: dict, instance: str | None) -> tuple[str, object]:
     """Return the section name and its values: [secret-agent_<instance>] when
     it exists, [secret-agent] otherwise."""
     if instance:
         name = "{}_{}".format(SECTION, instance)
 
         if name in conf_dict:
-            return name, dict(conf_dict[name])
+            return name, conf_dict[name]
 
-    return SECTION, dict(conf_dict.get(SECTION, {}))
+    return SECTION, conf_dict.get(SECTION, {})
 
 
 def is_section(name: str) -> bool:
@@ -80,7 +81,7 @@ def check_section(name: str, values: object) -> dict:
     key or value that cannot be used."""
     if not isinstance(values, dict):
         raise PasswordSourceError(
-            "invalid value {} for {}, expected a [{}] config section".format(
+            'invalid value "{}" for {}, expected a [{}] config section'.format(
                 values, name, name
             )
         )
@@ -208,13 +209,13 @@ def _parse_timeout(value: object, section: str | None) -> int:
 def _invalid(option: str, value: object, section: str | None) -> PasswordSourceError:
     if section is None:
         return PasswordSourceError(
-            "--{}: invalid value {}, expected {}".format(
+            '--{}: invalid value "{}", expected {}'.format(
                 option, value, _EXPECTED[option]
             )
         )
 
     return PasswordSourceError(
-        "invalid value {} for {} in the [{}] config section, expected {}".format(
+        'invalid value "{}" for {} in the [{}] config section, expected {}'.format(
             value, option, section, _EXPECTED[option]
         )
     )

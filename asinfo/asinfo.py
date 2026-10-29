@@ -209,6 +209,10 @@ def print_config_file_option():
     print("[secret-agent]")
     print(" Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.")
     print(
+        " In a config file, set these in the [secret-agent] section as sa-address,\n"
+        " sa-port, sa-timeout and sa-ca-file."
+    )
+    print(
         ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".\n'
         "                      Secret Agent hostname or IP address.\n"
         "                      Default: 127.0.0.1:3005"

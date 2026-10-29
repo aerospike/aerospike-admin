@@ -331,8 +331,8 @@ class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
         )
         self.assert_stopped_before_any_request(cp)
         self.assertIn(
-            "invalid value 1000.0 for sa-timeout in the [secret-agent] config section,"
-            " expected an integer from 1 to 2147483647",
+            'invalid value "1000.0" for sa-timeout in the [secret-agent] config'
+            " section, expected an integer from 1 to 2147483647",
             cp.stdout + cp.stderr,
         )
 
