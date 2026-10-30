@@ -353,12 +353,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, macos-14, macos-15, macos-26]
+        os: [macos-15-intel, macos-26-intel, macos-15, macos-26]
         include:
           # One publisher per arch (the oldest runner): every leg of an arch now
           # builds the same file name, so a second uploader would collide. The
           # floor itself is enforced by check_min_os.sh, not by this choice.
-          - os: macos-14
+          - os: macos-15
             publish: true
           - os: macos-15-intel
             publish: true
@@ -680,7 +680,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, macos-14, macos-15, macos-26]
+        os: [macos-15-intel, macos-26-intel, macos-15, macos-26]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
