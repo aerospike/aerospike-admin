@@ -19,6 +19,7 @@ from typing import Any, Callable, Self
 from lib.secret_agent import (
     DEFAULT_HOST,
     DEFAULT_PORT,
+    InvalidConfigError,
     SecretAgentClient,
     SecretAgentError,
     new_ssl_context,
@@ -44,12 +45,21 @@ def fetcher(args: Any) -> Callable[[str], str]:
     """Return a function that fetches a secrets: reference with the agent
     settings in args. The settings are checked now, as in the C tools. The CA
     file is read, and the client created, on first use, so runs without
-    secrets: values never read it."""
+    secrets: values never read it. Nothing is fetched when a config file could
+    not be parsed, since it may have held the agent's CA file."""
     settings = SecretAgentSettings.from_args(args)
+    unparsed = getattr(args, "secret_agent_unparsed_files", [])
     client = None
 
     def fetch(ref: str) -> str:
         nonlocal client
+
+        if unparsed:
+            raise InvalidConfigError(
+                "cannot fetch {}: config file {} could not be parsed".format(
+                    ref, unparsed[0]
+                )
+            )
 
         if client is None:
             client = settings.new_client()
@@ -103,7 +113,8 @@ class SecretAgentSettings:
     """Agent settings from each config file in the order they are read, then
     the command line, as in the C tools. Within one source an explicit sa-port
     beats a port in sa-address and sa-ca-file beats sa-cafile, and a later
-    source beats an earlier one. Invalid values raise PasswordSourceError."""
+    source beats an earlier one. On the command line only the CA option that
+    wins is checked. Invalid values raise PasswordSourceError."""
 
     def __init__(self, file_sections: list[tuple[str, dict]], cli_values: dict) -> None:
         self.host = DEFAULT_HOST
@@ -174,6 +185,13 @@ class SecretAgentSettings:
             cafile = values.get(option)
 
             if cafile is None:
+                continue
+
+            if (
+                section is None
+                and option == "sa-cafile"
+                and values.get("sa-ca-file") is not None
+            ):
                 continue
 
             if not isinstance(cafile, str) or not cafile:

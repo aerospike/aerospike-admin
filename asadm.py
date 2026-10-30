@@ -863,7 +863,12 @@ async def main():
     connects = cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER
 
     if connects:
-        if getattr(cli_args, "secret_agent_config_error", False):
+        errors = getattr(cli_args, "secret_agent_config_errors", [])
+
+        for error in errors:
+            logger.critical(error)
+
+        if errors:
             sys.exit(1)
 
         try:

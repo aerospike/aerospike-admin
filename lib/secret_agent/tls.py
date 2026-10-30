@@ -38,7 +38,7 @@ def new_ssl_context(ca_file: str) -> ssl.SSLContext:
     except (OSError, ValueError, ssl.SSLError) as e:
         reason = getattr(e, "strerror", None) or str(e)
         raise InvalidConfigError(
-            "cannot load TLS CA file {}: {}".format(ca_file, reason)
+            'cannot load CA file "{}": {}'.format(ca_file, reason)
         ) from e
 
     return ctx

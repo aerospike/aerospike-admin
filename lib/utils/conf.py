@@ -155,31 +155,41 @@ def _getdefault():
     return copy.deepcopy(_confdefault)
 
 
-class _SecretAgentConfigError(Exception):
-    """A config file whose [secret-agent] settings are unknown or cannot be
-    used, so no secret may be fetched."""
+class _AgentFiles:
+    """What the config files say about the Secret Agent, in the order the
+    files apply: a file, then the files it includes."""
+
+    def __init__(self):
+        self.sections = []
+        self.errors = []
+        self.unparsed = []
 
 
 def _parse_error(fname, e):
     return "Config file parse error: " + str(fname) + " " + str(e).split("\n")[0]
 
 
-def _loadfile(fname, loaded, instance):
-    """loaded collects each file's selected [secret-agent] section in the order
-    they apply: a file, then the files it includes. It is checked on its own
-    and kept when the rest of the file fails to load."""
+def _loadfile(fname, agent, instance):
+    """Each file's selected [secret-agent] section is checked on its own and
+    kept when the rest of the file fails to load. A file that cannot be parsed
+    is recorded in agent.unparsed, so no secret is fetched without its agent
+    settings."""
     conf_dict = {}
 
     if os.path.exists(fname):
         # file exists
         try:
-            text = open(fname).read()
+            with open(fname) as f:
+                conf_dict = toml.loads(f.read())
         except OSError as e:
             logger.warning("Config file read error : %s %s", fname, e.strerror or e)
             return conf_dict
+        except ValueError:
+            # Not UTF-8 or not TOML.
+            agent.unparsed.append(fname)
+            raise
 
-        conf_dict = toml.loads(text)
-        loaded.append(_take_agent_section(conf_dict, fname, instance))
+        _take_agent_section(conf_dict, fname, instance, agent)
 
         include_files = []
         if "include" in conf_dict.keys():
@@ -199,9 +209,7 @@ def _loadfile(fname, loaded, instance):
 
         for f in include_files:
             try:
-                _merge(conf_dict, _loadfile(f, loaded, instance))
-            except _SecretAgentConfigError:
-                raise
+                _merge(conf_dict, _loadfile(f, agent, instance))
             except Exception as e:
                 logger.error(_parse_error(f, e))
 
@@ -210,9 +218,10 @@ def _loadfile(fname, loaded, instance):
     return conf_dict
 
 
-def _take_agent_section(conf_dict, fname, instance):
-    """Remove the [secret-agent] sections from conf_dict and return the one
-    --instance selects, checked. The others are ignored."""
+def _take_agent_section(conf_dict, fname, instance, agent):
+    """Remove the [secret-agent] sections from conf_dict and keep the one
+    --instance selects, checked. The others are ignored. An error is kept for
+    asadm to report when the run connects."""
     sections = {
         name: conf_dict.pop(name)
         for name in list(conf_dict)
@@ -221,9 +230,9 @@ def _take_agent_section(conf_dict, fname, instance):
     name, values = secret_agent_conf.file_section(sections, instance)
 
     try:
-        return name, secret_agent_conf.check_section(name, values)
+        agent.sections.append((name, secret_agent_conf.check_section(name, values)))
     except password_source.PasswordSourceError as e:
-        raise _SecretAgentConfigError(_parse_error(fname, e)) from None
+        agent.errors.append("Config file error: {} {}".format(fname, e))
 
 
 def decode(v):
@@ -377,8 +386,7 @@ def loadconfig(cli_args):
 
     conf_dict = {}
     conffiles = []
-    loaded_files = []
-    secret_agent_config_error = False
+    agent = _AgentFiles()
 
     if cli_args.only_config_file is not None or not cli_args.no_config_file:
         if cli_args.only_config_file is not None:
@@ -387,11 +395,8 @@ def loadconfig(cli_args):
 
             if os.path.exists(f):
                 try:
-                    _merge(conf_dict, _loadfile(f, loaded_files, cli_args.instance))
+                    _merge(conf_dict, _loadfile(f, agent, cli_args.instance))
                     conffiles.append(f)
-                except _SecretAgentConfigError as e:
-                    secret_agent_config_error = True
-                    logger.critical(str(e))
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
                     logger.critical(_parse_error(f, e))
@@ -419,10 +424,7 @@ def loadconfig(cli_args):
 
             for f in conffiles:
                 try:
-                    _merge(conf_dict, _loadfile(f, loaded_files, cli_args.instance))
-                except _SecretAgentConfigError as e:
-                    secret_agent_config_error = True
-                    logger.critical(str(e))
+                    _merge(conf_dict, _loadfile(f, agent, cli_args.instance))
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
                     logger.critical(_parse_error(f, e))
@@ -450,8 +452,9 @@ def loadconfig(cli_args):
 
     # Kept apart from the merged options: the agent settings apply one file at a
     # time, as in the C tools, then the command line.
-    asadm_dict["secret_agent_sections"] = loaded_files
-    asadm_dict["secret_agent_config_error"] = secret_agent_config_error
+    asadm_dict["secret_agent_sections"] = agent.sections
+    asadm_dict["secret_agent_config_errors"] = agent.errors
+    asadm_dict["secret_agent_unparsed_files"] = agent.unparsed
 
     # Find seed nods
     seeds = _getseeds(asadm_dict)
