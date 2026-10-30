@@ -19,6 +19,8 @@ The forms match the PasswordFlag in tools-common-go:
     env-b64:<VAR>   base64 decoded value of environment variable VAR
     b64:<VALUE>     base64 decoded VALUE
     file:<PATH>     contents of PATH, less one trailing line ending
+    secrets:...     fetched from the Aerospike Secret Agent, when the caller
+                    passes fetch_secret
     anything else   the literal password
 
 Limits and messages match the C tools. max_len caps every value, literal or
@@ -30,6 +32,9 @@ Error messages name the option and the source but never the password.
 
 import base64
 import os
+from typing import Callable
+
+from lib.secret_agent import SecretAgentError
 
 PASSWORD_MAX_LEN = 63
 TLS_KEYFILE_PASSWORD_MAX_LEN = 1024
@@ -43,10 +48,12 @@ class PasswordSourceError(Exception):
     carries_its_own_message = True
 
 
-def has_source(value: str) -> bool:
+def has_source(value: str, fetch_secret: Callable[[str], str] | None = None) -> bool:
     kind, sep, _ = value.partition(":")
 
-    return bool(sep) and kind in _SOURCES
+    return bool(sep) and (
+        kind in _SOURCES or (kind == "secrets" and fetch_secret is not None)
+    )
 
 
 def check_len(password: str, option: str, max_len: int) -> None:
@@ -54,15 +61,20 @@ def check_len(password: str, option: str, max_len: int) -> None:
 
 
 def resolve(
-    value: str, option: str, *, max_len: int = 0, first_line: bool = False
+    value: str,
+    option: str,
+    fetch_secret: Callable[[str], str] | None = None,
+    *,
+    max_len: int = 0,
+    first_line: bool = False,
 ) -> str:
-    if not has_source(value):
+    if not has_source(value, fetch_secret):
         check_len(value, option, max_len)
         return value
 
     kind, _, rest = value.partition(":")
 
-    if not rest and kind != "b64":
+    if not rest and kind in ("env", "env-b64", "file"):
         raise PasswordSourceError(
             "{}: {}: requires {}".format(
                 option, kind, "a path" if kind == "file" else "a variable name"
@@ -79,12 +91,32 @@ def resolve(
     elif kind == "b64":
         password = _decode_b64(rest, option, "b64: value")
         what = "decoded b64: value"
+    elif kind == "secrets":
+        password = _fetch_secret(fetch_secret, value, option)
+        what = "value from " + value
     else:
         return _read_file(rest, option, max_len, first_line)
 
     _check_bytes(password.encode("utf-8"), option, max_len, what)
 
     return password
+
+
+def _fetch_secret(fetch_secret: Callable[[str], str], ref: str, option: str) -> str:
+    try:
+        return fetch_secret(ref)
+    except PasswordSourceError:
+        raise
+    except SecretAgentError as e:
+        raise PasswordSourceError("{}: {}".format(option, e)) from None
+    except Exception as e:
+        # asadm exits silently on unexpected errors; never lose this one. Only the
+        # type is given, since the message can hold the secret.
+        raise PasswordSourceError(
+            "{}: secret agent request for {} failed: {}".format(
+                option, ref, type(e).__name__
+            )
+        ) from None
 
 
 def _read_env(name: str, option: str) -> str:

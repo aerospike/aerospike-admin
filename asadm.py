@@ -704,6 +704,7 @@ def parse_tls_input(cli_args):
                     TLS_KEYFILE_PASSWORD_MAX_LEN,
                 )
 
+            # As in asbackup, a typed password is never fetched from the agent.
             keyfile_password = conf.resolve_keyfile_password(keyfile_password)
 
         return SSLContext(
@@ -862,6 +863,14 @@ async def main():
     connects = cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER
 
     if connects:
+        errors = getattr(cli_args, "sagent_config_errors", [])
+
+        for error in errors:
+            logger.critical(error)
+
+        if errors:
+            sys.exit(1)
+
         try:
             conf.resolve_password_sources(cli_args)
         except PasswordSourceError as e:

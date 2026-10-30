@@ -108,14 +108,17 @@ def print_config_file_option():
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>', the whole file less one trailing '\\n' or\n"
         "                         '\\r\\n'. PATH should name a regular file.\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
         "                      and one trailing newline is dropped after decoding. A 'b64:' value\n"
         "                      on the command line is as visible as a literal password.\n"
-        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
-        "                      'file:' must be given as 'b64:' or typed at the prompt.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+        "                      'file:' or 'secrets:' must be given as 'b64:' or typed at the\n"
+        "                      prompt.\n"
         "                      The password is read only when a user is set and the auth mode is\n"
         "                      not PKI. It must be at most 63 bytes.\n"
+        "                      A value fetched with 'secrets:' is used as-is.\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given. The typed password is used as is."
     )
@@ -171,17 +174,21 @@ def print_config_file_option():
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>', the first line of the file\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
         "                      and one trailing newline is dropped after decoding.\n"
-        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
-        "                      'file:' must be given as 'b64:'.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+        "                      'file:' or 'secrets:' must be given as 'b64:'.\n"
+        "                      Surrounding whitespace is trimmed before the form is read. A\n"
+        "                      password with surrounding whitespace must be given as 'b64:'.\n"
         "                      The password is read only when a key file is set. It must be at\n"
         "                      most 1024 bytes.\n"
+        "                      A value fetched with 'secrets:' is used as-is.\n"
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password\n"
         "                      specified and no password is given. The typed password\n"
-        "                      accepts the forms above."
+        "                      accepts the forms above except 'secrets:'."
     )
     print(
         " --tls-certfile=TLS_CERTFILE <path>\n"
@@ -199,6 +206,34 @@ def print_config_file_option():
         "                      tls_capath."
     )
     print("")
+    print("[secret-agent]")
+    print(" Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.")
+    print(
+        " In a config file, set these in the [secret-agent] section as sa-address,\n"
+        " sa-port, sa-timeout and sa-ca-file."
+    )
+    print(
+        ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".\n'
+        "                      Secret Agent hostname or IP address.\n"
+        "                      Default: 127.0.0.1:3005"
+    )
+    print(
+        " --sa-port=PORT       Secret Agent port, 1 to 65535.\n"
+        "                      Overrides a port in --sa-address.\n"
+        "                      Default: 3005"
+    )
+    print(
+        " --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an\n"
+        "                      integer from 1 to 2147483647.\n"
+        "                      Default: 1000"
+    )
+    print(
+        " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret\n"
+        "                      Agent and verifies its certificate against this CA. The\n"
+        "                      agent's hostname or IP address must be in the certificate.\n"
+        "                      Default: none"
+    )
+    print("")
 
 
 def config_file_help():
@@ -206,7 +241,7 @@ def config_file_help():
     print(
         "Default configuration files are read from the following files in the given order:\n"
         "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
-        "The following sections are read: (cluster include)\n"
+        "The following sections are read: (cluster secret-agent include)\n"
         "The following options effect configuration file behavior\n"
     )
     print(
@@ -216,7 +251,7 @@ def config_file_help():
     print(
         " --instance <name>\n"
         "                      Section with these instance is read. e.g in case instance \n"
-        "                      `a` is specified section cluster_a is read."
+        "                      `a` is specified sections cluster_a, secret-agent_a are read."
     )
     print(
         " --config-file <path>\n"
@@ -260,6 +295,12 @@ def get_cli_args():
     add_fn("--tls-certfile", dest="tls-certfile")
     add_fn("--tls-crl-check", dest="tls-crl-check", action="store_true")
     add_fn("--tls-crl-check-all", dest="tls-crl-check-all", action="store_true")
+
+    add_fn("--sa-address", dest="sa-address")
+    add_fn("--sa-port", dest="sa-port")
+    add_fn("--sa-timeout", dest="sa-timeout")
+    add_fn("--sa-ca-file", dest="sa-ca-file")
+    add_fn("--sa-cafile", dest="sa-cafile", help=argparse.SUPPRESS)
 
     add_fn("--config-file", dest="config-file")
     add_fn("--instance")
@@ -315,6 +356,18 @@ if args.version:
         print("Build " + build)
 
     sys.exit(0)
+
+# asadm warns on stderr, which asinfo treats as a failure, so warn here instead.
+legacy_ca_file = vars(args).pop("sa-cafile")
+
+if legacy_ca_file is not None:
+    print(
+        "WARNING: Argument --sa-cafile is deprecated. Use --sa-ca-file instead.",
+        file=sys.stderr,
+    )
+
+    if getattr(args, "sa-ca-file") is None:
+        setattr(args, "sa-ca-file", legacy_ca_file)
 
 if args.value == "stats":
     args.value = "statistics"

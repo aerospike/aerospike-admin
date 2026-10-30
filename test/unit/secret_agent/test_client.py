@@ -1,0 +1,553 @@
+# Copyright 2026 Aerospike, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import base64
+import errno
+import os
+import socket
+import tempfile
+import threading
+import time
+import traceback
+import unittest
+from unittest.mock import patch
+
+from parameterized import parameterized
+
+from lib.secret_agent import (
+    InvalidConfigError,
+    InvalidResponseError,
+    RequestFailedError,
+    SecretAgentClient,
+    SecretAgentError,
+    new_ssl_context,
+)
+from lib.secret_agent import _wire
+from lib.secret_agent.testing import FakeSecretAgent, frame, read_message
+from test.unit.secret_agent import pki as test_pki
+
+VALUE = "hunter2"
+UNREACHABLE_PORT = 1
+
+
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+AGENT_DATA = {
+    "aql": {
+        "password": b64(VALUE.encode()),
+        "newline": b64(VALUE.encode()) + "\n",
+        "whitespace": " \t\r\n",
+        "not-base64": VALUE,
+        "binary": b64(b"\xff" + VALUE.encode()),
+        "nul": b64(VALUE.encode() + b"\x00"),
+        "empty": "",
+        "env-like": b64(b"env:HOME"),
+    },
+    "": {"bare": b64(b"no-resource")},
+}
+
+
+def agent_client(agent: FakeSecretAgent, **kwargs) -> SecretAgentClient:
+    kwargs.setdefault("timeout", 10)
+
+    return SecretAgentClient(agent.host, agent.port, **kwargs)
+
+
+def assert_no_leak(test: unittest.TestCase, error: Exception) -> None:
+    text = "".join(traceback.format_exception(error))
+    test.assertNotIn(VALUE, text)
+
+
+class ClientTest(unittest.TestCase):
+    def setUp(self):
+        self.agent = FakeSecretAgent(AGENT_DATA).start()
+        self.addCleanup(self.agent.stop)
+        self.client = agent_client(self.agent)
+
+    def test_resolve(self):
+        self.assertEqual(self.client.resolve("secrets:aql:password"), VALUE)
+
+    @parameterized.expand(
+        [("plain",), ("",), ("env:HOME",), ("file:/etc/hosts",), ("Secrets:a:b",)]
+    )
+    def test_resolve_passes_literals_through(self, value):
+        self.assertEqual(self.client.resolve(value), value)
+
+    def test_resolve_without_resource(self):
+        self.assertEqual(self.client.resolve("secrets:bare"), "no-resource")
+
+    def test_resolved_value_is_not_parsed_again(self):
+        self.assertEqual(self.client.resolve("secrets:aql:env-like"), "env:HOME")
+
+    def test_get_secret(self):
+        self.assertEqual(self.client.get_secret("aql", "password"), VALUE)
+        self.assertEqual(self.client.get_secret("", "bare"), "no-resource")
+
+    def test_trailing_newline_is_trimmed_before_decoding(self):
+        self.assertEqual(self.client.get_secret("aql", "newline"), VALUE)
+
+    @parameterized.expand(
+        [
+            ("whitespace", "empty secret"),
+            ("empty", "empty secret"),
+            ("not-base64", "is not valid base64"),
+            ("binary", "is not valid UTF-8"),
+            ("nul", "contains a NUL byte"),
+        ]
+    )
+    def test_unusable_value(self, key, message):
+        with self.assertRaises(InvalidResponseError) as cm:
+            self.client.get_secret("aql", key)
+
+        self.assertIn(message, str(cm.exception))
+        self.assertIn("secrets:aql:" + key, str(cm.exception))
+        assert_no_leak(self, cm.exception)
+
+    def test_agent_error(self):
+        with self.assertRaises(RequestFailedError) as cm:
+            self.client.resolve("secrets:aql:missing")
+
+        self.assertIn(
+            "agent error from {} for secrets:aql:missing".format(self.agent.address),
+            str(cm.exception),
+        )
+
+    @parameterized.expand([("secrets:aql:",), ("secrets:",)])
+    def test_invalid_reference(self, value):
+        with self.assertRaises(InvalidConfigError):
+            self.client.resolve(value)
+
+    def test_empty_key(self):
+        with self.assertRaises(InvalidConfigError):
+            self.client.get_secret("aql", "")
+
+    def test_concurrent_use(self):
+        errors = []
+
+        def fetch():
+            try:
+                if self.client.resolve("secrets:aql:password") != VALUE:
+                    errors.append("wrong value")
+            except SecretAgentError as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=fetch) for _ in range(32)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+
+
+class RequestTest(unittest.TestCase):
+    def capture(self, ref):
+        requests = []
+
+        def respond(sock):
+            requests.append(read_message(sock))
+            sock.sendall(_wire.encode({"SecretValue": b64(VALUE.encode())}))
+
+        with FakeSecretAgent(handler=respond) as agent:
+            agent_client(agent).resolve(ref)
+
+        return requests
+
+    def test_resource_is_sent(self):
+        self.assertEqual(
+            self.capture("secrets:aql:password"),
+            [{"SecretKey": "password", "Resource": "aql"}],
+        )
+
+    def test_empty_resource_is_left_out(self):
+        self.assertEqual(self.capture("secrets:password"), [{"SecretKey": "password"}])
+        self.assertEqual(self.capture("secrets::password"), [{"SecretKey": "password"}])
+
+
+class TransportTest(unittest.TestCase):
+    def test_unreachable(self):
+        client = SecretAgentClient("127.0.0.1", UNREACHABLE_PORT)
+
+        with self.assertRaises(RequestFailedError) as cm:
+            client.resolve("secrets:aql:password")
+
+        self.assertIn(
+            "connect to 127.0.0.1:1 for secrets:aql:password", str(cm.exception)
+        )
+
+    def test_invalid_host_name(self):
+        host = "a" * 64 + ".com"
+        client = SecretAgentClient(host, 3005)
+
+        with self.assertRaises(RequestFailedError) as cm:
+            client.resolve("secrets:aql:password")
+
+        self.assertIn(
+            "connect to {}:3005 for secrets:aql:password".format(host),
+            str(cm.exception),
+        )
+
+    def test_timeout(self):
+        def never_reply(sock):
+            read_message(sock)
+            time.sleep(5)
+
+        with FakeSecretAgent(handler=never_reply) as agent:
+            client = agent_client(agent, timeout=0.2)
+            start = time.monotonic()
+
+            with self.assertRaises(RequestFailedError) as cm:
+                client.resolve("secrets:aql:password")
+
+            self.assertLess(time.monotonic() - start, 3)
+            self.assertIn("timed out", str(cm.exception))
+
+    def test_timeout_covers_every_address(self):
+        """A name with several addresses that never answer fails within one
+        timeout, not one per address."""
+        addresses = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.%d" % i, 3005))
+            for i in (1, 2, 3)
+        ]
+
+        def black_hole(sock, address):
+            time.sleep(sock.gettimeout())
+            raise TimeoutError("timed out")
+
+        client = SecretAgentClient("agent.example", 3005, timeout=0.3)
+        start = time.monotonic()
+
+        with patch("socket.getaddrinfo", return_value=addresses), patch.object(
+            socket.socket, "connect", black_hole
+        ):
+            with self.assertRaises(RequestFailedError):
+                client.resolve("secrets:aql:password")
+
+        self.assertLess(time.monotonic() - start, 0.6)
+
+    def test_socket_error_for_one_family_tries_the_next_address(self):
+        """As in socket.create_connection, a family the host cannot create a
+        socket for is skipped."""
+        real_socket = socket.socket
+
+        def no_ipv6(family=socket.AF_INET, *args, **kwargs):
+            if family == socket.AF_INET6:
+                raise OSError(errno.EAFNOSUPPORT, os.strerror(errno.EAFNOSUPPORT))
+
+            return real_socket(family, *args, **kwargs)
+
+        with FakeSecretAgent(AGENT_DATA) as agent:
+            addresses = [
+                (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", agent.port, 0, 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", agent.port)),
+            ]
+            client = SecretAgentClient("localhost", agent.port, timeout=10)
+
+            with patch("socket.getaddrinfo", return_value=addresses), patch(
+                "socket.socket", no_ipv6
+            ):
+                self.assertEqual(client.resolve("secrets:aql:password"), VALUE)
+
+    def test_timeout_covers_the_whole_response(self):
+        message = _wire.encode({"SecretValue": b64(VALUE.encode())})
+
+        def drip(sock):
+            read_message(sock)
+
+            for byte in message:
+                sock.sendall(bytes([byte]))
+                time.sleep(0.1)
+
+        with FakeSecretAgent(handler=drip) as agent:
+            client = agent_client(agent, timeout=0.5)
+            start = time.monotonic()
+
+            with self.assertRaises(RequestFailedError):
+                client.resolve("secrets:aql:password")
+
+            self.assertLess(time.monotonic() - start, 2)
+
+    def test_response_in_chunks(self):
+        message = _wire.encode({"SecretValue": b64(VALUE.encode())})
+
+        def chunks(sock):
+            read_message(sock)
+
+            for i in range(0, len(message), 5):
+                sock.sendall(message[i : i + 5])
+                time.sleep(0.01)
+
+        with FakeSecretAgent(handler=chunks) as agent:
+            self.assertEqual(agent_client(agent).resolve("secrets:a:b"), VALUE)
+
+    @parameterized.expand(
+        [
+            ("bad_magic", frame(b"{}", magic=0xDEADBEEF), InvalidResponseError),
+            (
+                "malformed_body",
+                frame(b'{"SecretValue":"' + VALUE.encode()),
+                InvalidResponseError,
+            ),
+            (
+                "not_an_object",
+                frame(b'"' + VALUE.encode() + b'"'),
+                InvalidResponseError,
+            ),
+            ("deep_nesting", frame(b"[" * 200000), InvalidResponseError),
+            (
+                "value_not_a_string",
+                frame(b'{"SecretValue":["' + VALUE.encode() + b'"]}'),
+                InvalidResponseError,
+            ),
+            ("error_not_a_string", frame(b'{"Error":1}'), InvalidResponseError),
+            (
+                "empty_error_with_value",
+                frame(b'{"Error":"","SecretValue":"aHVudGVyMg=="}'),
+                RequestFailedError,
+            ),
+            (
+                "oversized",
+                _wire.HEADER.pack(_wire.MAGIC, 1 << 21),
+                InvalidResponseError,
+            ),
+            (
+                "truncated",
+                frame(b'{"SecretValue":"' + VALUE.encode() + b'"}')[:12],
+                RequestFailedError,
+            ),
+            ("closed", b"", RequestFailedError),
+        ]
+    )
+    def test_broken_agent(self, _, response, error):
+        def respond(sock):
+            read_message(sock)
+            sock.sendall(response)
+
+        with FakeSecretAgent(handler=respond) as agent:
+            with self.assertRaises(error) as cm:
+                agent_client(agent).resolve("secrets:aql:password")
+
+        assert_no_leak(self, cm.exception)
+
+
+class EmptyAgentErrorTest(unittest.TestCase):
+    def test_empty_error_ends_the_message(self):
+        """Any Error field fails the request, even an empty one."""
+
+        def respond(sock):
+            read_message(sock)
+            sock.sendall(_wire.encode({"Error": ""}))
+
+        with FakeSecretAgent(handler=respond) as agent:
+            address = agent.address
+
+            with self.assertRaises(RequestFailedError) as cm:
+                agent_client(agent).resolve("secrets:aql:password")
+
+        self.assertEqual(
+            str(cm.exception),
+            "agent error from {} for secrets:aql:password".format(address),
+        )
+
+
+class ErrorNamesTheAgentTest(unittest.TestCase):
+    """A failure says which agent answered, not only a failed connect."""
+
+    @parameterized.expand(
+        [
+            ("agent_error", "secrets:aql:missing"),
+            ("not_base64", "secrets:aql:not-base64"),
+            ("empty", "secrets:aql:empty"),
+            ("not_utf8", "secrets:aql:binary"),
+            ("nul", "secrets:aql:nul"),
+        ]
+    )
+    def test_unusable_answer(self, _, ref):
+        with FakeSecretAgent(AGENT_DATA) as agent:
+            address = agent.address
+
+            with self.assertRaises(SecretAgentError) as cm:
+                agent_client(agent).resolve(ref)
+
+        self.assertIn(address, str(cm.exception))
+
+    @parameterized.expand(
+        [
+            ("bad_magic", frame(b"{}", magic=0xDEADBEEF)),
+            ("malformed_body", frame(b'{"SecretValue":"x')),
+            ("error_not_a_string", frame(b'{"Error":1}')),
+            ("truncated", frame(b'{"SecretValue":"aHVudGVyMg=="}')[:12]),
+            ("closed", b""),
+        ]
+    )
+    def test_broken_answer(self, _, response):
+        def respond(sock):
+            read_message(sock)
+            sock.sendall(response)
+
+        with FakeSecretAgent(handler=respond) as agent:
+            address = agent.address
+
+            with self.assertRaises(SecretAgentError) as cm:
+                agent_client(agent).resolve("secrets:aql:password")
+
+        self.assertIn(address, str(cm.exception))
+
+    def test_timeout(self):
+        def never_reply(sock):
+            read_message(sock)
+            time.sleep(5)
+
+        with FakeSecretAgent(handler=never_reply) as agent:
+            address = agent.address
+
+            with self.assertRaises(SecretAgentError) as cm:
+                agent_client(agent, timeout=0.2).resolve("secrets:aql:password")
+
+        self.assertIn(address, str(cm.exception))
+
+
+class TLSTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.pki = test_pki.generate(cls.tmp.name)
+
+        other = os.path.join(cls.tmp.name, "other")
+        os.mkdir(other)
+        cls.untrusted = test_pki.generate(other)
+
+        cls.by_name = {}
+
+        for name, hosts in (("ip", ("127.0.0.1",)), ("localhost", ("localhost",))):
+            directory = os.path.join(cls.tmp.name, name)
+            os.mkdir(directory)
+            cls.by_name[name] = test_pki.generate(directory, hosts=hosts)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def fetch(self, **client_kwargs):
+        with FakeSecretAgent(
+            AGENT_DATA, ssl_context=self.pki.server_context()
+        ) as agent:
+            return agent_client(agent, **client_kwargs).resolve("secrets:aql:password")
+
+    def test_ca(self):
+        ctx = new_ssl_context(self.pki.ca_file)
+        self.assertEqual(self.fetch(ssl_context=ctx), VALUE)
+
+    def test_untrusted_ca(self):
+        ctx = new_ssl_context(self.untrusted.ca_file)
+
+        with self.assertRaises(RequestFailedError):
+            self.fetch(ssl_context=ctx)
+
+    @parameterized.expand(
+        [
+            (
+                "ip_address",
+                "localhost",
+                "127.0.0.1",
+                "IP address mismatch, certificate is not valid for '127.0.0.1'",
+            ),
+            (
+                "host_name",
+                "ip",
+                "localhost",
+                "Hostname mismatch, certificate is not valid for 'localhost'",
+            ),
+        ]
+    )
+    def test_agent_not_in_certificate(self, _, cert, host, message):
+        pki = self.by_name[cert]
+
+        with FakeSecretAgent(AGENT_DATA, ssl_context=pki.server_context()) as agent:
+            client = SecretAgentClient(
+                host, agent.port, timeout=10, ssl_context=new_ssl_context(pki.ca_file)
+            )
+
+            with self.assertRaises(RequestFailedError) as cm:
+                client.resolve("secrets:aql:password")
+
+        self.assertIn(message, str(cm.exception))
+
+    @parameterized.expand([("ip", "127.0.0.1"), ("localhost", "localhost")])
+    def test_agent_in_certificate(self, cert, host):
+        pki = self.by_name[cert]
+
+        with FakeSecretAgent(AGENT_DATA, ssl_context=pki.server_context()) as agent:
+            client = SecretAgentClient(
+                host, agent.port, timeout=10, ssl_context=new_ssl_context(pki.ca_file)
+            )
+
+            self.assertEqual(client.resolve("secrets:aql:password"), VALUE)
+
+    def test_plaintext_to_tls_agent(self):
+        with self.assertRaises(SecretAgentError):
+            self.fetch()
+
+    def test_timeout_covers_the_handshake(self):
+        release = threading.Event()
+
+        with FakeSecretAgent(handler=lambda _: release.wait(5)) as agent:
+            ctx = new_ssl_context(self.pki.ca_file)
+            client = agent_client(agent, ssl_context=ctx, timeout=0.2)
+            start = time.monotonic()
+
+            with self.assertRaises(RequestFailedError) as cm:
+                client.resolve("secrets:aql:password")
+
+            release.set()
+
+        self.assertLess(time.monotonic() - start, 3)
+        self.assertIn("connect to", str(cm.exception))
+        self.assertTrue(str(cm.exception).endswith(": timed out"), str(cm.exception))
+
+    @parameterized.expand([("/nonexistent/ca.pem",), ("bad\x00path",)])
+    def test_invalid_ca_file(self, ca_file):
+        with self.assertRaises(InvalidConfigError):
+            new_ssl_context(ca_file)
+
+
+class ClientConfigTest(unittest.TestCase):
+    @parameterized.expand(
+        [
+            ("zero_timeout", {"timeout": 0}),
+            ("negative_timeout", {"timeout": -1}),
+            ("infinite_timeout", {"timeout": float("inf")}),
+            ("nan_timeout", {"timeout": float("nan")}),
+            ("bool_timeout", {"timeout": True}),
+            ("bad_port", {"port": 0}),
+            ("empty_host", {"host": ""}),
+        ]
+    )
+    def test_invalid(self, _, kwargs):
+        with self.assertRaises(InvalidConfigError):
+            SecretAgentClient(**kwargs)
+
+    def test_defaults(self):
+        self.assertEqual(SecretAgentClient().address, "127.0.0.1:3005")
+
+    def test_ipv6_address(self):
+        self.assertEqual(SecretAgentClient("::1", 4000).address, "[::1]:4000")
+
+
+if __name__ == "__main__":
+    unittest.main()
