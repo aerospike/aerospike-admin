@@ -171,10 +171,17 @@ def _parse_error(fname, e):
 
 def _loadfile(fname, agent, instance):
     """Each file's selected [secret-agent] section is checked on its own and
-    kept when the rest of the file fails to load. A file that cannot be parsed
-    is recorded in agent.unparsed, so no secret is fetched without its agent
-    settings."""
+    kept when the rest of the file fails to load. A file that cannot be parsed,
+    or an include directory that cannot be read, is recorded in agent.unparsed,
+    so no secret is fetched without its agent settings."""
     conf_dict = {}
+
+    def unreadable_directory(e):
+        if not isinstance(e, FileNotFoundError):
+            logger.warning(
+                "Config file read error : %s %s", e.filename, e.strerror or e
+            )
+            agent.unparsed.append(e.filename)
 
     if os.path.exists(fname):
         # file exists
@@ -184,8 +191,10 @@ def _loadfile(fname, agent, instance):
         except OSError as e:
             logger.warning("Config file read error : %s %s", fname, e.strerror or e)
             return conf_dict
-        except ValueError:
-            # Not UTF-8 or not TOML.
+        except RecursionError:
+            # A file that includes itself; it parsed, so its agent section is kept.
+            raise
+        except Exception:
             agent.unparsed.append(fname)
             raise
 
@@ -202,7 +211,9 @@ def _loadfile(fname, agent, instance):
                 include_files = include_files + sorted(
                     [
                         os.path.join(dp, f)
-                        for dp, dn, fn in os.walk(os.path.expanduser(d))
+                        for dp, dn, fn in os.walk(
+                            os.path.expanduser(d), onerror=unreadable_directory
+                        )
                         for f in fn
                     ]
                 )
@@ -453,7 +464,7 @@ def loadconfig(cli_args):
     # Kept apart from the merged options: the agent settings apply one file at a
     # time, as in the C tools, then the command line.
     asadm_dict["secret_agent_sections"] = agent.sections
-    asadm_dict["secret_agent_config_errors"] = agent.errors
+    asadm_dict["sagent_config_errors"] = agent.errors
     asadm_dict["secret_agent_unparsed_files"] = agent.unparsed
 
     # Find seed nods

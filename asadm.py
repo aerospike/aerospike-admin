@@ -863,7 +863,7 @@ async def main():
     connects = cli_args.asinfo_mode or mode == AdminMode.LIVE_CLUSTER
 
     if connects:
-        errors = getattr(cli_args, "secret_agent_config_errors", [])
+        errors = getattr(cli_args, "sagent_config_errors", [])
 
         for error in errors:
             logger.critical(error)

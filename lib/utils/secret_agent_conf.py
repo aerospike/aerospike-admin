@@ -46,7 +46,7 @@ def fetcher(args: Any) -> Callable[[str], str]:
     settings in args. The settings are checked now, as in the C tools. The CA
     file is read, and the client created, on first use, so runs without
     secrets: values never read it. Nothing is fetched when a config file could
-    not be parsed, since it may have held the agent's CA file."""
+    not be loaded, since it may have held the agent's CA file."""
     settings = SecretAgentSettings.from_args(args)
     unparsed = getattr(args, "secret_agent_unparsed_files", [])
     client = None
@@ -56,7 +56,7 @@ def fetcher(args: Any) -> Callable[[str], str]:
 
         if unparsed:
             raise InvalidConfigError(
-                "cannot fetch {}: config file {} could not be parsed".format(
+                "cannot fetch {}: config file {} could not be loaded".format(
                     ref, unparsed[0]
                 )
             )

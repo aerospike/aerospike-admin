@@ -475,7 +475,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.user = None
                 mock_args.password = None
                 mock_args.tls_enable = False
-                mock_args.secret_agent_config_errors = []
+                mock_args.sagent_config_errors = []
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -515,7 +515,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.user = None
                 mock_args.password = None
                 mock_args.tls_enable = False
-                mock_args.secret_agent_config_errors = []
+                mock_args.sagent_config_errors = []
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -568,7 +568,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.user = None
                 mock_args.password = None
                 mock_args.tls_enable = False
-                mock_args.secret_agent_config_errors = []
+                mock_args.sagent_config_errors = []
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -986,7 +986,7 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
 
         for mode in ({}, {"asinfo_mode": True}):
             with self.subTest(mode=mode):
-                args = self._make_args(secret_agent_config_errors=errors, **mode)
+                args = self._make_args(sagent_config_errors=errors, **mode)
 
                 code, logger, tls, shell_cls, asinfo = await self._run_main(args)
 
@@ -1003,7 +1003,7 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
         for mode in ("collectinfo", "log_analyzer"):
             with self.subTest(mode=mode):
                 args = self._make_args(
-                    secret_agent_config_errors=["Config file error: /a.conf x"],
+                    sagent_config_errors=["Config file error: /a.conf x"],
                     **{mode: True},
                 )
 

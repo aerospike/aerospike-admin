@@ -327,7 +327,7 @@ class SecretAgentErrorTests(AgentTestCase):
         self.assert_fails_before_connecting(
             cp,
             "password in config file: cannot fetch secrets:asadm:password: config"
-            f" file {include} could not be parsed",
+            f" file {include} could not be loaded",
         )
 
 

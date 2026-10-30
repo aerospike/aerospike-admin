@@ -875,7 +875,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                 with patch("lib.utils.conf.logger") as logger:
                     args = self.load(*argv, config=config.format(self.agent.address))
 
-                self.assertEqual(args.secret_agent_config_errors, [])
+                self.assertEqual(args.sagent_config_errors, [])
                 logger.critical.assert_not_called()
                 self.assertEqual(args.password, PW)
 
@@ -886,7 +886,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             args = self.load_config_file(path, "--instance", "y")
 
         self.assertEqual(
-            args.secret_agent_config_errors,
+            args.sagent_config_errors,
             [
                 'Config file error: {} invalid value "0" for sa-port in the'
                 " [secret-agent] config section, expected an integer from 1 to"
@@ -902,7 +902,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             args = self.load_config_file(path, "--instance", "dev")
 
         self.assertEqual(
-            args.secret_agent_config_errors,
+            args.sagent_config_errors,
             [
                 'Config file error: {} invalid value "agent:3005" for'
                 " secret-agent_dev, expected a [secret-agent_dev] config"
@@ -932,7 +932,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         self.assertTrue(args.no_color)
         logger.critical.assert_not_called()
         self.assertEqual(
-            args.secret_agent_config_errors,
+            args.sagent_config_errors,
             [
                 'Config file error: {} invalid value "0" for sa-port in the'
                 " [secret-agent] config section, expected an integer from 1 to"
@@ -965,7 +965,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                         self.agent.address,
                     )
 
-                self.assertEqual(args.secret_agent_config_errors, [])
+                self.assertEqual(args.sagent_config_errors, [])
                 self.assertEqual(args.password, expected)
                 self.assertIn(message, str(getattr(logger, log).call_args_list))
 
@@ -1005,24 +1005,67 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         self.assertEqual(
             str(cm.exception),
             "--password: cannot fetch secrets:aql:password: config file {} could"
-            " not be parsed".format(unparsed),
+            " not be loaded".format(unparsed),
         )
         self.assertEqual(requests, [])
 
-    def test_parse_error_skips_the_file(self):
-        path = self.write_file("astools.conf", "[cluster\n")
+    # toml raises IndexError, not a ValueError, for the inline table typo.
+    PARSE_ERRORS = [("section", "[cluster\n"), ("inline_table", "t = { = 1 }\n")]
+
+    @parameterized.expand(PARSE_ERRORS)
+    def test_parse_error_skips_the_file(self, _, typo):
+        path = self.write_file("astools.conf", typo)
         self.assert_parse_error_refuses_secrets(
             path, path, "critical", "Config file parse error: " + path
         )
 
-    def test_parse_error_in_included_file_skips_it(self):
-        include = self.write_file("include.conf", "[cluster\n")
+    @parameterized.expand(PARSE_ERRORS)
+    def test_parse_error_in_included_file_skips_it(self, _, typo):
+        include = self.write_file("include.conf", typo)
         path = self.write_file(
             "astools.conf", '[include]\nfile = "{}"\n'.format(include)
         )
         self.assert_parse_error_refuses_secrets(
             path, include, "error", "Config file parse error: " + include
         )
+
+    @unittest.skipIf(
+        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
+    )
+    def test_unreadable_include_directory_refuses_secrets(self):
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+        os.chmod(directory, 0)
+        self.addCleanup(os.chmod, directory, 0o700)
+        path = self.write_file(
+            "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        self.assert_parse_error_refuses_secrets(
+            path,
+            directory,
+            "warning",
+            "'Config file read error : %s %s', '{}', 'Permission denied'".format(
+                directory
+            ),
+        )
+
+    def test_missing_include_directory_is_ignored(self):
+        path = self.write_file(
+            "astools.conf",
+            '[include]\ndirectory = "{}"\n'.format(
+                os.path.join(self.tmpdir.name, "missing")
+            ),
+        )
+        args = self.load_config_file(
+            path,
+            "-U",
+            "admin",
+            "-P",
+            "secrets:aql:password",
+            "--sa-address",
+            self.agent.address,
+        )
+        self.assertEqual(args.password, PW)
 
     def test_include_directory_skips_a_bad_entry(self):
         directory = os.path.join(self.tmpdir.name, "conf.d")
@@ -1072,7 +1115,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         self.assertEqual(
             str(cm.exception),
             "password in config file: cannot fetch secrets:aql:password: config"
-            " file {} could not be parsed".format(include),
+            " file {} could not be loaded".format(include),
         )
         self.assertEqual(requests, [])
 
@@ -1156,7 +1199,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             args = self.load(config='[secret-agent]\nsa-tls-name = "agent"\n')
 
         self.assertEqual(
-            args.secret_agent_config_errors,
+            args.sagent_config_errors,
             [
                 "Config file error: {} unknown key sa-tls-name in the [secret-agent]"
                 " config section".format(os.path.join(self.tmpdir.name, "astools.conf"))
@@ -1422,7 +1465,7 @@ class BadSecretAgentSectionTest(unittest.TestCase):
         self.assert_stopped_before_any_request(cp)
         self.assertIn(
             "--password: cannot fetch secrets:aql:password: config file {} could not"
-            " be parsed".format(include),
+            " be loaded".format(include),
             cp.stderr,
         )
 
