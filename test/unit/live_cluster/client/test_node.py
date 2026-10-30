@@ -49,6 +49,7 @@ from test.unit import util
 
 # Captured before any test patches it out, so a test can exercise the real method.
 _REAL_INFO_BUILD = Node.info_build
+_REAL_INFO_CINFO = Node.__dict__["_info_cinfo"]
 
 
 class NodeInitTest(unittest.IsolatedAsyncioTestCase):
@@ -548,6 +549,74 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.node.session_expiration, 123)
         as_socket_mock.login.assert_awaited_once()
         as_socket_mock.authenticate.assert_awaited_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_logs_in_again_when_the_session_expired(
+        self, as_socket_mock
+    ):
+        self.node.user = "admin"
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 1
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.EXPIRED_SESSION, "Unable to authenticate"
+        )
+        as_socket.login.return_value = True
+        as_socket.get_session_info.return_value = "new-token", 123
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        self.assertEqual(self.node.session_token, "new-token")
+        self.assertEqual(self.node.session_expiration, 123)
+        as_socket.login.assert_awaited_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_get_connection_logs_in_again_with_pki_when_the_session_expired(
+        self, as_socket_mock
+    ):
+        self.node.user = None
+        self.node.auth_mode = constants.AuthMode.PKI
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 1
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.EXPIRED_SESSION, "Unable to authenticate"
+        )
+        as_socket.login.return_value = True
+        as_socket.get_session_info.return_value = "new-token", 123
+
+        sock = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertEqual(sock, as_socket)
+        self.assertEqual(self.node.session_token, "new-token")
+        as_socket.login.assert_awaited_once()
+
+    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
+    async def test_a_command_after_the_session_expired_keeps_the_node_live(
+        self, as_socket_mock
+    ):
+        """New sockets authenticate with the token from login. Once it expires the
+        node must log in again rather than drop out of the command."""
+        patch.object(Node, "_info_cinfo", _REAL_INFO_CINFO).start()
+        self.node.user = "admin"
+        self.node.alive = True
+        self.node.session_token = "old-token"
+        self.node.session_expiration = 1
+        self.node._initialize_socket_pool()
+        as_socket = as_socket_mock.return_value
+        as_socket.connect.return_value = True
+        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
+            ASResponse.EXPIRED_SESSION, "Unable to authenticate"
+        )
+        as_socket.login.return_value = True
+        as_socket.get_session_info.return_value = "new-token", 123
+        as_socket.info.return_value = "uptime=1"
+
+        self.assertEqual(await self.node.info("statistics"), "uptime=1")
+        self.assertTrue(self.node.alive)
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_get_connection_auth_success_does_not_relogin(self, as_socket_mock):
