@@ -309,6 +309,27 @@ class SecretAgentErrorTests(AgentTestCase):
         self.assertIn("sa-time-out", cp.stdout + cp.stderr)
         self.assertNotIn("Not able to connect", cp.stdout + cp.stderr)
 
+    def test_parse_error_in_include_stops_before_fetching(self):
+        """The CA file sits in an include that does not parse, so fetching the
+        secret would send it to the plaintext agent, which would answer."""
+        include = self.write_file(
+            "include.conf",
+            f'[secret-agent]\nsa-ca-file = "{self.tls_agent.ca_file}"\n[cluster\n',
+        )
+        path = self.write_file(
+            "astools.conf",
+            '[cluster]\nhost = "127.0.0.1:1"\nuser = "admin"\n'
+            'password = "secrets:asadm:password"\n'
+            f'[secret-agent]\nsa-address = "{self.agent.address}"\n'
+            f'[include]\nfile = "{include}"\n',
+        )
+        cp = util.run_asadm(f"--only-config-file {path} -e 'info network'")
+        self.assert_fails_before_connecting(
+            cp,
+            "password in config file: cannot fetch secrets:asadm:password: config"
+            f" file {include} could not be parsed",
+        )
+
 
 class SecretAgentTLSErrorTests(AgentTestCase):
     """TLS failures between asadm and the agent stop asadm before it connects,
@@ -370,14 +391,16 @@ class SecretAgentTLSErrorTests(AgentTestCase):
             f"--sa-address {self.tls_address} --sa-ca-file /nonexistent/ca.pem"
         )
         self.assert_fails_before_connecting(
-            cp, "--sa-ca-file: cannot load TLS CA file /nonexistent/ca.pem"
+            cp,
+            '--sa-ca-file: cannot load CA file "/nonexistent/ca.pem": No such file or'
+            " directory",
         )
 
     def test_ca_file_is_not_a_certificate(self):
         path = self.write_file("ca.pem", "not a certificate\n")
         cp = self.run_password(f"--sa-address {self.tls_address} --sa-ca-file {path}")
         self.assert_fails_before_connecting(
-            cp, f"--sa-ca-file: cannot load TLS CA file {path}"
+            cp, f'--sa-ca-file: cannot load CA file "{path}": '
         )
 
     def test_missing_legacy_cafile_names_its_spelling(self):
@@ -385,7 +408,9 @@ class SecretAgentTLSErrorTests(AgentTestCase):
             f"--sa-address {self.tls_address} --sa-cafile /nonexistent/ca.pem"
         )
         self.assert_fails_before_connecting(
-            cp, "--sa-cafile: cannot load TLS CA file /nonexistent/ca.pem"
+            cp,
+            '--sa-cafile: cannot load CA file "/nonexistent/ca.pem": No such file or'
+            " directory",
         )
 
     def test_missing_cafile_in_config_file_names_its_key_and_section(self):
@@ -400,7 +425,7 @@ class SecretAgentTLSErrorTests(AgentTestCase):
         self.assert_fails_before_connecting(
             cp,
             "sa-cafile in the [secret-agent] config section: "
-            "cannot load TLS CA file /nonexistent/ca.pem",
+            'cannot load CA file "/nonexistent/ca.pem": No such file or directory',
         )
 
     def test_empty_ca_file(self):
@@ -620,6 +645,18 @@ class SecretAgentClusterTests(AgentTestCase):
         )
         self.assert_connected(cp)
         self.assertIn(DEPRECATED_CAFILE, cp.stderr)
+
+    def test_tls_agent_ca_file_beats_empty_legacy_cafile_in_either_order(self):
+        """Only the option that wins is checked, as in asbackup, aql and the
+        asinfo wrapper."""
+        ca_file = f"--sa-ca-file {self.tls_agent.ca_file}"
+
+        for flags in (f"{ca_file} --sa-cafile ''", f"--sa-cafile '' {ca_file}"):
+            with self.subTest(flags=flags):
+                cp = self.run_password(
+                    "secrets:asadm:password", f"--sa-address {self.tls_address} {flags}"
+                )
+                self.assert_connected(cp)
 
     def test_asinfo_tls_agent_ca_file_beats_legacy_cafile_in_either_order(self):
         ca_file = f"--sa-ca-file {self.tls_agent.ca_file}"

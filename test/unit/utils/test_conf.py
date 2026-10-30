@@ -875,7 +875,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                 with patch("lib.utils.conf.logger") as logger:
                     args = self.load(*argv, config=config.format(self.agent.address))
 
-                self.assertFalse(args.secret_agent_config_error)
+                self.assertEqual(args.secret_agent_config_errors, [])
                 logger.critical.assert_not_called()
                 self.assertEqual(args.password, PW)
 
@@ -885,12 +885,15 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         with patch("lib.utils.conf.logger") as logger:
             args = self.load_config_file(path, "--instance", "y")
 
-        self.assertTrue(args.secret_agent_config_error)
-        logger.critical.assert_called_once_with(
-            'Config file parse error: {} invalid value "0" for sa-port in the'
-            " [secret-agent] config section, expected an integer from 1 to"
-            " 65535".format(path)
+        self.assertEqual(
+            args.secret_agent_config_errors,
+            [
+                'Config file error: {} invalid value "0" for sa-port in the'
+                " [secret-agent] config section, expected an integer from 1 to"
+                " 65535".format(path)
+            ],
         )
+        logger.critical.assert_not_called()
 
     def test_selected_section_that_is_not_a_table(self):
         path = self.write_file("astools.conf", 'secret-agent_dev = "agent:3005"\n')
@@ -898,11 +901,45 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         with patch("lib.utils.conf.logger") as logger:
             args = self.load_config_file(path, "--instance", "dev")
 
-        self.assertTrue(args.secret_agent_config_error)
-        logger.critical.assert_called_once_with(
-            'Config file parse error: {} invalid value "agent:3005" for'
-            " secret-agent_dev, expected a [secret-agent_dev] config"
-            " section".format(path)
+        self.assertEqual(
+            args.secret_agent_config_errors,
+            [
+                'Config file error: {} invalid value "agent:3005" for'
+                " secret-agent_dev, expected a [secret-agent_dev] config"
+                " section".format(path)
+            ],
+        )
+        logger.critical.assert_not_called()
+
+    @parameterized.expand([("collectinfo", "-c"), ("log_analyzer", "-l")])
+    def test_bad_section_keeps_the_rest_of_the_file(self, _, mode):
+        """A bad [secret-agent] section costs the file none of its other
+        sections and does not set the exit code. asadm stops only the runs that
+        connect."""
+        include = self.write_file("include.conf", "[secret-agent]\nsa-time-out = 1\n")
+        path = self.write_file(
+            "astools.conf",
+            "[cluster]\nport = 3100\n[asadm]\nno-color = true\n"
+            '[secret-agent]\nsa-port = 0\n[include]\nfile = "{}"\n'.format(include),
+        )
+
+        with patch("sys.argv", ["asadm", "--only-config-file", path, mode]), patch(
+            "lib.utils.conf.logger"
+        ) as logger:
+            args, seeds = conf.loadconfig(conf.get_cli_args())
+
+        self.assertEqual(seeds, [("127.0.0.1", 3100, None)])
+        self.assertTrue(args.no_color)
+        logger.critical.assert_not_called()
+        self.assertEqual(
+            args.secret_agent_config_errors,
+            [
+                'Config file error: {} invalid value "0" for sa-port in the'
+                " [secret-agent] config section, expected an integer from 1 to"
+                " 65535".format(path),
+                "Config file error: {} unknown key sa-time-out in the"
+                " [secret-agent] config section".format(include),
+            ],
         )
 
     def load_config_file(self, path, *argv):
@@ -928,7 +965,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                         self.agent.address,
                     )
 
-                self.assertFalse(args.secret_agent_config_error)
+                self.assertEqual(args.secret_agent_config_errors, [])
                 self.assertEqual(args.password, expected)
                 self.assertIn(message, str(getattr(logger, log).call_args_list))
 
@@ -948,10 +985,34 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             self.tmpdir.name, "warning", "Is a directory"
         )
 
+    def assert_parse_error_refuses_secrets(self, path, unparsed, log, message):
+        """The file is skipped and a run without secrets: goes on, as on master.
+        No secret is fetched, since the file may have held the agent's CA."""
+        requests = self.record_requests()
+        argv = ("-U", "admin", "--sa-address", self.agent.address)
+
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load_config_file(path, *argv, "-P", "admin")
+
+        self.assertEqual(args.password, "admin")
+        self.assertIn(message, str(getattr(logger, log).call_args_list))
+
+        with patch("lib.utils.conf.logger"), self.assertRaises(
+            PasswordSourceError
+        ) as cm:
+            self.load_config_file(path, *argv, "-P", "secrets:aql:password")
+
+        self.assertEqual(
+            str(cm.exception),
+            "--password: cannot fetch secrets:aql:password: config file {} could"
+            " not be parsed".format(unparsed),
+        )
+        self.assertEqual(requests, [])
+
     def test_parse_error_skips_the_file(self):
         path = self.write_file("astools.conf", "[cluster\n")
-        self.assert_config_file_error_is_not_fatal(
-            path, "critical", "Config file parse error: " + path
+        self.assert_parse_error_refuses_secrets(
+            path, path, "critical", "Config file parse error: " + path
         )
 
     def test_parse_error_in_included_file_skips_it(self):
@@ -959,23 +1020,72 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         path = self.write_file(
             "astools.conf", '[include]\nfile = "{}"\n'.format(include)
         )
-        self.assert_config_file_error_is_not_fatal(
-            path, "error", "Config file parse error: " + include
+        self.assert_parse_error_refuses_secrets(
+            path, include, "error", "Config file parse error: " + include
         )
 
     def test_include_directory_skips_a_bad_entry(self):
         directory = os.path.join(self.tmpdir.name, "conf.d")
         os.mkdir(directory)
+        readme = os.path.join(directory, "README")
 
-        with open(os.path.join(directory, "README"), "w") as f:
+        with open(readme, "w") as f:
             f.write("Put astools.conf files here.\n")
 
         path = self.write_file(
             "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
         )
-        self.assert_config_file_error_is_not_fatal(
-            path, "error", "Config file parse error: " + directory
+        self.assert_parse_error_refuses_secrets(
+            path, readme, "error", "Config file parse error: " + directory
         )
+
+    def test_file_that_is_not_utf8_refuses_secrets(self):
+        path = os.path.join(self.tmpdir.name, "astools.conf")
+
+        with open(path, "wb") as f:
+            f.write(b'[secret-agent]\nsa-ca-file = "/ca\xff.pem"\n')
+
+        self.assert_parse_error_refuses_secrets(
+            path, path, "critical", "Config file parse error: " + path
+        )
+
+    def test_parse_error_refuses_a_secret_from_another_file(self):
+        """The CA file sits in an include that does not parse, so fetching the
+        secret would send it to the agent in plaintext."""
+        include = self.write_file(
+            "include.conf", '[secret-agent]\nsa-ca-file = "/ca.pem"\n[cluster\n'
+        )
+        path = self.write_file(
+            "astools.conf",
+            '[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+            '[secret-agent]\nsa-address = "{}"\n[include]\nfile = "{}"\n'.format(
+                self.agent.address, include
+            ),
+        )
+        requests = self.record_requests()
+
+        with patch("lib.utils.conf.logger"), self.assertRaises(
+            PasswordSourceError
+        ) as cm:
+            self.load_config_file(path)
+
+        self.assertEqual(
+            str(cm.exception),
+            "password in config file: cannot fetch secrets:aql:password: config"
+            " file {} could not be parsed".format(include),
+        )
+        self.assertEqual(requests, [])
+
+    def test_empty_legacy_cafile_next_to_ca_file_is_not_checked(self):
+        """On the command line only the CA option that wins is checked, as in
+        asbackup, aql and the asinfo wrapper."""
+        for argv in (
+            ("--sa-ca-file", "/ca.pem", "--sa-cafile", ""),
+            ("--sa-cafile", "", "--sa-ca-file", "/ca.pem"),
+        ):
+            with self.subTest(argv=argv):
+                args = self.load("-U", "admin", "-P", "admin", *argv)
+                self.assertEqual(args.password, "admin")
 
     def test_file_that_includes_itself(self):
         path = os.path.join(self.tmpdir.name, "astools.conf")
@@ -1042,10 +1152,16 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         logger.critical.assert_not_called()
 
     def test_unknown_config_key_is_rejected(self):
-        with patch("lib.utils.conf.logger") as logger:
-            self.load(config='[secret-agent]\nsa-tls-name = "agent"\n')
+        with patch("lib.utils.conf.logger"):
+            args = self.load(config='[secret-agent]\nsa-tls-name = "agent"\n')
 
-        logger.critical.assert_called_once()
+        self.assertEqual(
+            args.secret_agent_config_errors,
+            [
+                "Config file error: {} unknown key sa-tls-name in the [secret-agent]"
+                " config section".format(os.path.join(self.tmpdir.name, "astools.conf"))
+            ],
+        )
 
     def record_requests(self):
         requests = []
@@ -1115,11 +1231,10 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                         *flags,
                     )
 
-                self.assertTrue(
-                    str(cm.exception).startswith(
-                        "--sa-ca-file: cannot load TLS CA file /nonexistent/ca-file.pem"
-                    ),
+                self.assertEqual(
                     str(cm.exception),
+                    '--sa-ca-file: cannot load CA file "/nonexistent/ca-file.pem": No'
+                    " such file or directory",
                 )
 
     def test_empty_ca_file_is_an_error(self):
@@ -1255,10 +1370,14 @@ class BadSecretAgentSectionTest(unittest.TestCase):
             cp.stderr,
         )
 
-    def test_bad_command_line_value_without_secrets(self):
-        cp = self.run_asadm(
-            "", "-e", "info network", "--sa-port", "0", password="admin"
-        )
+    @parameterized.expand(
+        [
+            ("execute", "-e", "info network"),
+            ("asinfo_mode", "--asinfo-mode", "-e", "build"),
+        ]
+    )
+    def test_bad_command_line_value_without_secrets(self, _, *argv):
+        cp = self.run_asadm("", *argv, "--sa-port", "0", password="admin")
         self.assert_stopped_before_any_request(cp)
         self.assertIn(
             '--sa-port: invalid value "0", expected an integer from 1 to 65535',
@@ -1275,16 +1394,37 @@ class BadSecretAgentSectionTest(unittest.TestCase):
     @parameterized.expand(
         [
             (name, config, password)
-            for name, config in (
-                ("parse_error", "[cluster\n"),
-                ("unselected_section", "[secret-agent_dev]\nsa-time-out = 500\n"),
+            for name, config, passwords in (
+                ("parse_error", "[cluster\n", ("admin",)),
+                (
+                    "unselected_section",
+                    "[secret-agent_dev]\nsa-time-out = 500\n",
+                    ("secrets:aql:password", "admin"),
+                ),
             )
-            for password in ("secrets:aql:password", "admin")
+            for password in passwords
         ]
     )
     def test_other_config_problem_does_not_stop_the_run(self, _, config, password):
         cp = self.run_asadm(config, "-e", "info network", password=password)
         self.assert_reached_the_cluster(cp, password)
+
+    def test_parse_error_stops_a_secret_before_any_request(self):
+        """The CA file sits in an include that does not parse, so fetching the
+        secret would send it to the agent in plaintext."""
+        include = self.write_file(
+            "include.conf",
+            '[secret-agent]\nsa-ca-file = "{}"\n[cluster\n'.format(self.ca_file),
+        )
+        cp = self.run_asadm(
+            '[include]\nfile = "{}"\n'.format(include), "-e", "info network"
+        )
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn(
+            "--password: cannot fetch secrets:aql:password: config file {} could not"
+            " be parsed".format(include),
+            cp.stderr,
+        )
 
     @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
     def test_empty_ca_file(self, key):

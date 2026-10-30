@@ -400,9 +400,10 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(PasswordSourceError) as cm:
             s.new_client()
 
-        self.assertIn(
-            "--{}: cannot load TLS CA file /nonexistent/ca.pem".format(option),
+        self.assertEqual(
             str(cm.exception),
+            '--{}: cannot load CA file "/nonexistent/ca.pem": No such file or'
+            " directory".format(option),
         )
 
     @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
@@ -412,10 +413,10 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(PasswordSourceError) as cm:
             s.new_client()
 
-        self.assertIn(
-            "{} in the [secret-agent_prod] config section: cannot load TLS CA file"
-            " /nonexistent/ca.pem".format(option),
+        self.assertEqual(
             str(cm.exception),
+            "{} in the [secret-agent_prod] config section: cannot load CA file"
+            ' "/nonexistent/ca.pem": No such file or directory'.format(option),
         )
         self.assertNotIn("--", str(cm.exception))
 
@@ -427,8 +428,28 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(PasswordSourceError) as cm:
             s.new_client()
 
-        self.assertIn(
-            "--sa-ca-file: cannot load TLS CA file /nonexistent.pem", str(cm.exception)
+        self.assertEqual(
+            str(cm.exception),
+            '--sa-ca-file: cannot load CA file "/nonexistent.pem": No such file or'
+            " directory",
+        )
+
+    def test_empty_legacy_cafile_next_to_ca_file_is_not_checked(self):
+        """On the command line only the CA option that wins is checked, as in
+        asbackup, aql and the asinfo wrapper."""
+        s = settings(cli_values={"sa-ca-file": "/ca.pem", "sa-cafile": ""})
+
+        self.assertEqual((s.cafile, s.cafile_option), ("/ca.pem", "--sa-ca-file"))
+
+    def test_empty_legacy_cafile_next_to_ca_file_in_a_config_section(self):
+        """Within one config section both keys are checked, as in the C tools."""
+        with self.assertRaises(PasswordSourceError) as cm:
+            settings({"sa-ca-file": "/ca.pem", "sa-cafile": ""})
+
+        self.assertEqual(
+            str(cm.exception),
+            'invalid value "" for sa-cafile in the [secret-agent] config section,'
+            " expected a path to a CA certificate file",
         )
 
 

@@ -287,7 +287,7 @@ class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
         os.mkdir(directory)
         self.ca_file = pki.generate(directory).ca_file
 
-    def run_asinfo(self, config):
+    def run_asinfo(self, config, *argv, password="secrets:aql:pw"):
         path = os.path.join(self.tmpdir.name, "astools.conf")
 
         with open(path, "w") as f:
@@ -305,8 +305,8 @@ class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
         return subprocess.run(
             [sys.executable, ASINFO, "--only-config-file", path]
             + ["-h", self.cluster.host, "-p", str(self.cluster.port)]
-            + ["-U", "admin", "-P", "secrets:aql:pw"]
-            + ["--sa-address", self.agent.address, "-v", "build"],
+            + ["-U", "admin", "-P", password]
+            + ["--sa-address", self.agent.address, *argv, "-v", "build"],
             capture_output=True,
             text=True,
             env=env,
@@ -319,6 +319,14 @@ class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
         self.assertEqual(self.requests, [], output)
         self.assertEqual(self.cluster_connections, [], output)
         self.assertNotIn(SECRET, output)
+
+    def test_bad_command_line_value_without_secrets(self):
+        cp = self.run_asinfo("", "--sa-port", "0", password="admin")
+        self.assert_stopped_before_any_request(cp)
+        self.assertIn(
+            '--sa-port: invalid value "0", expected an integer from 1 to 65535',
+            cp.stdout + cp.stderr,
+        )
 
     def test_unknown_key_with_ca_file(self):
         cp = self.run_asinfo('[secret-agent]\nsa-ca-file = "{ca}"\nsa-time-out = 500\n')

@@ -453,6 +453,11 @@ class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
 class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
     """Test ADMIN_HOME directory creation behavior"""
 
+    def setUp(self):
+        resolve = patch("asadm.conf.resolve_password_sources")
+        resolve.start()
+        self.addCleanup(resolve.stop)
+
     def test_admin_home_creation_success_in_interactive_mode(self):
         """Test that ADMIN_HOME is created successfully in interactive mode"""
         with patch("sys.argv", ["asadm.py"]):
@@ -470,6 +475,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.user = None
                 mock_args.password = None
                 mock_args.tls_enable = False
+                mock_args.secret_agent_config_errors = []
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -509,6 +515,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.user = None
                 mock_args.password = None
                 mock_args.tls_enable = False
+                mock_args.secret_agent_config_errors = []
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -561,6 +568,7 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.user = None
                 mock_args.password = None
                 mock_args.tls_enable = False
+                mock_args.secret_agent_config_errors = []
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -967,6 +975,42 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     shell_cls.call_args.kwargs["password"], "env:ASADM_TEST_UNSET"
                 )
+
+    async def test_agent_config_errors_stop_runs_that_connect(self):
+        errors = [
+            'Config file error: /a.conf invalid value "0" for sa-port in the'
+            " [secret-agent] config section, expected an integer from 1 to 65535",
+            "Config file error: /b.conf unknown key sa-time-out in the"
+            " [secret-agent] config section",
+        ]
+
+        for mode in ({}, {"asinfo_mode": True}):
+            with self.subTest(mode=mode):
+                args = self._make_args(secret_agent_config_errors=errors, **mode)
+
+                code, logger, tls, shell_cls, asinfo = await self._run_main(args)
+
+                self.assertEqual(code, 1)
+                self.assertEqual(
+                    [c.args[0] for c in logger.critical.call_args_list], errors
+                )
+                tls.assert_not_called()
+                shell_cls.assert_not_called()
+                asinfo.assert_not_called()
+
+    async def test_agent_config_errors_do_not_stop_analyzer_modes(self):
+        """Master ignored [secret-agent], and these modes never use the agent."""
+        for mode in ("collectinfo", "log_analyzer"):
+            with self.subTest(mode=mode):
+                args = self._make_args(
+                    secret_agent_config_errors=["Config file error: /a.conf x"],
+                    **{mode: True},
+                )
+
+                _, logger, _, shell_cls, _ = await self._run_main(args)
+
+                logger.critical.assert_not_called()
+                shell_cls.assert_called_once()
 
     async def test_config_file_label_in_error(self):
         args = self._make_args(
