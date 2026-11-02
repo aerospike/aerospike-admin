@@ -14,12 +14,14 @@
 
 import asyncio
 import copy
+import gc
 import json
 import logging
 import logging.handlers
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -934,14 +936,7 @@ class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[-1], mock.call(1))
 
 
-class RunCollectinfoArchivesPartialBundleTest(unittest.IsolatedAsyncioTestCase):
-    """A failed collection must still hand the operator whatever was preserved.
-
-    The json dump writes every collected snapshot and the aborted meta in its
-    finally, but evidence left only in the working directory reaches nobody:
-    the run has to continue to the archive step, skipping only the derived
-    outputs that would be built from data known to be incomplete."""
-
+class RunCollectinfoTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.controller = CollectinfoController()
         self.controller.nodes = "all"
@@ -1005,6 +1000,15 @@ class RunCollectinfoArchivesPartialBundleTest(unittest.IsolatedAsyncioTestCase):
             wait_time=0,
             ignore_errors=ignore_errors,
         )
+
+
+class RunCollectinfoArchivesPartialBundleTest(RunCollectinfoTestCase):
+    """A failed collection must still hand the operator whatever was preserved.
+
+    The json dump writes every collected snapshot and the aborted meta in its
+    finally, but evidence left only in the working directory reaches nobody:
+    the run has to continue to the archive step, skipping only the derived
+    outputs that would be built from data known to be incomplete."""
 
     async def test_a_failed_later_snapshot_still_archives_the_partial_bundle(self):
         patch.object(
@@ -1151,6 +1155,209 @@ class RunCollectinfoArchivesPartialBundleTest(unittest.IsolatedAsyncioTestCase):
         self.root_controller_mock.assert_called_once()
         self.ascollectinfo_mock.assert_awaited_once()
         self.archive_mock.assert_called_once_with(self.work_dir)
+
+
+class RunCollectinfoInterruptTest(RunCollectinfoTestCase):
+    """A Ctrl-C cancels the running collectinfo task. It is not a failure: no
+    --ignore-errors advice, nothing more collected, the partial bundle archived,
+    and the cancel passed on so `asadm -e` exits 130."""
+
+    async def _start(self, ignore_errors=False):
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(return_value=({"cluster": {"A": 1}}, {"no_data_nodes": []})),
+        ).start()
+        self.warning_mock = patch(
+            "lib.live_cluster.collectinfo_controller.logger.warning"
+        ).start()
+        self.error_mock = patch(
+            "lib.live_cluster.collectinfo_controller.logger.error"
+        ).start()
+        self.archived_after_sysinfo_stopped = []
+        self.archive_mock.side_effect = lambda path: (
+            self.archived_after_sysinfo_stopped.append(self.sysinfo_stopped.is_set())
+            or (path + ".tgz", True)
+        )
+        self.sysinfo_stopped = threading.Event()
+
+        return asyncio.create_task(self._run(ignore_errors=ignore_errors))
+
+    def _patch_sysinfo(self, collect_sys_info):
+        self.controller.cluster.is_localhost_a_node.return_value = True
+        self.conf_mock = patch.object(
+            CollectinfoController, "_dump_collectinfo_aerospike_conf", AsyncMock()
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
+            collect_sys_info,
+        ).start()
+
+    async def _interrupt_during_sysinfo(self, ignore_errors=False):
+        started = threading.Event()
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def collect_sys_info(port, file_header, outfile, stop=None):
+            started.set()
+
+            while not release.is_set():
+                if stop is not None and stop.wait(0.05):
+                    self.sysinfo_stopped.set()
+                    break
+
+            return []
+
+        self._patch_sysinfo(collect_sys_info)
+        task = await self._start(ignore_errors)
+        self.assertTrue(await asyncio.to_thread(started.wait, 5))
+        task.cancel()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+
+    def _logged(self, logger_mock):
+        return " ".join(str(c.args[0]) % c.args[1:] for c in logger_mock.call_args_list)
+
+    def assert_interrupted_bundle_archived(self):
+        self.archive_mock.assert_called_once_with(self.work_dir)
+        self.teardown_mock.assert_called_once()
+        self.assertNotIn("--ignore-errors", self._logged(self.error_mock))
+        self.assertNotIn("derived output", self._logged(self.warning_mock))
+        self.assertIn("interrupted", self._logged(self.warning_mock))
+
+    async def test_an_interrupt_during_sysinfo_stops_it_before_archiving(self):
+        await self._interrupt_during_sysinfo()
+
+        self.assertListEqual(self.archived_after_sysinfo_stopped, [True])
+        self.conf_mock.assert_not_awaited()
+        self.assertIn("sysinfo.log", self._logged(self.warning_mock))
+        self.assert_interrupted_bundle_archived()
+
+    async def test_an_interrupt_during_sysinfo_with_ignore_errors(self):
+        await self._interrupt_during_sysinfo(ignore_errors=True)
+
+        self.assertListEqual(self.archived_after_sysinfo_stopped, [True])
+        self.conf_mock.assert_not_awaited()
+        self.assert_interrupted_bundle_archived()
+
+    async def test_a_second_interrupt_still_waits_for_sysinfo_to_stop(self):
+        """Each Ctrl-C cancels the command again."""
+        started = threading.Event()
+        stopping = threading.Event()
+        finish = threading.Event()
+        self.addCleanup(finish.set)
+
+        def collect_sys_info(port, file_header, outfile, stop=None):
+            started.set()
+            stop.wait(5)
+            stopping.set()
+            finish.wait(5)
+            self.sysinfo_stopped.set()
+            return []
+
+        self._patch_sysinfo(collect_sys_info)
+        task = await self._start()
+        self.assertTrue(await asyncio.to_thread(started.wait, 5))
+        task.cancel()
+        self.assertTrue(await asyncio.to_thread(stopping.wait, 5))
+        task.cancel()
+        await asyncio.wait([task], timeout=0.2)
+        finish.set()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+
+        self.assertListEqual(self.archived_after_sysinfo_stopped, [True])
+        self.assertIn("sysinfo.log", self._logged(self.warning_mock))
+        self.assert_interrupted_bundle_archived()
+
+    async def test_an_interrupt_during_summary(self):
+        started = asyncio.Event()
+
+        async def summary(*args):
+            started.set()
+            await asyncio.Event().wait()
+
+        CollectinfoController._dump_collectinfo_summary.side_effect = summary
+        task = await self._start()
+        await asyncio.wait_for(started.wait(), 5)
+        task.cancel()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+        CollectinfoController._dump_collectinfo_health.assert_not_awaited()
+        self.assert_interrupted_bundle_archived()
+
+
+class DumpCollectinfoSysinfoTest(unittest.IsolatedAsyncioTestCase):
+    async def test_collect_sys_info_runs_off_the_event_loop_thread(self):
+        """Its shell commands take tens of seconds on a node and would stall the loop."""
+        controller = CollectinfoController()
+        controller.cluster = MagicMock()
+        controller.cluster.get_seed_nodes.return_value = [("10.0.0.1", 3100, None)]
+        calls = []
+
+        def collect_sys_info(**kwargs):
+            calls.append((threading.get_ident(), kwargs))
+            return ["iostat"]
+
+        with patch(
+            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
+            collect_sys_info,
+        ):
+            await controller._dump_collectinfo_sysinfo("prefix_", "header")
+
+        self.assertEqual(
+            calls,
+            [
+                (
+                    mock.ANY,
+                    {
+                        "port": 3100,
+                        "file_header": "header",
+                        "outfile": "prefix_sysinfo.log",
+                        "stop": mock.ANY,
+                    },
+                )
+            ],
+        )
+        self.assertNotEqual(calls[0][0], threading.get_ident())
+        self.assertEqual(controller.failed_cmds, ["iostat"])
+
+    async def test_an_error_while_stopping_is_not_left_unretrieved(self):
+        """asyncio would print it as a raw traceback once the command has ended."""
+        controller = CollectinfoController()
+        controller.cluster = MagicMock()
+        started = threading.Event()
+        unhandled = []
+        asyncio.get_running_loop().set_exception_handler(
+            lambda loop, context: unhandled.append(context["message"])
+        )
+
+        def collect_sys_info(stop, **kwargs):
+            started.set()
+            stop.wait(5)
+            raise OSError("No space left on device")
+
+        with patch(
+            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
+            collect_sys_info,
+        ):
+            task = asyncio.create_task(
+                controller._dump_collectinfo_sysinfo("prefix_", "header")
+            )
+            self.assertTrue(await asyncio.to_thread(started.wait, 5))
+            task.cancel()
+
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 5)
+
+        del task
+        gc.collect()
+
+        self.assertListEqual(unhandled, [])
 
 
 class ClassifyExceptionTest(unittest.TestCase):
