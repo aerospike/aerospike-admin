@@ -326,8 +326,25 @@ class SecretAgentErrorTests(AgentTestCase):
         cp = util.run_asadm(f"--only-config-file {path} -e 'info network'")
         self.assert_fails_before_connecting(
             cp,
-            "password in config file: cannot fetch secrets:asadm:password: config"
-            f" file {include} could not be loaded",
+            "password in config file: cannot fetch secrets:asadm:password:"
+            f" {include} could not be loaded (see above); fix or remove it to"
+            " fetch secrets",
+        )
+
+    def test_bad_include_value_stops_before_fetching(self):
+        """The CA file sits in a file the [include] value fails to name, so
+        fetching the secret would send it to the plaintext agent."""
+        include = self.write_file(
+            "include.conf", f'[secret-agent]\nsa-ca-file = "{self.tls_agent.ca_file}"\n'
+        )
+        path = self.write_file("astools.conf", f'[include]\nfile = ["{include}"]\n')
+        cp = util.run_asadm(
+            f"--only-config-file {path} -h 127.0.0.1:1 -U admin "
+            f"-P secrets:asadm:password --sa-address {self.agent.address} "
+            "-e 'info network'"
+        )
+        self.assert_fails_before_connecting(
+            cp, f"--password: cannot fetch secrets:asadm:password: {path} could not"
         )
 
 

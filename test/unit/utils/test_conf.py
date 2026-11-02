@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -35,6 +36,15 @@ ASADM = os.path.join(
 PW = "s3cr3t-pw"
 PW_B64 = base64.b64encode(PW.encode()).decode()
 UNSET = "ASADM_TEST_UNSET_PASSWORD_VAR"
+
+
+def refusal(option, path):
+    return (
+        "{}: cannot fetch secrets:aql:password: {} could not be loaded (see above);"
+        " fix or remove it to fetch secrets".format(option, path)
+    )
+
+
 HELP_INDENT = "\n" + " " * 22
 KEYFILE_PASSWORD_HELP = (
     " --tls-keyfile-password=password"
@@ -1002,11 +1012,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         ) as cm:
             self.load_config_file(path, *argv, "-P", "secrets:aql:password")
 
-        self.assertEqual(
-            str(cm.exception),
-            "--password: cannot fetch secrets:aql:password: config file {} could"
-            " not be loaded".format(unparsed),
-        )
+        self.assertEqual(str(cm.exception), refusal("--password", unparsed))
         self.assertEqual(requests, [])
 
     # toml raises IndexError, not a ValueError, for the inline table typo.
@@ -1112,12 +1118,160 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         ) as cm:
             self.load_config_file(path)
 
-        self.assertEqual(
-            str(cm.exception),
-            "password in config file: cannot fetch secrets:aql:password: config"
-            " file {} could not be loaded".format(include),
-        )
+        self.assertEqual(str(cm.exception), refusal("password in config file", include))
         self.assertEqual(requests, [])
+
+    def test_parse_error_refuses_a_keyfile_password_secret(self):
+        path = self.write_file("astools.conf", "[cluster\n")
+        requests = self.record_requests()
+
+        with patch("lib.utils.conf.logger"), self.assertRaises(
+            PasswordSourceError
+        ) as cm:
+            self.load_config_file(
+                path,
+                "--tls-enable",
+                "--tls-keyfile",
+                "/k.pem",
+                "--tls-keyfile-password",
+                "secrets:aql:password",
+                "--sa-address",
+                self.agent.address,
+            )
+
+        self.assertEqual(str(cm.exception), refusal("--tls-keyfile-password", path))
+        self.assertEqual(requests, [])
+
+    def write_agent_include(self):
+        return self.write_file(
+            "include.conf", '[secret-agent]\nsa-ca-file = "/ca.pem"\n'
+        )
+
+    @parameterized.expand(
+        [
+            ("file_list", '[include]\nfile = ["{}"]\n'),
+            ("wrong_case_key", '[include]\nFile = "{}"\n'),
+            ("directory_not_a_path", "[include]\ndirectory = 5\n"),
+            ("not_a_table", 'include = "{}"\n'),
+        ]
+    )
+    def test_bad_include_value_refuses_secrets(self, _, include):
+        path = self.write_file(
+            "astools.conf", include.format(self.write_agent_include())
+        )
+        self.assert_parse_error_refuses_secrets(
+            path, path, "critical", "Config file parse error: " + path
+        )
+
+    def test_bad_include_value_in_an_included_file_refuses_secrets(self):
+        middle = self.write_file(
+            "middle.conf",
+            '[include]\nfile = ["{}"]\n'.format(self.write_agent_include()),
+        )
+        path = self.write_file(
+            "astools.conf", '[include]\nfile = "{}"\n'.format(middle)
+        )
+        self.assert_parse_error_refuses_secrets(
+            path, middle, "error", "Config file parse error: " + middle
+        )
+
+    def test_nesting_too_deep_to_parse_refuses_secrets(self):
+        include = self.write_file(
+            "include.conf",
+            '[secret-agent]\nsa-ca-file = "/ca.pem"\n'
+            + "x = "
+            + "[" * 1000
+            + "]" * 1000
+            + "\n",
+        )
+        path = self.write_file(
+            "astools.conf", '[include]\nfile = "{}"\n'.format(include)
+        )
+        self.assert_parse_error_refuses_secrets(
+            path, include, "error", "Config file parse error: " + include
+        )
+
+    @unittest.skipIf(
+        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
+    )
+    def test_include_directory_without_search_permission_refuses_secrets(self):
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+        entry = os.path.join(directory, "agent.conf")
+
+        with open(entry, "w") as f:
+            f.write('[secret-agent]\nsa-ca-file = "/ca.pem"\n')
+
+        os.chmod(directory, 0o400)
+        self.addCleanup(os.chmod, directory, 0o700)
+        path = self.write_file(
+            "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        self.assert_parse_error_refuses_secrets(
+            path,
+            entry,
+            "warning",
+            "'Config file read error : %s %s', '{}', 'Permission denied'".format(entry),
+        )
+
+    @unittest.skipIf(
+        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
+    )
+    def test_named_file_without_search_permission_refuses_secrets(self):
+        directory = os.path.join(self.tmpdir.name, "conf")
+        os.mkdir(directory)
+        path = os.path.join(directory, "astools.conf")
+
+        with open(path, "w") as f:
+            f.write('[secret-agent]\nsa-ca-file = "/ca.pem"\n')
+
+        os.chmod(directory, 0o400)
+        self.addCleanup(os.chmod, directory, 0o700)
+        self.assert_parse_error_refuses_secrets(
+            path,
+            path,
+            "warning",
+            "'Config file read error : %s %s', '{}', 'Permission denied'".format(path),
+        )
+
+    @parameterized.expand([("fifo", False), ("link_to_fifo", True)])
+    def test_fifo_in_include_directory_is_skipped(self, _, link):
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+        fifo = os.path.join(self.tmpdir.name if link else directory, "pipe.conf")
+        os.mkfifo(fifo)
+
+        if link:
+            os.symlink(fifo, os.path.join(directory, "link.conf"))
+
+        path = self.write_file(
+            "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        loaded = []
+        loader = threading.Thread(
+            target=lambda: loaded.append(
+                self.load_config_file(
+                    path,
+                    "-U",
+                    "admin",
+                    "-P",
+                    "secrets:aql:password",
+                    "--sa-address",
+                    self.agent.address,
+                )
+            ),
+            daemon=True,
+        )
+        loader.start()
+        loader.join(5)
+        blocked = loader.is_alive()
+
+        if blocked:
+            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+            loader.join(5)
+
+        self.assertFalse(blocked, "the FIFO was opened")
+        self.assertEqual(loaded[0].password, PW)
 
     def test_empty_legacy_cafile_next_to_ca_file_is_not_checked(self):
         """On the command line only the CA option that wins is checked, as in
@@ -1452,22 +1606,22 @@ class BadSecretAgentSectionTest(unittest.TestCase):
         cp = self.run_asadm(config, "-e", "info network", password=password)
         self.assert_reached_the_cluster(cp, password)
 
-    def test_parse_error_stops_a_secret_before_any_request(self):
+    @parameterized.expand(
+        [
+            ("execute", "-e", "info network"),
+            ("asinfo_mode", "--asinfo-mode", "-e", "build"),
+        ]
+    )
+    def test_parse_error_stops_a_secret_before_any_request(self, _, *argv):
         """The CA file sits in an include that does not parse, so fetching the
         secret would send it to the agent in plaintext."""
         include = self.write_file(
             "include.conf",
             '[secret-agent]\nsa-ca-file = "{}"\n[cluster\n'.format(self.ca_file),
         )
-        cp = self.run_asadm(
-            '[include]\nfile = "{}"\n'.format(include), "-e", "info network"
-        )
+        cp = self.run_asadm('[include]\nfile = "{}"\n'.format(include), *argv)
         self.assert_stopped_before_any_request(cp)
-        self.assertIn(
-            "--password: cannot fetch secrets:aql:password: config file {} could not"
-            " be loaded".format(include),
-            cp.stderr,
-        )
+        self.assertIn(refusal("--password", include), cp.stderr)
 
     @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
     def test_empty_ca_file(self, key):

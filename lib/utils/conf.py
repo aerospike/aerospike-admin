@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import argparse
+import stat
 import sys
 import toml
 import copy
@@ -169,11 +170,22 @@ def _parse_error(fname, e):
     return "Config file parse error: " + str(fname) + " " + str(e).split("\n")[0]
 
 
-def _loadfile(fname, agent, instance):
+def _missing(path):
+    try:
+        os.stat(path)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        pass
+
+    return False
+
+
+def _loadfile(fname, agent, instance, including=()):
     """Each file's selected [secret-agent] section is checked on its own and
-    kept when the rest of the file fails to load. A file that cannot be parsed,
-    or an include directory that cannot be read, is recorded in agent.unparsed,
-    so no secret is fetched without its agent settings."""
+    kept when the rest of the file fails to load. A file that cannot be parsed
+    or followed, or that exists but cannot be looked up, is recorded in
+    agent.unparsed, so no secret is fetched without its agent settings."""
     conf_dict = {}
 
     def unreadable_directory(e):
@@ -183,50 +195,72 @@ def _loadfile(fname, agent, instance):
             )
             agent.unparsed.append(e.filename)
 
-    if os.path.exists(fname):
-        # file exists
-        try:
-            with open(fname) as f:
-                conf_dict = toml.loads(f.read())
-        except OSError as e:
-            logger.warning("Config file read error : %s %s", fname, e.strerror or e)
-            return conf_dict
-        except RecursionError:
-            # A file that includes itself; it parsed, so its agent section is kept.
-            raise
-        except Exception:
-            agent.unparsed.append(fname)
-            raise
+    try:
+        os.stat(fname)
+    except FileNotFoundError:
+        return conf_dict
+    except OSError as e:
+        logger.warning("Config file read error : %s %s", fname, e.strerror or e)
+        agent.unparsed.append(fname)
+        return conf_dict
+
+    path = os.path.realpath(fname)
+
+    if path in including:
+        raise ValueError("includes itself")
+
+    try:
+        with open(fname) as f:
+            conf_dict = toml.loads(f.read())
 
         _take_agent_section(conf_dict, fname, instance, agent)
+        include_files = _include_paths(conf_dict, unreadable_directory)
+    except OSError as e:
+        logger.warning("Config file read error : %s %s", fname, e.strerror or e)
+        return {}
+    except Exception:
+        agent.unparsed.append(fname)
+        raise
 
-        include_files = []
-        if "include" in conf_dict.keys():
-            if "file" in conf_dict["include"].keys():
-                f = conf_dict["include"]["file"]
-                include_files.append(os.path.expanduser(f))
+    for f in include_files:
+        try:
+            _merge(conf_dict, _loadfile(f, agent, instance, including + (path,)))
+        except Exception as e:
+            logger.error(_parse_error(f, e))
 
-            if "directory" in conf_dict["include"].keys():
-                d = conf_dict["include"]["directory"]
-                include_files = include_files + sorted(
-                    [
-                        os.path.join(dp, f)
-                        for dp, dn, fn in os.walk(
-                            os.path.expanduser(d), onerror=unreadable_directory
-                        )
-                        for f in fn
-                    ]
-                )
-
-        for f in include_files:
-            try:
-                _merge(conf_dict, _loadfile(f, agent, instance))
-            except Exception as e:
-                logger.error(_parse_error(f, e))
-
-        validate(conf_dict, json.loads(_confspec))
+    validate(conf_dict, json.loads(_confspec))
 
     return conf_dict
+
+
+def _include_paths(conf_dict, on_directory_error):
+    """The files [include] names. A directory entry that is not a regular file
+    is skipped, as in the C tools."""
+    include = conf_dict.get("include", {})
+    validate(include, json.loads(_confspec)["properties"]["include"])
+    paths = []
+
+    if "file" in include:
+        paths.append(os.path.expanduser(include["file"]))
+
+    if "directory" in include:
+        paths += sorted(
+            os.path.join(dp, f)
+            for dp, _, fn in os.walk(
+                os.path.expanduser(include["directory"]), onerror=on_directory_error
+            )
+            for f in fn
+            if _regular_or_unreadable(os.path.join(dp, f))
+        )
+
+    return paths
+
+
+def _regular_or_unreadable(path):
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except OSError:
+        return True
 
 
 def _take_agent_section(conf_dict, fname, instance, agent):
@@ -404,7 +438,7 @@ def loadconfig(cli_args):
             # Load only config file.
             f = cli_args.only_config_file
 
-            if os.path.exists(f):
+            if not _missing(f):
                 try:
                     _merge(conf_dict, _loadfile(f, agent, cli_args.instance))
                     conffiles.append(f)
@@ -423,7 +457,7 @@ def loadconfig(cli_args):
             # -> user specified conf file
             conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
             if cli_args.config_file:
-                if os.path.exists(cli_args.config_file):
+                if not _missing(cli_args.config_file):
                     conffiles.append(cli_args.config_file)
                 else:
                     logger.warning(

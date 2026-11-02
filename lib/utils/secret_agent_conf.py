@@ -56,9 +56,8 @@ def fetcher(args: Any) -> Callable[[str], str]:
 
         if unparsed:
             raise InvalidConfigError(
-                "cannot fetch {}: config file {} could not be loaded".format(
-                    ref, unparsed[0]
-                )
+                "cannot fetch {}: {} could not be loaded (see above); fix or"
+                " remove it to fetch secrets".format(ref, unparsed[0])
             )
 
         if client is None:
