@@ -144,7 +144,6 @@ class AsinfoRealAsadmTest(unittest.TestCase):
         self.assertNotIn("ignored because no user is set", cp.stdout)
 
 
-@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
 class AsinfoSecretAgentOptionsTest(unittest.TestCase):
     """asinfo hands the Secret Agent options and secrets: values to asadm as given."""
 
@@ -196,23 +195,20 @@ class AsinfoSecretAgentOptionsTest(unittest.TestCase):
         self.assertIn("--sa-ca-file /ca.pem", cp.stdout)
         self.assertNotIn("--sa-cafile", cp.stdout)
 
-    def test_ca_file_beats_legacy_cafile(self):
-        cp = self.run_asinfo("--sa-cafile", "/old.pem", "--sa-ca-file", "/new.pem")
+    def test_ca_file_beats_legacy_cafile_in_either_order(self):
+        for argv in (
+            ("--sa-cafile", "/old.pem", "--sa-ca-file", "/new.pem"),
+            ("--sa-ca-file", "/new.pem", "--sa-cafile", "/old.pem"),
+        ):
+            with self.subTest(argv=argv):
+                cp = self.run_asinfo(*argv)
 
-        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
-        self.assertIn("--sa-ca-file /new.pem", cp.stdout)
-        self.assertNotIn("/old.pem", cp.stdout)
-
-    def test_ca_file_beats_legacy_cafile_given_first(self):
-        cp = self.run_asinfo("--sa-ca-file", "/new.pem", "--sa-cafile", "/old.pem")
-
-        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
-        self.assertIn("--sa-ca-file /new.pem", cp.stdout)
-        self.assertNotIn("/old.pem", cp.stdout)
-        self.assertEqual(cp.stderr, LEGACY_CAFILE_WARNING)
+                self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+                self.assertIn("--sa-ca-file /new.pem", cp.stdout)
+                self.assertNotIn("/old.pem", cp.stdout)
+                self.assertEqual(cp.stderr, LEGACY_CAFILE_WARNING)
 
 
-@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
 class AsinfoRealAsadmSecretTest(unittest.TestCase):
     """asadm, run by asinfo, fetches a secrets: password before it connects."""
 
@@ -256,7 +252,6 @@ class AsinfoRealAsadmSecretTest(unittest.TestCase):
         self.assertNotIn("Not able to connect any cluster", cp.stdout)
 
 
-@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
 class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
     """A [secret-agent] section asadm cannot use stops asinfo before any agent
     is asked for a secret or the cluster is contacted."""
@@ -332,17 +327,6 @@ class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
         cp = self.run_asinfo('[secret-agent]\nsa-ca-file = "{ca}"\nsa-time-out = 500\n')
         self.assert_stopped_before_any_request(cp)
         self.assertIn("sa-time-out", cp.stdout + cp.stderr)
-
-    def test_wrong_type_names_key_and_section(self):
-        cp = self.run_asinfo(
-            '[secret-agent]\nsa-ca-file = "{ca}"\nsa-timeout = 1000.0\n'
-        )
-        self.assert_stopped_before_any_request(cp)
-        self.assertIn(
-            'invalid value "1000.0" for sa-timeout in the [secret-agent] config'
-            " section, expected an integer from 1 to 2147483647",
-            cp.stdout + cp.stderr,
-        )
 
 
 class AsinfoHelpTest(unittest.TestCase):

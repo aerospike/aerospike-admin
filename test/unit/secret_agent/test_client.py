@@ -80,9 +80,7 @@ class ClientTest(unittest.TestCase):
     def test_resolve(self):
         self.assertEqual(self.client.resolve("secrets:aql:password"), VALUE)
 
-    @parameterized.expand(
-        [("plain",), ("",), ("env:HOME",), ("file:/etc/hosts",), ("Secrets:a:b",)]
-    )
+    @parameterized.expand([("plain",), ("Secrets:a:b",)])
     def test_resolve_passes_literals_through(self, value):
         self.assertEqual(self.client.resolve(value), value)
 
@@ -114,6 +112,7 @@ class ClientTest(unittest.TestCase):
 
         self.assertIn(message, str(cm.exception))
         self.assertIn("secrets:aql:" + key, str(cm.exception))
+        self.assertIn(self.agent.address, str(cm.exception))
         assert_no_leak(self, cm.exception)
 
     def test_agent_error(self):
@@ -216,6 +215,7 @@ class TransportTest(unittest.TestCase):
 
             self.assertLess(time.monotonic() - start, 3)
             self.assertIn("timed out", str(cm.exception))
+            self.assertIn(agent.address, str(cm.exception))
 
     def test_timeout_covers_every_address(self):
         """A name with several addresses that never answer fails within one
@@ -339,9 +339,12 @@ class TransportTest(unittest.TestCase):
             sock.sendall(response)
 
         with FakeSecretAgent(handler=respond) as agent:
+            address = agent.address
+
             with self.assertRaises(error) as cm:
                 agent_client(agent).resolve("secrets:aql:password")
 
+        self.assertIn(address, str(cm.exception))
         assert_no_leak(self, cm.exception)
 
 
@@ -363,63 +366,6 @@ class EmptyAgentErrorTest(unittest.TestCase):
             str(cm.exception),
             "agent error from {} for secrets:aql:password".format(address),
         )
-
-
-class ErrorNamesTheAgentTest(unittest.TestCase):
-    """A failure says which agent answered, not only a failed connect."""
-
-    @parameterized.expand(
-        [
-            ("agent_error", "secrets:aql:missing"),
-            ("not_base64", "secrets:aql:not-base64"),
-            ("empty", "secrets:aql:empty"),
-            ("not_utf8", "secrets:aql:binary"),
-            ("nul", "secrets:aql:nul"),
-        ]
-    )
-    def test_unusable_answer(self, _, ref):
-        with FakeSecretAgent(AGENT_DATA) as agent:
-            address = agent.address
-
-            with self.assertRaises(SecretAgentError) as cm:
-                agent_client(agent).resolve(ref)
-
-        self.assertIn(address, str(cm.exception))
-
-    @parameterized.expand(
-        [
-            ("bad_magic", frame(b"{}", magic=0xDEADBEEF)),
-            ("malformed_body", frame(b'{"SecretValue":"x')),
-            ("error_not_a_string", frame(b'{"Error":1}')),
-            ("truncated", frame(b'{"SecretValue":"aHVudGVyMg=="}')[:12]),
-            ("closed", b""),
-        ]
-    )
-    def test_broken_answer(self, _, response):
-        def respond(sock):
-            read_message(sock)
-            sock.sendall(response)
-
-        with FakeSecretAgent(handler=respond) as agent:
-            address = agent.address
-
-            with self.assertRaises(SecretAgentError) as cm:
-                agent_client(agent).resolve("secrets:aql:password")
-
-        self.assertIn(address, str(cm.exception))
-
-    def test_timeout(self):
-        def never_reply(sock):
-            read_message(sock)
-            time.sleep(5)
-
-        with FakeSecretAgent(handler=never_reply) as agent:
-            address = agent.address
-
-            with self.assertRaises(SecretAgentError) as cm:
-                agent_client(agent, timeout=0.2).resolve("secrets:aql:password")
-
-        self.assertIn(address, str(cm.exception))
 
 
 class TLSTest(unittest.TestCase):

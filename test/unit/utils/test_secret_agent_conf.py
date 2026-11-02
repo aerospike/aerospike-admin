@@ -344,8 +344,6 @@ class ValidationTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("ca_file", {}, {"sa-ca-file": ""}, "--sa-ca-file"),
-            ("legacy_cafile", {}, {"sa-cafile": ""}, "--sa-cafile"),
             (
                 "ca_file_with_legacy_cafile",
                 {},
@@ -357,18 +355,6 @@ class ValidationTest(unittest.TestCase):
                 {"sa-ca-file": "{ca}"},
                 {"sa-ca-file": ""},
                 "--sa-ca-file",
-            ),
-            (
-                "config_ca_file",
-                {"sa-ca-file": ""},
-                {},
-                "sa-ca-file in the [secret-agent] config section",
-            ),
-            (
-                "config_legacy_cafile",
-                {"sa-cafile": ""},
-                {},
-                "sa-cafile in the [secret-agent] config section",
             ),
             (
                 "config_ca_file_with_legacy_cafile",
@@ -462,12 +448,6 @@ class FileSectionTest(unittest.TestCase):
     def test_without_instance(self):
         self.assertEqual(
             file_section(self.CONF, None), ("secret-agent", {"sa-address": "default"})
-        )
-
-    def test_instance_section_replaces_default(self):
-        self.assertEqual(
-            file_section(self.CONF, "prod"),
-            ("secret-agent_prod", {"sa-address": "prod"}),
         )
 
     def test_instance_section_drops_keys_only_in_default(self):

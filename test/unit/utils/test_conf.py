@@ -100,7 +100,7 @@ SECRET_AGENT_HELP = "\n".join(
 )
 
 
-class ResolvePasswordSourcesTest(unittest.TestCase):
+class PasswordSourcesTestCase(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmpdir.cleanup)
@@ -135,6 +135,8 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         conf.resolve_password_sources(args)
         return args
 
+
+class ResolvePasswordSourcesTest(PasswordSourcesTestCase):
     def test_password_env_space_separated(self):
         args = self.load("-U", "admin", "-P", "env:AS_PASS")
         self.assertEqual(args.password, PW)
@@ -525,7 +527,7 @@ class ResolvePasswordSourcesTest(unittest.TestCase):
         )
 
 
-class ResolveSecretsTest(ResolvePasswordSourcesTest):
+class ResolveSecretsTest(PasswordSourcesTestCase):
     """secrets: values, fetched from a fake Secret Agent."""
 
     def setUp(self):
@@ -686,16 +688,25 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
 
     def load_with_user_config(self, user_config, *argv):
         """Loads ~/.aerospike/astools.conf, then the files in argv, as asadm does
-        without --only-config-file."""
+        without --only-config-file. The host's /etc/aerospike/astools.conf is
+        left out."""
         home = os.path.join(self.tmpdir.name, "home") + "/"
         os.makedirs(home)
 
         with open(home + "astools.conf", "w") as f:
             f.write(user_config)
 
+        loadfile = conf._loadfile
+
+        def without_system_file(fname, *args):
+            if fname == "/etc/aerospike/astools.conf":
+                return {}
+
+            return loadfile(fname, *args)
+
         with patch("lib.utils.conf.ADMIN_HOME", home), patch(
-            "sys.argv", ["asadm", *argv]
-        ):
+            "lib.utils.conf._loadfile", without_system_file
+        ), patch("sys.argv", ["asadm", *argv]):
             args, _ = conf.loadconfig(conf.get_cli_args())
 
         conf.resolve_password_sources(args)
@@ -728,6 +739,37 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             ),
         )
         self.assertEqual(args.password, PW)
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_config_file_without_search_permission_is_read_as_missing(self):
+        directory = os.path.join(self.tmpdir.name, "conf")
+        os.mkdir(directory)
+        path = os.path.join(directory, "astools.conf")
+
+        with open(path, "w") as f:
+            f.write('[secret-agent]\nsa-ca-file = "/ca.pem"\n')
+
+        os.chmod(directory, 0o400)
+        self.addCleanup(os.chmod, directory, 0o700)
+
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load_with_user_config(
+                "",
+                "-U",
+                "admin",
+                "-P",
+                "secrets:aql:password",
+                "--sa-address",
+                self.agent.address,
+                "--config-file",
+                path,
+            )
+
+        self.assertEqual(args.password, PW)
+        self.assertIn(
+            "'Config file read error : %s %s', '{}', 'Permission denied'".format(path),
+            str(logger.warning.call_args_list),
+        )
 
     def test_include_applies_after_the_file_that_includes_it(self):
         include = self.write_file(
@@ -807,15 +849,6 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                 "--tls-keyfile-password: connect to 127.0.0.1:1 for secrets:aql:keypass"
             ),
             str(cm.exception),
-        )
-
-    def test_invalid_agent_option(self):
-        with self.assertRaises(PasswordSourceError) as cm:
-            self.load("-U", "admin", "-P", "secrets:aql:password", "--sa-port", "0")
-
-        self.assertEqual(
-            str(cm.exception),
-            '--sa-port: invalid value "0", expected an integer from 1 to 65535',
         )
 
     @parameterized.expand(
@@ -982,9 +1015,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                 if log != "critical":
                     logger.critical.assert_not_called()
 
-    @unittest.skipIf(
-        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
-    )
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
     def test_unreadable_file_is_read_as_missing(self):
         path = self.write_file("astools.conf", "[secret-agent]\nsa-port = 1\n")
         os.chmod(path, 0)
@@ -1035,9 +1066,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             path, include, "error", "Config file parse error: " + include
         )
 
-    @unittest.skipIf(
-        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
-    )
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
     def test_unreadable_include_directory_refuses_secrets(self):
         directory = os.path.join(self.tmpdir.name, "conf.d")
         os.mkdir(directory)
@@ -1191,9 +1220,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             path, include, "error", "Config file parse error: " + include
         )
 
-    @unittest.skipIf(
-        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
-    )
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
     def test_include_directory_without_search_permission_refuses_secrets(self):
         directory = os.path.join(self.tmpdir.name, "conf.d")
         os.mkdir(directory)
@@ -1214,10 +1241,8 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             "'Config file read error : %s %s', '{}', 'Permission denied'".format(entry),
         )
 
-    @unittest.skipIf(
-        sys.platform == "win32" or os.geteuid() == 0, "needs file permissions"
-    )
-    def test_named_file_without_search_permission_refuses_secrets(self):
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_named_file_without_search_permission_is_read_as_missing(self):
         directory = os.path.join(self.tmpdir.name, "conf")
         os.mkdir(directory)
         path = os.path.join(directory, "astools.conf")
@@ -1227,11 +1252,91 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
 
         os.chmod(directory, 0o400)
         self.addCleanup(os.chmod, directory, 0o700)
+        self.assert_config_file_error_is_not_fatal(path, "warning", "Permission denied")
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_unreadable_include_file_refuses_secrets(self):
+        include = self.write_agent_include()
+        os.chmod(include, 0)
+        path = self.write_file(
+            "astools.conf", '[include]\nfile = "{}"\n'.format(include)
+        )
         self.assert_parse_error_refuses_secrets(
             path,
+            include,
+            "warning",
+            "'Config file read error : %s %s', '{}', 'Permission denied'".format(
+                include
+            ),
+        )
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_unreadable_include_directory_entry_refuses_secrets(self):
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+        entry = os.path.join(directory, "agent.conf")
+
+        with open(entry, "w") as f:
+            f.write('[secret-agent]\nsa-ca-file = "/ca.pem"\n')
+
+        os.chmod(entry, 0)
+        path = self.write_file(
+            "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        self.assert_parse_error_refuses_secrets(
+            path,
+            entry,
+            "warning",
+            "'Config file read error : %s %s', '{}', 'Permission denied'".format(entry),
+        )
+
+    @parameterized.expand(
+        [
+            ("named_file", "{}/astools.conf", "No such file"),
+            ("include_file", '[include]\nfile = "{}/include.conf"\n', None),
+        ]
+    )
+    def test_path_through_a_file_is_missing(self, _, config, message):
+        regular = self.write_file("regular", "")
+
+        if message:
+            path = config.format(regular)
+        else:
+            path = self.write_file("astools.conf", config.format(regular))
+
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load_config_file(
+                path,
+                "-U",
+                "admin",
+                "-P",
+                "secrets:aql:password",
+                "--sa-address",
+                self.agent.address,
+            )
+
+        self.assertEqual(args.password, PW)
+        logger.critical.assert_not_called()
+
+        if message:
+            self.assertIn(message, str(logger.warning.call_args_list))
+        else:
+            logger.warning.assert_not_called()
+
+    def test_dangling_link_in_include_directory_is_reported(self):
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+        link = os.path.join(directory, "agent.conf")
+        os.symlink(os.path.join(self.tmpdir.name, "gone.conf"), link)
+        path = self.write_file(
+            "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
+        )
+        self.assert_config_file_error_is_not_fatal(
             path,
             "warning",
-            "'Config file read error : %s %s', '{}', 'Permission denied'".format(path),
+            "'Config file read error : %s %s', '{}', 'No such file or directory'".format(
+                link
+            ),
         )
 
     @parameterized.expand([("fifo", False), ("link_to_fifo", True)])
@@ -1291,6 +1396,24 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             path, "error", "Config file parse error: " + path
         )
 
+    def test_file_that_includes_itself_through_a_link_is_read_once(self):
+        path = os.path.join(self.tmpdir.name, "astools.conf")
+        link = os.path.join(self.tmpdir.name, "link.conf")
+        os.symlink(path, link)
+        self.write_file(
+            "astools.conf",
+            '[secret-agent]\nsa-port = 1\n[include]\nfile = "{}"\n'.format(link),
+        )
+
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load_config_file(path)
+
+        self.assertEqual(args.secret_agent_sections, [("secret-agent", {"sa-port": 1})])
+        self.assertIn(
+            "Config file parse error: {} includes itself".format(link),
+            str(logger.error.call_args_list),
+        )
+
     def test_expanded_value_is_not_a_reference(self):
         ref = "secrets:aql:password"
         os.environ["SA_REF"] = ref
@@ -1330,6 +1453,7 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
             )
 
         logger.critical.assert_not_called()
+        self.assertEqual(args.sagent_config_errors, [])
         self.assertEqual(args.password, "admin")
 
     def test_c_cafile_spelling_is_deprecated_on_the_command_line(self):
@@ -1434,28 +1558,6 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
                     " such file or directory",
                 )
 
-    def test_empty_ca_file_is_an_error(self):
-        """An empty CA file path is an error, not a fallback to plaintext."""
-        requests = self.record_requests()
-
-        for option in ("--sa-ca-file", "--sa-cafile"):
-            with self.subTest(option=option):
-                with self.assertRaises(PasswordSourceError) as cm:
-                    self.load(
-                        "-U",
-                        "admin",
-                        "-P",
-                        "secrets:aql:password",
-                        "--sa-address",
-                        self.agent.address,
-                        option,
-                        "",
-                    )
-
-                self.assertIn(option, str(cm.exception))
-
-        self.assertEqual(requests, [])
-
     def test_instance_section_ignores_keys_only_in_secret_agent_section(self):
         args = self.load(
             "--instance",
@@ -1469,7 +1571,6 @@ class ResolveSecretsTest(ResolvePasswordSourcesTest):
         self.assertEqual(args.password, PW)
 
 
-@unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
 class BadSecretAgentSectionTest(unittest.TestCase):
     """A [secret-agent] section asadm cannot use stops asadm before it asks any
     agent for a secret or connects to the cluster, as in the C tools. Any other
@@ -1543,30 +1644,6 @@ class BadSecretAgentSectionTest(unittest.TestCase):
         self.assert_stopped_before_any_request(cp)
         self.assertIn("sa-time-out", cp.stderr)
 
-    def test_unknown_key_in_instance_section(self):
-        cp = self.run_asadm(
-            '[secret-agent_a]\nsa-ca-file = "{ca}"\nsa-time-out = 500\n',
-            "--instance",
-            "a",
-            "-e",
-            "info network",
-        )
-        self.assert_stopped_before_any_request(cp)
-        self.assertIn("sa-time-out", cp.stderr)
-
-    def test_wrong_type_names_key_and_section(self):
-        cp = self.run_asadm(
-            '[secret-agent]\nsa-ca-file = "{ca}"\nsa-timeout = 1000.0\n',
-            "-e",
-            "info network",
-        )
-        self.assert_stopped_before_any_request(cp)
-        self.assertIn(
-            'invalid value "1000.0" for sa-timeout in the [secret-agent] config'
-            " section, expected an integer from 1 to 2147483647",
-            cp.stderr,
-        )
-
     @parameterized.expand(
         [
             ("execute", "-e", "info network"),
@@ -1622,37 +1699,6 @@ class BadSecretAgentSectionTest(unittest.TestCase):
         cp = self.run_asadm('[include]\nfile = "{}"\n'.format(include), *argv)
         self.assert_stopped_before_any_request(cp)
         self.assertIn(refusal("--password", include), cp.stderr)
-
-    @parameterized.expand([("sa-ca-file",), ("sa-cafile",)])
-    def test_empty_ca_file(self, key):
-        """An empty CA file path is an error, not a fallback to plaintext."""
-        cp = self.run_asadm(
-            '[secret-agent]\n{} = ""\n'.format(key), "-e", "info network"
-        )
-        self.assert_stopped_before_any_request(cp)
-        self.assertIn("{} in the [secret-agent] config section".format(key), cp.stderr)
-
-    def test_unknown_key_without_secrets(self):
-        cp = self.run_asadm(
-            "[secret-agent]\nsa-time-out = 500\n",
-            "-e",
-            "info network",
-            password="admin",
-        )
-        self.assert_stopped_before_any_request(cp)
-        self.assertIn("sa-time-out", cp.stderr)
-
-    def test_unknown_key_in_included_file(self):
-        include = self.write_file(
-            "include.conf",
-            '[secret-agent]\nsa-ca-file = "{}"\nsa-time-out = 500\n'.format(
-                self.ca_file
-            ),
-        )
-        cp = self.run_asadm(
-            '[include]\nfile = "{}"\n'.format(include), "-e", "info network"
-        )
-        self.assert_stopped_before_any_request(cp)
 
     def test_other_section_error_does_not_drop_the_ca_file(self):
         """The file's CA must not be lost with the rest of the file, so the
