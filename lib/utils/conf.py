@@ -173,7 +173,7 @@ def _parse_error(fname, e):
 def _missing(path):
     try:
         os.stat(path)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return True
     except OSError:
         pass
@@ -184,7 +184,7 @@ def _missing(path):
 def _loadfile(fname, agent, instance, including=()):
     """Each file's selected [secret-agent] section is checked on its own and
     kept when the rest of the file fails to load. A file that cannot be parsed
-    or followed, or that exists but cannot be looked up, is recorded in
+    or followed, or an include that cannot be read, is recorded in
     agent.unparsed, so no secret is fetched without its agent settings."""
     conf_dict = {}
 
@@ -195,13 +195,18 @@ def _loadfile(fname, agent, instance, including=()):
             )
             agent.unparsed.append(e.filename)
 
+    def unreadable(e):
+        logger.warning("Config file read error : %s %s", fname, e.strerror or e)
+
+        if including:
+            agent.unparsed.append(fname)
+
     try:
         os.stat(fname)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return conf_dict
     except OSError as e:
-        logger.warning("Config file read error : %s %s", fname, e.strerror or e)
-        agent.unparsed.append(fname)
+        unreadable(e)
         return conf_dict
 
     path = os.path.realpath(fname)
@@ -216,7 +221,7 @@ def _loadfile(fname, agent, instance, including=()):
         _take_agent_section(conf_dict, fname, instance, agent)
         include_files = _include_paths(conf_dict, unreadable_directory)
     except OSError as e:
-        logger.warning("Config file read error : %s %s", fname, e.strerror or e)
+        unreadable(e)
         return {}
     except Exception:
         agent.unparsed.append(fname)
@@ -250,15 +255,20 @@ def _include_paths(conf_dict, on_directory_error):
                 os.path.expanduser(include["directory"]), onerror=on_directory_error
             )
             for f in fn
-            if _regular_or_unreadable(os.path.join(dp, f))
+            if _loadable_entry(os.path.join(dp, f))
         )
 
     return paths
 
 
-def _regular_or_unreadable(path):
+def _loadable_entry(path):
+    """A regular file, or one that cannot be looked up, so that loading it
+    reports why. A dangling link is reported and skipped, as in the C tools."""
     try:
         return stat.S_ISREG(os.stat(path).st_mode)
+    except FileNotFoundError as e:
+        logger.warning("Config file read error : %s %s", path, e.strerror)
+        return False
     except OSError:
         return True
 
