@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
 import json
 import os
 import shutil
@@ -578,22 +579,31 @@ class SecretAgentClusterTests(AgentTestCase):
         self.assert_connected(cp)
 
     def test_fetched_value_is_the_password(self):
-        """The user's password is the reference itself, so only sending the
-        reference instead of the fetched value would log in."""
+        """The user's password is the reference itself, which logs in when given
+        as b64:, so only sending the reference instead of the fetched value would."""
         user = "sa-literal"
-        lib.CLIENT.admin_create_user(
-            user, "secrets:asadm:wrong", ["sys-admin", "read-write"]
-        )
+        reference = "secrets:asadm:wrong"
+        lib.CLIENT.admin_create_user(user, reference, ["sys-admin", "read-write"])
         self.addCleanup(lib.CLIENT.admin_drop_user, user)
 
+        self.assert_connected(
+            self.run_info(
+                f"--no-config-file -h {self.host} -U {user} "
+                f"-P b64:{base64.b64encode(reference.encode()).decode()}"
+            )
+        )
+
         cp = self.run_info(
-            f"--no-config-file -h {self.host} -U {user} -P secrets:asadm:wrong "
+            f"--no-config-file -h {self.host} -U {user} -P {reference} "
             f"--sa-address {self.agent.address}"
         )
+        output = cp.stdout + cp.stderr
         self.assertNotIn("--password:", cp.stderr)
-        self.assertIn("Not able to connect any cluster with", cp.stdout + cp.stderr)
+        self.assertIn("Not able to connect any cluster with", output)
         self.assertNotIn("Network Information", cp.stdout)
-        self.assertNotIn(WRONG_PW, cp.stdout + cp.stderr)
+
+        for value in (WRONG_PW, base64.b64encode(WRONG_PW.encode()).decode()):
+            self.assertNotIn(value, output)
 
     def test_tls_agent(self):
         cp = self.run_password(
