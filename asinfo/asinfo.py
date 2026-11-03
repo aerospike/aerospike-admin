@@ -31,7 +31,10 @@ __version__ = "$$__version__$$"
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
 
-NO_USER_WARNING = re.compile(r"WARNING: .+: ignored because no user is set")
+WARNINGS = re.compile(
+    r"WARNING: .+: ignored because no user is set"
+    r"|WARNING: Config file read error : .+"
+)
 
 
 def bytes_to_str(data):
@@ -50,7 +53,7 @@ def split_warnings(err):
     errors, warnings = [], []
 
     for line in err.splitlines():
-        (warnings if NO_USER_WARNING.fullmatch(line) else errors).append(line)
+        (warnings if WARNINGS.fullmatch(line) else errors).append(line)
 
     return "\n".join(errors), warnings
 
