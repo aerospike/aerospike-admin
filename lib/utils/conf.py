@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ import stat
 import sys
 import toml
 import copy
-from jsonschema import validate
+from jsonschema import ValidationError, validate
 from collections.abc import Mapping
 
 from lib.utils import password_source, secret_agent_conf
@@ -166,14 +167,50 @@ class _AgentFiles:
         self.unparsed = []
 
 
+_EXPECTED_TYPE = {
+    "string": "a string",
+    "integer": "an integer",
+    "boolean": "a boolean",
+    "object": "a table",
+}
+
+# No file can be at such a path. os.stat raises ValueError for a path with a NUL.
+_NO_SUCH_PATH = (FileNotFoundError, NotADirectoryError, ValueError)
+
+
 def _parse_error(fname, e):
-    return "Config file parse error: " + str(fname) + " " + str(e).split("\n")[0]
+    """Never quotes a value from the file, which may be a password."""
+    if isinstance(e, ValidationError):
+        reason = _schema_error(e)
+    elif isinstance(e, toml.TomlDecodeError):
+        reason = "invalid TOML at line {} column {}".format(e.lineno, e.colno)
+    else:
+        reason = str(e).split("\n")[0]
+
+    return "Config file parse error: " + str(fname) + " " + reason
+
+
+def _schema_error(e):
+    if e.validator == "additionalProperties":
+        return e.message
+
+    *section, key = [str(p) for p in e.path] or ["the file"]
+    where = key
+
+    if section:
+        where = "{} in the [{}] config section".format(key, ".".join(section))
+
+    if e.validator == "type" and str(e.validator_value) in _EXPECTED_TYPE:
+        expected = _EXPECTED_TYPE[str(e.validator_value)]
+        return "invalid value for {}, expected {}".format(where, expected)
+
+    return "invalid value for " + where
 
 
 def _missing(path):
     try:
         os.stat(path)
-    except (FileNotFoundError, NotADirectoryError):
+    except _NO_SUCH_PATH:
         return True
     except OSError:
         pass
@@ -185,11 +222,12 @@ def _loadfile(fname, agent, instance, including=()):
     """Each file's selected [secret-agent] section is checked on its own and
     kept when the rest of the file fails to load. A file that cannot be parsed
     or followed, or an include that cannot be read, is recorded in
-    agent.unparsed, so no secret is fetched without its agent settings."""
+    agent.unparsed, so no secret is fetched without its agent settings. Returns
+    None for a file that exists but cannot be read."""
     conf_dict = {}
 
     def unreadable_directory(e):
-        if not isinstance(e, FileNotFoundError):
+        if not isinstance(e, _NO_SUCH_PATH):
             logger.warning(
                 "Config file read error : %s %s", e.filename, e.strerror or e
             )
@@ -203,11 +241,11 @@ def _loadfile(fname, agent, instance, including=()):
 
     try:
         os.stat(fname)
-    except (FileNotFoundError, NotADirectoryError):
+    except _NO_SUCH_PATH:
         return conf_dict
     except OSError as e:
         unreadable(e)
-        return conf_dict
+        return None
 
     path = os.path.realpath(fname)
 
@@ -215,21 +253,22 @@ def _loadfile(fname, agent, instance, including=()):
         raise ValueError("includes itself")
 
     try:
-        with open(fname) as f:
+        with open(fname, encoding="utf-8") as f:
             conf_dict = toml.loads(f.read())
 
         _take_agent_section(conf_dict, fname, instance, agent)
         include_files = _include_paths(conf_dict, unreadable_directory)
     except OSError as e:
         unreadable(e)
-        return {}
+        return None
     except Exception:
         agent.unparsed.append(fname)
         raise
 
     for f in include_files:
         try:
-            _merge(conf_dict, _loadfile(f, agent, instance, including + (path,)))
+            included = _loadfile(f, agent, instance, including + (path,))
+            _merge(conf_dict, included or {})
         except Exception as e:
             logger.error(_parse_error(f, e))
 
@@ -242,7 +281,10 @@ def _include_paths(conf_dict, on_directory_error):
     """The files [include] names. A directory entry that is not a regular file
     is skipped, as in the C tools."""
     include = conf_dict.get("include", {})
-    validate(include, json.loads(_confspec)["properties"]["include"])
+    validate(
+        {"include": include},
+        {"properties": {"include": json.loads(_confspec)["properties"]["include"]}},
+    )
     paths = []
 
     if "file" in include:
@@ -263,14 +305,16 @@ def _include_paths(conf_dict, on_directory_error):
 
 def _loadable_entry(path):
     """A regular file, or one that cannot be looked up, so that loading it
-    reports why. A dangling link is reported and skipped, as in the C tools."""
+    reports why. A dangling link or a link loop is reported and skipped, as in
+    the C tools."""
     try:
         return stat.S_ISREG(os.stat(path).st_mode)
-    except FileNotFoundError as e:
+    except OSError as e:
+        if e.errno not in (errno.ENOENT, errno.ELOOP):
+            return True
+
         logger.warning("Config file read error : %s %s", path, e.strerror)
         return False
-    except OSError:
-        return True
 
 
 def _take_agent_section(conf_dict, fname, instance, agent):
@@ -450,8 +494,11 @@ def loadconfig(cli_args):
 
             if not _missing(f):
                 try:
-                    _merge(conf_dict, _loadfile(f, agent, cli_args.instance))
-                    conffiles.append(f)
+                    loaded = _loadfile(f, agent, cli_args.instance)
+
+                    if loaded is not None:
+                        _merge(conf_dict, loaded)
+                        conffiles.append(f)
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
                     logger.critical(_parse_error(f, e))
@@ -479,7 +526,7 @@ def loadconfig(cli_args):
 
             for f in conffiles:
                 try:
-                    _merge(conf_dict, _loadfile(f, agent, cli_args.instance))
+                    _merge(conf_dict, _loadfile(f, agent, cli_args.instance) or {})
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
                     logger.critical(_parse_error(f, e))

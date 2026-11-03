@@ -71,7 +71,7 @@ def fetcher(args: Any) -> Callable[[str], str]:
 def file_section(conf_dict: dict, instance: str | None) -> tuple[str, object]:
     """Return the section name and its values: [secret-agent_<instance>] when
     it exists, [secret-agent] otherwise."""
-    if instance:
+    if instance is not None:
         name = "{}_{}".format(SECTION, instance)
 
         if name in conf_dict:
@@ -87,7 +87,8 @@ def is_section(name: str) -> bool:
 def check_section(name: str, values: object) -> dict:
     """Return a config file section with its keys lowercased, so they match
     without regard to case. Raises PasswordSourceError when the section has a
-    key or value that cannot be used."""
+    key or value that cannot be used. Each key is checked in turn, as in the C
+    tools, so a later spelling of a key does not hide an invalid value."""
     if not isinstance(values, dict):
         raise PasswordSourceError(
             'invalid value "{}" for {}, expected a [{}] config section'.format(
@@ -95,17 +96,15 @@ def check_section(name: str, values: object) -> dict:
             )
         )
 
-    values = {k.lower(): v for k, v in values.items()}
-
-    for key in values:
-        if key not in OPTIONS:
+    for key, value in values.items():
+        if key.lower() not in OPTIONS:
             raise PasswordSourceError(
-                "unknown key {} in the [{}] config section".format(key, name)
+                "unknown key {} in the [{}] config section".format(key.lower(), name)
             )
 
-    SecretAgentSettings([(name, values)], {})
+        SecretAgentSettings([(name, {key.lower(): value})], {})
 
-    return values
+    return {k.lower(): v for k, v in values.items()}
 
 
 class SecretAgentSettings:
