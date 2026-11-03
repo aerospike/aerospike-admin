@@ -149,10 +149,10 @@ _install_python_via_asdf_and_fpm() {
     # bootstrap.pypa.io/get-pip.py is a ROLLING url -- PyPA replaces it in place on
     # every pip release, so this pin goes stale on their schedule, not ours. Expect
     # to bump it a few times a year; the mismatch branch below explains itself when
-    # you do. Current value is the file bundling pip 26.2.2 (verified: genuine PyPA
+    # you do. Current value is the file bundling pip 26.3 (verified: genuine PyPA
     # header, self-contained base85 zip, no runtime network calls). See the PR for
     # why pinning a rolling url is the real problem here.
-    local get_pip_expected_sha="${GET_PIP_SHA256:-f4448a01e3ab2914c65f4ca59d4cacba6b2dbde19a483fbac46587f8bbaff424}"
+    local get_pip_expected_sha="${GET_PIP_SHA256:-356e0d0de21cdc348c3394084d90939b85e4246c4d14c76aee6ca4f46646ea98}"
     curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
     # Compare explicitly rather than with `sha256sum -c`, whose only failure output
     # is "WARNING: 1 computed checksum did NOT match" -- it names neither the file,
