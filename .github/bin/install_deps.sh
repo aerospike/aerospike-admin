@@ -152,7 +152,7 @@ _install_python_via_asdf_and_fpm() {
     # you do. Current value is the file bundling pip 26.3 (verified: genuine PyPA
     # header, self-contained base85 zip, no runtime network calls). See the PR for
     # why pinning a rolling url is the real problem here.
-    local get_pip_expected_sha="${GET_PIP_SHA256:-f7654c5589318e1d0789575b2586ce76937eb9943602adda8b15b3be3aa0dac3}"
+    local get_pip_expected_sha="${GET_PIP_SHA256:-356e0d0de21cdc348c3394084d90939b85e4246c4d14c76aee6ca4f46646ea98}"
     curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
     # Compare explicitly rather than with `sha256sum -c`, whose only failure output
     # is "WARNING: 1 computed checksum did NOT match" -- it names neither the file,
