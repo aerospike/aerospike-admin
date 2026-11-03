@@ -206,9 +206,11 @@ class AgentTestCase(unittest.TestCase):
 
     def assert_no_agent_request(self, log):
         """The plaintext agent logs every connection at debug level, so its log
-        has not grown since agent_log() returned log."""
+        has not grown since agent_log() returned log, apart from the metrics it
+        logs every 10 seconds."""
         time.sleep(0.5)
-        self.assertEqual(self.agent.container.logs()[len(log) :], b"")
+        new = self.agent.container.logs()[len(log) :].splitlines()
+        self.assertEqual([line for line in new if b" metrics.go:" not in line], [])
 
 
 class SecretAgentErrorTests(AgentTestCase):
