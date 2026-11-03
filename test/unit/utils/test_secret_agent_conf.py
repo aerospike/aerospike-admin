@@ -212,6 +212,7 @@ class ValidationTest(unittest.TestCase):
         [
             ("too_large", "2147483648"),
             ("far_too_large", "99999999999"),
+            ("too_long_for_int", "1" * 5000),
             ("decimal", "1000.0"),
             ("signed", "+5"),
             ("padded", " 5"),
@@ -237,6 +238,7 @@ class ValidationTest(unittest.TestCase):
             ("bool", True),
             ("zero_string", "0"),
             ("text", "1s"),
+            ("too_long_for_int", "1" * 5000),
         ]
     )
     def test_config_timeout(self, _, value):
@@ -329,6 +331,30 @@ class ValidationTest(unittest.TestCase):
     def test_command_line_value_is_quoted(self, _, cli_values, message):
         with self.assertRaises(PasswordSourceError) as cm:
             settings(cli_values=cli_values)
+
+        self.assertEqual(str(cm.exception), message)
+
+    @parameterized.expand(
+        [
+            (
+                "port",
+                {"sa-port": "abc", "SA-PORT": 3005},
+                'invalid value "abc" for sa-port in the [secret-agent] config section,'
+                " expected an integer from 1 to 65535",
+            ),
+            (
+                "ca_file",
+                {"sa-ca-file": "", "SA-CA-FILE": "/ca.pem"},
+                'invalid value "" for sa-ca-file in the [secret-agent] config section,'
+                " expected a path to a CA certificate file",
+            ),
+        ]
+    )
+    def test_key_repeated_in_another_case_is_checked(self, _, values, message):
+        """A later spelling of a key does not hide an invalid value, as in the C
+        tools, which check each key in turn."""
+        with self.assertRaises(PasswordSourceError) as cm:
+            check_section("secret-agent", values)
 
         self.assertEqual(str(cm.exception), message)
 
@@ -466,6 +492,11 @@ class FileSectionTest(unittest.TestCase):
 
     def test_no_section(self):
         self.assertEqual(file_section({}, "dev"), ("secret-agent", {}))
+
+    def test_empty_instance_reads_its_own_section(self):
+        """As in the C tools, and as asadm reads [cluster_] for --instance ''."""
+        conf = {"secret-agent": {"sa-address": "default"}, "secret-agent_": {}}
+        self.assertEqual(file_section(conf, ""), ("secret-agent_", {}))
 
 
 if __name__ == "__main__":

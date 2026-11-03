@@ -19,12 +19,13 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
 from parameterized import parameterized
 
-from lib.secret_agent.testing import FakeSecretAgent
+from lib.secret_agent.testing import FakeSecretAgent, read_message
 from lib.utils import conf
 from lib.utils.constants import AuthMode
 from lib.utils.password_source import PasswordSourceError
@@ -740,6 +741,121 @@ class ResolveSecretsTest(PasswordSourcesTestCase):
         )
         self.assertEqual(args.password, PW)
 
+    def test_instance_section_in_a_default_file(self):
+        args = self.load_with_user_config(
+            '[cluster_e]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+            '[secret-agent]\nsa-address = "127.0.0.1:1"\n'
+            '[secret-agent_e]\nsa-address = "{}"\n'.format(self.agent.address),
+            "--instance",
+            "e",
+        )
+        self.assertEqual(args.password, PW)
+
+    def test_empty_instance_reads_its_own_sections(self):
+        args = self.load(
+            "--instance",
+            "",
+            config=(
+                '[cluster_]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                '[secret-agent]\nsa-address = "127.0.0.1:1"\n'
+                '[secret-agent_]\nsa-address = "{}"\n'.format(self.agent.address)
+            ),
+        )
+        self.assertEqual(args.password, PW)
+
+    def test_timeout_reaches_the_agent_request(self):
+        release = threading.Event()
+
+        def never_answer(sock):
+            read_message(sock)
+            release.wait(5)
+
+        agent = FakeSecretAgent(handler=never_answer).start()
+        self.addCleanup(agent.stop)
+        self.addCleanup(release.set)
+        start = time.monotonic()
+
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.load(
+                "-U",
+                "admin",
+                "-P",
+                "secrets:aql:password",
+                "--sa-address",
+                agent.address,
+                "--sa-timeout",
+                "200",
+            )
+
+        self.assertLess(time.monotonic() - start, 1)
+        self.assertTrue(str(cm.exception).endswith(": timed out"), str(cm.exception))
+
+    @parameterized.expand(
+        [("file", 'file = "~/agent.conf"'), ("directory", 'directory = "~/conf.d"')]
+    )
+    def test_include_path_starts_from_the_home_directory(self, _, include):
+        home = os.path.join(self.tmpdir.name, "home")
+        os.makedirs(os.path.join(home, "conf.d"))
+
+        for name in ("agent.conf", os.path.join("conf.d", "agent.conf")):
+            with open(os.path.join(home, name), "w") as f:
+                f.write(
+                    '[secret-agent]\nsa-address = "{}"\n'.format(self.agent.address)
+                )
+
+        with patch.dict(os.environ, {"HOME": home}):
+            args = self.load(
+                config='[cluster]\nuser = "admin"\npassword = "secrets:aql:password"\n'
+                "[include]\n" + include + "\n"
+            )
+
+        self.assertEqual(args.password, PW)
+
+    def test_bad_include_value_keeps_the_files_section(self):
+        path = self.write_file(
+            "astools.conf",
+            '[secret-agent]\nsa-port = 0\n[include]\nfile = ["/x.conf"]\n',
+        )
+
+        with patch("lib.utils.conf.logger"):
+            args = self.load_config_file(path)
+
+        self.assertEqual(
+            args.sagent_config_errors,
+            [
+                'Config file error: {} invalid value "0" for sa-port in the'
+                " [secret-agent] config section, expected an integer from 1 to"
+                " 65535".format(path)
+            ],
+        )
+        self.assertEqual(args.secret_agent_unparsed_files, [path])
+
+    def test_refusal_names_the_first_file_that_could_not_be_loaded(self):
+        first = self.write_file("first.conf", "[cluster\n")
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+
+        with open(os.path.join(directory, "second.conf"), "w") as f:
+            f.write("[cluster\n")
+
+        path = self.write_file(
+            "astools.conf",
+            '[include]\nfile = "{}"\ndirectory = "{}"\n'.format(first, directory),
+        )
+        self.assert_parse_error_refuses_secrets(
+            path, first, "error", "Config file parse error: " + first
+        )
+
+    def test_bare_reference_names_the_empty_key(self):
+        with self.assertRaises(PasswordSourceError) as cm:
+            self.load(
+                "-U", "admin", "-P", "secrets:", "--sa-address", self.agent.address
+            )
+
+        self.assertEqual(
+            str(cm.exception), "--password: secret reference secrets: has an empty key"
+        )
+
     @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
     def test_config_file_without_search_permission_is_read_as_missing(self):
         directory = os.path.join(self.tmpdir.name, "conf")
@@ -1026,6 +1142,112 @@ class ResolveSecretsTest(PasswordSourcesTestCase):
             self.tmpdir.name, "warning", "Is a directory"
         )
 
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_file_that_cannot_be_read_is_not_listed_as_read(self):
+        path = self.write_file("astools.conf", "[cluster]\n")
+        os.chmod(path, 0)
+        locked = os.path.join(self.tmpdir.name, "locked")
+        os.mkdir(locked)
+
+        with open(os.path.join(locked, "astools.conf"), "w") as f:
+            f.write("[cluster]\n")
+
+        os.chmod(locked, 0o400)
+        self.addCleanup(os.chmod, locked, 0o700)
+
+        for config in (path, self.tmpdir.name, os.path.join(locked, "astools.conf")):
+            with self.subTest(config=config):
+                sys.stderr.seek(0)
+                sys.stderr.truncate()
+
+                with patch("lib.utils.conf.logger"):
+                    self.load_config_file(config)
+
+                self.assertIn("Config_file: None\n", sys.stderr.getvalue())
+
+    @parameterized.expand(
+        [
+            (
+                "wrong_type",
+                '[cluster]\nuser = "admin"\npassword = 12345678\n',
+                "invalid value for password in the [cluster] config section,"
+                " expected a string",
+                "12345678",
+            ),
+            (
+                "not_toml",
+                '[cluster]\nuser = "admin"\npassword = 12hunter2\n',
+                "invalid TOML at line 3 column 1",
+                "12hunter2",
+            ),
+            (
+                "unknown_key",
+                '[cluster]\nuser = "admin"\npassword = "hunter2-literal"\nhots = "x"\n',
+                "Additional properties are not allowed ('hots' was unexpected)",
+                "hunter2-literal",
+            ),
+            (
+                "include_value",
+                "[include]\nfile = 5\n",
+                "invalid value for file in the [include] config section,"
+                " expected a string",
+                None,
+            ),
+            (
+                "include_not_a_table",
+                'include = "x"\n',
+                "invalid value for include, expected a table",
+                None,
+            ),
+        ]
+    )
+    def test_parse_error_never_quotes_a_value(self, _, content, reason, secret):
+        """The value may be a password, so the error names its key and the form
+        expected, as the C tools do."""
+        path = self.write_file("astools.conf", content)
+
+        with patch("lib.utils.conf.logger") as logger:
+            self.load_config_file(path)
+
+        logged = [c.args[0] for c in logger.critical.call_args_list]
+        self.assertEqual(
+            logged, ["Config file parse error: {} {}".format(path, reason)]
+        )
+
+        if secret:
+            self.assertNotIn(secret, str(logger.mock_calls))
+
+    def test_config_file_is_read_as_utf8_in_any_locale(self):
+        path = os.path.join(self.tmpdir.name, "astools.conf")
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('[cluster]\nuser = "usér"\n')
+
+        code = (
+            "import sys\n"
+            "sys.path.insert(0, {!r})\n"
+            "from lib.utils import conf\n"
+            "sys.argv = ['asadm', '--only-config-file', {!r}]\n"
+            "args, _ = conf.loadconfig(conf.get_cli_args())\n"
+            "print(ascii(args.user))\n"
+        ).format(os.path.dirname(ASADM), path)
+        cp = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            env=dict(
+                os.environ,
+                LC_ALL="C",
+                LANG="C",
+                PYTHONCOERCECLOCALE="0",
+                PYTHONUTF8="0",
+                HOME=self.tmpdir.name,
+            ),
+            timeout=60,
+        )
+
+        self.assertEqual(cp.stdout.splitlines()[-1:], [ascii("usér")], cp.stderr)
+
     def assert_parse_error_refuses_secrets(self, path, unparsed, log, message):
         """The file is skipped and a run without secrets: goes on, as on master.
         No secret is fetched, since the file may have held the agent's CA."""
@@ -1294,9 +1516,13 @@ class ResolveSecretsTest(PasswordSourcesTestCase):
         [
             ("named_file", "{}/astools.conf", "No such file"),
             ("include_file", '[include]\nfile = "{}/include.conf"\n', None),
+            ("include_file_with_nul", '[include]\nfile = "a\\u0000b.conf"\n', None),
+            ("include_directory_is_a_file", '[include]\ndirectory = "{}"\n', None),
+            ("include_directory", '[include]\ndirectory = "{}/conf.d"\n', None),
         ]
     )
-    def test_path_through_a_file_is_missing(self, _, config, message):
+    def test_path_that_cannot_exist_is_missing(self, _, config, message):
+        """No file can be at such a path, so nothing is lost by skipping it."""
         regular = self.write_file("regular", "")
 
         if message:
@@ -1317,26 +1543,36 @@ class ResolveSecretsTest(PasswordSourcesTestCase):
 
         self.assertEqual(args.password, PW)
         logger.critical.assert_not_called()
+        logger.error.assert_not_called()
 
         if message:
             self.assertIn(message, str(logger.warning.call_args_list))
         else:
             logger.warning.assert_not_called()
 
-    def test_dangling_link_in_include_directory_is_reported(self):
+    @parameterized.expand(
+        [
+            ("dangling", "No such file or directory"),
+            ("loop", "Too many levels of symbolic links"),
+        ]
+    )
+    def test_broken_link_in_include_directory_is_reported(self, kind, reason):
+        """A link that leads to no file holds no settings, so it is skipped with a
+        warning, as in the C tools."""
         directory = os.path.join(self.tmpdir.name, "conf.d")
         os.mkdir(directory)
         link = os.path.join(directory, "agent.conf")
-        os.symlink(os.path.join(self.tmpdir.name, "gone.conf"), link)
+        os.symlink(
+            link if kind == "loop" else os.path.join(self.tmpdir.name, "gone.conf"),
+            link,
+        )
         path = self.write_file(
             "astools.conf", '[include]\ndirectory = "{}"\n'.format(directory)
         )
         self.assert_config_file_error_is_not_fatal(
             path,
             "warning",
-            "'Config file read error : %s %s', '{}', 'No such file or directory'".format(
-                link
-            ),
+            "'Config file read error : %s %s', '{}', '{}'".format(link, reason),
         )
 
     @parameterized.expand([("fifo", False), ("link_to_fifo", True)])
@@ -1413,6 +1649,46 @@ class ResolveSecretsTest(PasswordSourcesTestCase):
             "Config file parse error: {} includes itself".format(link),
             str(logger.error.call_args_list),
         )
+
+    def assert_include_cycle_is_read_once(self, path):
+        """Reaching path again is logged once, and the CA file of the file that
+        included it is kept."""
+        with patch("lib.utils.conf.logger") as logger:
+            args = self.load_config_file(path)
+
+        self.assertEqual(
+            [c.args[0] for c in logger.error.call_args_list],
+            ["Config file parse error: {} includes itself".format(path)],
+        )
+        self.assertEqual(
+            args.secret_agent_sections,
+            [("secret-agent", {}), ("secret-agent", {"sa-ca-file": "/ca.pem"})],
+        )
+        self.assertEqual(args.secret_agent_unparsed_files, [])
+
+    def test_two_file_include_cycle_is_read_once(self):
+        a = os.path.join(self.tmpdir.name, "a.conf")
+        b = self.write_file(
+            "b.conf",
+            '[secret-agent]\nsa-ca-file = "/ca.pem"\n[include]\nfile = "{}"\n'.format(
+                a
+            ),
+        )
+        self.write_file("a.conf", '[include]\nfile = "{}"\n'.format(b))
+        self.assert_include_cycle_is_read_once(a)
+
+    def test_include_directory_holding_its_includer_is_read_once(self):
+        directory = os.path.join(self.tmpdir.name, "conf.d")
+        os.mkdir(directory)
+        path = os.path.join(directory, "astools.conf")
+
+        with open(path, "w") as f:
+            f.write('[include]\ndirectory = "{}"\n'.format(directory))
+
+        with open(os.path.join(directory, "agent.conf"), "w") as f:
+            f.write('[secret-agent]\nsa-ca-file = "/ca.pem"\n')
+
+        self.assert_include_cycle_is_read_once(path)
 
     def test_expanded_value_is_not_a_reference(self):
         ref = "secrets:aql:password"
@@ -1854,6 +2130,18 @@ class PasswordHelpTest(unittest.TestCase):
             conf.print_config_help()
 
         self.assertIn(SECRET_AGENT_HELP, out.getvalue())
+
+    def test_help_config_file_block_names_the_agent_sections(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        for text in (
+            "The following sections are read: (cluster asadm secret-agent include)\n",
+            "`a` is specified sections cluster_a, asadm_a,\n"
+            "                      secret-agent_a is read.\n",
+        ):
+            self.assertIn(text, out.getvalue())
 
 
 if __name__ == "__main__":

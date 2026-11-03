@@ -45,6 +45,9 @@ exec "$ASADM_PYTHON" "$ASADM_SCRIPT" "$@"
 """
 
 NO_USER_WARNING = "WARNING: --password: ignored because no user is set"
+READ_WARNING = (
+    "WARNING: Config file read error : /etc/aerospike/astools.conf Permission denied"
+)
 
 
 def install_asadm(test, script):
@@ -61,7 +64,8 @@ def install_asadm(test, script):
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
 class AsinfoStderrTest(unittest.TestCase):
-    """asinfo runs asadm and treats its stderr as failure, except the no-user warning."""
+    """asinfo runs asadm and treats its stderr as failure, except the no-user and
+    config file read warnings."""
 
     def setUp(self):
         self.bindir = install_asadm(self, FAKE_ASADM)
@@ -81,10 +85,12 @@ class AsinfoStderrTest(unittest.TestCase):
             timeout=30,
         )
 
-    def test_no_user_warning_is_passed_through(self):
+    def test_warning_is_passed_through(self):
         for warning in (
             NO_USER_WARNING,
             "WARNING: password in config file: ignored because no user is set",
+            READ_WARNING,
+            "WARNING: Config file read error : /x.conf No such file",
         ):
             with self.subTest(warning=warning):
                 cp = self.run_asinfo(warning + "\n")
@@ -96,7 +102,7 @@ class AsinfoStderrTest(unittest.TestCase):
     def test_other_stderr_still_fails(self):
         for stderr in (
             "ERROR: Not able to connect any cluster with [('127.0.0.1', 1, None)].\n",
-            "WARNING: Config file read error : /x.conf No such file\n",
+            "WARNING: Cannot create history directory /h: Permission denied\n",
         ):
             with self.subTest(stderr=stderr):
                 cp = self.run_asinfo(stderr)
@@ -105,14 +111,26 @@ class AsinfoStderrTest(unittest.TestCase):
                 self.assertIn(stderr.strip(), cp.stdout)
                 self.assertEqual(cp.stderr, "")
 
-    def test_error_with_no_user_warning_fails(self):
-        error = "ERROR: Not able to connect any cluster with [('127.0.0.1', 1, None)]."
-        cp = self.run_asinfo(NO_USER_WARNING + "\n" + error + "\n")
+    def test_error_with_a_warning_fails(self):
+        for warning, error in (
+            (
+                NO_USER_WARNING,
+                "ERROR: Not able to connect any cluster with [('127.0.0.1', 1, None)].",
+            ),
+            (
+                READ_WARNING,
+                "ERROR: --password: cannot fetch secrets:aql:pw:"
+                " /etc/aerospike/astools.conf could not be loaded (see above); fix or"
+                " remove it to fetch secrets",
+            ),
+        ):
+            with self.subTest(warning=warning):
+                cp = self.run_asinfo(warning + "\n" + error + "\n")
 
-        self.assertEqual(cp.returncode, 1)
-        self.assertIn(error, cp.stdout)
-        self.assertNotIn(NO_USER_WARNING, cp.stdout)
-        self.assertEqual(cp.stderr, NO_USER_WARNING + "\n")
+                self.assertEqual(cp.returncode, 1)
+                self.assertIn(error, cp.stdout)
+                self.assertNotIn(warning, cp.stdout)
+                self.assertEqual(cp.stderr, warning + "\n")
 
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
@@ -142,6 +160,44 @@ class AsinfoRealAsadmTest(unittest.TestCase):
         self.assertEqual(cp.stderr, NO_USER_WARNING + "\n")
         self.assertIn("Not able to connect any cluster", cp.stdout)
         self.assertNotIn("ignored because no user is set", cp.stdout)
+
+    def test_read_warning_from_asadm_is_passed_through(self):
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        directory = os.path.join(tmpdir.name, "conf.d")
+        os.mkdir(directory)
+        link = os.path.join(directory, "agent.conf")
+        os.symlink(os.path.join(tmpdir.name, "gone.conf"), link)
+        path = os.path.join(tmpdir.name, "astools.conf")
+
+        with open(path, "w") as f:
+            f.write('[include]\ndirectory = "{}"\n'.format(directory))
+
+        bindir = install_asadm(self, REAL_ASADM)
+        env = dict(
+            os.environ,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=os.path.join(ROOT, "asadm.py"),
+        )
+
+        cp = subprocess.run(
+            [sys.executable, ASINFO, "--only-config-file", path, "-h", "127.0.0.1"]
+            + ["-p", "1", "-v", "build"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+
+        warning = (
+            "WARNING: Config file read error : {} No such file or directory".format(
+                link
+            )
+        )
+        self.assertEqual(cp.stderr, warning + "\n", cp.stdout)
+        self.assertNotIn(warning, cp.stdout)
+        self.assertIn("Not able to connect any cluster", cp.stdout)
 
 
 class AsinfoSecretAgentOptionsTest(unittest.TestCase):
@@ -187,6 +243,13 @@ class AsinfoSecretAgentOptionsTest(unittest.TestCase):
         ):
             self.assertIn(forwarded, cp.stdout)
 
+    def test_usage_hides_c_cafile_spelling(self):
+        cp = self.run_asinfo("--bogus")
+
+        self.assertNotEqual(cp.returncode, 0)
+        self.assertIn("--sa-ca-file", cp.stderr)
+        self.assertNotIn("--sa-cafile", cp.stderr)
+
     def test_legacy_cafile_warns_without_failing(self):
         cp = self.run_asinfo("--sa-cafile", "/ca.pem")
 
@@ -216,6 +279,14 @@ class AsinfoRealAsadmSecretTest(unittest.TestCase):
         encoded = base64.b64encode(SECRET.encode()).decode()
         self.agent = FakeSecretAgent({"aql": {"pw": encoded}}).start()
         self.addCleanup(self.agent.stop)
+        self.requests = []
+        lookup = self.agent.lookup
+
+        def record(request):
+            self.requests.append(request)
+            return lookup(request)
+
+        self.agent.lookup = record
 
     def run_asinfo(self, password):
         bindir = install_asadm(self, REAL_ASADM)
@@ -240,6 +311,7 @@ class AsinfoRealAsadmSecretTest(unittest.TestCase):
         cp = self.run_asinfo("secrets:aql:pw")
 
         self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(self.requests, [{"SecretKey": "pw", "Resource": "aql"}])
         self.assertIn("Not able to connect any cluster", cp.stdout)
         self.assertNotIn(SECRET, cp.stdout + cp.stderr)
 

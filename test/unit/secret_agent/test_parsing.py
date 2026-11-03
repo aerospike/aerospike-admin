@@ -73,6 +73,10 @@ class RefTest(unittest.TestCase):
         """Messages name the reference as it was given."""
         self.assertEqual(str(parse_ref(value)), value)
 
+    def test_str_without_a_resource(self):
+        self.assertEqual(str(SecretRef("", "key")), "secrets:key")
+        self.assertEqual(str(SecretRef("res", "key")), "secrets:res:key")
+
 
 class AddressTest(unittest.TestCase):
     @parameterized.expand(
@@ -107,6 +111,7 @@ class AddressTest(unittest.TestCase):
             ("[]:3005",),
             ("[::1",),
             ("[::1]x",),
+            ("[::1]x3005",),
             ("[::1]:",),
             ("[host:3005:x]",),
             ("[host:3005:x]:3005",),

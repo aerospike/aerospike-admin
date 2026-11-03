@@ -132,6 +132,9 @@ class _Handler(socketserver.BaseRequestHandler):
             sock.sendall(_wire.encode(agent.lookup(request)))
         except OSError:
             pass
+        finally:
+            if sock is not self.request:
+                sock.close()
 
 
 def read_message(sock: socket.socket) -> dict | None:

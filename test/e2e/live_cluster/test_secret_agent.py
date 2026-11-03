@@ -191,6 +191,25 @@ class AgentTestCase(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertIn("Network Information", cp.stdout)
 
+    def agent_log(self):
+        """The plaintext agent's log, once earlier connections are in it."""
+        log = self.agent.container.logs()
+
+        while True:
+            time.sleep(0.3)
+            now = self.agent.container.logs()
+
+            if now == log:
+                return log
+
+            log = now
+
+    def assert_no_agent_request(self, log):
+        """The plaintext agent logs every connection at debug level, so its log
+        has not grown since agent_log() returned log."""
+        time.sleep(0.5)
+        self.assertEqual(self.agent.container.logs()[len(log) :], b"")
+
 
 class SecretAgentErrorTests(AgentTestCase):
     """Secret Agent failures stop asadm before it connects, so no server is
@@ -276,15 +295,18 @@ class SecretAgentErrorTests(AgentTestCase):
         """The section's CA file must not be dropped with the rest of it, leaving
         the secret to be fetched in plaintext."""
         path = self.write_bad_section()
+        log = self.agent_log()
         cp = util.run_asadm(
             f"--only-config-file {path} -h 127.0.0.1:1 -U admin "
             f"-P secrets:asadm:password --sa-address {self.agent.address} "
             "-e 'info network'"
         )
         self.assert_fails_before_connecting(cp, "sa-time-out")
+        self.assert_no_agent_request(log)
 
     def test_asinfo_bad_section_stops_before_fetching(self):
         path = self.write_bad_section()
+        log = self.agent_log()
         cp = util.run_asinfo(
             f"--only-config-file {path} -h 127.0.0.1 -p 1 -U admin "
             f"-P secrets:asadm:password --sa-address {self.agent.address} -v build"
@@ -292,6 +314,7 @@ class SecretAgentErrorTests(AgentTestCase):
         self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
         self.assertIn("sa-time-out", cp.stdout + cp.stderr)
         self.assertNotIn("Not able to connect", cp.stdout + cp.stderr)
+        self.assert_no_agent_request(log)
 
     def test_parse_error_in_include_stops_before_fetching(self):
         """The CA file sits in an include that does not parse, so fetching the
@@ -307,12 +330,14 @@ class SecretAgentErrorTests(AgentTestCase):
             f'[secret-agent]\nsa-address = "{self.agent.address}"\n'
             f'[include]\nfile = "{include}"\n',
         )
+        log = self.agent_log()
         cp = util.run_asadm(f"--only-config-file {path} -e 'info network'")
         self.assert_fails_before_connecting(
             cp,
             "password in config file: cannot fetch secrets:asadm:password:"
             f" {include} could not",
         )
+        self.assert_no_agent_request(log)
 
     def test_bad_include_value_stops_before_fetching(self):
         """The CA file sits in a file the [include] value fails to name, so
@@ -321,6 +346,7 @@ class SecretAgentErrorTests(AgentTestCase):
             "include.conf", f'[secret-agent]\nsa-ca-file = "{self.tls_agent.ca_file}"\n'
         )
         path = self.write_file("astools.conf", f'[include]\nfile = ["{include}"]\n')
+        log = self.agent_log()
         cp = util.run_asadm(
             f"--only-config-file {path} -h 127.0.0.1:1 -U admin "
             f"-P secrets:asadm:password --sa-address {self.agent.address} "
@@ -329,6 +355,7 @@ class SecretAgentErrorTests(AgentTestCase):
         self.assert_fails_before_connecting(
             cp, f"--password: cannot fetch secrets:asadm:password: {path} could not"
         )
+        self.assert_no_agent_request(log)
 
 
 class SecretAgentTLSErrorTests(AgentTestCase):

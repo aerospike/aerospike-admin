@@ -16,6 +16,7 @@ import base64
 import errno
 import os
 import socket
+import ssl
 import tempfile
 import threading
 import time
@@ -49,8 +50,11 @@ AGENT_DATA = {
     "aql": {
         "password": b64(VALUE.encode()),
         "newline": b64(VALUE.encode()) + "\n",
+        "trailing-whitespace": b64(VALUE.encode()) + " \t\r\n\f\v",
         "whitespace": " \t\r\n",
         "not-base64": VALUE,
+        "bad-character": "aHVu!dGVyMg==",
+        "inner-newline": "aHVu\ndGVyMg==",
         "binary": b64(b"\xff" + VALUE.encode()),
         "nul": b64(VALUE.encode() + b"\x00"),
         "empty": "",
@@ -94,14 +98,19 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(self.client.get_secret("aql", "password"), VALUE)
         self.assertEqual(self.client.get_secret("", "bare"), "no-resource")
 
-    def test_trailing_newline_is_trimmed_before_decoding(self):
-        self.assertEqual(self.client.get_secret("aql", "newline"), VALUE)
+    def test_trailing_whitespace_is_trimmed_before_decoding(self):
+        """As in the C client, which trims any isspace() character."""
+        for key in ("newline", "trailing-whitespace"):
+            with self.subTest(key=key):
+                self.assertEqual(self.client.get_secret("aql", key), VALUE)
 
     @parameterized.expand(
         [
             ("whitespace", "empty secret"),
             ("empty", "empty secret"),
             ("not-base64", "is not valid base64"),
+            ("bad-character", "is not valid base64"),
+            ("inner-newline", "is not valid base64"),
             ("binary", "is not valid UTF-8"),
             ("nul", "contains a NUL byte"),
         ]
@@ -185,8 +194,9 @@ class TransportTest(unittest.TestCase):
         with self.assertRaises(RequestFailedError) as cm:
             client.resolve("secrets:aql:password")
 
-        self.assertIn(
-            "connect to 127.0.0.1:1 for secrets:aql:password", str(cm.exception)
+        self.assertEqual(
+            str(cm.exception),
+            "connect to 127.0.0.1:1 for secrets:aql:password: Connection refused",
         )
 
     def test_invalid_host_name(self):
@@ -202,9 +212,12 @@ class TransportTest(unittest.TestCase):
         )
 
     def test_timeout(self):
+        release = threading.Event()
+        self.addCleanup(release.set)
+
         def never_reply(sock):
             read_message(sock)
-            time.sleep(5)
+            release.wait(5)
 
         with FakeSecretAgent(handler=never_reply) as agent:
             client = agent_client(agent, timeout=0.2)
@@ -347,6 +360,26 @@ class TransportTest(unittest.TestCase):
         self.assertIn(address, str(cm.exception))
         assert_no_leak(self, cm.exception)
 
+    @parameterized.expand(
+        [
+            ("closed", b""),
+            ("truncated", frame(b'{"SecretValue":"aHVudGVyMg=="}')[:12]),
+        ]
+    )
+    def test_closed_connection_is_reported(self, _, response):
+        def respond(sock):
+            read_message(sock)
+            sock.sendall(response)
+
+        with FakeSecretAgent(handler=respond) as agent:
+            with self.assertRaises(RequestFailedError) as cm:
+                agent_client(agent).resolve("secrets:aql:password")
+
+        self.assertTrue(
+            str(cm.exception).endswith(": connection closed by the agent"),
+            str(cm.exception),
+        )
+
 
 class EmptyAgentErrorTest(unittest.TestCase):
     def test_empty_error_ends_the_message(self):
@@ -465,6 +498,34 @@ class TLSTest(unittest.TestCase):
         self.assertLess(time.monotonic() - start, 3)
         self.assertIn("connect to", str(cm.exception))
         self.assertTrue(str(cm.exception).endswith(": timed out"), str(cm.exception))
+
+    def test_handshake_gets_what_a_slow_connect_leaves(self):
+        release = threading.Event()
+        self.addCleanup(release.set)
+        connect = socket.socket.connect
+
+        def slow_connect(sock, address):
+            time.sleep(0.6)
+            connect(sock, address)
+
+        with FakeSecretAgent(handler=lambda _: release.wait(5)) as agent:
+            ctx = new_ssl_context(self.pki.ca_file)
+            client = agent_client(agent, ssl_context=ctx, timeout=0.8)
+            start = time.monotonic()
+
+            with patch.object(socket.socket, "connect", slow_connect):
+                with self.assertRaises(RequestFailedError):
+                    client.resolve("secrets:aql:password")
+
+        self.assertLess(time.monotonic() - start, 1.2)
+
+    def test_context_trusts_only_the_ca_file(self):
+        ctx = new_ssl_context(self.pki.ca_file)
+
+        self.assertEqual(ctx.cert_store_stats()["x509_ca"], 1)
+        self.assertEqual(ctx.minimum_version, ssl.TLSVersion.TLSv1_2)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(ctx.check_hostname)
 
     @parameterized.expand([("/nonexistent/ca.pem",), ("bad\x00path",)])
     def test_invalid_ca_file(self, ca_file):
