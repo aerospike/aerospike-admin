@@ -779,3 +779,47 @@ class InfoMemoryIndexSheetTest(unittest.TestCase):
             with self.subTest(subgroup=subgroup):
                 self.assertEqual(record[subgroup]["Alloc"]["raw"], alloc)
                 self.assertEqual(record[subgroup]["Used"]["raw"], used)
+
+
+class ShowMaskingRulesSheetTest(unittest.TestCase):
+    def render(self, rules):
+        data = {i: util.normalize_masking_rule_data(r) for i, r in enumerate(rules)}
+        render = sheet.render(
+            templates.show_masking_rules,
+            "Masking Rules",
+            dict(data=data),
+            style=SheetStyle.json,
+        )
+        return json.loads(render)["groups"][0]["records"]
+
+    def test_path_rule_shows_decoded_path_and_its_bin(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "ael_b64": "JC5wcm9maWxlLnNzbg==",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [
+                (
+                    r["Bin"]["converted"],
+                    r["AEL Path"]["converted"],
+                    r["Function"]["raw"],
+                )
+                for r in records
+            ],
+            [("profile", "$.profile.ssn", "redact"), ("ssn", "--", "redact")],
+        )

@@ -77,6 +77,35 @@ class ASInfoErrorTest(unittest.TestCase):
                 str(error), exp_string, "Fail caused by {}".format(response)
             )
 
+    @parameterized.expand(
+        [
+            (
+                "ERROR:4:bad path '$.x +', at offset 4: unexpected end of input",
+                "bad path '$.x +', at offset 4: unexpected end of input",
+            ),
+            (
+                "ERROR:4:bad path '$.a.{=1}', rank and value selectors name an element by its content",
+                "bad path '$.a.{=1}', rank and value selectors name an element by its content",
+            ),
+            (
+                "error::a=b:c",
+                "a=b:c",
+            ),
+            (
+                "FAIL:1:a:b",
+                "a:b",
+            ),
+            (
+                "ERROR=something;more-data",
+                "something;more-data",
+            ),
+        ]
+    )
+    def test_keeps_delimiters_inside_message(self, response, exp_msg):
+        error = ASInfoResponseError("test message", response)
+
+        self.assertEqual(str(error), "test message : {}.".format(exp_msg))
+
     def test_create_unknow_error_str(self):
         message = "test message"
         responses = [
