@@ -414,11 +414,16 @@ class Cluster(AsyncObject):
         peers = []
         aliases = {}
         if self.nodes:
-            for node_key in list(self.nodes.keys()):
-                node = self.nodes[node_key]
+
+            async def refresh(node):
                 if await node.needs_refresh():
                     logger.debug("Node %s:%s needs refresh", node.ip, node.port)
                     await node.refresh_connection()
+
+            nodes = list(self.nodes.items())
+            await asyncio.gather(*(refresh(node) for _, node in nodes))
+
+            for node_key, node in nodes:
                 if node.key != node_key:
                     # change in service list
                     self.nodes.pop(node_key)

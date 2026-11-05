@@ -111,24 +111,17 @@ class SummaryController(LiveClusterCommandController):
             self.cluster.info("cluster-name", nodes=self.nodes)
         )
 
-        os_version = self.cluster.info_system_statistics(
-            nodes=self.nodes,
-            ssh_user=ssh_user,
-            ssh_pwd=ssh_pwd,
-            ssh_key=ssh_key,
-            ssh_key_pwd=ssh_key_pwd,
-            ssh_port=ssh_port,
-            commands=["lsb"],
-            enable_ssh=enable_ssh,
-        )
-        kernel_version = self.cluster.info_system_statistics(
-            nodes=self.nodes,
-            ssh_user=ssh_user,
-            ssh_pwd=ssh_pwd,
-            ssh_key_pwd=ssh_key_pwd,
-            ssh_port=ssh_port,
-            commands=["uname"],
-            enable_ssh=enable_ssh,
+        system_stats = asyncio.create_task(
+            self.cluster.info_system_statistics(
+                nodes=self.nodes,
+                ssh_user=ssh_user,
+                ssh_pwd=ssh_pwd,
+                ssh_key=ssh_key,
+                ssh_key_pwd=ssh_key_pwd,
+                ssh_port=ssh_port,
+                commands=["lsb", "uname"],
+                enable_ssh=enable_ssh,
+            )
         )
 
         service_stats = asyncio.create_task(
@@ -192,8 +185,7 @@ class SummaryController(LiveClusterCommandController):
             ):
                 metadata["cluster_name"][node] = cluster_name[node]
 
-        os_version = await os_version
-        kernel_version = await kernel_version
+        os_version = kernel_version = await system_stats
 
         try:
             try:

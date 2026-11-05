@@ -64,6 +64,16 @@ class _AsyncioSSLConnectionAdapter(SSL.Connection):
 logger = logging.getLogger(__name__)
 
 
+async def _ready(fd, add, remove):
+    ready = asyncio.get_running_loop().create_future()
+    add(fd, lambda: ready.done() or ready.set_result(None))
+
+    try:
+        await ready
+    finally:
+        remove(fd)
+
+
 class ASSocket:
     def __init__(
         self,
@@ -133,15 +143,7 @@ class ASSocket:
                     The loop handles the handshake on a non-blocking socket otherwise a blocking socket would block the event loop.
                     """
 
-                    async def _handshake():
-                        while True:
-                            try:
-                                sock.do_handshake()
-                                break
-                            except (SSL.WantReadError, SSL.WantWriteError):
-                                await asyncio.sleep(0.01)
-
-                    await asyncio.wait_for(_handshake(), self._timeout)
+                    await asyncio.wait_for(self._handshake(sock), self._timeout)
 
                 except Exception as tlse:
                     logger.debug(f"TLS connection exception {type(tlse)}: {str(tlse)}")
@@ -156,6 +158,18 @@ class ASSocket:
             pass
 
         return sock
+
+    async def _handshake(self, sock):
+        loop = asyncio.get_running_loop()
+
+        while True:
+            try:
+                sock.do_handshake()
+                return
+            except SSL.WantReadError:
+                await _ready(sock.fileno(), loop.add_reader, loop.remove_reader)
+            except SSL.WantWriteError:
+                await _ready(sock.fileno(), loop.add_writer, loop.remove_writer)
 
     async def _create_socket(self):
         sock = None
