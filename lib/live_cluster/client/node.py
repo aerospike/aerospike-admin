@@ -1108,11 +1108,16 @@ class Node(AsyncObject):
 
                     return sock
                 elif (
-                    e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
+                    e.as_response
+                    in (
+                        ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,
+                        ASResponse.EXPIRED_SESSION,
+                    )
                     and token is not None
-                    and self.user
+                    and (self.user or self.auth_mode == constants.AuthMode.PKI)
                 ):
-                    # The node no longer accepts the token, e.g. it has restarted.
+                    # The node no longer accepts the token: it restarted, or the
+                    # session expired.
                     logger.debug(
                         "trying to sock login again %s ip=%s port=%s auth_mode=%s",
                         id(sock),

@@ -14,6 +14,7 @@
 
 import asyncio
 import os
+import re
 import shutil
 import threading
 import time
@@ -28,6 +29,7 @@ from test.e2e import lib, util
 
 NODE_COUNT = 2
 RECOVERY_SECONDS = 20
+SHORTEST_SESSION_TTL = 120
 SSH_PASSWORD = "E2E-ssh-Pw0rd-marker"
 NON_ASCII_USER = "e2e-non-ascii"
 NON_ASCII_PASSWORD = "pässwörd-ü-密码"
@@ -236,6 +238,48 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
                 await cl.close()
 
         self.assertEqual(failures_left, 0)
+
+    async def test_a_command_after_the_session_expires_reaches_every_node(self):
+        """Open connections outlive the session, but a new socket authenticates with
+        the expired token, so the node has to log in again."""
+        original_ttls = {
+            re.search(r"session-ttl=(\d+)", response[1]).group(1)
+            for response in lib.CLIENT.info_all("get-config:context=security").values()
+        }
+        self.assertEqual(len(original_ttls), 1, original_ttls)
+        lib.CLIENT.info_all(
+            "set-config:context=security;session-ttl=%d" % SHORTEST_SESSION_TTL
+        )
+
+        try:
+            cl = await connect()
+
+            try:
+                await wait_for_every_node_to_answer(cl)
+                await asyncio.sleep(SHORTEST_SESSION_TTL + 5)
+
+                for node in cl.nodes.values():
+                    await node.close()
+                    node._initialize_socket_pool()
+
+                with patch.object(
+                    Cluster, "need_to_refresh_cluster", return_value=False
+                ):
+                    answers = await cl.info("node")
+
+                live = len(cl.get_live_nodes())
+            finally:
+                await cl.close()
+        finally:
+            lib.CLIENT.close()
+            lib.connect_client()
+            lib.CLIENT.info_all(
+                "set-config:context=security;session-ttl=%s" % original_ttls.pop()
+            )
+
+        self.assertEqual(len(answers), NODE_COUNT)
+        self.assertTrue(all(isinstance(a, str) for a in answers.values()), answers)
+        self.assertEqual(live, NODE_COUNT)
 
 
 class SecurityDisabledTest(unittest.IsolatedAsyncioTestCase):
