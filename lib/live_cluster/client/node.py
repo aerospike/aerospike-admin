@@ -405,6 +405,7 @@ class Node(AsyncObject):
         the append, so a concurrent return cannot fill the pool in between."""
         pool = self.socket_pool.setdefault(port, deque(maxlen=MAX_SOCKET_POOL_SIZE))
         oldest = pool.popleft() if len(pool) == pool.maxlen else None
+        sock.last_used = time.monotonic()
         pool.append(sock)
 
         if oldest is not None:
@@ -594,8 +595,6 @@ class Node(AsyncObject):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            await self.close()
-            self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
             if not self.service_addresses or current_host not in self.service_addresses:
@@ -613,10 +612,6 @@ class Node(AsyncObject):
                         s,
                         current_host,
                     )
-                    # calling update ip again because info_service may have provided a
-                    # different IP than what was seeded.
-                    self.ip = s[0]
-                    self.port = s[1]
 
                     # Most common case
                     if s[0] == current_host[0] and s[1] == current_host[1] and i == 0:
@@ -624,6 +619,15 @@ class Node(AsyncObject):
                         # The following info requests were already made
                         # no need to do again
                         break
+
+                    # Seed sockets, as to a load balancer, must not reach this address.
+                    await self.close()
+                    self._initialize_socket_pool()
+
+                    # calling update ip again because info_service may have provided a
+                    # different IP than what was seeded.
+                    self.ip = s[0]
+                    self.port = s[1]
 
                     # IP address have changed. Not common.
                     # Re-fetch all node info including build version, as this could be

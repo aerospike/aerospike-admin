@@ -254,6 +254,95 @@ class NodeInitTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class NodeLoginSocketTest(unittest.IsolatedAsyncioTestCase):
+    """The socket a node logs in on carries its later requests."""
+
+    async def asyncSetUp(self):
+        patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name",
+            return_value="host.domain.local",
+        ).start()
+        patch(
+            "socket.getaddrinfo",
+            side_effect=lambda host, port, *args, **kwargs: [
+                (2, 1, 6, "", (host, port))
+            ],
+        ).start()
+        patch("lib.live_cluster.client.node.util.async_shell_command").start()
+        self.sockets = []
+        self.requests = []
+        patch(
+            "lib.live_cluster.client.node.ASSocket", side_effect=self.new_socket
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def answer(self, command):
+        responses = {
+            "node": "A0",
+            "build": "8.1.0.0",
+            "peers-generation": "1",
+            "connection": "admin=false",
+            "service-clear-std": "10.0.0.1:3000",
+            "peers-clear-std": "1,3000,[]",
+            "statistics": "uptime=1",
+        }
+
+        if isinstance(command, str):
+            return responses[command]
+
+        return {name: responses[name] for name in command}
+
+    def new_socket(self, *args, **kwargs):
+        sock = AsyncMock(spec=ASSocket)
+        sock.connect.return_value = True
+        sock.login.return_value = True
+        sock.authenticate.return_value = True
+        sock.is_connected.return_value = True
+        sock.get_session_info = Mock(return_value=("token", time.time() + 3600))
+        address = args[0]
+
+        def info(command):
+            self.requests.append((address, command))
+            return self.answer(command)
+
+        sock.info.side_effect = info
+        self.sockets.append(sock)
+        return sock
+
+    async def test_requests_after_connect_reuse_the_login_socket(self):
+        node = await Node("10.0.0.1", user="admin", password="admin")
+        await node.info("statistics")
+
+        self.assertTrue(node.alive)
+        self.assertEqual(len(self.sockets), 1)
+        self.sockets[0].login.assert_awaited_once()
+        self.sockets[0].authenticate.assert_not_awaited()
+
+    async def test_a_node_reached_through_another_address_does_not_keep_the_seed_socket(
+        self,
+    ):
+        """A load balancer seed: the node lists a different service address, so later
+        requests must go there, not through the socket opened to the seed."""
+        seed_answer = self.answer
+
+        def answer(command):
+            if command == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "10.0.0.7:3000",
+                    "peers-clear-std": "1,3000,[]",
+                }
+
+            return seed_answer(command)
+
+        self.answer = answer
+        node = await Node("10.0.0.1", user="admin", password="admin")
+        await node.info("statistics")
+
+        self.assertEqual(node.ip, "10.0.0.7")
+        self.assertIn(("10.0.0.7", "statistics"), self.requests)
+        self.assertNotIn(("10.0.0.1", "statistics"), self.requests)
+
+
 class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.maxDiff = None
@@ -6150,6 +6239,32 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         # Create node
         self.node = await Node(self.ip, self.port)
         self.node._initialize_socket_pool()
+
+    def connected_socket(self):
+        near, far = socket.socketpair()
+        self.addCleanup(near.close)
+        self.addCleanup(far.close)
+
+        sock = ASSocket(
+            self.ip, self.port, None, None, None, constants.AuthMode.INTERNAL, None
+        )
+        sock.sock = near
+        sock.reader = asyncio.StreamReader()
+        sock.writer = MagicMock(spec=asyncio.StreamWriter)
+        sock.writer.is_closing.return_value = False
+        return sock
+
+    async def test_reusing_a_returned_socket_sends_no_request(self):
+        sock = self.connected_socket()
+        await self.node._return_to_pool(self.node.port, sock)
+
+        with patch(
+            "lib.live_cluster.client.assocket.info", AsyncMock(return_value="A0")
+        ) as info:
+            reused = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIs(reused, sock)
+        info.assert_not_called()
 
     async def test_socket_pool_maxlen_behavior(self):
         """Test that socket pool respects maxlen and FIFO behavior"""

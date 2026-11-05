@@ -13,10 +13,13 @@
 # limitations under the License.
 
 import logging
+import select
 import socket
+import time
 import warnings
 import asyncio
 
+from .constants import POOLED_SOCKET_PROBE_AFTER_IDLE_SECONDS
 from .types import ASProtocolExcFactory, ASResponse
 from .info import (
     add_privileges,
@@ -87,6 +90,7 @@ class ASSocket:
         self.auth_mode = auth_mode
         self.ssl_context = ssl_context
         self._timeout = timeout
+        self.last_used = 0.0
 
     def settimeout(self, timeout):
         """
@@ -235,8 +239,11 @@ class ASSocket:
         return True
 
     async def is_connected(self):
-        if not self.sock:
+        if not self.sock or self._is_stale():
             return False
+
+        if time.monotonic() - self.last_used < POOLED_SOCKET_PROBE_AFTER_IDLE_SECONDS:
+            return True
 
         try:
             result = await self.info("node")
@@ -249,6 +256,23 @@ class ASSocket:
             return False
 
         return True
+
+    def _is_stale(self):
+        """The stream flags lag while the prompt blocks the event loop, so the socket is
+        polled too: an idle socket has nothing to read until the server closes it."""
+        if (
+            self.writer.is_closing()
+            or self.reader.at_eof()
+            or self.reader.exception() is not None
+        ):
+            return True
+
+        try:
+            poller = select.poll()
+            poller.register(self.sock, select.POLLIN)
+            return bool(poller.poll(0))
+        except (OSError, TypeError, ValueError):
+            return True
 
     async def close(self):
         if self.sock:
