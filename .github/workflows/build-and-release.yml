@@ -551,6 +551,7 @@ jobs:
       installer-identity: "Developer ID Installer: Aerospike, Inc. (22224RFU67)"
       gh-workflows-ref: "v3.7.0"
       gh-retention-days: 1
+      runs-on: macos-15
     secrets:
       apple-application-cert: ${{ secrets.APPLE_APPLICATION_CERT }}
       apple-id: ${{ secrets.APPLE_ID }}
