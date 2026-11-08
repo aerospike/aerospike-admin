@@ -24,7 +24,7 @@ from parameterized import parameterized
 from pytest import PytestUnraisableExceptionWarning
 
 import lib
-from lib.live_cluster.client.cluster import Cluster
+from lib.live_cluster.client.cluster import Cluster, PrincipalNotFoundError
 from lib.live_cluster.client.node import Node
 from lib.utils import constants
 
@@ -1037,6 +1037,94 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         # Should return peers when no service addresses
         self.assertIn(("192.1.1.2", 3000, None), result)
+
+    async def _cluster_with_offline_node(self):
+        """
+        A cluster whose seed node is live, plus a second node that was Offline when
+        it was first added: it carries the placeholder node ID, so update_node did not
+        index it by ID.
+        """
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        seed = next(iter(cluster.nodes.values()))
+        seed.needs_refresh = AsyncMock(return_value=False)
+
+        node = await Node("192.1.1.2", 3000)
+        node.ip = node.fqdn = "192.1.1.2"
+        node._service_IP_port = node.create_key("192.1.1.2", 3000)
+        node._key = hash(node._service_IP_port)
+        node.node_id = "000000000000000"
+        node.alive = False
+        node.service_addresses = [("192.1.1.2", 3000, None)]
+        node.peers = []
+        cluster.update_node(node)
+
+        return cluster, seed, node
+
+    async def test_node_back_online_after_refresh_is_found_by_node_id(self):
+        """
+        A node that was Offline at startup and connects on a later refresh
+        must be reachable by its node ID. When that node is the principal, 'show users'
+        and 'show roles' raised KeyError("Unable to find keys with '<node-id>'").
+        """
+        cluster, _, node = await self._cluster_with_offline_node()
+
+        async def back_online():
+            node.node_id = "BB9000000000001"
+            node.alive = True
+
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=back_online)
+
+        await cluster.find_new_nodes()
+
+        self.assertEqual(cluster.get_expected_principal(), "BB9000000000001")
+        self.assertEqual(cluster.get_node("BB9000000000001"), [node])
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [node])
+
+    async def test_node_gone_offline_after_refresh_is_not_found_by_old_node_id(self):
+        """The reverse: a node that drops out must not keep answering to its old ID."""
+        cluster, _, node = await self._cluster_with_offline_node()
+        node.node_id = "BB9000000000001"
+        node.alive = True
+        cluster.update_node(node)
+
+        async def gone_offline():
+            node.node_id = "000000000000000"
+            node.alive = False
+
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=gone_offline)
+
+        await cluster.find_new_nodes()
+
+        self.assertNotIn("BB9000000000001", cluster.node_lookup)
+
+    async def test_unreachable_principal_raises_an_error_that_needs_no_traceback(self):
+        """
+        get_nodes(PRINCIPAL) must not leak the lookup KeyError: asadm printed it with
+        a full traceback. The replacement explains itself, so the logger prints only
+        the message.
+        """
+        cluster, _, _ = await self._cluster_with_offline_node()
+        cluster.get_expected_principal = MagicMock(return_value="BB9000000000001")
+
+        with self.assertRaises(PrincipalNotFoundError) as ctx:
+            cluster.get_nodes(constants.NodeSelection.PRINCIPAL)
+
+        self.assertIn("BB9000000000001", str(ctx.exception))
+        self.assertTrue(ctx.exception.carries_its_own_message)
+
+    async def test_no_live_node_names_no_principal(self):
+        cluster, _, _ = await self._cluster_with_offline_node()
+        for node in cluster.nodes.values():
+            node.alive = False
+            node.node_id = "000000000000000"
+            cluster.update_node(node)
+
+        with self.assertRaises(PrincipalNotFoundError) as ctx:
+            cluster.get_nodes(constants.NodeSelection.PRINCIPAL)
+
+        self.assertIn("no node is live", str(ctx.exception))
 
     async def test_find_new_nodes_socket_reuse_optimization(self):
         """Test that socket reuse optimization works at cluster level"""

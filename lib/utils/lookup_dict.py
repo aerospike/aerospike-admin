@@ -154,6 +154,10 @@ class LookupDict(Generic[ValueType]):
 
         raise KeyError("Unable to find key '%s'" % (k))
 
+    def discard_exact(self, k):
+        """Remove exactly k, never a key that only starts or ends with it."""
+        self._kv.pop(k, None)
+
     def remove(self, k):
         keys = self.get_key(k)
 
