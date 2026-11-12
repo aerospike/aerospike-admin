@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import asyncio
+import gc
 import socket
 import threading
 import time
 import unittest
 import warnings
+import weakref
 from collections import deque
 from ctypes import ArgumentError
 from typing import Any
@@ -38,7 +40,7 @@ from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.ctx import CDTContext, CTXItems
 from lib.live_cluster.client.msgpack import pack_ael_expression
-from lib.live_cluster.client.node import _SysCmd, Node
+from lib.live_cluster.client.node import _SysCmd, Node, _get_host_ips
 from lib.live_cluster.client.types import (
     ASProtocolError,
     ASProtocolExcFactory,
@@ -340,6 +342,29 @@ class NodeConnectRequestsTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(on_host.is_localhost())
         self.assertFalse(elsewhere.is_localhost())
+
+
+class HostIpsTest(unittest.TestCase):
+    def setUp(self):
+        process = AsyncMock(spec=asyncio.subprocess.Process)
+        process.returncode = 0
+        process.stdout = MagicMock(spec=asyncio.StreamReader)
+        process.stdout.read.return_value = b"10.0.0.1"
+        patch(
+            "lib.live_cluster.client.node.util.async_shell_command",
+            AsyncMock(return_value=process),
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def test_a_finished_loop_is_released(self):
+        async def ask():
+            await _get_host_ips()
+            return weakref.ref(asyncio.get_running_loop())
+
+        loop_ref = asyncio.run(ask())
+        gc.collect()
+
+        self.assertIsNone(loop_ref())
 
 
 class NodeTest(unittest.IsolatedAsyncioTestCase):

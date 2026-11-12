@@ -40,7 +40,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
-from lib.live_cluster.get_controller import GetPmapController
+from lib.live_cluster.get_controller import GetPmapController, GetStatisticsController
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
     CollectionContext,
@@ -1862,6 +1862,8 @@ class ErrorRecordingClusterTest(unittest.IsolatedAsyncioTestCase):
 
     STATISTICS = constants.CollectinfoSection.STATISTICS
     TIMEOUT = constants.CollectinfoErrorClass.TIMEOUT
+    UNSUPPORTED = constants.CollectinfoErrorClass.UNSUPPORTED
+    SINDEX = {"ns": "test", "set": "demo", "indexname": "idx"}
 
     def setUp(self):
         self.controller = CollectinfoController()
@@ -1872,6 +1874,40 @@ class ErrorRecordingClusterTest(unittest.IsolatedAsyncioTestCase):
             setattr(self.controller.cluster, name, AsyncMock(return_value=result))
 
         return self.controller._cluster_for_section(self.STATISTICS, ledger)
+
+    async def test_a_node_failing_sindex_statistics_is_recorded_under_sindex(self):
+        """get_sindex asks each node for every sindex's statistics in one call."""
+        ledger = {}
+        cluster = self._wrapped(
+            ledger,
+            info_sindex={"A": [self.SINDEX]},
+            info_all_sindex_statistics={"A": asyncio.TimeoutError()},
+        )
+
+        await GetStatisticsController(cluster).get_sindex(nodes="all")
+
+        self.assertIn(
+            (self.STATISTICS, self.TIMEOUT, constants.STAT_SINDEX), ledger["A"]
+        )
+
+    async def test_a_sindex_one_node_lacks_is_recorded_as_unsupported(self):
+        ledger = {}
+        cluster = self._wrapped(
+            ledger,
+            info_sindex={"A": [self.SINDEX], "B": [self.SINDEX]},
+            info_all_sindex_statistics={
+                "A": {("test", "idx"): {"entries": "1"}},
+                "B": {("test", "idx"): ASInfoResponseError("err", "ERROR::no index")},
+            },
+        )
+
+        await GetStatisticsController(cluster).get_sindex(nodes="all")
+
+        self.assertIn(
+            (self.STATISTICS, self.UNSUPPORTED, constants.STAT_SINDEX),
+            ledger.get("B", {}),
+        )
+        self.assertNotIn("A", ledger)
 
     async def test_a_dropped_nested_failure_reaches_the_ledger(self):
         """A namespace whose statistics one node failed to answer: the getter
