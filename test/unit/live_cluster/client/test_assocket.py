@@ -495,7 +495,7 @@ class ASSocketReuseTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patch.stopall)
 
     def used(self, seconds_ago):
-        self.as_socket.last_used = time.monotonic() - seconds_ago
+        self.as_socket.last_used = time.time() - seconds_ago
 
     async def test_recently_used_socket_is_reused_without_a_request(self):
         self.used(0)

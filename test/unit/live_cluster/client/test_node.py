@@ -6266,6 +6266,20 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         self.assertIs(reused, sock)
         info.assert_not_called()
 
+    async def test_a_socket_idle_while_the_machine_slept_is_probed(self):
+        sock = self.connected_socket()
+        await self.node._return_to_pool(self.node.port, sock)
+        an_hour_later = time.time() + 3600
+
+        with patch("time.time", return_value=an_hour_later), patch(
+            "lib.live_cluster.client.assocket.info", AsyncMock(return_value="A0")
+        ) as info:
+            reused = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIs(reused, sock)
+        info.assert_awaited_once()
+        self.assertEqual(info.await_args.args[2], "node")
+
     async def test_socket_pool_maxlen_behavior(self):
         """Test that socket pool respects maxlen and FIFO behavior"""
         from lib.live_cluster.client.constants import MAX_SOCKET_POOL_SIZE

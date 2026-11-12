@@ -405,7 +405,7 @@ class Node(AsyncObject):
         the append, so a concurrent return cannot fill the pool in between."""
         pool = self.socket_pool.setdefault(port, deque(maxlen=MAX_SOCKET_POOL_SIZE))
         oldest = pool.popleft() if len(pool) == pool.maxlen else None
-        sock.last_used = time.monotonic()
+        sock.last_used = time.time()
         pool.append(sock)
 
         if oldest is not None:

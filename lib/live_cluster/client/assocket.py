@@ -242,7 +242,7 @@ class ASSocket:
         if not self.sock or self._is_stale():
             return False
 
-        if time.monotonic() - self.last_used < POOLED_SOCKET_PROBE_AFTER_IDLE_SECONDS:
+        if time.time() - self.last_used < POOLED_SOCKET_PROBE_AFTER_IDLE_SECONDS:
             return True
 
         try:
