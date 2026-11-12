@@ -18,11 +18,11 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-15-intel, macos-14, macos-15, macos-26]  
+        os: [macos-15-intel, macos-26-intel, macos-15, macos-26]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -55,7 +55,7 @@ jobs:
         run: |
           git describe --tags --always --abbrev=9
           echo "tag=$(git describe --tags --always --abbrev=9)" >> $GITHUB_OUTPUT
-      - uses: kenchan0130/actions-system-info@59699597e84e80085a750998045983daa49274c4 # v1.4.0
+      - uses: kenchan0130/actions-system-info@ceae9371bdbf9ff80acc78f28f7824a39c9648b3 # v1.5.0
         id: system-info
       - name: Get Python version from Pipfile
         working-directory: ${{ steps.working-dir.outputs.value }}
@@ -66,7 +66,7 @@ jobs:
           echo ${{ steps.system-info.outputs.kernel-release }}
           echo ${{ steps.system-info.outputs.platform }}
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Cache asadm and asinfo
@@ -171,7 +171,7 @@ jobs:
         working-directory: ${{ steps.working-dir.outputs.value }}
         run: |
           tar -C build/bin/ -cvf asadm.tar asadm
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.system-info.outputs.platform }}-${{ runner.arch }}-${{ matrix.os }}-${{ steps.system-info.outputs.release }}-asadm
           path: ${{ steps.working-dir.outputs.value }}/asadm.tar
