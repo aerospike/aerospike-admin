@@ -11,7 +11,6 @@
 #                    el8, el9, el10, amzn2023
 #
 # Set DEBUG=1 to enable bash trace mode.
-# ubuntu26.04: set GET_PIP_SHA256 to override the expected sha256 for bootstrap get-pip.py when PyPA updates it.
 #
 
 set -euo pipefail
@@ -30,7 +29,7 @@ UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd 
 UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
 # Ubuntu 26.04 (resolute): lzma-dev was dropped — use liblzma-dev. Do not pin libreadline8
 # (t64 / readline major varies); libreadline-dev pulls the correct runtime (see aerospike/aql#70).
-# Extra pyenv-style -dev packages keep CPython stdlib modules complete; ensurepip workaround below.
+# Extra pyenv-style -dev packages keep CPython stdlib modules complete.
 UBUNTU_2604_DEPS="${UBUNTU_2404_DEPS/lzma-dev/liblzma-dev} zlib1g-dev libbz2-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev uuid-dev"
 UBUNTU_2604_DEPS="${UBUNTU_2604_DEPS/libreadline8 /}"
 EL8_DEPS="ruby rubygems redhat-rpm-config rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
@@ -122,69 +121,11 @@ _install_go() {
 
 _install_python_via_asdf_and_fpm() {
   local pip_flags="$1"  # "" or "--break-system-packages"
-  local distro="${2:-}"
-  local saved_pyconf_set=0
-  local saved_pyconf=""
-  if [[ -n "${PYTHON_CONFIGURE_OPTS+x}" ]]; then
-    saved_pyconf_set=1
-    saved_pyconf="${PYTHON_CONFIGURE_OPTS}"
-  fi
 
   /opt/golang/go/bin/go install "github.com/asdf-vm/asdf/cmd/asdf@${ASDF_VERSION}"
   install "$HOME/go/bin/asdf" /usr/local/bin/asdf
   asdf plugin add python https://github.com/asdf-community/asdf-python.git
-  # Ubuntu 26.04 (resolute): ensurepip during "make install" can fail (pip bootstrap to --root /).
-  # Build without bundled pip and install pip explicitly afterward.
-  if [[ "$distro" == "ubuntu26.04" ]]; then
-    export PYTHON_CONFIGURE_OPTS="--with-ensurepip=no"
-  fi
   asdf install python "$PYTHON_VERSION"
-  if [[ "$distro" == "ubuntu26.04" ]]; then
-    if [[ "$saved_pyconf_set" -eq 1 ]]; then
-      export PYTHON_CONFIGURE_OPTS="${saved_pyconf}"
-    else
-      unset PYTHON_CONFIGURE_OPTS
-    fi
-    # Fail on HTTP errors (-f); checksum pins bootstrap.pypa.io content (bump when updating intentionally).
-    # bootstrap.pypa.io/get-pip.py is a ROLLING url -- PyPA replaces it in place on
-    # every pip release, so this pin goes stale on their schedule, not ours. Expect
-    # to bump it a few times a year; the mismatch branch below explains itself when
-    # you do. Current value is the file bundling pip 26.2.2 (verified: genuine PyPA
-    # header, self-contained base85 zip, no runtime network calls). See the PR for
-    # why pinning a rolling url is the real problem here.
-    local get_pip_expected_sha="${GET_PIP_SHA256:-f4448a01e3ab2914c65f4ca59d4cacba6b2dbde19a483fbac46587f8bbaff424}"
-    curl -fSL "${CURL_RETRY_OPTS[@]}" https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
-    # Compare explicitly rather than with `sha256sum -c`, whose only failure output
-    # is "WARNING: 1 computed checksum did NOT match" -- it names neither the file,
-    # the two hashes, nor where the pin lives, so the failure reads as an opaque
-    # exit 1 to whoever is on call. Print the diagnosis and the remedy instead.
-    local get_pip_actual_sha
-    get_pip_actual_sha=$(sha256sum /tmp/get-pip.py | cut -d' ' -f1)
-    if [[ "$get_pip_actual_sha" != "$get_pip_expected_sha" ]]; then
-      cat >&2 <<EOF
-ERROR: get-pip.py checksum mismatch -- https://bootstrap.pypa.io/get-pip.py has
-       changed upstream since this pin was last updated.
-  expected: ${get_pip_expected_sha}
-  actual:   ${get_pip_actual_sha}
-  file:     /tmp/get-pip.py (left in place for inspection)
-  pin:      .github/bin/install_deps.sh, get_pip_expected_sha (this function)
-
-That URL is ROLLING: PyPA replaces the file in place on every pip release, so the
-pin goes stale on their release schedule, not ours. A mismatch is far more often a
-routine pip release than a tampered download -- but it is the only signal we have,
-so confirm which it is before updating the pin.
-
-To fix: check https://pypi.org/project/pip/#history for a release around now, and
-confirm /tmp/get-pip.py is a genuine PyPA get-pip.py (PyPA header, self-contained
-base85 zip, no runtime network calls). Once verified, update get_pip_expected_sha
-above to the actual hash. GET_PIP_SHA256 overrides it for a single run -- use that
-only to test a hash you have already verified, never to wave a build through.
-EOF
-      return 1
-    fi
-    "$HOME/.asdf/installs/python/$PYTHON_VERSION/bin/python" /tmp/get-pip.py --no-warn-script-location
-    rm -f /tmp/get-pip.py
-  fi
   asdf set python "$PYTHON_VERSION"
   echo "python $PYTHON_VERSION" > /.tool-versions
   echo "python $PYTHON_VERSION" > "$HOME/.tool-versions"
@@ -214,6 +155,6 @@ install_deps() {
   _install_distro_packages "$distro"
 
   _install_go
-  _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")" "$distro"
+  _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")"
   _post_install_cleanup "$distro"
 }
