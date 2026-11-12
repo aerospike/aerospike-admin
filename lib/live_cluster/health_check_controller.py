@@ -25,11 +25,13 @@ from lib.live_cluster.get_controller import (
     GetStatisticsController,
 )
 from lib.utils import util
-from lib.base_controller import CommandHelp, ModifierHelp
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
 logger = logging.getLogger(__name__)
+
+MAX_SNAPSHOT_INTERVAL_SECONDS = 24 * 60 * 60
 
 
 @CommandHelp(
@@ -48,7 +50,7 @@ logger = logging.getLogger(__name__)
         ModifierHelp("-n", "Number of snapshots", default="1"),
         ModifierHelp(
             "-s",
-            "Sleep time in seconds between each snapshot",
+            "Sleep time in seconds between each snapshot, from 1 to 86400",
             default="1 sec",
         ),
         ModifierHelp(
@@ -159,6 +161,11 @@ class HealthCheckController(LiveClusterCommandController):
             modifiers=self.modifiers,
             mods=self.mods,
         )
+
+        if not 1 <= sleep_tm <= MAX_SNAPSHOT_INTERVAL_SECONDS:
+            raise ShellException(
+                "-s must be between 1 and %d seconds." % MAX_SNAPSHOT_INTERVAL_SECONDS
+            )
 
         verbose = util.check_arg_and_delete_from_mods(
             line=line, arg="-v", default=False, modifiers=self.modifiers, mods=self.mods
@@ -825,7 +832,9 @@ class HealthCheckController(LiveClusterCommandController):
 
                 sn_ct += 1
                 logger.info("Snapshot " + str(sn_ct))
-                time.sleep(sleep)
+
+                if sn_ct < snap_count:
+                    await asyncio.sleep(sleep)
 
             # FEATKEY is defined during tests. This is to help debugging github actions failures.
             if os.environ.get("FEATKEY"):

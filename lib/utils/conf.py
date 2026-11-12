@@ -12,18 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
 import json
 import logging
 import os
 import re
 import argparse
+import stat
 import sys
 import toml
 import copy
-from jsonschema import validate
+from jsonschema import ValidationError, validate
 from collections.abc import Mapping
 
-from lib.utils import password_source
+from lib.utils import password_source, secret_agent_conf
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
@@ -155,40 +157,181 @@ def _getdefault():
     return copy.deepcopy(_confdefault)
 
 
-def _loadfile(fname):
+class _AgentFiles:
+    """What the config files say about the Secret Agent, in the order the
+    files apply: a file, then the files it includes."""
+
+    def __init__(self):
+        self.sections = []
+        self.errors = []
+        self.unparsed = []
+
+
+_EXPECTED_TYPE = {
+    "string": "a string",
+    "integer": "an integer",
+    "boolean": "a boolean",
+    "object": "a table",
+}
+
+# No file can be at such a path. os.stat raises ValueError for a path with a NUL.
+_NO_SUCH_PATH = (FileNotFoundError, NotADirectoryError, ValueError)
+
+
+def _parse_error(fname, e):
+    """Never quotes a value from the file, which may be a password."""
+    if isinstance(e, ValidationError):
+        reason = _schema_error(e)
+    elif isinstance(e, toml.TomlDecodeError):
+        reason = "invalid TOML at line {} column {}".format(e.lineno, e.colno)
+    else:
+        reason = str(e).split("\n")[0]
+
+    return "Config file parse error: " + str(fname) + " " + reason
+
+
+def _schema_error(e):
+    if e.validator == "additionalProperties":
+        return e.message
+
+    *section, key = [str(p) for p in e.path] or ["the file"]
+    where = key
+
+    if section:
+        where = "{} in the [{}] config section".format(key, ".".join(section))
+
+    if e.validator == "type" and str(e.validator_value) in _EXPECTED_TYPE:
+        expected = _EXPECTED_TYPE[str(e.validator_value)]
+        return "invalid value for {}, expected {}".format(where, expected)
+
+    return "invalid value for " + where
+
+
+def _missing(path):
+    try:
+        os.stat(path)
+    except _NO_SUCH_PATH:
+        return True
+    except OSError:
+        pass
+
+    return False
+
+
+def _loadfile(fname, agent, instance, including=()):
+    """Each file's selected [secret-agent] section is checked on its own and
+    kept when the rest of the file fails to load. A file that cannot be parsed
+    or followed, or an include that cannot be read, is recorded in
+    agent.unparsed, so no secret is fetched without its agent settings. Returns
+    None for a file that exists but cannot be read."""
     conf_dict = {}
 
-    if os.path.exists(fname):
-        # file exists
-        conf_dict = toml.loads(open(fname).read())
+    def unreadable_directory(e):
+        if not isinstance(e, _NO_SUCH_PATH):
+            logger.warning(
+                "Config file read error : %s %s", e.filename, e.strerror or e
+            )
+            agent.unparsed.append(e.filename)
 
-        include_files = []
-        if "include" in conf_dict.keys():
-            if "file" in conf_dict["include"].keys():
-                f = conf_dict["include"]["file"]
-                include_files.append(os.path.expanduser(f))
+    def unreadable(e):
+        logger.warning("Config file read error : %s %s", fname, e.strerror or e)
 
-            if "directory" in conf_dict["include"].keys():
-                d = conf_dict["include"]["directory"]
-                include_files = include_files + sorted(
-                    [
-                        os.path.join(dp, f)
-                        for dp, dn, fn in os.walk(os.path.expanduser(d))
-                        for f in fn
-                    ]
-                )
+        if including:
+            agent.unparsed.append(fname)
 
-        for f in include_files:
-            try:
-                _merge(conf_dict, _loadfile(f))
-            except Exception as e:
-                logger.error(
-                    "Config file parse error: " + str(f) + " " + str(e).split("\n")[0]
-                )
+    try:
+        os.stat(fname)
+    except _NO_SUCH_PATH:
+        return conf_dict
+    except OSError as e:
+        unreadable(e)
+        return None
 
-        validate(conf_dict, json.loads(_confspec))
+    path = os.path.realpath(fname)
+
+    if path in including:
+        raise ValueError("includes itself")
+
+    try:
+        with open(fname, encoding="utf-8") as f:
+            conf_dict = toml.loads(f.read())
+
+        _take_agent_section(conf_dict, fname, instance, agent)
+        include_files = _include_paths(conf_dict, unreadable_directory)
+    except OSError as e:
+        unreadable(e)
+        return None
+    except Exception:
+        agent.unparsed.append(fname)
+        raise
+
+    for f in include_files:
+        try:
+            included = _loadfile(f, agent, instance, including + (path,))
+            _merge(conf_dict, included or {})
+        except Exception as e:
+            logger.error(_parse_error(f, e))
+
+    validate(conf_dict, json.loads(_confspec))
 
     return conf_dict
+
+
+def _include_paths(conf_dict, on_directory_error):
+    """The files [include] names. A directory entry that is not a regular file
+    is skipped, as in the C tools."""
+    include = conf_dict.get("include", {})
+    validate(
+        {"include": include},
+        {"properties": {"include": json.loads(_confspec)["properties"]["include"]}},
+    )
+    paths = []
+
+    if "file" in include:
+        paths.append(os.path.expanduser(include["file"]))
+
+    if "directory" in include:
+        paths += sorted(
+            os.path.join(dp, f)
+            for dp, _, fn in os.walk(
+                os.path.expanduser(include["directory"]), onerror=on_directory_error
+            )
+            for f in fn
+            if _loadable_entry(os.path.join(dp, f))
+        )
+
+    return paths
+
+
+def _loadable_entry(path):
+    """A regular file, or one that cannot be looked up, so that loading it
+    reports why. A dangling link or a link loop is reported and skipped, as in
+    the C tools."""
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except OSError as e:
+        if e.errno not in (errno.ENOENT, errno.ELOOP):
+            return True
+
+        logger.warning("Config file read error : %s %s", path, e.strerror)
+        return False
+
+
+def _take_agent_section(conf_dict, fname, instance, agent):
+    """Remove the [secret-agent] sections from conf_dict and keep the one
+    --instance selects, checked. The others are ignored. An error is kept for
+    asadm to report when the run connects."""
+    sections = {
+        name: conf_dict.pop(name)
+        for name in list(conf_dict)
+        if secret_agent_conf.is_section(name)
+    }
+    name, values = secret_agent_conf.file_section(sections, instance)
+
+    try:
+        agent.sections.append((name, secret_agent_conf.check_section(name, values)))
+    except password_source.PasswordSourceError as e:
+        agent.errors.append("Config file error: {} {}".format(fname, e))
 
 
 def decode(v):
@@ -342,24 +485,23 @@ def loadconfig(cli_args):
 
     conf_dict = {}
     conffiles = []
+    agent = _AgentFiles()
 
     if cli_args.only_config_file is not None or not cli_args.no_config_file:
         if cli_args.only_config_file is not None:
             # Load only config file.
             f = cli_args.only_config_file
 
-            if os.path.exists(f):
+            if not _missing(f):
                 try:
-                    _merge(conf_dict, _loadfile(f))
-                    conffiles.append(f)
+                    loaded = _loadfile(f, agent, cli_args.instance)
+
+                    if loaded is not None:
+                        _merge(conf_dict, loaded)
+                        conffiles.append(f)
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
-                    logger.critical(
-                        "Config file parse error: "
-                        + str(f)
-                        + " "
-                        + str(e).split("\n")[0]
-                    )
+                    logger.critical(_parse_error(f, e))
             else:
                 logger.warning(
                     "Config file read error : " + str(f) + " " + "No such file"
@@ -372,7 +514,7 @@ def loadconfig(cli_args):
             # -> user specified conf file
             conffiles = ["/etc/aerospike/astools.conf", ADMIN_HOME + "astools.conf"]
             if cli_args.config_file:
-                if os.path.exists(cli_args.config_file):
+                if not _missing(cli_args.config_file):
                     conffiles.append(cli_args.config_file)
                 else:
                     logger.warning(
@@ -384,15 +526,10 @@ def loadconfig(cli_args):
 
             for f in conffiles:
                 try:
-                    _merge(conf_dict, _loadfile(f))
+                    _merge(conf_dict, _loadfile(f, agent, cli_args.instance) or {})
                 except Exception as e:
                     # Bail out of the primary file has parsing error.
-                    logger.critical(
-                        "Config file parse error: "
-                        + str(f)
-                        + " "
-                        + str(e).split("\n")[0]
-                    )
+                    logger.critical(_parse_error(f, e))
 
     asadm_dict = _flatten(default_conf_dict)
     file_dict = _flatten(conf_dict, cli_args.instance)
@@ -414,6 +551,12 @@ def loadconfig(cli_args):
         asadm_dict["auth"] = AuthMode[asadm_dict["auth"].upper()]
     except Exception:
         logger.critical("Wrong authentication mode: " + str(asadm_dict["auth"]))
+
+    # Kept apart from the merged options: the agent settings apply one file at a
+    # time, as in the C tools, then the command line.
+    asadm_dict["secret_agent_sections"] = agent.sections
+    asadm_dict["sagent_config_errors"] = agent.errors
+    asadm_dict["secret_agent_unparsed_files"] = agent.unparsed
 
     # Find seed nods
     seeds = _getseeds(asadm_dict)
@@ -447,7 +590,7 @@ def option_label(args, option):
     return "--" + option
 
 
-def _resolve_password(args):
+def _resolve_password(args, fetch_secret):
     # DEFAULTPASSWORD means prompt later.
     if args.auth == AuthMode.PKI or args.password in (None, DEFAULTPASSWORD):
         return
@@ -455,18 +598,20 @@ def _resolve_password(args):
     label = option_label(args, "password")
 
     if args.user is None:
-        if password_source.has_source(args.password):
+        if password_source.has_source(args.password, fetch_secret):
             logger.warning("%s: ignored because no user is set", label)
 
         return
 
     args.password = password_source.resolve(
-        args.password, label, max_len=password_source.PASSWORD_MAX_LEN
+        args.password, label, fetch_secret, max_len=password_source.PASSWORD_MAX_LEN
     )
 
 
 def resolve_password_sources(args):
-    _resolve_password(args)
+    fetch_secret = secret_agent_conf.fetcher(args)
+
+    _resolve_password(args, fetch_secret)
 
     if (
         args.tls_enable
@@ -474,14 +619,17 @@ def resolve_password_sources(args):
         and args.tls_keyfile_password not in (None, DEFAULTPASSWORD)
     ):
         args.tls_keyfile_password = resolve_keyfile_password(
-            args.tls_keyfile_password, option_label(args, "tls-keyfile-password")
+            args.tls_keyfile_password,
+            fetch_secret,
+            option_label(args, "tls-keyfile-password"),
         )
 
 
-def resolve_keyfile_password(value, option="--tls-keyfile-password"):
+def resolve_keyfile_password(value, fetch_secret=None, option="--tls-keyfile-password"):
     return password_source.resolve(
         value.strip(password_source.WHITESPACE),
         option,
+        fetch_secret,
         max_len=password_source.TLS_KEYFILE_PASSWORD_MAX_LEN,
         first_line=True,
     )
@@ -574,14 +722,17 @@ def print_config_file_option():
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>', the whole file less one trailing '\\n' or\n"
         "                         '\\r\\n'. PATH should name a regular file.\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
         "                      and one trailing newline is dropped after decoding. A 'b64:' value\n"
         "                      on the command line is as visible as a literal password.\n"
-        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
-        "                      'file:' must be given as 'b64:' or typed at the prompt.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+        "                      'file:' or 'secrets:' must be given as 'b64:' or typed at the\n"
+        "                      prompt.\n"
         "                      The password is read only when a user is set and the auth mode is\n"
         "                      not PKI. It must be at most 63 bytes.\n"
+        "                      A value fetched with 'secrets:' is used as-is.\n"
         "                      User will be prompted on command line if -P specified and no\n"
         "                      password is given. The typed password is used as is. A password\n"
         "                      piped on stdin has surrounding whitespace trimmed."
@@ -631,18 +782,21 @@ def print_config_file_option():
         "                      2) Base64 encoded environment variable: 'env-b64:<VAR>'\n"
         "                      3) Base64 encoded string: 'b64:<BASE64>'\n"
         "                      4) File: 'file:<PATH>', the first line of the file\n"
-        "                      5) String: 'PASSWORD'\n"
+        "                      5) Aerospike Secret Agent: 'secrets:<resource>:<key>'\n"
+        "                      6) String: 'PASSWORD'\n"
         "                      Prefixes are case-sensitive. A base64 value may be line wrapped,\n"
         "                      and one trailing newline is dropped after decoding.\n"
-        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:' or\n"
-        "                      'file:' must be given as 'b64:'.\n"
-        "                      Surrounding whitespace is trimmed before the form is read.\n"
+        "                      A password that itself begins with 'env:', 'env-b64:', 'b64:',\n"
+        "                      'file:' or 'secrets:' must be given as 'b64:'.\n"
+        "                      Surrounding whitespace is trimmed before the form is read. A\n"
+        "                      password with surrounding whitespace must be given as 'b64:'.\n"
         "                      The password is read only when a key file is set. It must be at\n"
         "                      most 1024 bytes.\n"
+        "                      A value fetched with 'secrets:' is used as-is.\n"
         "                      Default: none\n"
         "                      User will be prompted on command line if --tls-keyfile-password\n"
         "                      specified and no password is given. The typed password\n"
-        "                      accepts the forms above."
+        "                      accepts the forms above except 'secrets:'."
     )
     print(
         " --tls-certfile=path  Path to the chain file for mutual authentication (if\n"
@@ -659,6 +813,8 @@ def print_config_file_option():
         "                      tls_capath."
     )
     print("")
+    print_secret_agent_options()
+    print("")
     print("[asadm]")
     print(
         " -s --services-alumni\n"
@@ -674,12 +830,42 @@ def print_config_file_option():
     )
 
 
+def print_secret_agent_options():
+    print("[secret-agent]")
+    print(" Aerospike Secret Agent used for 'secrets:<resource>:<key>' passwords.")
+    print(
+        " In a config file, set these in the [secret-agent] section as sa-address,\n"
+        " sa-port, sa-timeout and sa-ca-file."
+    )
+    print(
+        ' --sa-address=HOST    HOST is "<host>[:<port>]" or "[<ipv6>][:<port>]".\n'
+        "                      Secret Agent hostname or IP address.\n"
+        "                      Default: 127.0.0.1:3005"
+    )
+    print(
+        " --sa-port=PORT       Secret Agent port, 1 to 65535.\n"
+        "                      Overrides a port in --sa-address.\n"
+        "                      Default: 3005"
+    )
+    print(
+        " --sa-timeout=ms      Timeout in milliseconds for Secret Agent requests, an\n"
+        "                      integer from 1 to 2147483647.\n"
+        "                      Default: 1000"
+    )
+    print(
+        " --sa-ca-file=path    Path to a CA certificate file. Enables TLS to the Secret\n"
+        "                      Agent and verifies its certificate against this CA. The\n"
+        "                      agent's hostname or IP address must be in the certificate.\n"
+        "                      Default: none"
+    )
+
+
 def config_file_help():
     print("\n\n")
     print(
         "Default configuration files are read from the following files in the given order:\n"
         "/etc/aerospike/astools.conf ~/.aerospike/astools.conf\n"
-        "The following sections are read: (cluster asadm include)\n"
+        "The following sections are read: (cluster asadm secret-agent include)\n"
         "The following options effect configuration file behavior\n"
     )
     print(
@@ -689,7 +875,8 @@ def config_file_help():
     print(
         " --instance=name\n"
         "                      Section with these instance is read. e.g in case instance \n"
-        "                      `a` is specified sections cluster_a, asadm_a is read."
+        "                      `a` is specified sections cluster_a, asadm_a,\n"
+        "                      secret-agent_a is read."
     )
     print(
         " --config-file=path\n"
@@ -707,7 +894,7 @@ def create_deprecate_action(action, optional_msg=""):
     Used to create a deprecated flag action. The DeprecateAction is useful for obvious reasons
     but the need to pass a BaseClass may not be.  This allows you to deprecate a flag that already
     has an action defined.  argparse does not allow multiple actions. So you could do:
-    create_deprecate_action(argparse._Store)
+    create_deprecate_action(argparse._StoreAction)
 
     action - A argparse.Action class not an instance.
     optional_msg - Message to be printed after deprecation warning.
@@ -715,9 +902,7 @@ def create_deprecate_action(action, optional_msg=""):
 
     class DeprecateAction(action):
         def __call__(self, parser, namespace, values, option_string=None):
-            logger.warning(
-                "Argument %s is deprecated. %s", self.option_strings, optional_msg
-            )
+            logger.warning("Argument %s is deprecated. %s", option_string, optional_msg)
             super().__call__(parser, namespace, values, option_string)
 
     return DeprecateAction
@@ -771,6 +956,18 @@ def get_cli_args():
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
     add_fn("--timeout", type=float)
+
+    add_fn("--sa-address")
+    add_fn("--sa-port")
+    add_fn("--sa-timeout")
+    add_fn("--sa-ca-file")
+    add_fn(
+        "--sa-cafile",
+        action=create_deprecate_action(
+            argparse._StoreAction, "Use --sa-ca-file instead."
+        ),
+        help=argparse.SUPPRESS,
+    )
 
     add_fn("--config-file")
     add_fn("--instance")
