@@ -272,6 +272,7 @@ _INFO_CALL_SUBSECTIONS = {
     "info_bin_statistics": constants.STAT_BINS,
     "info_sindex": constants.STAT_SINDEX,
     "info_sindex_statistics": constants.STAT_SINDEX,
+    "info_all_sindex_statistics": constants.STAT_SINDEX,
     "info_XDR_statistics": constants.STAT_XDR,
     "info_all_dc_statistics": constants.STAT_DC,
     "info_all_xdr_namespaces_statistics": constants.STAT_XDR_NS,
@@ -397,10 +398,21 @@ class _ErrorRecordingCluster:
             return
 
         for node_key, value in result.items():
-            if isinstance(value, Exception):
-                _record_info_call_error(
-                    self._ledger, self._section, method_name, kwargs, node_key, value
-                )
+            failures = [value]
+
+            if method_name == "info_all_sindex_statistics" and isinstance(value, dict):
+                failures = value.values()
+
+            for failure in failures:
+                if isinstance(failure, Exception):
+                    _record_info_call_error(
+                        self._ledger,
+                        self._section,
+                        method_name,
+                        kwargs,
+                        node_key,
+                        failure,
+                    )
 
 
 def _retry_reported_failure(

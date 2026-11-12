@@ -87,9 +87,9 @@ def get_fully_qualified_domain_name(address, timeout=0.5):
     return result[0]
 
 
-_host_ips: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task]" = (
-    weakref.WeakKeyDictionary()
-)
+_host_ips: (
+    "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task | list[str]]"
+) = weakref.WeakKeyDictionary()
 
 
 async def _get_host_ips() -> list[str]:
@@ -99,7 +99,10 @@ async def _get_host_ips() -> list[str]:
     if loop not in _host_ips:
         _host_ips[loop] = loop.create_task(_run_hostname())
 
-    return await asyncio.shield(_host_ips[loop])
+    if isinstance(_host_ips[loop], asyncio.Task):
+        _host_ips[loop] = await asyncio.shield(_host_ips[loop])
+
+    return _host_ips[loop]
 
 
 async def _run_hostname() -> list[str]:
