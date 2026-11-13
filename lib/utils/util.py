@@ -267,7 +267,7 @@ def get_arg_and_delete_from_mods(
 
         line.remove(arg)
 
-        if val:
+        if val is not None:
             line.remove(str(val))
     except Exception:
         val = default
