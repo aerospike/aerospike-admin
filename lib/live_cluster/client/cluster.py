@@ -39,17 +39,6 @@ class PrincipalNotFoundError(LookupError):
 
     carries_its_own_message = True
 
-    def __init__(self, principal):
-        if principal and principal.strip("0"):
-            message = (
-                "Unable to reach the principal node {}. Check 'info network' for "
-                "Offline nodes; a longer --timeout may help.".format(principal)
-            )
-        else:
-            message = "Unable to reach the principal node: no node is live."
-
-        super().__init__(message)
-
 
 # interval time in second for cluster refreshing
 CLUSTER_REFRESH_INTERVAL = 3
@@ -119,9 +108,9 @@ class Cluster(AsyncObject):
         # self.node_lookup is a dict of (fqdn, port) -> Node
         # and (ip, port) -> Node, and node.node_id -> Node
         self.node_lookup: LookupDict[Node] = LookupDict(LookupDict.PREFIX_MODE)
-        # node_id -> Node for the IDs currently in node_lookup, so an ID can be
-        # dropped when its node goes Offline or reports a different ID.
-        self._node_id_lookup: dict[str, Node] = {}
+        # The node IDs currently in node_lookup. They are rebuilt after every
+        # crawl, see _reindex_node_ids().
+        self._indexed_ids: set[str] = set()
 
         self._seed_nodes: set[Addr_Port_TLSName] = set(seed_nodes)
         self._live_nodes: set[Addr_Port_TLSName] = set()
@@ -284,6 +273,19 @@ class Cluster(AsyncObject):
             logger.error(e)
             return ""
 
+    def get_principal_node(self) -> Node | None:
+        """
+        The live node with the highest node ID, or None when no node is live. Unlike
+        get_expected_principal(), which serves the display and looks at every node,
+        this never returns a node that cannot take a command.
+        """
+        live_nodes = [node for node in self.nodes.values() if node.alive]
+
+        if not live_nodes:
+            return None
+
+        return max(live_nodes, key=lambda node: node.node_id.zfill(16))
+
     def get_live_nodes(self) -> set[Addr_Port_TLSName]:
         # TODO: why not return a reference to Node objects instead?
         return self._live_nodes
@@ -437,16 +439,12 @@ class Cluster(AsyncObject):
         if self.nodes:
             for node_key in list(self.nodes.keys()):
                 node = self.nodes[node_key]
-                refreshed = await node.needs_refresh()
-                if refreshed:
+                if await node.needs_refresh():
                     logger.debug("Node %s:%s needs refresh", node.ip, node.port)
                     await node.refresh_connection()
                 if node.key != node_key:
                     # change in service list
                     self.nodes.pop(node_key)
-                if refreshed or node.key != node_key:
-                    # A refresh can bring an Offline node back, take a live one
-                    # down, or change its node ID, without changing its key.
                     self.update_node(node)
                 _endpoints = node.service_addresses
                 self.update_aliases(aliases, _endpoints, node.key)
@@ -556,22 +554,30 @@ class Cluster(AsyncObject):
         # add node to lookup
         self.node_lookup[node.sock_name(use_fqdn=True)] = node
         self.node_lookup[node.sock_name()] = node
-        self._update_node_id_lookup(node)
-
-    def _update_node_id_lookup(self, node):
-        """
-        Index a node by its ID only while it is live, and drop any ID it no longer
-        answers to. An Offline node carries a placeholder ID, so it must not be
-        reachable by the ID it had before it went down.
-        """
-        for node_id, indexed in list(self._node_id_lookup.items()):
-            if indexed is node and not (node.alive and node_id == node.node_id):
-                del self._node_id_lookup[node_id]
-                self.node_lookup.discard_exact(node_id)
-
         if node.alive:
-            self._node_id_lookup[node.node_id] = node
-            self.node_lookup[node.node_id] = node
+            self._index_node_id(node)
+
+    def _index_node_id(self, node):
+        self.node_lookup[node.node_id] = node
+        self._indexed_ids.add(node.node_id)
+
+    def _reindex_node_ids(self):
+        """
+        Rebuild the node ID entries of node_lookup from the live nodes in self.nodes.
+        update_node() only ever adds an ID. A crawl can also take a live node down,
+        change a node ID or drop a node, and can bring an Offline node back without
+        calling update_node(), so the IDs are rebuilt after each crawl. An Offline
+        node carries a placeholder ID and must not be reachable by the ID it had
+        before it went down.
+        """
+        for node_id in self._indexed_ids:
+            self.node_lookup.discard_exact(node_id)
+
+        self._indexed_ids = set()
+
+        for node in self.nodes.values():
+            if node.alive:
+                self._index_node_id(node)
 
     def get_node(self, node) -> list[Node]:
         """
@@ -636,15 +642,12 @@ class Cluster(AsyncObject):
             randint = random.randint(0, len(live_nodes) - 1)
             use_nodes = [live_nodes[randint]]
         elif nodes == constants.NodeSelection.PRINCIPAL:
-            principal = self.get_expected_principal()
+            principal = self.get_principal_node()
 
-            try:
-                use_nodes = self.get_node(principal)
-            except KeyError:
-                use_nodes = []
+            if principal is None:
+                raise PrincipalNotFoundError(str(self._no_usable_nodes_error()))
 
-            if not use_nodes:
-                raise PrincipalNotFoundError(principal)
+            use_nodes = [principal]
 
         elif isinstance(nodes, list):
             for node in nodes:
@@ -803,6 +806,8 @@ class Cluster(AsyncObject):
             try:
                 if self.need_to_refresh_cluster():
                     await self._crawl()
+                    # Not in _crawl(): it returns early when there are no new peers.
+                    self._reindex_node_ids()
                     self.last_cluster_refresh_time = time()
             except Exception:
                 raise
@@ -959,7 +964,7 @@ class Cluster(AsyncObject):
                 pass
         self.nodes = {}
         self.node_lookup = LookupDict()
-        self._node_id_lookup = {}
+        self._indexed_ids = set()
 
     def get_self_node(self):
         # Returns the first node flagged localhost; if multiple co-located
