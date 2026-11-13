@@ -4364,24 +4364,24 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
     def _parse_target(self, line):
         """Return (bin, ael_b64, path modifier or None, prompt text) for the one target.
         A bare keyword parses as empty and an unquoted path as several words."""
-        if "ael" in line and not self.mods["ael"]:
+        if "ael" in line and not any(self.mods["ael"]):
             raise ShellException(
                 "The 'ael' modifier requires an AEL path, e.g. ael '$.profile.ssn'."
             )
 
-        if "ael_b64" in line and not self.mods["ael_b64"]:
+        if "ael_b64" in line and not any(self.mods["ael_b64"]):
             raise ShellException(
                 "The 'ael_b64' modifier requires a base64 encoded AEL path, e.g. ael_b64 JC5wcm9maWxlLnNzbg==."
             )
 
         if len(self.mods["ael"]) > 1:
             raise ShellException(
-                "The 'ael' modifier takes one quoted path. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'."
+                f"The 'ael' modifier takes one quoted path, but '{' '.join(self.mods['ael'][1:])}' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'."
             )
 
         if len(self.mods["ael_b64"]) > 1:
             raise ShellException(
-                "The 'ael_b64' modifier takes one base64 encoded path."
+                f"The 'ael_b64' modifier takes one base64 encoded path, but '{' '.join(self.mods['ael_b64'][1:])}' follows it."
             )
 
         bin_name = util.get_arg_and_delete_from_mods(
@@ -4428,6 +4428,9 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
                 "Either 'bin', 'ael' or 'ael_b64' modifier is required. Use 'bin' to mask a whole bin, or 'ael'/'ael_b64' to mask the element an AEL path names."
             )
 
+        if line:
+            raise ShellException(f"Unexpected words '{' '.join(line)}'.")
+
         if ael is not None:
             target = f"path '{ael}'"
             ael_b64 = binascii.b2a_base64(ael.encode("utf-8"), newline=False).decode(
@@ -4459,7 +4462,8 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
             "function-args",
             "Function parameters in key-value pairs (e.g. position 0 length 4 value *)."
             " 'default' is what redact returns for a value of another type, and a redact"
-            " rule on an AEL path requires it.",
+            " rule on an AEL path requires it. Quote a value containing '#', e.g."
+            " value '#', since an unquoted '#' starts a comment.",
         ),
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
@@ -4671,7 +4675,6 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
     def __init__(self):
         self.required_modifiers = set(["namespace", "set"])
         self.modifiers = set(["bin", "ael", "ael_b64", "type"])
-        self.meta_getter = GetClusterMetadataController(self.cluster)
 
     async def _do_default(self, line):
 
@@ -4707,23 +4710,7 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
         if not all([namespace, set_name]):
             raise ShellException("All parameters are required: namespace, set")
 
-        bin_name, ael_b64, path_mod, target = self._parse_target(line)
-
-        if path_mod is not None:
-            builds = await self.meta_getter.get_builds(nodes=self.nodes)
-            feature_support = await util.check_version_support(
-                feature_versions={
-                    "masking_ael": constants.SERVER_MASKING_ON_AEL_FIRST_VERSION,
-                },
-                builds=builds,
-            )
-
-            if not feature_support["masking_ael"]:
-                raise ShellException(
-                    "The '{}' modifier requires server v. {} or later.".format(
-                        path_mod, constants.SERVER_MASKING_ON_AEL_FIRST_VERSION
-                    )
-                )
+        bin_name, ael_b64, _, target = self._parse_target(line)
 
         if self.warn and not self.prompt_challenge(
             f"You're about to drop the masking rule for {target} in namespace '{namespace}', set '{set_name}'."

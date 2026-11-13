@@ -4277,13 +4277,17 @@ class Node(AsyncObject):
         if resp.startswith("error") or resp.startswith("ERROR"):
             raise ASInfoResponseError("Failed to list masking rules", resp)
 
-        rules = (
-            client_util.info_to_dict(v, ";")
-            for v in client_util.info_to_list(resp, delimiter=":")
-            if v != ""
-        )
-        # A ':' inside a value splits its rule; the pieces after it carry no namespace.
-        result = [rule for rule in rules if "namespace" in rule or "ns" in rule]
+        raw_rules = []
+        for piece in client_util.info_to_list(resp, delimiter=":"):
+            if piece == "":
+                continue
+            keys = client_util.info_to_dict(piece, ";").keys()
+            # A ':' inside a value splits its rule; the pieces after it carry no namespace.
+            if raw_rules and "namespace" not in keys and "ns" not in keys:
+                raw_rules[-1] += ":" + piece
+            else:
+                raw_rules.append(piece)
+        result = [client_util.info_to_dict(rule, ";") for rule in raw_rules]
         logger.debug(
             "info_masking_list_rules node=%s namespace=%s set=%s response=%s",
             self.ip,

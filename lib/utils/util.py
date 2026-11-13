@@ -1507,8 +1507,7 @@ def _masking_path_bin(ael):
 
 def normalize_masking_rule_data(rule):
     """Map a masking-show rule to the show masking columns. A path rule carries no
-    bin, so its bin is read off the front of the decoded AEL path. The server marks
-    only dormant rules, so an unmarked rule is enforced."""
+    bin, so its bin is read off the front of the decoded AEL path."""
     processed_rule = {}
 
     # Normalize field names (handle both "ns"/"namespace")
@@ -1548,6 +1547,7 @@ def normalize_masking_rule_data(rule):
             "bin",
             "type",
             "function",
+            "default",
             "ael_b64",
             "enforced",
         }
@@ -1558,6 +1558,9 @@ def normalize_masking_rule_data(rule):
         processed_rule["function"] = result
     else:
         processed_rule["function"] = ""
+
+    if "default" in rule:
+        processed_rule["default"] = rule["default"]
 
     processed_rule["enforced"] = rule.get("enforced", "true")
 

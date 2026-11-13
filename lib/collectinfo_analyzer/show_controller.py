@@ -2211,6 +2211,15 @@ class ShowMaskingController(CollectinfoCommandController):
             warn_no_data("show masking", "masking rules")
             return
 
+        # Older asadm split rules at ':' and stored the pieces without a namespace.
+        merged_rules = []
+        for rule in masking_rules:
+            if "namespace" in rule or "ns" in rule:
+                merged_rules.append(dict(rule))
+            elif merged_rules:
+                merged_rules[-1].update(rule)
+        masking_rules = merged_rules
+
         # Apply filtering if specified
         if namespace or set_name:
             filtered_rules = []
