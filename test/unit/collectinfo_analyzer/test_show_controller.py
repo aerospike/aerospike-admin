@@ -380,6 +380,146 @@ class ShowMaskingControllerTest(unittest.TestCase):
             BRANCH_BUNDLE_MASKING_RULES, timestamp="2023-01-01"
         )
 
+    @parameterized.expand(
+        [
+            ("bin_rule", {"bin": "t"}, {"namespace": "b"}, {"bin": "t"}),
+            (
+                "path_rule",
+                {},
+                {"namespace": "b", "ael_b64": "JC5wLng="},
+                {"ael_b64": "JC5wLng="},
+            ),
+            (
+                "dormant_path_rule",
+                {},
+                {"namespace": "b", "ael_b64": "JC5wLng=", "enforced": "false"},
+                {"ael_b64": "JC5wLng=", "enforced": "false"},
+            ),
+        ]
+    )
+    def test_do_default_old_bundle_piece_with_namespace_keeps_rule_namespace(
+        self, _, target, piece, exp_target
+    ):
+        before = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "u",
+            "type": "string",
+            "function": "redact",
+        }
+        after = dict(before, bin="w")
+        rule = dict(
+            namespace="test",
+            set="demo",
+            type="string",
+            function="constant",
+            value="a",
+            **target,
+        )
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy([before, rule, piece, after])
+            }
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [
+                before,
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="constant",
+                    value="a",
+                    **exp_target,
+                ),
+                after,
+            ],
+            timestamp="2023-01-01",
+        )
+
+    @parameterized.expand(
+        [
+            ("no_filter", []),
+            ("namespace_and_set", ["namespace", "test", "set", "demo"]),
+        ]
+    )
+    def test_do_default_old_bundle_rule_typed_before_namespace_is_one_rule(
+        self, _, line
+    ):
+        before = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "u",
+            "type": "string",
+            "function": "redact",
+        }
+        after = dict(before, bin="w")
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy(
+                    [
+                        before,
+                        {"set": "demo", "value": "1"},
+                        {
+                            "namespace": "test",
+                            "bin": "t",
+                            "type": "string",
+                            "function": "constant",
+                        },
+                        after,
+                    ]
+                )
+            }
+        }
+
+        self.controller._do_default(line)
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [
+                before,
+                {
+                    "set": "demo",
+                    "value": "1",
+                    "namespace": "test",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                },
+                after,
+            ],
+            timestamp="2023-01-01",
+        )
+
+    def test_do_default_keeps_bundle_rules_keyed_by_ns_apart(self):
+        rules = [
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "u",
+                "type": "string",
+                "function": "redact",
+            },
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "w",
+                "type": "string",
+                "function": "redact",
+            },
+        ]
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy(rules)}
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            rules, timestamp="2023-01-01"
+        )
+
     def test_do_default_set_without_namespace_raises_error(self):
         """Test error when set is specified without namespace"""
         line = ["set", "demo"]
