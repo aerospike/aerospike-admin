@@ -752,6 +752,31 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(name=name):
                 self.assertFalse(util.is_valid_aerospike_name(name, "role"))
 
+    def test_get_arg_and_delete_from_mods_consumes_a_zero_value(self):
+        line = ["-s", "0"]
+
+        val = util.get_arg_and_delete_from_mods(
+            line=line, arg="-s", return_type=int, default=5, modifiers=[], mods={}
+        )
+
+        self.assertEqual(val, 0)
+        self.assertEqual(line, [])
+
+    def test_get_arg_and_delete_from_mods_consumes_an_empty_string_value(self):
+        line = ["--output-prefix", ""]
+
+        val = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--output-prefix",
+            return_type=str,
+            default="x",
+            modifiers=[],
+            mods={},
+        )
+
+        self.assertEqual(val, "")
+        self.assertEqual(line, [])
+
 
 class AggregateNsMemoryStatsTest(unittest.TestCase):
     def test_aggregates_across_namespaces(self):

@@ -3502,10 +3502,6 @@ class CaptureStyleJsonTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(get_style_json())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class CollectinfoSnapshotWaitFlagTest(unittest.IsolatedAsyncioTestCase):
     """The help names -s for the wait between snapshots."""
 
@@ -3515,6 +3511,8 @@ class CollectinfoSnapshotWaitFlagTest(unittest.IsolatedAsyncioTestCase):
             CollectinfoController, "_run_collectinfo", AsyncMock()
         ).start()
         self.addCleanup(patch.stopall)
+        logger_util.set_exit_code(0)
+        self.addCleanup(logger_util.set_exit_code, 0)
 
     def wait_time(self):
         call = self.run_mock.await_args
@@ -3528,6 +3526,7 @@ class CollectinfoSnapshotWaitFlagTest(unittest.IsolatedAsyncioTestCase):
         await self.controller.execute(["-s", "0"])
 
         self.assertEqual(self.wait_time(), 0)
+        self.assertEqual(logger_util.get_exit_code(), 0)
 
     async def test_t_still_sets_the_wait(self):
         await self.controller.execute(["-t", "2"])
@@ -3660,3 +3659,7 @@ class ParseNamespaceTest(unittest.TestCase):
         )
 
         self.assertEqual(namespaces, {"test", "bar"})
+
+
+if __name__ == "__main__":
+    unittest.main()
