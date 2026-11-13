@@ -823,3 +823,33 @@ class ShowMaskingRulesSheetTest(unittest.TestCase):
             ],
             [("profile", "$.profile.ssn", "redact"), ("ssn", "--", "redact")],
         )
+
+    def test_dormant_rule_shows_not_enforced(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "default": "x",
+        }
+        records = self.render(
+            [
+                dict(rule, ael_b64="JC5wcm9maWxlLnNzbg=="),
+                dict(rule, ael_b64="JC5wcm9maWxl", enforced="false"),
+            ]
+        )
+
+        self.assertEqual(
+            [
+                (
+                    r["AEL Path"]["converted"],
+                    r["Function"]["raw"],
+                    r["Enforced"]["raw"],
+                )
+                for r in records
+            ],
+            [
+                ("$.profile", "redact default x", False),
+                ("$.profile.ssn", "redact default x", True),
+            ],
+        )

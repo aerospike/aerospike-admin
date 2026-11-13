@@ -99,6 +99,10 @@ class ASInfoErrorTest(unittest.TestCase):
                 "ERROR=something;more-data",
                 "something;more-data",
             ),
+            (
+                "error:bad=value",
+                "bad=value",
+            ),
         ]
     )
     def test_keeps_delimiters_inside_message(self, response, exp_msg):

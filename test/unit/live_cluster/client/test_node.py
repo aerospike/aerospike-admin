@@ -5263,6 +5263,17 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    @parameterized.expand([("12:30",), ("a:b=c",)])
+    async def test_info_masking_list_rules_skips_piece_of_split_value(self, value):
+        self.info_mock.return_value = (
+            f"namespace=test;set=demo;bin=t;type=string;function=constant;value={value}"
+            ":namespace=test;set=demo;bin=u;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual([rule.get("bin") for rule in result], ["t", "u"])
+
     async def test_info_masking_list_rules_success(self):
         """Test successful masking rules listing"""
         self.info_mock.return_value = "ns=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*:ns=test;set=demo;bin=email;type=string;function=constant;value=REDACTED"

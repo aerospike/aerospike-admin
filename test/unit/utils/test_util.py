@@ -503,6 +503,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "redact position 0 length 4 value *",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -526,6 +527,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "email",
             "type": "string",
             "function": "constant value REDACTED",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -548,6 +550,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "redact",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -558,7 +561,14 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
 
         result = util.normalize_masking_rule_data(rule)
 
-        expected = {"ns": "test", "set": "", "bin": "ssn", "type": "", "function": ""}
+        expected = {
+            "ns": "test",
+            "set": "",
+            "bin": "ssn",
+            "type": "",
+            "function": "",
+            "enforced": "true",
+        }
 
         self.assertEqual(result, expected)
 
@@ -580,6 +590,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "unknown_func",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -605,6 +616,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "custom_func param1 value1 param2 value2 custom_arg custom_value",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -612,8 +624,10 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             ("JC5wcm9maWxlLnNzbg==", None, "$.profile.ssn", "profile"),
-            ("JC5iLmFjY291bnRzLiouY2FyZA==", None, "$.b.accounts.*.card", "b"),
-            ("JC5wcm9maWxlcy4qLnNzbg==", None, "$.profiles.*.ssn", "profiles"),
+            ("JC4ibXktYmluIi5zc24=", None, '$."my-bin".ssn', "my-bin"),
+            ("JC4iYS5iIi54", None, '$."a.b".x', "a.b"),
+            ("JC5jYXJkcy5bMF0=", None, "$.cards.[0]", "cards"),
+            ("JC4i/yIueA==", None, '$."\\xff".x', "\\xff"),
             ("JC5zc24=", None, "$.ssn", "ssn"),
             ("JC5wcm9maWxlLnNzbg==", "srv_bin", "$.profile.ssn", "srv_bin"),
             ("!!not-base64", None, "!!not-base64", ""),
@@ -645,6 +659,34 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
                 "type": "string",
                 "ael": exp_ael,
                 "function": "redact position 0",
+                "enforced": "true",
+            },
+        )
+
+    def test_normalize_masking_rule_data_dormant_rule(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "value": "#",
+            "default": "unknown",
+            "ael_b64": "JC5wcm9maWxlLnNzbg==",
+            "enforced": "false",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        self.assertEqual(
+            result,
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "profile",
+                "type": "string",
+                "ael": "$.profile.ssn",
+                "function": "redact value # default unknown",
+                "enforced": "false",
             },
         )
 
