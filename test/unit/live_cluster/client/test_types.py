@@ -103,12 +103,25 @@ class ASInfoErrorTest(unittest.TestCase):
                 "error:bad=value",
                 "bad=value",
             ),
+            (
+                "ERROR:4",
+                "4",
+            ),
+            (
+                "error:bad",
+                "bad",
+            ),
         ]
     )
     def test_keeps_delimiters_inside_message(self, response, exp_msg):
         error = ASInfoResponseError("test message", response)
 
         self.assertEqual(str(error), "test message : {}.".format(exp_msg))
+
+    def test_one_colon_with_no_text_shows_no_server_text(self):
+        error = ASInfoResponseError("test message", "ERROR:")
+
+        self.assertEqual(str(error), "test message.")
 
     def test_create_unknow_error_str(self):
         message = "test message"

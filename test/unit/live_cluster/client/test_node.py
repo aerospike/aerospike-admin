@@ -5263,16 +5263,71 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    @parameterized.expand([("12:30",), ("a:b=c",)])
-    async def test_info_masking_list_rules_skips_piece_of_split_value(self, value):
+    @parameterized.expand(
+        [
+            (
+                "dormant_path_rule",
+                "namespace=test;set=demo;type=string;function=constant;value=12:30;ael_b64=JC5yMC54Lnk=;enforced=false",
+                {
+                    "type": "string",
+                    "function": "constant",
+                    "value": "12:30",
+                    "ael_b64": "JC5yMC54Lnk=",
+                    "enforced": "false",
+                },
+            ),
+            (
+                "path_rule_default",
+                "namespace=test;set=demo;type=string;function=redact;default=00:00;ael_b64=JC52Lnc=",
+                {
+                    "type": "string",
+                    "function": "redact",
+                    "default": "00:00",
+                    "ael_b64": "JC52Lnc=",
+                },
+            ),
+            (
+                "bin_rule_value_with_equals",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=a:b=c",
+                {
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "a:b=c",
+                },
+            ),
+            (
+                "bin_rule_value_with_two_colons",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=aa:bb:cc",
+                {
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "aa:bb:cc",
+                },
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_rejoins_split_value(self, _, rule, exp_rule):
         self.info_mock.return_value = (
-            f"namespace=test;set=demo;bin=t;type=string;function=constant;value={value}"
-            ":namespace=test;set=demo;bin=u;type=string;function=redact"
+            rule + ":namespace=test;set=demo;bin=u;type=string;function=redact:"
         )
 
         result = await self.node.info_masking_list_rules()
 
-        self.assertEqual([rule.get("bin") for rule in result], ["t", "u"])
+        self.assertEqual(
+            result,
+            [
+                dict(namespace="test", set="demo", **exp_rule),
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+            ],
+        )
 
     async def test_info_masking_list_rules_success(self):
         """Test successful masking rules listing"""

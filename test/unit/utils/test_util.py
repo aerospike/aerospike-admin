@@ -685,8 +685,35 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
                 "bin": "profile",
                 "type": "string",
                 "ael": "$.profile.ssn",
-                "function": "redact value # default unknown",
+                "function": "redact value #",
+                "default": "unknown",
                 "enforced": "false",
+            },
+        )
+
+    def test_normalize_masking_rule_data_default_leaves_function(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "redact",
+            "position": "0",
+            "default": "N/A",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        self.assertEqual(
+            result,
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact position 0",
+                "default": "N/A",
+                "enforced": "true",
             },
         )
 

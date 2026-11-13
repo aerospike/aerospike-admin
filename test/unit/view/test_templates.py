@@ -816,7 +816,7 @@ class ShowMaskingRulesSheetTest(unittest.TestCase):
             [
                 (
                     r["Bin"]["converted"],
-                    r["AEL Path"]["converted"],
+                    r["AEL"]["converted"],
                     r["Function"]["raw"],
                 )
                 for r in records
@@ -842,14 +842,58 @@ class ShowMaskingRulesSheetTest(unittest.TestCase):
         self.assertEqual(
             [
                 (
-                    r["AEL Path"]["converted"],
+                    r["AEL"]["converted"],
                     r["Function"]["raw"],
                     r["Enforced"]["raw"],
                 )
                 for r in records
             ],
             [
-                ("$.profile", "redact default x", False),
-                ("$.profile.ssn", "redact default x", True),
+                ("$.profile", "redact", False),
+                ("$.profile.ssn", "redact", True),
             ],
         )
+
+    def test_default_shows_in_its_own_column(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "position": "0",
+                    "default": "N/A",
+                    "ael_b64": "JC5wcm9maWxlLnNzbg==",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                    "position": "0",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [(r["Function"]["raw"], r["Default"]["converted"]) for r in records],
+            [("redact position 0", "N/A"), ("redact position 0", "--")],
+        )
+
+    def test_default_column_sits_between_function_and_enforced(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                    "default": "N/A",
+                },
+            ]
+        )
+
+        self.assertEqual(list(records[0])[-3:], ["Function", "Default", "Enforced"])
