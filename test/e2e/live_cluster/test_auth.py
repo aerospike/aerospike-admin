@@ -24,6 +24,7 @@ from lib.live_cluster.client import info, node
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
+from lib.utils import constants
 from test.e2e import lib, util
 
 NODE_COUNT = 2
@@ -31,6 +32,7 @@ RECOVERY_SECONDS = 20
 SSH_PASSWORD = "E2E-ssh-Pw0rd-marker"
 NON_ASCII_USER = "e2e-non-ascii"
 NON_ASCII_PASSWORD = "pässwörd-ü-密码"
+ROTATED_USER = "e2e-rotated"
 
 
 class ThreadRecorder:
@@ -83,6 +85,14 @@ async def wait_for_every_node_to_answer(cl: Cluster):
     raise AssertionError(
         "nodes did not answer within %ds: %r" % (RECOVERY_SECONDS, answers)
     )
+
+
+def nodes_showing_build(info_network, build):
+    """The nodes whose `info network` row shows the build, so the ones that answered."""
+    lines = info_network.splitlines()
+    nodes = [f"{lib.SERVER_IP}:{lib.PORT + 1000 * i}" for i in range(NODE_COUNT)]
+
+    return [n for n in nodes if any(n in line and build in line for line in lines)]
 
 
 class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
@@ -236,6 +246,62 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
                 await cl.close()
 
         self.assertEqual(failures_left, 0)
+
+    async def test_node_rejecting_the_login_after_a_restart_goes_offline(self):
+        """The password changed mid-session, then node 2, the principal, restarted. It
+        rejects the old password while node 1 keeps the session."""
+        lib.CLIENT.admin_create_user(
+            ROTATED_USER, "old-password", ["sys-admin", "read-write"]
+        )
+        self.addCleanup(lib.CLIENT.admin_drop_user, ROTATED_USER)
+        node_1 = f"{lib.SERVER_IP}:{lib.PORT}"
+        cl = await connect(ROTATED_USER, "old-password")
+
+        try:
+            await wait_for_every_node_to_answer(cl)
+            self.assertEqual(
+                list(await cl.info("node", nodes=constants.NodeSelection.PRINCIPAL)),
+                [f"{lib.SERVER_IP}:{lib.PORT + 1000}"],
+            )
+
+            lib.CLIENT.admin_set_password(ROTATED_USER, "new-password")
+            lib.restart_node(2)
+            lib.wait_for_cluster(NODE_COUNT)
+
+            every_node = await cl.info("node")
+            principal = await cl.info("node", nodes=constants.NodeSelection.PRINCIPAL)
+
+            lib.CLIENT.admin_set_password(ROTATED_USER, "old-password")
+            await wait_for_every_node_to_answer(cl)
+        finally:
+            await cl.close()
+
+        self.assertEqual(list(every_node), [node_1])
+        self.assertEqual(list(principal), [node_1])
+
+    def test_session_keeps_answering_when_a_restarted_node_rejects_the_login(self):
+        """The same rotation and restart, in an interactive asadm session."""
+        lib.CLIENT.admin_create_user(
+            ROTATED_USER, "old-password", ["sys-admin", "read-write"]
+        )
+        self.addCleanup(lib.CLIENT.admin_drop_user, ROTATED_USER)
+        node_1 = f"{lib.SERVER_IP}:{lib.PORT}"
+        node_2 = f"{lib.SERVER_IP}:{lib.PORT + 1000}"
+        session = util.AsadmSession(f"-h {node_1} -U {ROTATED_USER} -P old-password")
+        self.addCleanup(session.close)
+
+        before = session.run("info network")
+        self.assertCountEqual(nodes_showing_build(before, self.build), [node_1, node_2])
+
+        lib.CLIENT.admin_set_password(ROTATED_USER, "new-password")
+        lib.restart_node(2)
+        lib.wait_for_cluster(NODE_COUNT)
+        after = session.run("info network")
+
+        self.assertEqual(nodes_showing_build(after, self.build), [node_1])
+        self.assertIn(
+            f"ERROR: {node_2}: Login failed : No credential or bad credential.", after
+        )
 
 
 class SecurityDisabledTest(unittest.IsolatedAsyncioTestCase):
