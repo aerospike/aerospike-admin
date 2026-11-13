@@ -752,6 +752,31 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(name=name):
                 self.assertFalse(util.is_valid_aerospike_name(name, "role"))
 
+    def test_get_arg_and_delete_from_mods_consumes_a_zero_value(self):
+        line = ["-s", "0"]
+
+        val = util.get_arg_and_delete_from_mods(
+            line=line, arg="-s", return_type=int, default=5, modifiers=[], mods={}
+        )
+
+        self.assertEqual(val, 0)
+        self.assertEqual(line, [])
+
+    def test_get_arg_and_delete_from_mods_consumes_an_empty_string_value(self):
+        line = ["--output-prefix", ""]
+
+        val = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="--output-prefix",
+            return_type=str,
+            default="x",
+            modifiers=[],
+            mods={},
+        )
+
+        self.assertEqual(val, "")
+        self.assertEqual(line, [])
+
 
 class AggregateNsMemoryStatsTest(unittest.TestCase):
     def test_aggregates_across_namespaces(self):
@@ -1778,6 +1803,57 @@ class MemoryTablesAgreeTest(unittest.TestCase):
 
         self.assertEqual(headline["node1"]["allocated_shmem_bytes"], "800")
         self.assertEqual(headline["node1"]["allocated_bytes"], str(800 + 1000 * 1024))
+
+
+class AsyncCachedHeldTest(unittest.IsolatedAsyncioTestCase):
+    """Answers kept while held outlive the usual half second, until released."""
+
+    async def asyncSetUp(self):
+        self.asked = []
+        self.clock = 1000.0
+        asked = self.asked
+
+        class Server:
+            @util.async_cached
+            async def ask(self, command):
+                asked.append(command)
+                return command
+
+        self.Server = Server
+        self.server = Server()
+        patch("lib.utils.util.time", side_effect=lambda: self.clock).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_held_answers_outlive_the_ttl(self):
+        with self.Server.ask.held():
+            await self.server.ask("a")
+            self.clock += 60
+            await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a"])
+
+    async def test_answers_are_forgotten_once_released(self):
+        with self.Server.ask.held():
+            await self.server.ask("a")
+
+        await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a", "a"])
+
+    async def test_forget_clears_held_answers(self):
+        with self.Server.ask.held():
+            await self.server.ask("a")
+            self.Server.ask.forget()
+            await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a", "a"])
+
+    async def test_answers_still_expire_when_not_held(self):
+        await self.server.ask("a")
+        self.clock += 1
+        await self.server.ask("a")
+
+        self.assertEqual(self.asked, ["a", "a"])
 
 
 class ShellCommandStopTest(unittest.TestCase):
