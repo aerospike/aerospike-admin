@@ -12,16 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import fcntl
 import gzip
 import io
 import json
 import os
+import pty
 import re
+import select
 import shlex
 import signal
+import struct
 import subprocess
 import tarfile
 import tempfile
+import termios
 import threading
 import time
 import zipfile
@@ -172,6 +177,83 @@ class CompletedOutput:
     def __init__(self, stdout, stderr):
         self.stdout = stdout
         self.stderr = stderr
+
+
+class AsadmSession:
+    """Interactive asadm on a terminal, so a test can change the cluster between
+    commands. HOME is a temporary directory, so no user config or history is touched."""
+
+    PROMPT = re.compile(r"Admin\+?> $")
+    ESCAPES = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|[\x01\x02\r]")
+
+    def __init__(self, args, timeout=60):
+        self.home = tempfile.TemporaryDirectory()
+        self.fd, terminal = pty.openpty()
+        fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 250, 0, 0))
+        cmd = [_asadm_binary()] + shlex.split(args)
+        print("Running cmd: {}".format(cmd))
+        self.proc = subprocess.Popen(
+            cmd,
+            stdin=terminal,
+            stdout=terminal,
+            stderr=terminal,
+            start_new_session=True,
+            env=dict(os.environ, HOME=self.home.name, TERM="dumb"),
+        )
+        os.close(terminal)
+
+        try:
+            self._read_to_prompt(timeout)
+        except BaseException:
+            self.close()
+            raise
+
+    def run(self, command, timeout=60):
+        """Returns everything asadm printed for the command, errors included."""
+        os.write(self.fd, command.encode() + b"\n")
+        return self._read_to_prompt(timeout)
+
+    def _read_to_prompt(self, timeout):
+        deadline = time.monotonic() + timeout
+        raw = b""
+
+        while True:
+            output = self.ESCAPES.sub("", raw.decode(errors="replace"))
+
+            if self.PROMPT.search(output):
+                print(output)
+                return output
+
+            if time.monotonic() > deadline:
+                raise AssertionError(
+                    "no asadm prompt within %ds: %r" % (timeout, output)
+                )
+
+            if select.select([self.fd], [], [], 0.2)[0]:
+                try:
+                    data = os.read(self.fd, 65536)
+                except OSError:
+                    data = b""
+
+                if not data:
+                    raise AssertionError("asadm exited: %r" % output)
+
+                raw += data
+
+    def close(self):
+        try:
+            os.write(self.fd, b"exit\n")
+            self.proc.wait(10)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(self.proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+            self.proc.wait()
+
+        os.close(self.fd)
+        self.home.cleanup()
 
 
 def run_asinfo(args) -> CompletedProcess:
