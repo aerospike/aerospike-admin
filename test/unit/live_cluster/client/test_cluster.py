@@ -24,7 +24,7 @@ from parameterized import parameterized
 from pytest import PytestUnraisableExceptionWarning
 
 import lib
-from lib.live_cluster.client.cluster import Cluster, PrincipalNotFoundError
+from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
 from lib.utils import constants
 
@@ -1039,11 +1039,7 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("192.1.1.2", 3000, None), result)
 
     async def _cluster_with_offline_node(self):
-        """
-        A cluster whose seed node is live, plus a second node that was Offline when
-        it was first added: it carries the placeholder node ID, so update_node did not
-        index it by ID.
-        """
+        """A cluster with a live seed node and a second node that was Offline when added."""
         cluster = await Cluster([("192.1.1.1", 3000, None)])
         seed = next(iter(cluster.nodes.values()))
         seed.needs_refresh = AsyncMock(return_value=False)
@@ -1070,12 +1066,15 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         cluster.last_cluster_refresh_time = 0
         await cluster._refresh_cluster()
 
+    async def _call_principal(self, cluster):
+        """Run a principal-only call without a refresh, as a command would."""
+        cluster.need_to_refresh_cluster = MagicMock(return_value=False)
+        return await cluster.call_node_method_async(
+            constants.NodeSelection.PRINCIPAL, "info_build"
+        )
+
     async def test_node_back_online_after_refresh_is_found_by_node_id(self):
-        """
-        A node that was Offline at startup and connects on a later refresh
-        must be reachable by its node ID. When that node is the principal, 'show users'
-        and 'show roles' raised KeyError("Unable to find keys with '<node-id>'").
-        """
+        """A node Offline at startup that reconnects is found by ID and as principal."""
         cluster, _, node = await self._cluster_with_offline_node()
 
         async def back_online():
@@ -1092,7 +1091,7 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [node])
 
     async def test_node_gone_offline_after_refresh_is_not_found_by_old_node_id(self):
-        """The reverse: a node that drops out must not keep answering to its old ID."""
+        """A node that goes Offline loses its old ID but keeps its address entries."""
         cluster, _, node = await self._cluster_with_offline_node()
         node.node_id = "BB9000000000001"
         node.alive = True
@@ -1108,53 +1107,50 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         await self._refresh(cluster)
 
         self.assertNotIn("BB9000000000001", cluster.node_lookup)
+        self.assertEqual(cluster.get_node(node.sock_name()), [node])
+        self.assertEqual(cluster.get_node(node.sock_name(use_fqdn=True)), [node])
 
-    async def test_unreachable_principal_raises_an_error_that_needs_no_traceback(self):
-        """
-        get_nodes(PRINCIPAL) must not leak the lookup KeyError: asadm printed it with
-        a full traceback. The replacement explains itself, so the logger prints only
-        the message.
-        """
+    async def test_no_live_node_raises_the_no_usable_nodes_error(self):
+        """With no live node, a principal call raises the usual no-usable-nodes error."""
         cluster, seed, _ = await self._cluster_with_offline_node()
         # What a failed request leaves behind: not alive, node ID kept and indexed.
         seed.alive = False
 
-        with self.assertRaises(PrincipalNotFoundError) as ctx:
-            cluster.get_nodes(constants.NodeSelection.PRINCIPAL)
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [])
+
+        with self.assertRaises(IOError) as ctx:
+            await self._call_principal(cluster)
 
         self.assertEqual(str(ctx.exception), "Unable to find any Aerospike nodes")
-        self.assertTrue(ctx.exception.carries_its_own_message)
 
-    async def test_no_live_node_names_no_principal(self):
+    async def test_no_live_node_keeps_the_parked_node_message(self):
+        """With every node parked by checkpoint-save, a principal call names them."""
         cluster, _, _ = await self._cluster_with_offline_node()
         for node in cluster.nodes.values():
             node.alive = False
             node.node_id = "000000000000000"
-            cluster.update_node(node)
+            node.checkpoint_parked = True
 
-        with self.assertRaises(PrincipalNotFoundError) as ctx:
-            cluster.get_nodes(constants.NodeSelection.PRINCIPAL)
+        with self.assertRaises(IOError) as ctx:
+            await self._call_principal(cluster)
 
-        self.assertIn("Unable to find any Aerospike nodes", str(ctx.exception))
+        message = str(ctx.exception)
+        self.assertIn("Parked by checkpoint-save", message)
+        for node in cluster.nodes.values():
+            self.assertIn(node.key, message)
 
     async def test_principal_is_found_without_the_node_id_index(self):
-        """
-        get_nodes(PRINCIPAL) picks the node itself. It must not depend on node_lookup
-        holding the principal's ID at that moment.
-        """
+        """The principal is picked from live nodes, not resolved through node_lookup."""
         cluster, _, node = await self._cluster_with_offline_node()
+        # Live with its real ID, but never passed through update_node().
         node.node_id = "BB9000000000001"
         node.alive = True
-        cluster.node_lookup.discard_exact("BB9000000000001")
 
         self.assertNotIn("BB9000000000001", cluster.node_lookup)
         self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [node])
 
     async def test_principal_is_never_a_node_that_is_not_alive(self):
-        """
-        A failed request marks a node not alive but leaves its node ID in place and
-        indexed. The principal must then be the highest live node, not that one.
-        """
+        """A node a failed request marked not alive is never the principal."""
         cluster, seed, node = await self._cluster_with_offline_node()
         node.node_id = "BB9000000000001"
         node.alive = True
@@ -1165,32 +1161,18 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cluster.get_node("BB9000000000001"), [node])
         self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [seed])
 
-    async def test_no_live_node_keeps_the_parked_node_message(self):
-        """
-        When checkpoint-save has parked every node, the principal error must say so,
-        as every other node selection does, and still need no traceback.
-        """
-        cluster, _, _ = await self._cluster_with_offline_node()
-        for node in cluster.nodes.values():
-            node.alive = False
-            node.node_id = "000000000000000"
-            node.checkpoint_parked = True
+    async def test_principal_compares_node_ids_of_different_lengths(self):
+        """Node IDs are compared as zero-padded hex, so 100000000000000 beats FF."""
+        cluster, seed, node = await self._cluster_with_offline_node()
+        seed.node_id = "FF"
+        node.node_id = "100000000000000"
+        node.alive = True
 
-        with self.assertRaises(PrincipalNotFoundError) as ctx:
-            cluster.get_nodes(constants.NodeSelection.PRINCIPAL)
-
-        message = str(ctx.exception)
-        self.assertEqual(message, str(cluster._no_usable_nodes_error()))
-        self.assertIn("Parked by checkpoint-save", message)
-        for node in cluster.nodes.values():
-            self.assertIn(node.key, message)
-        self.assertTrue(ctx.exception.carries_its_own_message)
+        self.assertEqual(cluster.get_expected_principal(), "100000000000000")
+        self.assertEqual(cluster.get_principal_node(), node)
 
     async def test_node_id_stays_with_the_live_node_when_its_twin_goes_offline(self):
-        """
-        Two Node objects can report the same node ID. When the one the ID points to
-        goes Offline, the ID must move to the other, which needed no refresh.
-        """
+        """When one of two Node objects with the same ID goes Offline, the ID moves."""
         cluster, seed, node = await self._cluster_with_offline_node()
         node.node_id = seed.node_id
         node.alive = True
@@ -1213,7 +1195,8 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         clear_node_list.assert_not_called()
         self.assertEqual(cluster.get_node(seed.node_id), [seed])
 
-    async def test_node_dropped_from_the_cluster_is_not_found_by_node_id(self):
+    async def test_node_dropped_from_the_cluster_is_not_found(self):
+        """A node no longer in self.nodes is found neither by ID nor by address."""
         cluster, seed, node = await self._cluster_with_offline_node()
         node.node_id = "BB9000000000001"
         node.alive = True
@@ -1226,9 +1209,11 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         await self._refresh(cluster)
 
         self.assertNotIn("BB9000000000001", cluster.node_lookup)
+        self.assertNotIn(node.sock_name(), cluster.node_lookup)
         self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [seed])
 
     async def test_live_node_reporting_a_new_node_id_is_found_by_the_new_id_only(self):
+        """A live node that reports a new ID is found by the new ID, not the old one."""
         cluster, _, node = await self._cluster_with_offline_node()
         node.node_id = "BB9000000000001"
         node.alive = True
@@ -1244,22 +1229,6 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cluster.get_node("BB9000000000002"), [node])
         self.assertNotIn("BB9000000000001", cluster.node_lookup)
-
-    async def test_discard_exact_removes_only_the_exact_key(self):
-        """Dropping an ID must not take a longer ID or an address that starts with it."""
-        cluster, _, node = await self._cluster_with_offline_node()
-        node.node_id = "BB9000000000001"
-        node.alive = True
-        cluster.update_node(node)
-
-        cluster.node_lookup.discard_exact("BB9")
-        cluster.node_lookup.discard_exact("192.1.1.2")
-
-        self.assertEqual(cluster.node_lookup.get_exact("BB9000000000001"), node)
-        self.assertEqual(cluster.node_lookup.get_exact(node.sock_name()), node)
-        self.assertEqual(
-            cluster.node_lookup.get_exact(node.sock_name(use_fqdn=True)), node
-        )
 
     async def test_find_new_nodes_socket_reuse_optimization(self):
         """Test that socket reuse optimization works at cluster level"""
