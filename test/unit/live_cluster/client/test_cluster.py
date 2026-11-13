@@ -1038,6 +1038,198 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         # Should return peers when no service addresses
         self.assertIn(("192.1.1.2", 3000, None), result)
 
+    async def _cluster_with_offline_node(self):
+        """A cluster with a live seed node and a second node that was Offline when added."""
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        seed = next(iter(cluster.nodes.values()))
+        seed.needs_refresh = AsyncMock(return_value=False)
+        # The mocks above leave the seed Offline as well, so bring it up here.
+        seed.node_id = "A00000000000000"
+        seed.alive = True
+        cluster.update_node(seed)
+
+        node = await Node("192.1.1.2", 3000)
+        node.ip = node.fqdn = "192.1.1.2"
+        node._service_IP_port = node.create_key("192.1.1.2", 3000)
+        node._key = hash(node._service_IP_port)
+        node.node_id = "000000000000000"
+        node.alive = False
+        node.service_addresses = [("192.1.1.2", 3000, None)]
+        node.peers = []
+        cluster.update_node(node)
+
+        return cluster, seed, node
+
+    @staticmethod
+    async def _refresh(cluster):
+        """Refresh the cluster now, as the next command does once the interval is up."""
+        cluster.last_cluster_refresh_time = 0
+        await cluster._refresh_cluster()
+
+    async def _call_principal(self, cluster):
+        """Run a principal-only call without a refresh, as a command would."""
+        cluster.need_to_refresh_cluster = MagicMock(return_value=False)
+        return await cluster.call_node_method_async(
+            constants.NodeSelection.PRINCIPAL, "info_build"
+        )
+
+    async def test_node_back_online_after_refresh_is_found_by_node_id(self):
+        """A node Offline at startup that reconnects is found by ID and as principal."""
+        cluster, _, node = await self._cluster_with_offline_node()
+
+        async def back_online():
+            node.node_id = "BB9000000000001"
+            node.alive = True
+
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=back_online)
+
+        await self._refresh(cluster)
+
+        self.assertEqual(cluster.get_expected_principal(), "BB9000000000001")
+        self.assertEqual(cluster.get_node("BB9000000000001"), [node])
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [node])
+
+    async def test_node_gone_offline_after_refresh_is_not_found_by_old_node_id(self):
+        """A node that goes Offline loses its old ID but keeps its address entries."""
+        cluster, _, node = await self._cluster_with_offline_node()
+        node.node_id = "BB9000000000001"
+        node.alive = True
+        cluster.update_node(node)
+
+        async def gone_offline():
+            node.node_id = "000000000000000"
+            node.alive = False
+
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=gone_offline)
+
+        await self._refresh(cluster)
+
+        self.assertNotIn("BB9000000000001", cluster.node_lookup)
+        self.assertEqual(cluster.get_node(node.sock_name()), [node])
+        self.assertEqual(cluster.get_node(node.sock_name(use_fqdn=True)), [node])
+
+    async def test_no_live_node_raises_the_no_usable_nodes_error(self):
+        """With no live node, a principal call raises the usual no-usable-nodes error."""
+        cluster, seed, _ = await self._cluster_with_offline_node()
+        # What a failed request leaves behind: not alive, node ID kept and indexed.
+        seed.alive = False
+
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [])
+
+        with self.assertRaises(IOError) as ctx:
+            await self._call_principal(cluster)
+
+        self.assertEqual(str(ctx.exception), "Unable to find any Aerospike nodes")
+
+    async def test_no_live_node_keeps_the_parked_node_message(self):
+        """With every node parked by checkpoint-save, a principal call names them."""
+        cluster, _, _ = await self._cluster_with_offline_node()
+        for node in cluster.nodes.values():
+            node.alive = False
+            node.node_id = "000000000000000"
+            node.checkpoint_parked = True
+
+        with self.assertRaises(IOError) as ctx:
+            await self._call_principal(cluster)
+
+        message = str(ctx.exception)
+        self.assertIn("Parked by checkpoint-save", message)
+        for node in cluster.nodes.values():
+            self.assertIn(node.key, message)
+
+    async def test_principal_is_found_without_the_node_id_index(self):
+        """The principal is picked from live nodes, not resolved through node_lookup."""
+        cluster, _, node = await self._cluster_with_offline_node()
+        # Live with its real ID, but never passed through update_node().
+        node.node_id = "BB9000000000001"
+        node.alive = True
+
+        self.assertNotIn("BB9000000000001", cluster.node_lookup)
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [node])
+
+    async def test_principal_is_never_a_node_that_is_not_alive(self):
+        """A node a failed request marked not alive is never the principal."""
+        cluster, seed, node = await self._cluster_with_offline_node()
+        node.node_id = "BB9000000000001"
+        node.alive = True
+        cluster.update_node(node)
+        node.alive = False
+
+        self.assertEqual(cluster.get_expected_principal(), "BB9000000000001")
+        self.assertEqual(cluster.get_node("BB9000000000001"), [node])
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [seed])
+
+    async def test_principal_compares_node_ids_of_different_lengths(self):
+        """Node IDs are compared as zero-padded hex, so 100000000000000 beats FF."""
+        cluster, seed, node = await self._cluster_with_offline_node()
+        seed.node_id = "FF"
+        node.node_id = "100000000000000"
+        node.alive = True
+
+        self.assertEqual(cluster.get_expected_principal(), "100000000000000")
+        self.assertEqual(cluster.get_principal_node(), node)
+
+    async def test_node_id_stays_with_the_live_node_when_its_twin_goes_offline(self):
+        """When one of two Node objects with the same ID goes Offline, the ID moves."""
+        cluster, seed, node = await self._cluster_with_offline_node()
+        node.node_id = seed.node_id
+        node.alive = True
+        cluster.update_node(node)
+        self.assertEqual(cluster.get_node(seed.node_id), [node])
+
+        async def gone_offline():
+            node.node_id = "000000000000000"
+            node.alive = False
+
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=gone_offline)
+
+        with patch.object(
+            cluster, "clear_node_list", wraps=cluster.clear_node_list
+        ) as clear_node_list:
+            await self._refresh(cluster)
+
+        # No new peers, the usual case: the crawl returned before its cleanup.
+        clear_node_list.assert_not_called()
+        self.assertEqual(cluster.get_node(seed.node_id), [seed])
+
+    async def test_node_dropped_from_the_cluster_is_not_found(self):
+        """A node no longer in self.nodes is found neither by ID nor by address."""
+        cluster, seed, node = await self._cluster_with_offline_node()
+        node.node_id = "BB9000000000001"
+        node.alive = True
+        node.needs_refresh = AsyncMock(return_value=False)
+        cluster.update_node(node)
+        self.assertEqual(cluster.get_node("BB9000000000001"), [node])
+
+        # As clear_node_list() does for a node that left the service list.
+        cluster.nodes.pop(node.key)
+        await self._refresh(cluster)
+
+        self.assertNotIn("BB9000000000001", cluster.node_lookup)
+        self.assertNotIn(node.sock_name(), cluster.node_lookup)
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [seed])
+
+    async def test_live_node_reporting_a_new_node_id_is_found_by_the_new_id_only(self):
+        """A live node that reports a new ID is found by the new ID, not the old one."""
+        cluster, _, node = await self._cluster_with_offline_node()
+        node.node_id = "BB9000000000001"
+        node.alive = True
+        cluster.update_node(node)
+
+        async def new_node_id():
+            node.node_id = "BB9000000000002"
+
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=new_node_id)
+
+        await self._refresh(cluster)
+
+        self.assertEqual(cluster.get_node("BB9000000000002"), [node])
+        self.assertNotIn("BB9000000000001", cluster.node_lookup)
+
     async def test_find_new_nodes_socket_reuse_optimization(self):
         """Test that socket reuse optimization works at cluster level"""
         cluster = await Cluster([("192.1.1.1", 3000, None)])
