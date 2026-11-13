@@ -2552,6 +2552,7 @@ show_masking_rules = Sheet(
         Field("Type", Projectors.String("data", "type")),
         Field("AEL Path", Projectors.String("data", "ael")),
         Field("Function", Projectors.String("data", "function")),
+        Field("Enforced", Projectors.Boolean("data", "enforced")),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),

@@ -255,7 +255,7 @@ class ASInfoResponseError(ASInfoError):
             # sometimes there is a message with 'error' and sometimes not. i.e. set-config, udf-put
             if server_resp.startswith("error") or server_resp.startswith("ERROR"):
                 if server_resp[5:6] == ":":
-                    server_resp = server_resp.split(":", 2)[2]
+                    server_resp = server_resp.split(":", 2)[-1]
                 else:
                     try:
                         server_resp = server_resp.split("=", 1)[1]
