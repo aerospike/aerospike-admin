@@ -30,6 +30,7 @@ from lib.utils import util, constants
 from lib.utils.types import NodeDict
 
 from . import client_util
+from .info import _hash_password
 from .node import Node
 
 # interval time in second for cluster refreshing
@@ -79,6 +80,12 @@ class Cluster(AsyncObject):
         self.user = user
         self.password = password
         self.auth_mode = auth_mode
+        # Hashed once, off the event loop, before any node logs in.
+        self.credential = (
+            await asyncio.to_thread(_hash_password, password)
+            if user is not None and auth_mode != constants.AuthMode.PKI
+            else None
+        )
 
         self.use_services_alumni = use_services_alumni
         self.use_services_alt = use_services_alt
@@ -255,6 +262,11 @@ class Cluster(AsyncObject):
         except Exception as e:
             logger.error(e)
             return ""
+
+    def get_principal_node(self) -> Node | None:
+        """The live node with the highest node ID, or None when no node is live."""
+        live_nodes = [node for node in self.nodes.values() if node.alive]
+        return max(live_nodes, key=lambda node: node.node_id.zfill(16), default=None)
 
     def get_live_nodes(self) -> set[Addr_Port_TLSName]:
         # TODO: why not return a reference to Node objects instead?
@@ -521,11 +533,23 @@ class Cluster(AsyncObject):
 
     def update_node(self, node):
         self.nodes[node.key] = node
-        # add node to lookup
-        self.node_lookup[node.sock_name(use_fqdn=True)] = node
-        self.node_lookup[node.sock_name()] = node
+        self._add_to_lookup(self.node_lookup, node)
+
+    @staticmethod
+    def _add_to_lookup(node_lookup, node):
+        node_lookup[node.sock_name(use_fqdn=True)] = node
+        node_lookup[node.sock_name()] = node
         if node.alive:
-            self.node_lookup[node.node_id] = node
+            node_lookup[node.node_id] = node
+
+    def _rebuild_node_lookup(self):
+        """Rebuild node_lookup from self.nodes with the entries update_node() adds."""
+        node_lookup = LookupDict(LookupDict.PREFIX_MODE)
+
+        for node in list(self.nodes.values()):
+            self._add_to_lookup(node_lookup, node)
+
+        self.node_lookup = node_lookup
 
     def get_node(self, node) -> list[Node]:
         """
@@ -590,8 +614,8 @@ class Cluster(AsyncObject):
             randint = random.randint(0, len(live_nodes) - 1)
             use_nodes = [live_nodes[randint]]
         elif nodes == constants.NodeSelection.PRINCIPAL:
-            principal = self.get_expected_principal()
-            use_nodes = self.get_node(principal)
+            principal = self.get_principal_node()
+            use_nodes = [principal] if principal is not None else []
 
         elif isinstance(nodes, list):
             for node in nodes:
@@ -706,6 +730,7 @@ class Cluster(AsyncObject):
                 timeout=self._timeout,
                 user=self.user,
                 password=self.password,
+                credential=self.credential,
                 auth_mode=self.auth_mode,
                 consider_alumni=self.use_services_alumni,
                 use_services_alt=self.use_services_alt,
@@ -749,6 +774,8 @@ class Cluster(AsyncObject):
             try:
                 if self.need_to_refresh_cluster():
                     await self._crawl()
+                    # Not in _crawl(): it returns early when there are no new peers.
+                    self._rebuild_node_lookup()
                     self.last_cluster_refresh_time = time()
             except Exception:
                 raise

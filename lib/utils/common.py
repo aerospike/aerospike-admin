@@ -16,17 +16,22 @@
 # Functions common to multiple modes (online cluster / offline cluster / collectinfo-analyzer / log-analyzer)
 #############################################################################################################
 
+import contextlib
 import datetime
+import functools
 import json
 import logging
 import operator
 import os
 import platform
 import shutil
+import signal
 from typing import Any, Callable, TypedDict
 from typing_extensions import NotRequired, Required
 import distro
 import socket
+import subprocess
+import threading
 import time
 from urllib import request
 import zipfile
@@ -2555,10 +2560,13 @@ def _get_aws_metadata(response_str, prefix="", old_response=""):
     return aws_c
 
 
-def _check_cmds_for_str(cmds, strings):
+def _check_cmds_for_str(cmds, strings, stop: threading.Event | None = None):
     for cmd in cmds:
+        if _stopped(stop):
+            break
+
         try:
-            output, _ = util.shell_command([cmd])
+            output, _ = util.shell_command([cmd], stop=stop)
 
             for string in strings:
                 if string in output:
@@ -2570,7 +2578,7 @@ def _check_cmds_for_str(cmds, strings):
     return False
 
 
-def _collect_aws_data(cmd=""):
+def _collect_aws_data(cmd="", stop: threading.Event | None = None):
     aws_rsp = ""
     aws_timeout = 1
     socket.setdefaulttimeout(aws_timeout)
@@ -2593,7 +2601,7 @@ def _collect_aws_data(cmd=""):
         else:
             out += "\nFailed! Response Code: {0}".format(r.code)
             out += "\nChecking {0} for '{1}'".format(extra_cmds_to_check, grep_for)
-            if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
+            if _check_cmds_for_str(extra_cmds_to_check, [grep_for], stop=stop):
                 out += "\nSuccess!"
             else:
                 out += "\nFailed!"
@@ -2602,7 +2610,7 @@ def _collect_aws_data(cmd=""):
     except Exception as e:
         out += "\nFailed! Exception: {0}".format(e)
         out += "\nChecking [{0}] for {1}".format(extra_cmds_to_check, grep_for)
-        if _check_cmds_for_str(extra_cmds_to_check, [grep_for]):
+        if _check_cmds_for_str(extra_cmds_to_check, [grep_for], stop=stop):
             out += "\nSuccess!"
         else:
             out += "\nFailed!"
@@ -2703,11 +2711,11 @@ def _collect_azure_data(cmd=""):
     return out, None
 
 
-def _collect_cpuinfo(cmd=""):
+def _collect_cpuinfo(cmd="", stop: threading.Event | None = None):
     out = "['cpuinfo']"
 
     cpu_info_cmd = 'cat /proc/cpuinfo | grep "vendor_id"'
-    o, e = util.shell_command([cpu_info_cmd])
+    o, e = util.shell_command([cpu_info_cmd], stop=stop)
 
     if o:
         o = o.strip().split("\n")
@@ -2730,14 +2738,14 @@ def _collect_cpuinfo(cmd=""):
     return out, None
 
 
-def _collect_lsof(verbose=False):
+def _collect_lsof(verbose=False, stop: threading.Event | None = None):
     # Collect lsof data
     # If verbose true then returns whole output
     # If verbose false then returns count and type of fds for aerospike process
 
     out = "['lsof']"
 
-    pids = get_asd_pids()
+    pids = get_asd_pids(stop=stop)
 
     o_dict = {}
     unidentified_protocol_count = 0
@@ -2745,8 +2753,11 @@ def _collect_lsof(verbose=False):
     desc_ljust = 20
 
     for pid in pids:
+        if _stopped(stop):
+            break
+
         cmd = "sudo lsof -n -p %s" % str(pid)
-        o, e = util.shell_command([cmd])
+        o, e = util.shell_command([cmd], stop=stop)
 
         if e or not o:
             continue
@@ -2845,7 +2856,7 @@ def _collect_env_variables(cmd=""):
     return out, None
 
 
-def _collect_installed_packages(cmd=""):
+def _collect_installed_packages(cmd="", stop: threading.Event | None = None):
     package_commands: list[list[str]] = []
 
     if shutil.which("rpm"):
@@ -2865,8 +2876,11 @@ def _collect_installed_packages(cmd=""):
     sections: list[str] = []
 
     for pkg_cmd in package_commands:
+        if _stopped(stop):
+            break
+
         section = f"['{' '.join(pkg_cmd)}']"
-        o, e = util.shell_command(pkg_cmd)
+        o, e = util.shell_command(pkg_cmd, stop=stop)
         if o:
             section += "\n" + o.strip()
         if e:
@@ -2876,7 +2890,7 @@ def _collect_installed_packages(cmd=""):
     return "\n\n".join(sections), None
 
 
-def _collect_ip_link_details(cmd=""):
+def _collect_ip_link_details(cmd="", stop: threading.Event | None = None):
     out = "['ip -s link']"
 
     cmd = "ip -s link"
@@ -2884,16 +2898,27 @@ def _collect_ip_link_details(cmd=""):
     sleep_seconds = 5
 
     for i in range(0, loop_count):
-        o, e = util.shell_command([cmd])
+        if _stopped(stop):
+            break
+
+        o, e = util.shell_command([cmd], stop=stop)
 
         if o:
             out += "\n" + str(o) + "\n"
-        time.sleep(sleep_seconds)
+
+        if stop is None:
+            time.sleep(sleep_seconds)
+        else:
+            stop.wait(sleep_seconds)
 
     return out, None
 
 
-def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
+def _stopped(stop: threading.Event | None):
+    return stop is not None and stop.is_set()
+
+
+def _collectinfo_shell_cmds(cmd: str, alt_cmds=[], stop: threading.Event | None = None):
     logger.info(
         f"Collecting output from shell command '{cmd}' and writing to syslog.log"
     )
@@ -2907,7 +2932,7 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
     failed_cmds = []
 
     try:
-        o, e = util.shell_command([cmd])  # TODO make async
+        o, e = util.shell_command([cmd], stop=stop)  # TODO make async
     except Exception as e:
         return o_line + str(e), failed_cmds
 
@@ -2918,6 +2943,9 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
         if alt_cmds:
             success = False
             for alt_cmd in alt_cmds:
+                if _stopped(stop):
+                    break
+
                 if not alt_cmd:
                     continue
 
@@ -2926,7 +2954,7 @@ def _collectinfo_shell_cmds(cmd: str, alt_cmds=[]):
                 )
                 alt_cmd = [alt_cmd]
                 o_line += str(alt_cmd) + "\n"
-                o_alt, e_alt = util.shell_command(alt_cmd)  # TODO make async
+                o_alt, e_alt = util.shell_command(alt_cmd, stop=stop)  # TODO make async
 
                 if e_alt:
                     e = e_alt
@@ -3106,10 +3134,10 @@ def get_system_commands(port=3000) -> list[list[str]]:
     return sys_shell_cmds
 
 
-def get_asd_pids():
+def get_asd_pids(stop: threading.Event | None = None):
     pids = []
     ps_cmd = 'sudo ps aux|grep -v grep|grep -E "asd|cld"'
-    ps_o, ps_e = util.shell_command([ps_cmd])
+    ps_o, ps_e = util.shell_command([ps_cmd], stop=stop)
     if ps_o:
         ps_o = ps_o.strip().split("\n")
         pids = []
@@ -3164,7 +3192,35 @@ def archive_dir(logdir):
         return archive, False
 
     _zip_files(logdir)
-    util.shell_command(["tar", "-czvf", archive, logdir])
+
+    try:
+        tar = subprocess.run(
+            ["tar", "-czf", archive, logdir],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as e:
+        logger.error("Failed to archive %s: %s", logdir, e)
+        return archive, False
+
+    if tar.returncode != 0:
+        with contextlib.suppress(OSError):
+            os.remove(archive)
+
+        if tar.returncode < 0:
+            try:
+                reason = "tar was killed by " + signal.Signals(-tar.returncode).name
+            except ValueError:
+                reason = "tar was killed by signal %d" % -tar.returncode
+        else:
+            reason = (
+                util.bytes_to_str(tar.stderr).strip()
+                or "tar exited with %d" % tar.returncode
+            )
+
+        logger.error("Failed to archive %s: %s", logdir, reason)
+        return archive, False
+
     logger.info("Files in " + logdir + " are now archived in " + archive + ".")
     return archive, True
 
@@ -3187,7 +3243,10 @@ def print_collect_summary(
     terminal.enable_color(True)
 
 
-def collect_sys_info(port=3000, file_header="", outfile=""):
+def collect_sys_info(
+    port=3000, file_header="", outfile="", stop: threading.Event | None = None
+):
+    """Setting stop ends the collection early and kills the running command."""
     failed_cmds = []
 
     cluster_online = True
@@ -3206,9 +3265,13 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
 
     try:
         for cmds in get_system_commands(port=port):
+            if _stopped(stop):
+                break
+
             o, f_cmds = _collectinfo_shell_cmds(
                 cmd=cmds[0],
                 alt_cmds=cmds[1:] if len(cmds) > 1 else [],
+                stop=stop,
             )
             failed_cmds += f_cmds
             util.write_to_file(outfile, o)
@@ -3216,73 +3279,45 @@ def collect_sys_info(port=3000, file_header="", outfile=""):
         print(e)
         util.write_to_file(outfile, str(e))
 
-    try:
-        logger.info(f"Collecting output about the cpu and writing to syslog.log")
-        o = _collectinfo_content(func=_collect_cpuinfo)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
+    sections = [
+        (
+            "Collecting output about the cpu",
+            functools.partial(_collect_cpuinfo, stop=stop),
+        ),
+        (
+            "Checking if you are running in Cloud: AWS",
+            functools.partial(_collect_aws_data, stop=stop),
+        ),
+        ("Checking if you are running in Cloud: GCP", _collect_gce_data),
+        ("Checking if you are running in Cloud: Azure", _collect_azure_data),
+        (
+            "Collecting infomation about aerospike open file descriptors using 'lsof'",
+            functools.partial(_collect_lsof, stop=stop),
+        ),
+        (
+            "Collecting information about the environment",
+            _collect_env_variables,
+        ),
+        (
+            "Collecting installed packages",
+            functools.partial(_collect_installed_packages, stop=stop),
+        ),
+        (
+            "Collecting infomation about network interfaces",
+            functools.partial(_collect_ip_link_details, stop=stop),
+        ),
+    ]
 
-    try:
-        logger.info(
-            f"Checking if you are running in Cloud: AWS and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_aws_data)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
+    for description, func in sections:
+        if _stopped(stop):
+            break
 
-    try:
-        logger.info(
-            f"Checking if you are running in Cloud: GCP and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_gce_data)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Checking if you are running in Cloud: Azure and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_azure_data)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Collecting infomation about aerospike open file descriptors using 'lsof' and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_lsof)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Collecting information about the environment and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_env_variables)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info("Collecting installed packages and writing to syslog.log")
-        o = _collectinfo_content(func=_collect_installed_packages)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
-
-    try:
-        logger.info(
-            f"Collecting infomation about network interfaces and writing to syslog.log"
-        )
-        o = _collectinfo_content(func=_collect_ip_link_details)
-        util.write_to_file(outfile, o)
-    except Exception as e:
-        util.write_to_file(outfile, str(e))
+        try:
+            logger.info(description + " and writing to syslog.log")
+            o = _collectinfo_content(func=func)
+            util.write_to_file(outfile, o)
+        except Exception as e:
+            util.write_to_file(outfile, str(e))
 
     if not cluster_online:
         # Cluster is offline so collecting only system info and archiving files

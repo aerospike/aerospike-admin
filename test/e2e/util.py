@@ -12,11 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gzip
+import io
 import json
 import os
 import re
 import shlex
+import signal
 import subprocess
+import tarfile
+import tempfile
+import threading
+import time
+import zipfile
 from typing import Any
 from lib.utils import util
 
@@ -60,16 +68,163 @@ class CompletedProcess:
         return get_separate_output(self.stdout)
 
 
+def _asadm_binary():
+    if "ASADM_TEST_BUNDLE" in os.environ:
+        return os.path.abspath("build/bin/asadm/asadm")
+
+    return os.path.abspath("asadm.py")
+
+
+class AsadmProcess:
+    """asadm running in the background, so a test can interrupt it mid-command."""
+
+    def __init__(self, args, env=None):
+        cmd = [_asadm_binary()] + shlex.split(args)
+        print("Running cmd: {}".format(cmd))
+        self.proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            env=os.environ if env is None else env,
+        )
+        self.stdout = []
+        self.stderr = []
+        self._readers = [
+            threading.Thread(target=self._read, args=(stream, lines), daemon=True)
+            for stream, lines in (
+                (self.proc.stdout, self.stdout),
+                (self.proc.stderr, self.stderr),
+            )
+        ]
+
+        for reader in self._readers:
+            reader.start()
+
+        self.interrupted_at = None
+
+    @staticmethod
+    def _read(stream, lines):
+        for line in iter(stream.readline, b""):
+            lines.append(line.decode(errors="replace"))
+
+    def wait_for_stderr(self, text, timeout):
+        deadline = time.monotonic() + timeout
+
+        while time.monotonic() < deadline:
+            if any(text in line for line in self.stderr):
+                return True
+
+            if self.proc.poll() is not None:
+                return False
+
+            time.sleep(0.1)
+
+        return False
+
+    def interrupt(self, sig=signal.SIGINT, group=False):
+        """Signals asadm alone by default, so its children only stop if asadm stops
+        them. group=True signals its children too, as a terminal Ctrl-C does."""
+        if self.interrupted_at is None:
+            self.interrupted_at = time.monotonic()
+
+        try:
+            if group:
+                os.killpg(self.proc.pid, sig)
+            else:
+                self.proc.send_signal(sig)
+        except (ProcessLookupError, PermissionError):
+            # Already exited. macOS answers killpg on an exited group with EPERM.
+            pass
+
+    def wait(self, timeout):
+        """Returns (exit code or None if still running at the timeout, seconds since
+        the interrupt). A process still running at the timeout is killed."""
+        try:
+            returncode = self.proc.wait(timeout)
+        except subprocess.TimeoutExpired:
+            self.kill()
+            returncode = None
+
+        elapsed = time.monotonic() - (self.interrupted_at or time.monotonic())
+
+        for reader in self._readers:
+            reader.join(5)
+
+        return returncode, elapsed
+
+    def kill(self):
+        """Kills asadm and everything it started."""
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+        self.proc.wait()
+
+    @property
+    def output(self):
+        return CompletedOutput("".join(self.stdout), "".join(self.stderr))
+
+
+class CompletedOutput:
+    def __init__(self, stdout, stderr):
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def run_asinfo(args) -> CompletedProcess:
+    """Runs the asinfo wrapper, which execs whatever `asadm` comes first on PATH."""
+    with tempfile.TemporaryDirectory() as bin_dir:
+        os.symlink(_asadm_binary(), os.path.join(bin_dir, "asadm"))
+        env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"])
+        cmd = [os.path.abspath("asinfo/asinfo.py")] + shlex.split(args)
+        print("Running cmd: {}".format(cmd))
+
+        return CompletedProcess(
+            subprocess.run(
+                cmd,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,
+            )
+        )
+
+
+def collectinfo_files_containing(collectinfo_path, needle: bytes) -> list[str]:
+    """Names of the files in a collectinfo bundle that contain `needle`, looking
+    inside the zip and gzip files it nests too."""
+
+    def search(name, data):
+        found = [name] if needle in data else []
+
+        if zipfile.is_zipfile(io.BytesIO(data)):
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for member in zf.namelist():
+                    found += search(name + "/" + member, zf.read(member))
+        elif data[:2] == b"\x1f\x8b":
+            found += search(name + "/<gunzip>", gzip.decompress(data))
+
+        return found
+
+    found = []
+
+    with tarfile.open(collectinfo_path) as tf:
+        for member in tf.getmembers():
+            if member.isfile():
+                found += search(member.name, tf.extractfile(member).read())
+
+    return found
+
+
 def run_asadm(args=None, strip_header=True, stdin_input=None) -> CompletedProcess:
     """
     stdin_input feeds an interactive session. -e mode skips the startup diagnostics,
     so a session opened without it is the only way to cover them.
     """
-    if "ASADM_TEST_BUNDLE" in os.environ:
-        binary = os.path.abspath("build/bin/asadm/asadm")
-    else:
-        binary = os.path.abspath("asadm.py")
-
+    binary = _asadm_binary()
     args = [] if args is None else shlex.split(args)
     cmd = [binary]
     cmd.extend(args)

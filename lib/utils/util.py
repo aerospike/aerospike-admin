@@ -24,11 +24,13 @@ import math
 import re
 import shlex
 import socket
+import signal
 import subprocess
 import sys
 import logging
+import threading
 from lib.utils import constants, version
-from time import time
+from time import sleep, time
 from typing import (
     Any,
     Awaitable,
@@ -54,12 +56,14 @@ def callable(func, *args, **kwargs):
     return lambda: func(*args, **kwargs)
 
 
-def shell_command(command) -> tuple[str, str]:
+def shell_command(command, stop: threading.Event | None = None) -> tuple[str, str]:
     """
     command is a list of ['cmd','arg1','arg2',...] or a single shell command string
 
     If command has one element, it's treated as a shell command string (may contain pipes, redirects, etc.)
     If command has multiple elements, each element is quoted and joined with spaces
+
+    Setting stop kills the command, for callers in a thread that cannot be cancelled.
     """
     if len(command) == 1:
         # Single shell command string - pass directly to bash without additional quoting
@@ -71,11 +75,53 @@ def shell_command(command) -> tuple[str, str]:
     command = ["bash", "-c", cmd_str]
     try:
         p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = p.communicate()
+        out, err = p.communicate() if stop is None else _communicate_until(p, stop)
     except Exception:
         return "", "error"
     else:
         return bytes_to_str(out), bytes_to_str(err)
+
+
+def _communicate_until(p: subprocess.Popen, stop: threading.Event):
+    while True:
+        try:
+            return p.communicate(timeout=0.1)
+        except subprocess.TimeoutExpired:
+            if not stop.is_set():
+                continue
+
+        # Freeze bash so it starts nothing more, then stop its children while they
+        # are still its children, then bash or the command it became. SIGTERM first
+        # lets each clean up, as sudo restores the terminal.
+        p.send_signal(signal.SIGSTOP)
+
+        if _signal_children(p, signal.SIGTERM):
+            sleep(0.5)
+            _signal_children(p, signal.SIGKILL)
+
+        p.terminate()
+        p.send_signal(signal.SIGCONT)
+
+        try:
+            return p.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            # It ignored SIGTERM, or a grandchild still holds the output open.
+            p.kill()
+            p.wait()
+            return b"", b""
+
+
+def _signal_children(p: subprocess.Popen, sig: signal.Signals) -> bool:
+    try:
+        pkill = subprocess.run(
+            ["pkill", "-%d" % sig, "-P", str(p.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+
+    return pkill.returncode == 0
 
 
 async def async_shell_command(command: str) -> Process | None:

@@ -88,6 +88,9 @@ SETS = []
 INDEXES = []
 UDFS = []
 SERVER_IP = None
+FIRST_NODE_BRIDGE_IP = None
+# per node: what start_server rendered its config from, so restart_node can rewrite it
+NODE_CONFS = [None for i in range(NODE_CAPACITY)]
 
 # used for testing, disable to connect to a locally running aerospike server
 USE_DOCKER_SERVERS = True
@@ -419,6 +422,26 @@ def create_conf_file_from_template(
     Create an Aerospike configuration file from the given template.
     """
 
+    return create_config_file_from_config(
+        render_conf_template(
+            template_content,
+            port_base,
+            peer_addr,
+            enable_security,
+            index,
+            access_address=access_address,
+        )
+    )
+
+
+def render_conf_template(
+    template_content,
+    port_base,
+    peer_addr,
+    enable_security: bool,
+    index,
+    access_address="127.0.0.1",
+):
     params = {
         "security_stanza": (
             "" if not enable_security else "security {\n enable-quotas true\n}"
@@ -448,9 +471,8 @@ def create_conf_file_from_template(
     }
 
     temp = string.Template(template_content)
-    conf_content = temp.substitute(params)
 
-    return create_config_file_from_config(conf_content)
+    return temp.substitute(params)
 
 
 def create_config_file_from_config(config_content):
@@ -474,13 +496,12 @@ def get_file(path, base=None):
         raise Exception("path %s is not in the directory %s" % (path, base))
 
 
-def connect_client():
+def connect_client(enable_security=True):
     global CLIENT
-    config = {
-        "hosts": [(SERVER_IP, PORT)],
-        "user": "admin",
-        "password": "admin",
-    }
+    config = {"hosts": [(SERVER_IP, PORT)]}
+
+    if enable_security:
+        config.update(user="admin", password="admin")
 
     for attempt in range(CLIENT_ATTEMPTS):
         try:
@@ -503,11 +524,14 @@ def start_server(
     config_content=None,
     preview_features=None,
     ckpt_dir=None,
+    mesh_over_bridge=False,
+    enable_security=True,
 ):
     global CLIENT
     global NODES
     global RUNNING
     global SERVER_IP
+    global FIRST_NODE_BRIDGE_IP
 
     mount_dir = absolute_path(WORK_DIRECTORY)
 
@@ -526,14 +550,24 @@ def start_server(
             template_content = file_obj.read()
 
     if template_content:
+        peer_ip = FIRST_NODE_BRIDGE_IP if mesh_over_bridge else SERVER_IP
+        peer_addr = None if index == 1 else (peer_ip, first_base)
         conf_file = create_conf_file_from_template(
             template_content,
             base,
-            None if index == 1 else (SERVER_IP, first_base),
-            True,
+            peer_addr,
+            enable_security,
             index,
             access_address=access_address,
         )
+        NODE_CONFS[index - 1] = {
+            "conf_file": conf_file,
+            "template_content": template_content,
+            "port_base": base,
+            "peer_addr": peer_addr,
+            "access_address": access_address,
+            "enable_security": enable_security,
+        }
     elif config_content:
         conf_file = create_config_file_from_config(config_content)
     else:
@@ -598,10 +632,22 @@ def start_server(
         },
         name="aerospike-%d" % (index),
         privileged=True,
+        # The node-id derives from the MAC, which docker would otherwise reassign on a
+        # restart, so restart_node would bring back a different node.
+        network="bridge",
+        networking_config={
+            "bridge": docker.types.EndpointConfig(
+                DOCKER_CLIENT.api.api_version, mac_address="02:ae:00:00:00:%02x" % index
+            )
+        },
     )
 
     NODES[index - 1] = container
     container.reload()
+    bridge_ip = container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
+
+    if index == 1:
+        FIRST_NODE_BRIDGE_IP = bridge_ip
 
     # For local development, use localhost since ports are mapped to host
     # For CI/CD environments, you might want to use the container IP
@@ -611,7 +657,7 @@ def start_server(
     if use_localhost:
         return "127.0.0.1"
     else:
-        return container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
+        return bridge_ip
 
 
 def start(
@@ -623,7 +669,11 @@ def start(
     config_content=None,
     preview_features=None,
     ckpt_dir=None,
+    mesh_over_bridge=False,
+    enable_security=True,
 ):
+    """mesh_over_bridge seeds the mesh with node 1's bridge IP. With SERVER_IP
+    127.0.0.1, each container would seed itself and form a single-node cluster."""
     global CLIENT
     global NODES
     global RUNNING
@@ -652,33 +702,40 @@ def start(
                     config_content=config_content,
                     preview_features=preview_features,
                     ckpt_dir=ckpt_dir,
+                    mesh_over_bridge=mesh_over_bridge,
+                    enable_security=enable_security,
                 )
                 if index == 1:
                     SERVER_IP = ip
         else:
             SERVER_IP = "127.0.0.1"
 
+        if mesh_over_bridge:
+            wait_for_cluster(num_nodes)
+
         print("Connecting client")
 
-        connect_client()
+        connect_client(enable_security)
 
         print("Client connected")
-        CLIENT.admin_grant_roles(
-            "admin",
-            [
-                "sys-admin",
-                "user-admin",
-                "data-admin",
-                "read-write-udf",
-                "sindex-admin",
-                "read",
-                "write",
-                "read-write",
-            ],
-        )
 
-        CLIENT.close()
-        connect_client()
+        if enable_security:
+            CLIENT.admin_grant_roles(
+                "admin",
+                [
+                    "sys-admin",
+                    "user-admin",
+                    "data-admin",
+                    "read-write-udf",
+                    "sindex-admin",
+                    "read",
+                    "write",
+                    "read-write",
+                ],
+            )
+
+            CLIENT.close()
+            connect_client()
 
         # Add roster management for strong consistency namespace if using latest config
         if template_file == "aerospike_latest.conf":
@@ -693,12 +750,80 @@ def start(
 
             # Reconnect to ensure proper connectivity
             CLIENT.close()
-            connect_client()
+            connect_client(enable_security)
 
     else:
         if do_reset:
             # if the cluster is already up and running, reset it
             reset()
+
+
+def restart_node(index, enable_security=None):
+    """Restarts node `index` in place: same container, ports and bridge IP. Given
+    enable_security, its config is rewritten with or without a security stanza first."""
+    conf = NODE_CONFS[index - 1]
+
+    if enable_security is not None:
+        conf["enable_security"] = enable_security
+
+        with codecs.open(conf["conf_file"], "w", "UTF-8") as file_obj:
+            file_obj.write(
+                render_conf_template(
+                    conf["template_content"],
+                    conf["port_base"],
+                    conf["peer_addr"],
+                    enable_security,
+                    index,
+                    access_address=conf["access_address"],
+                )
+            )
+
+    container = NODES[index - 1]
+    bridge_ip = container.attrs["NetworkSettings"]["Networks"]["bridge"]["IPAddress"]
+    container.restart(timeout=5)
+    container.reload()
+    new_bridge_ip = container.attrs["NetworkSettings"]["Networks"]["bridge"][
+        "IPAddress"
+    ]
+
+    if new_bridge_ip != bridge_ip:
+        raise Exception(
+            "node %d came back on %s instead of %s" % (index, new_bridge_ip, bridge_ip)
+        )
+
+
+def wait_for_cluster(size, timeout=60):
+    """Waits until every running node reports a stable cluster of `size` nodes, with
+    migrations done."""
+    deadline = time.time() + timeout
+    answers = None
+    command = "cluster-stable:size=%d" % size
+
+    while time.time() < deadline:
+        answers = []
+
+        for container, conf in zip(NODES, NODE_CONFS):
+            if container is None or conf is None:
+                continue
+
+            auth = " -U admin -P admin" if conf["enable_security"] else ""
+
+            try:
+                out = container.exec_run(
+                    "asinfo -p %d%s -v '%s'" % (conf["port_base"], auth, command)
+                )
+                answers.append(out.output.decode().strip())
+            except docker.errors.APIError as e:
+                answers.append("error: %s" % e)
+
+        if answers and all(
+            answer and "error" not in answer.lower() for answer in answers
+        ):
+            return
+
+        safe_sleep(0.5)
+
+    raise Exception("cluster not stable at size %d: %s" % (size, answers))
 
 
 def dump_docker_logs():
@@ -783,6 +908,7 @@ def stop():
                 NODES[i].stop()
                 NODES[i].remove()
                 NODES[i] = None
+                NODE_CONFS[i] = None
 
         remove_state_dirs()
         remove_work_dir()
