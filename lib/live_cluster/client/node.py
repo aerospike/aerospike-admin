@@ -4299,7 +4299,7 @@ class Node(AsyncObject):
         # namespace and set are optional
         masking_show_req = "masking-show:"
         if namespace is not None:
-            masking_show_req += "ns={};".format(namespace)
+            masking_show_req += "namespace={};".format(namespace)
         if set_ is not None:
             masking_show_req += "set={};".format(set_)
 
@@ -4308,17 +4308,27 @@ class Node(AsyncObject):
         if resp.startswith("error") or resp.startswith("ERROR"):
             raise ASInfoResponseError("Failed to list masking rules", resp)
 
-        raw_rules = []
-        for piece in client_util.info_to_list(resp, delimiter=":"):
-            if piece == "":
-                continue
-            keys = client_util.info_to_dict(piece, ";").keys()
-            # A ':' inside a value splits its rule; the pieces after it carry no namespace.
-            if raw_rules and "namespace" not in keys and "ns" not in keys:
-                raw_rules[-1] += ":" + piece
-            else:
-                raw_rules.append(piece)
-        result = [client_util.info_to_dict(rule, ";") for rule in raw_rules]
+        result = []
+        pending = None
+        # A ':' inside a value splits its rule, and the piece after it is not a
+        # complete rule on its own, so join pieces from the end until they form one.
+        for piece in reversed(client_util.info_to_list(resp, delimiter=":")):
+            pending = piece if pending is None else piece + ":" + pending
+            rule = {}
+            for token in client_util.info_to_list(pending, ";"):
+                key, sep, value = token.partition("=")
+                if sep:
+                    rule.setdefault(key, value)
+            if (
+                "=" in pending.split(";", 1)[0]
+                and ("namespace" in rule or "ns" in rule)
+                and all(k in rule for k in ("set", "type", "function"))
+            ):
+                result.append(rule)
+                pending = None
+        if pending:
+            result.append(rule)
+        result.reverse()
         logger.debug(
             "info_masking_list_rules node=%s namespace=%s set=%s response=%s",
             self.ip,
