@@ -40,7 +40,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
-from lib.live_cluster.get_controller import GetPmapController
+from lib.live_cluster.get_controller import GetPmapController, GetStatisticsController
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
     CollectionContext,
@@ -1862,6 +1862,8 @@ class ErrorRecordingClusterTest(unittest.IsolatedAsyncioTestCase):
 
     STATISTICS = constants.CollectinfoSection.STATISTICS
     TIMEOUT = constants.CollectinfoErrorClass.TIMEOUT
+    UNSUPPORTED = constants.CollectinfoErrorClass.UNSUPPORTED
+    SINDEX = {"ns": "test", "set": "demo", "indexname": "idx"}
 
     def setUp(self):
         self.controller = CollectinfoController()
@@ -1872,6 +1874,40 @@ class ErrorRecordingClusterTest(unittest.IsolatedAsyncioTestCase):
             setattr(self.controller.cluster, name, AsyncMock(return_value=result))
 
         return self.controller._cluster_for_section(self.STATISTICS, ledger)
+
+    async def test_a_node_failing_sindex_statistics_is_recorded_under_sindex(self):
+        """get_sindex asks each node for every sindex's statistics in one call."""
+        ledger = {}
+        cluster = self._wrapped(
+            ledger,
+            info_sindex={"A": [self.SINDEX]},
+            info_all_sindex_statistics={"A": asyncio.TimeoutError()},
+        )
+
+        await GetStatisticsController(cluster).get_sindex(nodes="all")
+
+        self.assertIn(
+            (self.STATISTICS, self.TIMEOUT, constants.STAT_SINDEX), ledger["A"]
+        )
+
+    async def test_a_sindex_one_node_lacks_is_recorded_as_unsupported(self):
+        ledger = {}
+        cluster = self._wrapped(
+            ledger,
+            info_sindex={"A": [self.SINDEX], "B": [self.SINDEX]},
+            info_all_sindex_statistics={
+                "A": {("test", "idx"): {"entries": "1"}},
+                "B": {("test", "idx"): ASInfoResponseError("err", "ERROR::no index")},
+            },
+        )
+
+        await GetStatisticsController(cluster).get_sindex(nodes="all")
+
+        self.assertIn(
+            (self.STATISTICS, self.UNSUPPORTED, constants.STAT_SINDEX),
+            ledger.get("B", {}),
+        )
+        self.assertNotIn("A", ledger)
 
     async def test_a_dropped_nested_failure_reaches_the_ledger(self):
         """A namespace whose statistics one node failed to answer: the getter
@@ -3206,19 +3242,26 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
         self.controller.collectinfo_root_controller = MagicMock()
 
         async def info(cmd, *args, **kwargs):
-            if cmd in self.fail_on:
-                raise Exception("boom: " + cmd)
+            self.info_requests.append(cmd)
 
             if cmd == "build":
                 return {"A": "8.2.0.0"}
 
-            return {"A": "test"}
+            def answer(name):
+                return "ERROR::boom" if name in self.rejected else "test"
+
+            if isinstance(cmd, str):
+                return {"A": answer(cmd)}
+
+            return {"A": {name: answer(name) for name in cmd}}
 
         self.controller.cluster = MagicMock()
         self.controller.cluster.info = info
 
         self.captured = []
         self.fail_on = set()
+        self.rejected = set()
+        self.info_requests = []
 
         async def capture(filename, func, param=None):
             name = " ".join(param or [])
@@ -3303,14 +3346,74 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("features", self.captured)
         self.assertIn("connection", self.captured)
 
-    async def test_one_failed_asinfo_command_does_not_drop_the_rest(self):
-        self.fail_on = {"connection"}
+    async def test_one_rejected_asinfo_command_does_not_drop_the_rest(self):
+        self.rejected = {"connection"}
 
         await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
 
-        self.assertNotIn("connection", self.captured)
+        self.assertIn("connection", self.captured)
         self.assertIn("service-clear-std", self.captured)
         self.assertIn("roster:", self.captured)
+
+    async def test_asinfo_commands_go_to_each_node_in_one_request(self):
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        singles = [r for r in self.info_requests if isinstance(r, str)]
+        batches = [r for r in self.info_requests if not isinstance(r, str)]
+        self.assertCountEqual(singles, ["build", "namespaces"])
+        self.assertEqual(len(batches), 1)
+        self.assertIn("connection", batches[0])
+        self.assertIn("roster:", batches[0])
+
+
+class AsinfoCaptureFormatTest(unittest.IsolatedAsyncioTestCase):
+    """Each asinfo command keeps its own section in ascollectinfo.log, with every
+    node's answer, however the commands are sent."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.timeout = asyncio.TimeoutError()
+
+        async def info(cmd, *args, **kwargs):
+            if cmd == "build":
+                return {"A": "8.2.0.0", "B": self.timeout}
+
+            if cmd == "namespaces":
+                return {"A": "test", "B": "test"}
+
+            if isinstance(cmd, str):
+                return {"A": "answer to " + cmd, "B": self.timeout}
+
+            return {"A": {name: "answer to " + name for name in cmd}, "B": self.timeout}
+
+        self.controller.cluster = MagicMock()
+        self.controller.cluster.info = info
+        self.written = []
+
+        patch.object(
+            CollectinfoController, "_collectinfo_capture_and_write_to_file", AsyncMock()
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.util.write_to_file",
+            side_effect=lambda filename, content: self.written.append(content),
+        ).start()
+        patch("lib.live_cluster.collectinfo_controller.InfoController").start()
+        patch("lib.live_cluster.collectinfo_controller.ShowController").start()
+        patch("lib.live_cluster.collectinfo_controller.FeaturesController").start()
+        self.addCleanup(patch.stopall)
+
+    async def test_each_command_has_its_section(self):
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        for cmd in ("connection", "roster:", "histogram:namespace=test;type=ttl"):
+            self.assertIn(
+                constants.COLLECTINFO_SEPERATOR
+                + cmd
+                + "\n"
+                + str({"A": "answer to " + cmd, "B": self.timeout}),
+                self.written,
+            )
 
 
 class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):

@@ -3535,6 +3535,39 @@ class ManageJobsKillTridControllerTest(unittest.IsolatedAsyncioTestCase):
             **self.controller.mods,
         )
 
+    async def test_kill_trids_sends_every_kill_at_once(self):
+        self.getter_mock.get_all.return_value = {
+            "scan": {"1.1.1.1": {"123": {"trid": "123"}}},
+            "query": {"1.1.1.1": {"456": {"trid": "456"}}},
+        }
+        in_flight = []
+        most_in_flight = 0
+
+        async def abort(trid, nodes):
+            nonlocal most_in_flight
+            in_flight.append(trid)
+            most_in_flight = max(most_in_flight, len(in_flight))
+            await asyncio.sleep(0.05)
+            in_flight.remove(trid)
+            return {nodes[0]: ASINFO_RESPONSE_OK}
+
+        self.cluster_mock.info_scan_abort.side_effect = abort
+        self.cluster_mock.info_query_abort.side_effect = abort
+
+        await self.controller.execute(["123", "456"])
+
+        self.assertEqual(most_in_flight, 2, "each kill waited for the one before it")
+        self.view_mock.killed_jobs.assert_called_once_with(
+            self.cluster_mock,
+            {
+                "1.1.1.1": {
+                    "123": {"trid": "123", "response": "ok"},
+                    "456": {"trid": "456", "response": "ok"},
+                },
+            },
+            **self.controller.mods,
+        )
+
     async def test_kill_trids_warn(self):
         trids = ["123", "789", "101", "456"]
         self.controller.warn = True

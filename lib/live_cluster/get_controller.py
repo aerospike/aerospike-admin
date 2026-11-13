@@ -527,8 +527,9 @@ class GetConfigController(BaseGetConfigController):
             except IndexError:
                 pass
 
-        all_dcs = await _get_all_dcs(self.cluster, nodes)
-        all_namespaces = await _get_all_namespaces(self.cluster, nodes)
+        all_dcs, all_namespaces = await asyncio.gather(
+            _get_all_dcs(self.cluster, nodes), _get_all_namespaces(self.cluster, nodes)
+        )
 
         filtered_dcs = list(util.filter_list(list(all_dcs), dcs_filter))
         filtered_namespaces = list(
@@ -816,56 +817,70 @@ class GetStatisticsController:
         }
         stats = util.filter_exceptions(stats)
 
-        result = {}
-        if stats:
-            for host, stat_list in stats.items():
-                if not stat_list or isinstance(stat_list, Exception):
+        listed = []
+
+        for stat_list in stats.values():
+            if not stat_list or isinstance(stat_list, Exception):
+                continue
+
+            ns_filter = None
+            sindex_filter = None
+
+            if for_mods is not None:
+                try:
+                    ns_filter = [for_mods[0]]
+                    sindex_filter = [for_mods[1]]
+                except IndexError:
+                    pass
+
+            namespace_set = {stat["ns"] for stat in stat_list}
+            namespace_set = set(util.filter_list(namespace_set, ns_filter))
+
+            sindex_set = {stat["indexname"] for stat in stat_list}
+            sindex_set = set(util.filter_list(sindex_set, sindex_filter))
+
+            for stat in stat_list:
+                if not stat or stat["ns"] not in namespace_set:
                     continue
 
-                ns_filter = None
-                sindex_filter = None
+                ns = stat["ns"]
+                indexname = stat["indexname"]
 
-                if for_mods is not None:
-                    try:
-                        ns_filter = [for_mods[0]]
-                        sindex_filter = [for_mods[1]]
-                    except IndexError:
-                        pass
+                if not indexname or not ns or indexname not in sindex_set:
+                    continue
 
-                namespace_set = {stat["ns"] for stat in stat_list}
-                namespace_set = set(util.filter_list(namespace_set, ns_filter))
+                listed.append(stat)
 
-                sindex_set = {stat["indexname"] for stat in stat_list}
-                sindex_set = set(util.filter_list(sindex_set, sindex_filter))
+        sindex_stats = {}
 
-                for stat in stat_list:
-                    if not stat or stat["ns"] not in namespace_set:
-                        continue
+        if listed:
+            sindex_stats = await self.cluster.info_all_sindex_statistics(
+                list(dict.fromkeys((stat["ns"], stat["indexname"]) for stat in listed)),
+                nodes=nodes,
+            )
 
-                    ns = stat["ns"]
-                    set_ = stat["set"]
-                    indexname = stat["indexname"]
+        result = {}
 
-                    if not indexname or not ns or indexname not in sindex_set:
-                        continue
+        for stat in listed:
+            sindex = (stat["ns"], stat["indexname"])
+            sindex_key = "%s %s %s" % (stat["ns"], stat["set"], stat["indexname"])
 
-                    sindex_key = "%s %s %s" % (ns, set_, indexname)
+            if sindex_key not in result:
+                result[sindex_key] = {
+                    node: node_stats.get(sindex)
+                    for node, node_stats in sindex_stats.items()
+                    if isinstance(node_stats, dict)
+                }
 
-                    if sindex_key not in result:
-                        # Only call this once per sindex
-                        result[sindex_key] = await self.cluster.info_sindex_statistics(
-                            ns, indexname, nodes=nodes
-                        )
+            for node in list(result[sindex_key]):
+                if not result[sindex_key][node] or isinstance(
+                    result[sindex_key][node], Exception
+                ):
+                    del result[sindex_key][node]
+                    continue
 
-                    for node in list(result[sindex_key]):
-                        if not result[sindex_key][node] or isinstance(
-                            result[sindex_key][node], Exception
-                        ):
-                            del result[sindex_key][node]
-                            continue
-
-                        for key, value in stat.items():
-                            result[sindex_key][node][key] = value
+                for key, value in stat.items():
+                    result[sindex_key][node][key] = value
 
         if flip:
             return result
@@ -984,8 +999,9 @@ class GetStatisticsController:
             except IndexError:
                 pass
 
-        all_dcs = await _get_all_dcs(self.cluster, nodes)
-        all_namespaces = await _get_all_namespaces(self.cluster, nodes)
+        all_dcs, all_namespaces = await asyncio.gather(
+            _get_all_dcs(self.cluster, nodes), _get_all_namespaces(self.cluster, nodes)
+        )
 
         filtered_dcs = list(util.filter_list(list(all_dcs), dcs_filter))
         filtered_namespaces = list(

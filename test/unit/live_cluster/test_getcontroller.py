@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import copy
 import warnings
 from pytest import PytestUnraisableExceptionWarning
@@ -35,6 +36,27 @@ from lib.live_cluster.get_controller import (
 from lib.utils import constants
 
 import unittest
+
+
+def answered_together(*results):
+    """Side effects that each answer only once all of them have been asked, so a
+    caller that waits for one before asking the next never finishes."""
+    asked = []
+    everyone_asked = asyncio.Event()
+
+    def side_effect(result):
+        async def answer(*args, **kwargs):
+            asked.append(result)
+
+            if len(asked) == len(results):
+                everyone_asked.set()
+
+            await everyone_asked.wait()
+            return result
+
+        return answer
+
+    return [side_effect(result) for result in results]
 
 
 class GetLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
@@ -754,15 +776,104 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
             "1.1.1.1": Exception("timeout"),
             "2.2.2.2": [{"ns": "test", "set": "s", "indexname": "idx"}],
         }
-        self.cluster_mock.info_sindex_statistics.return_value = {
-            "1.1.1.1": {"keys": "1"},
-            "2.2.2.2": {"keys": "2"},
+        self.cluster_mock.info_sindex_statistics.side_effect = AssertionError(
+            "asked once per sindex"
+        )
+        self.cluster_mock.info_all_sindex_statistics.return_value = {
+            "1.1.1.1": {("test", "idx"): {"keys": "1"}},
+            "2.2.2.2": {("test", "idx"): {"keys": "2"}},
         }
 
         actual = await self.controller.get_sindex(keep_exceptions=True)
 
         self.assertEqual(actual["1.1.1.1"]["test s idx"]["keys"], "1")
         self.assertEqual(actual["2.2.2.2"]["test s idx"]["keys"], "2")
+
+    async def test_get_sindex_asks_each_node_once_for_every_sindex(self):
+        self.cluster_mock.info_sindex.return_value = {
+            "1.1.1.1": [
+                {"ns": "test", "set": "s", "indexname": "a"},
+                {"ns": "test", "set": "s", "indexname": "b"},
+            ],
+            "2.2.2.2": [
+                {"ns": "test", "set": "s", "indexname": "a"},
+                {"ns": "bar", "set": "t", "indexname": "c"},
+            ],
+        }
+        self.cluster_mock.info_sindex_statistics.side_effect = AssertionError(
+            "asked once per sindex"
+        )
+        self.cluster_mock.info_all_sindex_statistics.return_value = {
+            "1.1.1.1": {
+                ("test", "a"): {"keys": "1"},
+                ("test", "b"): {"keys": "2"},
+                ("bar", "c"): Exception("no index"),
+            },
+            "2.2.2.2": {
+                ("test", "a"): {"keys": "3"},
+                ("test", "b"): {},
+                ("bar", "c"): {"keys": "4"},
+            },
+        }
+
+        actual = await self.controller.get_sindex()
+
+        self.cluster_mock.info_sindex_statistics.assert_not_called()
+        self.cluster_mock.info_all_sindex_statistics.assert_awaited_once()
+        self.assertCountEqual(
+            self.cluster_mock.info_all_sindex_statistics.await_args.args[0],
+            [("test", "a"), ("test", "b"), ("bar", "c")],
+        )
+        self.assertEqual(
+            actual,
+            {
+                "1.1.1.1": {
+                    "test s a": {
+                        "keys": "1",
+                        "ns": "test",
+                        "set": "s",
+                        "indexname": "a",
+                    },
+                    "test s b": {
+                        "keys": "2",
+                        "ns": "test",
+                        "set": "s",
+                        "indexname": "b",
+                    },
+                },
+                "2.2.2.2": {
+                    "test s a": {
+                        "keys": "3",
+                        "ns": "test",
+                        "set": "s",
+                        "indexname": "a",
+                    },
+                    "bar t c": {
+                        "keys": "4",
+                        "ns": "bar",
+                        "set": "t",
+                        "indexname": "c",
+                    },
+                },
+            },
+        )
+
+    async def test_get_sindex_drops_a_node_whose_statistics_request_failed(self):
+        self.cluster_mock.info_sindex.return_value = {
+            "1.1.1.1": [{"ns": "test", "set": "s", "indexname": "a"}],
+            "2.2.2.2": [{"ns": "test", "set": "s", "indexname": "a"}],
+        }
+        self.cluster_mock.info_sindex_statistics.side_effect = AssertionError(
+            "asked once per sindex"
+        )
+        self.cluster_mock.info_all_sindex_statistics.return_value = {
+            "1.1.1.1": Exception("timeout"),
+            "2.2.2.2": {("test", "a"): {"keys": "3"}},
+        }
+
+        actual = await self.controller.get_sindex()
+
+        self.assertEqual(list(actual), ["2.2.2.2"])
 
     async def test_get_sindex_drops_failed_and_empty_nodes_by_default(self):
         self.cluster_mock.info_sindex.return_value = {
@@ -873,6 +984,21 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
             nodes="all", dcs=["aaa", "aab"], namespaces=["test", "test1"]
         )
         self.assertDictEqual(actual, {})
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    @patch("lib.live_cluster.get_controller._get_all_namespaces")
+    async def test_get_xdr_namespaces_asks_for_dcs_and_namespaces_at_once(
+        self, _get_all_namespaces: AsyncMock, _get_all_dcs_mock: AsyncMock
+    ):
+        _get_all_dcs_mock.side_effect, _get_all_namespaces.side_effect = (
+            answered_together(["aaa"], ["test"])
+        )
+        self.cluster_mock.info_all_xdr_namespaces_statistics.return_value = {}
+
+        try:
+            await asyncio.wait_for(self.controller.get_xdr_namespaces(), 2)
+        except asyncio.TimeoutError:
+            self.fail("the namespaces were asked for only after the dcs came back")
 
 
 class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
@@ -1398,6 +1524,21 @@ class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             nodes="all", dcs=["aaa", "aab"], namespaces=["test", "test1"]
         )
         self.assertDictEqual(actual, {})
+
+    @patch("lib.live_cluster.get_controller._get_all_dcs")
+    @patch("lib.live_cluster.get_controller._get_all_namespaces")
+    async def test_get_xdr_namespaces_asks_for_dcs_and_namespaces_at_once(
+        self, _get_all_namespaces: AsyncMock, _get_all_dcs_mock: AsyncMock
+    ):
+        _get_all_dcs_mock.side_effect, _get_all_namespaces.side_effect = (
+            answered_together(["aaa"], ["test"])
+        )
+        self.cluster_mock.info_xdr_namespaces_config.return_value = {}
+
+        try:
+            await asyncio.wait_for(self.controller.get_xdr_namespaces(), 2)
+        except asyncio.TimeoutError:
+            self.fail("the namespaces were asked for only after the dcs came back")
 
     @patch("lib.live_cluster.get_controller._get_all_dcs")
     @patch("lib.live_cluster.get_controller._get_all_namespaces")

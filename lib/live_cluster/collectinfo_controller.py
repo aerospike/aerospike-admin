@@ -272,6 +272,7 @@ _INFO_CALL_SUBSECTIONS = {
     "info_bin_statistics": constants.STAT_BINS,
     "info_sindex": constants.STAT_SINDEX,
     "info_sindex_statistics": constants.STAT_SINDEX,
+    "info_all_sindex_statistics": constants.STAT_SINDEX,
     "info_XDR_statistics": constants.STAT_XDR,
     "info_all_dc_statistics": constants.STAT_DC,
     "info_all_xdr_namespaces_statistics": constants.STAT_XDR_NS,
@@ -397,10 +398,21 @@ class _ErrorRecordingCluster:
             return
 
         for node_key, value in result.items():
-            if isinstance(value, Exception):
-                _record_info_call_error(
-                    self._ledger, self._section, method_name, kwargs, node_key, value
-                )
+            failures = [value]
+
+            if method_name == "info_all_sindex_statistics" and isinstance(value, dict):
+                failures = value.values()
+
+            for failure in failures:
+                if isinstance(failure, Exception):
+                    _record_info_call_error(
+                        self._ledger,
+                        self._section,
+                        method_name,
+                        kwargs,
+                        node_key,
+                        failure,
+                    )
 
 
 def _retry_reported_failure(
@@ -2228,16 +2240,25 @@ class CollectinfoController(LiveClusterCommandController):
                     except Exception as e:
                         util.write_to_file(complete_filename, str(e))
 
-            for cmd in dignostic_aerospike_info_commands:
-                logger.info(
-                    f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+            try:
+                results = await self.cluster.info(
+                    tuple(dignostic_aerospike_info_commands)
                 )
-
-                try:
-                    result = await self.cluster.info(cmd)
-                    self._write_func_output_to_file(complete_filename, [cmd], result)
-                except Exception as e:
-                    util.write_to_file(complete_filename, str(e))
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+            else:
+                for cmd in dignostic_aerospike_info_commands:
+                    logger.info(
+                        f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+                    )
+                    self._write_func_output_to_file(
+                        complete_filename,
+                        [cmd],
+                        {
+                            node: resp.get(cmd) if isinstance(resp, dict) else resp
+                            for node, resp in results.items()
+                        },
+                    )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
             logger.warning("Failed to generate %s file.", complete_filename)

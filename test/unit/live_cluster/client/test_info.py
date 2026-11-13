@@ -34,6 +34,7 @@ from lib.live_cluster.client.info import (
     delete_whitelist,
     drop_user,
     grant_roles,
+    info,
     login,
     query_roles,
     query_users,
@@ -43,6 +44,7 @@ from lib.live_cluster.client.info import (
     set_whitelist,
     _receive_data,
 )
+from lib.live_cluster.client.types import ASInfoNotAuthenticatedError
 
 
 class ASPrivilegeTest(unittest.TestCase):
@@ -983,3 +985,44 @@ class ReceiveDataTest(unittest.IsolatedAsyncioTestCase):
         reader = DummyReader([b""])
         with self.assertRaises(ConnectionResetError):
             await _receive_data(reader, 5)
+
+
+class InfoBatchedReplyTest(unittest.IsolatedAsyncioTestCase):
+    NAMES = ("sindex-list:v=v2", "sindex-list:v=v2;b64=true")
+
+    async def _info(self, reply, names=NAMES):
+        with patch(
+            "lib.live_cluster.client.info._info_request",
+            AsyncMock(return_value=reply),
+        ):
+            return await info(Mock(), Mock(), names)
+
+    async def test_a_set_named_not_authenticated_is_returned_as_data(self):
+        sindexes = "ns=test:indexname=idx:set=not authenticated:bin=a;"
+        reply = "sindex-list:v=v2\t{0}\nsindex-list:v=v2;b64=true\t{0}\n".format(
+            sindexes
+        )
+
+        self.assertEqual(
+            await self._info(reply.encode()),
+            {"sindex-list:v=v2": sindexes, "sindex-list:v=v2;b64=true": sindexes},
+        )
+
+    async def test_an_index_named_not_authenticated_is_returned_as_data(self):
+        names = (
+            "sindex-stat:namespace=test;indexname=not authenticated",
+            "sindex-stat:namespace=test;indexname=Not Authenticated 2",
+        )
+        stats = (
+            "entries=0;used_bytes=16777216;entries_per_bval=0;entries_per_rec=0;"
+            "load_pct=100;load_time=0;stat_gc_recs=0"
+        )
+        reply = "".join("{}\t{}\n".format(name, stats) for name in names)
+
+        self.assertEqual(
+            await self._info(reply.encode(), names), dict.fromkeys(names, stats)
+        )
+
+    async def test_the_server_auth_failure_line_still_raises(self):
+        with self.assertRaises(ASInfoNotAuthenticatedError):
+            await self._info(b"ERROR:80:not authenticated\n")
