@@ -4361,6 +4361,15 @@ class ManageMaskingController(LiveClusterManageCommandController):
 
 
 class ManageMaskingLeafCommandController(ManageLeafCommandController):
+    def _refuse_semicolons(self, fields):
+        """Refuse a ';' in any (name, word) sent in the info command, since the server
+        reads it as the start of another field."""
+        for name, word in fields:
+            if word and ";" in word:
+                raise ShellException(
+                    f"The {name} '{word}' cannot contain ';', which separates the fields of a masking command."
+                )
+
     def _parse_target(self, line):
         """Return (bin, ael_b64, path modifier or None, prompt text) for the one target.
         A bare keyword parses as empty and an unquoted path as several words."""
@@ -4544,6 +4553,25 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
 
         bin_name, ael_b64, path_mod, target = self._parse_target(line)
 
+        self._refuse_semicolons(
+            [
+                ("function", function_name),
+                ("namespace", namespace),
+                ("set", set_name),
+                ("bin", bin_name),
+                ("ael_b64", ael_b64),
+                ("type", bin_type),
+            ]
+            + [("parameter name", name) for name in function_params]
+            + list(function_params.items())
+        )
+
+        for param_name in function_params:
+            if "=" in param_name:
+                raise ShellException(
+                    f"The parameter name '{param_name}' cannot contain '='."
+                )
+
         # check if the cluster supports data masking
         builds = await self.meta_getter.get_builds(nodes=self.nodes)
 
@@ -4711,6 +4739,16 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
             raise ShellException("All parameters are required: namespace, set")
 
         bin_name, ael_b64, _, target = self._parse_target(line)
+
+        self._refuse_semicolons(
+            [
+                ("namespace", namespace),
+                ("set", set_name),
+                ("bin", bin_name),
+                ("ael_b64", ael_b64),
+                ("type", bin_type),
+            ]
+        )
 
         if self.warn and not self.prompt_challenge(
             f"You're about to drop the masking rule for {target} in namespace '{namespace}', set '{set_name}'."

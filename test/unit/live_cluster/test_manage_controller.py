@@ -4983,6 +4983,138 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             (
+                "value",
+                ["constant", "value", "x;bin=other", "bin", "ssn"],
+                "The value 'x;bin=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                "default",
+                ["redact", "default", "N;A", "ael", "$.p.ssn"],
+                "The default 'N;A' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                "parameter_name",
+                ["constant", "value;bin=other", "x", "bin", "ssn"],
+                "The parameter name 'value;bin=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                "function",
+                ["constant;bin=other", "bin", "ssn"],
+                "The function 'constant;bin=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                "bin",
+                ["constant", "bin", "ssn;bin=other"],
+                "The bin 'ssn;bin=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                "ael_b64",
+                ["constant", "ael_b64", "JC5wLnNzbg==;bin=other"],
+                "The ael_b64 'JC5wLnNzbg==;bin=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                "type",
+                ["constant", "bin", "ssn", "type", "string;function=remove"],
+                "The type 'string;function=remove' cannot contain ';', which separates the fields of a masking command.",
+            ),
+        ]
+    )
+    async def test_add_rule_refuses_semicolon(self, _, words, exp_error):
+        line = words[:-2] + ["namespace", "test", "set", "demo"] + words[-2:]
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(str(context.exception), exp_error)
+        self.meta_mock.get_builds.assert_not_called()
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
+
+    @parameterized.expand(
+        [
+            ("namespace", ["namespace", "test;bin=other", "set", "demo"]),
+            ("set", ["namespace", "test", "set", "demo;bin=other"]),
+        ]
+    )
+    async def test_add_rule_refuses_semicolon_in_namespace_or_set(self, mod, words):
+        line = ["constant"] + words + ["bin", "ssn"]
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception),
+            f"The {mod} '{words[words.index(mod) + 1]}' cannot contain ';', which separates the fields of a masking command.",
+        )
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
+
+    async def test_add_rule_refuses_equals_in_parameter_name(self):
+        line = "constant value=x y namespace test set demo bin ssn".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception),
+            "The parameter name 'value=x' cannot contain '='.",
+        )
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
+
+    @parameterized.expand(
+        [
+            ("equals", ["value", "a=b", "bin", "ssn"], "ssn", {"value": "a=b"}, None),
+            (
+                "colon",
+                ["value", "12:30", "bin", "ssn"],
+                "ssn",
+                {"value": "12:30"},
+                None,
+            ),
+            (
+                "semicolon_in_ael_path",
+                ["value", "x", "ael", '$."a;b".x'],
+                "",
+                {"value": "x"},
+                "JC4iYTtiIi54",
+            ),
+        ]
+    )
+    async def test_add_rule_sends_value_server_accepts(
+        self, _, words, exp_bin, exp_params, exp_ael_b64
+    ):
+        line = ["constant"] + words[:2] + "namespace test set demo".split() + words[2:]
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            exp_bin,
+            "string",
+            "constant",
+            exp_params,
+            exp_ael_b64,
+            nodes="principal",
+        )
+
+    @parameterized.expand(
+        [
+            (
                 "ael $.a b",
                 "The 'ael' modifier takes one quoted path, but 'b' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'.",
             ),
@@ -5349,6 +5481,54 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
             f"You're about to drop the masking rule for {exp_target} in namespace 'test', set 'demo'."
         )
         self.cluster_mock.info_masking_remove_rule.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (
+                "namespace",
+                "namespace test;bin=other set demo bin ssn",
+                "test;bin=other",
+            ),
+            ("set", "namespace test set demo;bin=other bin ssn", "demo;bin=other"),
+            ("bin", "namespace test set demo bin ssn;type=integer", "ssn;type=integer"),
+            (
+                "ael_b64",
+                "namespace test set demo ael_b64 JC5wLnNzbg==;bin=other",
+                "JC5wLnNzbg==;bin=other",
+            ),
+            (
+                "type",
+                "namespace test set demo bin ssn type string;bin=other",
+                "string;bin=other",
+            ),
+        ]
+    )
+    async def test_drop_rule_refuses_semicolon(self, mod, rest, word):
+        line = rest.split()
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception),
+            f"The {mod} '{word}' cannot contain ';', which separates the fields of a masking command.",
+        )
+        self.cluster_mock.info_masking_remove_rule.assert_not_called()
+
+    async def test_drop_rule_sends_ael_path_with_semicolon(self):
+        line = ["namespace", "test", "set", "demo", "ael", '$."a;b".x']
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            "test", "demo", "", "string", "JC4iYTtiIi54", nodes="principal"
+        )
 
 
 class ManageACLGrantUserControllerTest(unittest.IsolatedAsyncioTestCase):
