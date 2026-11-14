@@ -110,10 +110,16 @@ class AsadmProcess:
             lines.append(line.decode(errors="replace"))
 
     def wait_for_stderr(self, text, timeout):
+        return self._wait_for(self.stderr, text, timeout)
+
+    def wait_for_stdout(self, text, timeout):
+        return self._wait_for(self.stdout, text, timeout)
+
+    def _wait_for(self, lines, text, timeout):
         deadline = time.monotonic() + timeout
 
         while time.monotonic() < deadline:
-            if any(text in line for line in self.stderr):
+            if any(text in line for line in lines):
                 return True
 
             if self.proc.poll() is not None:
