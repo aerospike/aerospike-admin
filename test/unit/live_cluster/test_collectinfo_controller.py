@@ -40,7 +40,7 @@ from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
-from lib.live_cluster.get_controller import GetPmapController
+from lib.live_cluster.get_controller import GetLatenciesController, GetPmapController
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
     CollectionContext,
@@ -811,6 +811,21 @@ class GetAsPmapTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("B", pmap_map)
         self.assertEqual(list(ledger["B"]), [(self.PMAP, self.TIMEOUT, "node")])
         self.assertNotIn("A", ledger)
+
+
+class GetAsLatencyTest(unittest.IsolatedAsyncioTestCase):
+    async def test_requests_verbose_latencies(self):
+        """TOOLS-4583: the object-store histograms are only queried in verbose mode."""
+        controller = CollectinfoController()
+        controller.nodes = "all"
+        controller.cluster = MagicMock()
+
+        with patch.object(
+            GetLatenciesController, "get_all", AsyncMock(return_value={})
+        ) as get_all:
+            await controller._get_as_latency()
+
+        self.assertTrue(get_all.call_args.kwargs["verbose"])
 
 
 class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
