@@ -253,6 +253,49 @@ class NodeInitTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_offline_node_records_why(self):
+        """TOOLS-4644: an Offline node keeps the reason, never an empty one."""
+        for error, reason in (
+            (
+                ConnectionError("connect timed out after 1s"),
+                "connect timed out after 1s",
+            ),
+            (asyncio.TimeoutError(), "TimeoutError"),
+        ):
+            with self.subTest(reason=reason), patch.object(
+                Node, "login", AsyncMock(side_effect=error)
+            ):
+                n = await Node("192.1.1.1")
+
+            self.assertFalse(n.alive)
+            self.assertEqual(n.offline_reason, reason)
+
+    async def test_reconnected_node_clears_its_offline_reason(self):
+        with patch.object(
+            Node, "login", AsyncMock(side_effect=ConnectionError("refused"))
+        ):
+            n = await Node("192.1.1.1")
+
+        responses = {
+            "node": "A00000000000000",
+            "build": "8.1.0.0",
+            "peers-generation": "1",
+            "connection": "admin=false",
+            "service-clear-std": "192.1.1.1:3000",
+            "peers-clear-std": "1,3000,[]",
+        }
+
+        def info_side_effect(cmd, *args, **kwargs):
+            if isinstance(cmd, list):
+                return {c: responses[c] for c in cmd}
+            return responses.get(cmd, "ok")
+
+        with patch.object(Node, "_info_cinfo", AsyncMock(side_effect=info_side_effect)):
+            await n.connect("192.1.1.1", 3000)
+
+        self.assertTrue(n.alive)
+        self.assertIsNone(n.offline_reason)
+
 
 class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
