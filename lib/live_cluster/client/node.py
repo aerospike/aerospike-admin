@@ -2853,6 +2853,10 @@ class Node(AsyncObject):
                 "benchmarks-udf",
                 "benchmarks-udf-sub",
                 "benchmarks-batch-sub",
+                "object-store-put",
+                "object-store-get",
+                "object-store-list",
+                "object-store-delete",
             ]
             cmd_latencies += [
                 "latencies:hist={%s}-%s" % (ns, optional)
@@ -2884,9 +2888,8 @@ class Node(AsyncObject):
         hist_name = None
         ns = None
         unit_mapping = {"msec": "ms", "usec": "us"}
-        time_units = None
         exponent_increment = 1 if exponent_increment <= 0 else exponent_increment
-        columns = [
+        thresholds = [
             ">1",
             ">2",
             ">4",
@@ -2930,13 +2933,8 @@ class Node(AsyncObject):
                 hist_name = None
                 continue
 
-            if time_units is None:
-                time_units = hist_data.pop(0)
-                columns = ["ops/sec"] + [
-                    (col + unit_mapping[time_units]) for col in list(columns)
-                ]
-            else:
-                hist_data.pop(0)
+            time_units = unit_mapping[hist_data.pop(0)]
+            columns = ["ops/sec"] + [col + time_units for col in thresholds]
 
             latency_data = [float(r) for r in hist_data]
             # Remove ops/sec and then add it back in after getting correct latency buckets.
