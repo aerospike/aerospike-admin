@@ -2550,11 +2550,19 @@ show_masking_rules = Sheet(
         Field("Set", Projectors.String("data", "set")),
         Field("Bin", Projectors.String("data", "bin")),
         Field("Type", Projectors.String("data", "type")),
+        Field("AEL", Projectors.String("data", "ael")),
         Field("Function", Projectors.String("data", "function")),
+        Field("Default", Projectors.String("data", "default")),
+        Field("Enforced", Projectors.Boolean("data", "enforced")),
     ),
     from_source=("data"),
     group_by=("Namespace", "Set"),
-    order_by=(FieldSorter("Namespace"), FieldSorter("Set"), FieldSorter("Bin")),
+    order_by=(
+        FieldSorter("Namespace"),
+        FieldSorter("Set"),
+        FieldSorter("Bin"),
+        FieldSorter("AEL"),
+    ),
 )
 
 

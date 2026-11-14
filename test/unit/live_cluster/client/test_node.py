@@ -5497,13 +5497,412 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to remove masking rule")
 
+    @parameterized.expand(
+        [
+            (
+                "",
+                "JC5wcm9maWxlLnNzbg==",
+                "masking:namespace=test;set=demo;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=redact;position=0",
+            ),
+            (
+                "ssn",
+                "JC5wcm9maWxlLnNzbg==",
+                "masking:namespace=test;set=demo;bin=ssn;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=redact;position=0",
+            ),
+            (
+                "",
+                "",
+                "masking:namespace=test;set=demo;ael_b64=;type=string;function=redact;position=0",
+            ),
+            (
+                "",
+                None,
+                "masking:namespace=test;set=demo;type=string;function=redact;position=0",
+            ),
+        ]
+    )
+    async def test_info_masking_add_rule_sends_target_as_given(
+        self, bin_, ael_b64, expected_req
+    ):
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_add_rule(
+            "test", "demo", bin_, "string", "redact", {"position": "0"}, ael_b64
+        )
+
+        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_remove_rule_with_ael_b64(self):
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_remove_rule(
+            "test", "demo", "", "string", "JC5wcm9maWxlLnNzbg=="
+        )
+
+        self.info_mock.assert_called_with(
+            "masking:namespace=test;set=demo;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=remove",
+            self.ip,
+        )
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_add_rule_keeps_whole_server_error(self):
+        self.info_mock.return_value = (
+            "ERROR:4:bad path '$.p.x +', at offset 6: unexpected '+'"
+        )
+
+        result = await self.node.info_masking_add_rule(
+            "test", "demo", "", "string", "redact", {}, "JC5wLnggKw=="
+        )
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(
+            result.response, "bad path '$.p.x +', at offset 6: unexpected '+'"
+        )
+
+    async def test_info_masking_list_rules_with_path_rule(self):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=ssn;type=string;function=redact"
+            ":namespace=test;set=demo;type=string;function=redact;ael_b64=JC5wcm9maWxlLnNzbg=="
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "ael_b64": "JC5wcm9maWxlLnNzbg==",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "dormant_path_rule",
+                "namespace=test;set=demo;type=string;function=constant;value=12:30;ael_b64=JC5yMC54Lnk=;enforced=false",
+                {
+                    "type": "string",
+                    "function": "constant",
+                    "value": "12:30",
+                    "ael_b64": "JC5yMC54Lnk=",
+                    "enforced": "false",
+                },
+            ),
+            (
+                "path_rule_default",
+                "namespace=test;set=demo;type=string;function=redact;default=00:00;ael_b64=JC52Lnc=",
+                {
+                    "type": "string",
+                    "function": "redact",
+                    "default": "00:00",
+                    "ael_b64": "JC52Lnc=",
+                },
+            ),
+            (
+                "bin_rule_value_with_equals",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=a:b=c",
+                {
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "a:b=c",
+                },
+            ),
+            (
+                "bin_rule_value_with_two_colons",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=aa:bb:cc",
+                {
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "aa:bb:cc",
+                },
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_rejoins_split_value(self, _, rule, exp_rule):
+        self.info_mock.return_value = (
+            rule + ":namespace=test;set=demo;bin=u;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                dict(namespace="test", set="demo", **exp_rule),
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            ("value_ends_with_colon_first", "abc:", 0, 1),
+            ("value_ends_with_colon_middle", "abc:", 1, 1),
+            ("value_ends_with_colon_last", "abc:", 1, 0),
+            ("value_two_colons_first", "::", 0, 1),
+            ("value_two_colons_middle", "::", 1, 1),
+            ("value_two_colons_last", "::", 1, 0),
+            ("value_double_colon_inside_first", "a::b", 0, 1),
+            ("value_double_colon_inside_middle", "a::b", 1, 1),
+            ("value_double_colon_inside_last", "a::b", 1, 0),
+            ("value_colon_alone_first", ":", 0, 1),
+            ("value_colon_alone_middle", ":", 1, 1),
+            ("value_colon_alone_last", ":", 1, 0),
+        ]
+    )
+    async def test_info_masking_list_rules_keeps_empty_pieces_of_a_value(
+        self, _, value, before, after
+    ):
+        other = "namespace=test;set=demo;bin=u;type=string;function=redact"
+        exp_other = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "u",
+            "type": "string",
+            "function": "redact",
+        }
+        self.info_mock.return_value = ":".join(
+            [other] * before
+            + [
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value="
+                + value
+            ]
+            + [other] * after
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [exp_other] * before
+            + [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": value,
+                }
+            ]
+            + [exp_other] * after,
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=a:namespace=b",
+                {"bin": "t", "value": "a:namespace=b"},
+            ),
+            (
+                "path_rule",
+                "namespace=test;set=demo;type=string;function=constant;value=a:namespace=b;ael_b64=JC5wLng=",
+                {"value": "a:namespace=b", "ael_b64": "JC5wLng="},
+            ),
+            (
+                "dormant_path_rule",
+                "namespace=test;set=demo;type=string;function=constant;value=a:namespace=b;ael_b64=JC5wLng=;enforced=false",
+                {"value": "a:namespace=b", "ael_b64": "JC5wLng=", "enforced": "false"},
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_value_holding_namespace_stays_in_its_rule(
+        self, _, rule, exp_rule
+    ):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=u;type=string;function=redact:"
+            + rule
+            + ":namespace=test;set=demo;bin=w;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="constant",
+                    **exp_rule,
+                ),
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "w",
+                    "type": "string",
+                    "function": "redact",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "adjacent",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=first;value=second",
+            ),
+            (
+                "split_by_another_key",
+                "namespace=test;set=demo;bin=t;type=string;value=first;function=constant;value=second",
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_duplicate_key_keeps_first_value(
+        self, _, rule
+    ):
+        self.info_mock.return_value = rule
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "first",
+                }
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                "set=demo;value=1:2;namespace=test;bin=t;type=string;function=constant",
+                {"bin": "t", "value": "1:2"},
+            ),
+            (
+                "bin_rule_equals_after_colon",
+                "set=demo;value=1:k=2;namespace=test;bin=t;type=string;function=constant",
+                {"bin": "t", "value": "1:k=2"},
+            ),
+            (
+                "path_rule",
+                "set=demo;value=1:2;namespace=test;type=string;function=constant;ael_b64=JC5wLng=",
+                {"value": "1:2", "ael_b64": "JC5wLng="},
+            ),
+            (
+                "value_typed_first",
+                "value=1:2;namespace=test;set=demo;bin=t;type=string;function=constant",
+                {"bin": "t", "value": "1:2"},
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_value_typed_before_namespace(
+        self, _, rule, exp_rule
+    ):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=u;type=string;function=redact:"
+            + rule
+            + ":namespace=test;set=demo;bin=w;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="constant",
+                    **exp_rule,
+                ),
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "w",
+                    "type": "string",
+                    "function": "redact",
+                },
+            ],
+        )
+
+    async def test_info_masking_list_rules_live_reply(self):
+        self.info_mock.return_value = (
+            "set=tpa576_p;value=1:2;namespace=test;bin=d1;type=string;function=constant"
+            ":namespace=test;set=tpa576_p;type=string;function=constant;value=a:namespace=b;ael_b64=JC5wLng="
+            ":namespace=test;set=tpa576_p;bin=a2;type=string;function=constant;value=a::b"
+            ":namespace=test;set=tpa576_p;bin=b1;type=string;function=constant;value=a:namespace=b"
+            ":namespace=test;set=tpa576_p;bin=d2;type=string;function=constant;value=first;value=second"
+            ":namespace=test;set=tpa576_p;bin=a1;type=string;function=constant;value=abc:"
+            ":namespace=test;set=tpa576_p;bin=ok1;type=string;function=constant;value=12:30"
+            ":namespace=test;set=tpa576_p;bin=a4;type=string;function=constant;value=:"
+            ":namespace=test;set=tpa576_p;bin=a3;type=string;function=constant;value=::"
+        )
+        rule = {
+            "namespace": "test",
+            "set": "tpa576_p",
+            "type": "string",
+            "function": "constant",
+        }
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                dict(rule, bin="d1", value="1:2"),
+                dict(rule, value="a:namespace=b", ael_b64="JC5wLng="),
+                dict(rule, bin="a2", value="a::b"),
+                dict(rule, bin="b1", value="a:namespace=b"),
+                dict(rule, bin="d2", value="first"),
+                dict(rule, bin="a1", value="abc:"),
+                dict(rule, bin="ok1", value="12:30"),
+                dict(rule, bin="a4", value=":"),
+                dict(rule, bin="a3", value="::"),
+            ],
+        )
+
     async def test_info_masking_list_rules_success(self):
         """Test successful masking rules listing"""
         self.info_mock.return_value = "ns=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*:ns=test;set=demo;bin=email;type=string;function=constant;value=REDACTED"
 
         result = await self.node.info_masking_list_rules("test", "demo")
 
-        expected_req = "masking-show:ns=test;set=demo;"
+        expected_req = "masking-show:namespace=test;set=demo;"
         self.info_mock.assert_called_with(expected_req, self.ip)
 
         expected = [
@@ -5527,6 +5926,14 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         ]
         self.assertEqual(result, expected)
+
+    async def test_info_masking_list_rules_namespace_filter_uses_namespace_param(self):
+        """masking-show takes 'ns' only as a deprecated alias of 'namespace'."""
+        self.info_mock.return_value = ""
+
+        await self.node.info_masking_list_rules("test")
+
+        self.info_mock.assert_called_with("masking-show:namespace=test;", self.ip)
 
     async def test_info_masking_list_rules_no_filters(self):
         """Test masking rules listing without filters"""

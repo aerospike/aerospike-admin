@@ -2211,6 +2211,25 @@ class ShowMaskingController(CollectinfoCommandController):
             warn_no_data("show masking", "masking rules")
             return
 
+        # Older asadm split rules at ':' and stored the pieces as rules of their own.
+        merged_rules = []
+        pending = {}
+        for piece in reversed(masking_rules):
+            rule = dict(piece)
+            for key, value in pending.items():
+                rule.setdefault(key, value)
+            if ("namespace" in rule or "ns" in rule) and all(
+                k in rule for k in ("set", "type", "function")
+            ):
+                merged_rules.append(rule)
+                pending = {}
+            else:
+                pending = rule
+        if pending:
+            merged_rules.append(pending)
+        merged_rules.reverse()
+        masking_rules = merged_rules
+
         # Apply filtering if specified
         if namespace or set_name:
             filtered_rules = []
