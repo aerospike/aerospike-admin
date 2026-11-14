@@ -423,7 +423,11 @@ class Cluster(AsyncObject):
                 node = self.nodes[node_key]
                 if await node.needs_refresh():
                     logger.debug("Node %s:%s needs refresh", node.ip, node.port)
-                    await node.refresh_connection()
+                    try:
+                        await node.refresh_connection()
+                    except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
+                        logger.error("%s: %s", node.key, e)
+                        node.alive = False
                 if node.key != node_key:
                     # change in service list
                     self.nodes.pop(node_key)
