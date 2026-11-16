@@ -14,7 +14,7 @@
 
 import unittest
 
-from parameterized import parameterized
+from parameterized import parameterized, parameterized_class
 
 from lib.base_controller import (
     BaseController,
@@ -102,6 +102,67 @@ class FakeCommand2(CommandController):
 
     async def do_zoo(self, line):
         return "zoo", line
+
+
+@CommandHelp("A root whose 'fake' command is also a prefix of two others")
+class FakeOverlapRoot(BaseController):
+    def __init__(self, exact_first=False):
+        self.modifiers = set()
+        commands = [("fakeinfo", FakeCommand2), ("fakelogs", FakeCommand2)]
+        commands.insert(0 if exact_first else 1, ("fake", FakeCommand1))
+        self.controller_map = dict(commands)
+
+
+@parameterized_class(("exact_first",), [(False,), (True,)])
+class ExactCommandNameTest(unittest.IsolatedAsyncioTestCase):
+    """A command named like the start of others ('collect' beside 'collectinfo'
+    and 'collectlogs') is reachable by its full name, wherever it is registered."""
+
+    exact_first = False
+
+    def root(self):
+        return FakeOverlapRoot(self.exact_first)
+
+    async def test_full_name_runs_that_command(self):
+        result = await self.root()(["fake"])
+
+        self.assertEqual(result[0], "fake1")
+
+    async def test_full_name_routes_into_its_subcommands(self):
+        result = await self.root()(["fake", "cmd"])
+
+        self.assertEqual(result, ["fake1", []])
+
+    async def test_unique_prefix_of_a_longer_command_still_resolves(self):
+        result = await self.root()(["fakei"])
+
+        self.assertEqual(result[0], "fake2")
+
+    async def test_prefix_shared_by_several_commands_is_still_ambiguous(self):
+        with self.assertRaisesRegex(ShellException, "Ambiguous command"):
+            await self.root()(["fak"])
+
+    def test_help_lists_every_command(self):
+        help_lines = self.root().execute_help([]).splitlines()
+
+        for command in ("fake", "fakeinfo", "fakelogs"):
+            self.assertTrue(
+                any(line.split()[:1] == [command] for line in help_lines),
+                f"'{command}' missing from root help",
+            )
+
+    def test_help_for_full_name_describes_that_command(self):
+        help_text = self.root().execute_help(["fake"])
+
+        self.assertIn("Fake Command 1 Help", help_text)
+
+    def test_complete_after_full_name_offers_its_subcommands(self):
+        self.assertEqual(self.root().complete(["fake", ""]), ["cmd"])
+
+    def test_complete_of_full_name_still_offers_longer_names(self):
+        self.assertEqual(
+            self.root().complete(["fake"]), ["fake", "fakeinfo", "fakelogs"]
+        )
 
 
 class BaseControllerTest(unittest.IsolatedAsyncioTestCase):
