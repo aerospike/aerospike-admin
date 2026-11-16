@@ -85,6 +85,7 @@ deb: prep
 		--version $(PKG_VERSION) \
 		--iteration $(DEB_ITERATION) \
 		--maintainer $(MAINTAINER) \
+		--depends "libssl3 | libssl3t64" \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \
@@ -107,6 +108,7 @@ rpm: prep
 		--version $(RPM_VERSION) \
 		--iteration $(ITERATION) \
 		--maintainer $(MAINTAINER) \
+		--depends "openssl-libs" \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \

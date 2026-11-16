@@ -19,3 +19,21 @@ for tool in asadm asinfo; do
 	assert_version_output "$out" "$expected"
 	echo "$tool reports $(expected_version_lines "$expected" | tr '\n' ' ')(from $expected)"
 done
+
+if [ "$(uname)" = Linux ]; then
+	bundle="$(dirname "$(readlink -f "$(command -v asadm)")")"
+	bundled="$(find "$bundle" \( -name 'libssl.so*' -o -name 'libcrypto.so*' -o -path '*/ossl-modules/*' \))"
+	if [ -n "$bundled" ]; then
+		echo "error: asadm ships its own OpenSSL: $bundled" >&2
+		exit 1
+	fi
+fi
+
+if command -v openssl >/dev/null &&
+	OPENSSL_FORCE_FIPS_MODE=1 openssl sha256 /dev/null >/dev/null 2>&1 &&
+	! OPENSSL_FORCE_FIPS_MODE=1 openssl md5 /dev/null >/dev/null 2>&1; then
+	for tool in asadm asinfo; do
+		OPENSSL_FORCE_FIPS_MODE=1 "$tool" --version >/dev/null
+		echo "$tool starts with OpenSSL in FIPS mode"
+	done
+fi

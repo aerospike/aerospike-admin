@@ -154,6 +154,10 @@ jobs:
       - name: Mark workspace as safe (for git inside container)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      # EL9/EL10: build against the oldest-stable (GA) OpenSSL; no-op elsewhere.
+      - name: Pin EL build repos to frozen vault
+        run: bash .github/bin/pin_build_repos.sh "${{ matrix.distro }}"
+
       - name: Install build dependencies
         env:
           ENV_DISTRO: ${{ matrix.distro }}

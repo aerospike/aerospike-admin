@@ -59,8 +59,8 @@ ENV LANG=C.UTF-8 \
 SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 
 # Fetch (or copy) → verify SHA → apt-install the .deb. apt resolves any
-# transitive Depends from the .deb (currently none declared) and the .deb's
-# PyInstaller bundle relies only on libs already present in ubuntu:24.04.
+# transitive Depends from the .deb (the host's OpenSSL) and the rest of the
+# .deb's PyInstaller bundle relies only on libs already present in ubuntu:24.04.
 # curl is installed only when we need to download, then purged.
 # Then record, from the installed package's own file list, the executables it
 # put on PATH: docker-entrypoint.sh reads /usr/local/share/aerospike/tools and

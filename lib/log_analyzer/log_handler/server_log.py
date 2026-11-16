@@ -394,7 +394,7 @@ class ServerLog:
                         line_data = line
                 else:
                     line_data = line
-                m = hashlib.md5(line_data)
+                m = hashlib.md5(line_data.encode("utf-8"), usedforsecurity=False)
                 if m.hexdigest() in self.uniq_lines_track:
                     fail = True
                     continue

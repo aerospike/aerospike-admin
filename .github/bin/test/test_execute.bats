@@ -53,3 +53,31 @@ setup() {
   echo "$output"
   assert_version_output "$output" "$expected"
 }
+
+@test "asadm ships no OpenSSL of its own on Linux" {
+  [ "$(uname)" = Linux ] || skip "macOS has no host OpenSSL to load"
+  local bundle
+  bundle="$(dirname "$(readlink -f "$(command -v asadm)")")"
+
+  run find "$bundle" \( -name 'libssl.so*' -o -name 'libcrypto.so*' -o -path '*/ossl-modules/*' \)
+  [ "$status" -eq 0 ]
+  echo "bundled OpenSSL: $output"
+  [ -z "$output" ]
+}
+
+@test "asadm and asinfo start when the host's OpenSSL is in FIPS mode" {
+  command -v openssl >/dev/null || skip "no openssl CLI to confirm FIPS mode can be forced"
+  OPENSSL_FORCE_FIPS_MODE=1 openssl sha256 /dev/null >/dev/null 2>&1 \
+    || skip "this host has no OpenSSL FIPS provider"
+  if OPENSSL_FORCE_FIPS_MODE=1 openssl md5 /dev/null >/dev/null 2>&1; then
+    skip "this host's OpenSSL ignores OPENSSL_FORCE_FIPS_MODE"
+  fi
+
+  run env OPENSSL_FORCE_FIPS_MODE=1 asadm --version
+  echo "$output"
+  [ "$status" -eq 0 ]
+
+  run env OPENSSL_FORCE_FIPS_MODE=1 asinfo --version
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
