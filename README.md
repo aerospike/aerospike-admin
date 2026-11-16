@@ -136,6 +136,12 @@ DUMP_DOCKER_LOGS=true FEATKEY=(base64 -i path/to/features.conf) make integration
 ```
 This will save container logs to the `docker_logs/` directory when containers are stopped.
 
+### Running FIPS Tests
+```
+FEATKEY=(base64 -i path/to/features.conf) make fips
+```
+Runs asadm from the working tree in a RHEL 9 container whose OpenSSL is forced into FIPS mode, against a TLS cluster that also runs sshd. The first run builds the client image, which compiles `cryptography` against the container's OpenSSL.
+
 ### Running all tests with coverage
 ```
 FEATKEY=(base64 -i path/to/features.conf) make coverage
