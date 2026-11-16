@@ -15,6 +15,7 @@
 import asyncio
 import copy
 import gc
+import inspect
 import json
 import logging
 import logging.handlers
@@ -25,6 +26,8 @@ import threading
 import unittest
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from parameterized import parameterized
 
 from lib.live_cluster.client.types import (
     ASInfoError,
@@ -934,6 +937,41 @@ class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
 
         calls = self.controller.cluster.set_timeout.call_args_list
         self.assertEqual(calls[-1], mock.call(1))
+
+
+class CollectinfoNumericFlagTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.mods = {}
+        self.run_signature = inspect.signature(CollectinfoController._run_collectinfo)
+        self.run_mock = patch.object(
+            CollectinfoController, "_run_collectinfo", AsyncMock()
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def _parse(self, *line):
+        with self.assertNoLogs(LOGGER_NAME, level=logging.ERROR):
+            await self.controller._do_default(list(line))
+
+        call = self.run_mock.await_args
+        args = self.run_signature.bind(
+            self.controller, *call.args, **call.kwargs
+        ).arguments
+        return args["snp_count"], args["wait_time"]
+
+    @parameterized.expand(
+        [
+            ("snapshots_leading_zero", ["-n", "03"], (3, 5)),
+            ("wait_leading_zero", ["-t", "07"], (1, 7)),
+            ("wait_plus_sign", ["-t", "+7"], (1, 7)),
+            ("wait_zero", ["-t", "0"], (1, 0)),
+            ("wait_double_zero", ["-t", "00"], (1, 0)),
+            ("wait_negative_zero", ["-t", "-0"], (1, 0)),
+            ("value_equal_to_another_flags", ["-n", "02", "-t", "2"], (2, 2)),
+        ]
+    )
+    async def test_value_is_taken_as_written(self, _, line, expected):
+        self.assertEqual(await self._parse(*line), expected)
 
 
 class RunCollectinfoTestCase(unittest.IsolatedAsyncioTestCase):

@@ -753,6 +753,90 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(util.is_valid_aerospike_name(name, "role"))
 
 
+class GetArgAndDeleteFromModsTest(unittest.TestCase):
+    """The value taken and removed is the token right after the flag, as written."""
+
+    def _get(self, line, arg, default, return_type=int, modifiers=(), mods=None):
+        return util.get_arg_and_delete_from_mods(
+            line=line,
+            arg=arg,
+            return_type=return_type,
+            default=default,
+            modifiers=list(modifiers),
+            mods={} if mods is None else mods,
+        )
+
+    @parameterized.expand(
+        [
+            ("plain", "7", 7),
+            ("negative", "-5", -5),
+            ("leading_zero", "03", 3),
+            ("leading_zeros", "007", 7),
+            ("plus_sign", "+7", 7),
+            ("zero", "0", 0),
+            ("double_zero", "00", 0),
+            ("negative_zero", "-0", 0),
+        ]
+    )
+    def test_takes_the_value_as_written(self, _, raw, expected):
+        line = ["-t", raw]
+
+        self.assertEqual(self._get(line, "-t", default=5), expected)
+        self.assertEqual(line, [])
+
+    def test_takes_an_empty_string_value(self):
+        line = ["--output-prefix", ""]
+
+        self.assertEqual(
+            self._get(line, "--output-prefix", default="x", return_type=str), ""
+        )
+        self.assertEqual(line, [])
+
+    def test_leaves_an_equal_value_of_another_flag_alone(self):
+        line = ["-n", "05", "-t", "5"]
+
+        self.assertEqual(self._get(line, "-n", default=1), 5)
+        self.assertEqual(self._get(line, "-t", default=9), 5)
+        self.assertEqual(line, [])
+
+    def test_missing_value_leaves_a_token_equal_to_the_default_alone(self):
+        line = ["-n", "1", "-t"]
+
+        self.assertEqual(self._get(line, "-t", default=1), 1)
+        self.assertEqual(line, ["-n", "1"])
+
+    def test_unparsable_value_stays_on_the_line(self):
+        line = ["-t", "x", "-n", "5"]
+
+        self.assertEqual(self._get(line, "-t", default=5), 5)
+        self.assertEqual(line, ["x", "-n", "5"])
+
+    def test_absent_flag_gives_the_default(self):
+        line = ["-n", "3"]
+
+        self.assertEqual(self._get(line, "-t", default=5), 5)
+        self.assertEqual(line, ["-n", "3"])
+
+    def test_repeated_flag_is_taken_in_order(self):
+        line = ["-where", "a=1", "-where", "b=2"]
+
+        self.assertEqual(
+            self._get(line, "-where", default=None, return_type=str), "a=1"
+        )
+        self.assertEqual(
+            self._get(line, "-where", default=None, return_type=str), "b=2"
+        )
+        self.assertEqual(line, [])
+
+    def test_clears_the_flag_and_its_value_from_mods(self):
+        line = ["-n", "03"]
+        mods = {"like": ["-n", "03", "x"]}
+
+        self._get(line, "-n", default=1, modifiers=["like"], mods=mods)
+
+        self.assertEqual(mods, {"like": ["x"]})
+
+
 class AggregateNsMemoryStatsTest(unittest.TestCase):
     def test_aggregates_across_namespaces(self):
         ns_stats = {

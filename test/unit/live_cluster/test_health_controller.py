@@ -111,6 +111,15 @@ class HealthCheckControllerSnapshotSleepTest(HealthCheckControllerTestCase):
         self.health_checker_mock.execute.assert_not_called()
 
 
+class HealthCheckControllerNumericFlagTest(HealthCheckControllerTestCase):
+    async def test_leading_zero_values_are_taken_not_read_as_the_query_file(self):
+        with patch("asyncio.sleep", AsyncMock()) as async_sleep_mock:
+            await self.controller._do_default(["-n", "02", "-s", "03"])
+
+        self.health_checker_mock.execute.assert_called_once_with(query_file=None)
+        self.assertIn(call(3.0), async_sleep_mock.await_args_list)
+
+
 class HealthCheckControllerSnapshotIntervalTest(HealthCheckControllerTestCase):
     """time.sleep rejected these. asyncio.sleep returns at once for a negative
     interval and never for a huge one."""

@@ -230,46 +230,25 @@ def fetch_argument(
     return not success, default
 
 
-def _fetch_line_clear_dict(
-    line, arg, return_type: Type[ReturnType], default: DefaultType, keys, d
-) -> Union[DefaultType, ReturnType]:
-    if not line:
-        return default
-    try:
-        success, _val = fetch_argument(line, arg, default)
-        if _val is not None:
-            val = return_type(_val)
-        else:
-            val = None
-
-        if success and keys and d:
-            clear_val_from_list_in_dict(keys, d, arg)
-            clear_val_from_list_in_dict(keys, d, _val)
-
-    except Exception:
-        val = default
-    return val
-
-
 def get_arg_and_delete_from_mods(
     line, arg, return_type: Type[ReturnType], default: DefaultType, modifiers, mods
 ) -> Union[DefaultType, ReturnType]:
+    if not line or arg not in line:
+        return default
+
+    index = line.index(arg)
+    del line[index]
+
     try:
-        val = _fetch_line_clear_dict(
-            line=line,
-            arg=arg,
-            return_type=return_type,
-            default=default,
-            keys=modifiers,
-            d=mods,
-        )
+        val = return_type(line[index])
 
-        line.remove(arg)
-
-        if val:
-            line.remove(str(val))
+        if modifiers and mods:
+            clear_val_from_list_in_dict(modifiers, mods, arg)
+            clear_val_from_list_in_dict(modifiers, mods, line[index])
     except Exception:
-        val = default
+        return default
+
+    del line[index]
     return val
 
 
