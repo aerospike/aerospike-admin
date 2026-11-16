@@ -54,6 +54,7 @@ from lib.live_cluster.show_controller import (
     ShowUsersController,
     ShowUsersStatsController,
 )
+from lib.live_cluster.collectusage_controller import UsageExport, UsageUnavailable
 from lib.view.view import CliView
 from test.unit import util as test_util
 
@@ -1605,6 +1606,97 @@ class ShowStopWritesControllerTest(unittest.IsolatedAsyncioTestCase):
         self.view_mock.show_stop_writes.assert_called_with(
             summary_resp, self.cluster_mock, **self.controller.mods
         )
+
+
+class ShowUsageControllerTest(unittest.IsolatedAsyncioTestCase):
+    DATA = {
+        "cluster": "963fa489-71bd-46a9-af70-765ce26c5a62",
+        "feature_key": {"account-name": "Acme Corp"},
+        "records": [],
+        "schema": 1,
+        "taken": "2026-11-16T19:11:36Z",
+    }
+
+    async def asyncSetUp(self):
+        self.controller = ShowController().controller_map["usage"]()
+        self.cluster_mock = self.controller.cluster = MagicMock()
+        self.cluster_mock.info_namespaces = AsyncMock(return_value={})
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.controller.mods = {}
+        self.fetch = patch(
+            "lib.live_cluster.show_controller.fetch_usage", AsyncMock()
+        ).start()
+        self.supported = patch(
+            "lib.live_cluster.show_controller.usage_supported",
+            AsyncMock(return_value=True),
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_shows_the_export_with_the_clusters_namespace_names(self):
+        self.fetch.return_value = UsageExport("10.0.0.3:3000", b"{}", self.DATA)
+        self.cluster_mock.info_namespaces.return_value = {
+            "10.0.0.1:3000": ["test", "bar"],
+            "10.0.0.2:3000": ["test", "baz"],
+            "10.0.0.3:3000": TimeoutError("info timed out after 1s"),
+        }
+
+        await self.controller._do_default([])
+
+        self.fetch.assert_awaited_once_with(self.cluster_mock)
+        self.view_mock.show_usage.assert_called_once_with(
+            self.DATA, namespaces=["bar", "baz", "test"]
+        )
+
+    async def test_an_older_server_is_a_warning(self):
+        self.supported.return_value = False
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            await self.controller._do_default([])
+
+        self.assertEqual(
+            [(r.levelname, r.getMessage()) for r in cm.records],
+            [
+                (
+                    "WARNING",
+                    "'show usage' is not supported on aerospike versions < 8.2.1",
+                )
+            ],
+        )
+        self.fetch.assert_not_awaited()
+        self.view_mock.show_usage.assert_not_called()
+
+    async def test_a_server_without_usage_reporting_is_a_warning(self):
+        self.fetch.side_effect = UsageUnavailable(
+            "10.0.0.3:3000", "ERROR:25:enterprise only", supported=False
+        )
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            await self.controller._do_default([])
+
+        self.assertEqual(
+            [(r.levelname, r.getMessage()) for r in cm.records],
+            [
+                (
+                    "WARNING",
+                    "'show usage' is not supported on this cluster "
+                    "(10.0.0.3:3000 replied ERROR:25:enterprise only).",
+                )
+            ],
+        )
+        self.view_mock.show_usage.assert_not_called()
+
+    async def test_a_server_error_is_shown_verbatim(self):
+        reply = "ERROR:81:role violation - requires permission 'user-admin'"
+        self.fetch.side_effect = UsageUnavailable("10.0.0.3:3000", reply)
+
+        with self.assertLogs("lib", level="ERROR") as cm:
+            await self.controller._do_default([])
+
+        self.assertEqual(
+            cm.records[0].getMessage(),
+            f"Failed to get usage from 10.0.0.3:3000: {reply}",
+        )
+        self.view_mock.show_usage.assert_not_called()
 
 
 class ShowUserAgentsControllerTest(unittest.IsolatedAsyncioTestCase):

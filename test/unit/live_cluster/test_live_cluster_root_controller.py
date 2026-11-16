@@ -177,6 +177,41 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
         help_line(help_text, "info")
         help_line(help_text, "logs")
 
+    def test_help_collect_lists_usage(self):
+        help_line(self.root.execute_help(["collect"]), "usage")
+
+    def test_help_collect_usage_names_its_option_and_privilege(self):
+        help_text = " ".join(
+            ANSI.sub("", self.root.execute_help(["collect", "usage"])).split()
+        )
+
+        self.assertIn("collect usage [--output-prefix <prefix>]", help_text)
+        self.assertIn("user-admin", help_text)
+
+    @parameterized.expand([("full", "usage"), ("prefix", "u")])
+    async def test_collect_usage_runs_the_usage_export(self, _, name):
+        usage = patch(
+            "lib.live_cluster.collectusage_controller.CollectusageController._do_default",
+            autospec=True,
+        ).start()
+
+        await self.root.execute(["collect", name, "--output-prefix", "pre"])
+
+        usage.assert_awaited_once()
+        self.assertEqual(usage.call_args.args[1], ["--output-prefix", "pre"])
+        self.collectinfo.assert_not_awaited()
+
+    def test_help_show_lists_usage(self):
+        help_line(self.root.execute_help(["show"]), "usage")
+
+    def test_help_show_usage_names_the_privilege(self):
+        help_text = " ".join(
+            ANSI.sub("", self.root.execute_help(["show", "usage"])).split()
+        )
+
+        self.assertIn("user-admin", help_text)
+        self.assertIn("License Usage", help_text)
+
     def test_help_info_lists_summary(self):
         help_line(self.root.execute_help(["info"]), "summary")
 
