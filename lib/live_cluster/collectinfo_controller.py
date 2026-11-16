@@ -2257,7 +2257,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             util.write_to_file(complete_filename, fileHeader)
 
-            summary_params = ["summary"]
+            summary_params = ["info summary"]
             summary_info_params = [
                 "network",
                 "memory",

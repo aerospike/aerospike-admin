@@ -251,6 +251,30 @@ def create_disabled_controller(controller, command_):
     return DisableController
 
 
+def create_deprecated_controller(controller, command_, replacement):
+    """Keeps a replaced command working, with a warning each time it runs."""
+
+    @CommandHelp(
+        *CommandHelp.long_message(controller).split("\n"),
+        f"Deprecated: use '{replacement}' instead. '{command_}' will be removed in a future release.",
+        short_msg=f"{CommandHelp.short_message(controller)} (deprecated, use '{replacement}')",
+        usage=CommandHelp.usage(controller) or None,
+        modifiers=getattr(controller, "_modifiers", None),
+    )
+    class DeprecatedController(controller):
+        # override
+        async def execute(self, line):
+            logger.warning(
+                "'%s' is deprecated and will be removed in a future release. Use '%s' instead.",
+                command_,
+                replacement,
+            )
+
+            return await super().execute(line)
+
+    return DeprecatedController
+
+
 class ShellException(Exception):
     carries_its_own_message = True
 

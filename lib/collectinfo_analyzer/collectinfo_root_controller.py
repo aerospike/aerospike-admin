@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.base_controller import BaseController, CommandHelp, ShellException
+from lib.base_controller import (
+    BaseController,
+    CommandHelp,
+    ShellException,
+    create_deprecated_controller,
+)
 
 from .collectinfo_handler.log_handler import CollectinfoLogHandler, LogHandlerException
 from .collectinfo_command_controller import CollectinfoCommandController
@@ -60,7 +65,9 @@ class CollectinfoRootController(BaseController):
             "features": FeaturesController,
             "pager": PagerController,
             "health": HealthCheckController,
-            "summary": SummaryController,
+            "summary": create_deprecated_controller(
+                SummaryController, "summary", "info summary"
+            ),
         }
 
     def close(self):

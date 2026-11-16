@@ -3259,6 +3259,12 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("memory", self.captured)
 
+    async def test_summary_log_runs_info_summary_not_the_deprecated_command(self):
+        await self.controller._dump_collectinfo_summary("prefix_", "header\n")
+
+        self.assertIn("info summary", self.captured)
+        self.assertNotIn("summary", self.captured)
+
     async def test_one_failed_info_command_does_not_drop_the_rest(self):
         self.fail_on = {"network"}
 
