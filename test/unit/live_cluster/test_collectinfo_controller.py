@@ -3319,6 +3319,7 @@ class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
     collectinfo_debug.log, which hangs off the same logger at DEBUG."""
 
     COMMAND_LOGGER = "lib.live_cluster.info_controller"
+    HEALTH_LOGGER = "lib.collectinfo_analyzer.health_check_controller"
 
     async def asyncSetUp(self):
         self.controller = CollectinfoController()
@@ -3378,6 +3379,33 @@ class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
     async def test_command_error_still_reaches_the_terminal(self):
         await self._capture(
             lambda: logging.getLogger(self.COMMAND_LOGGER).log(logging.ERROR, "boom")
+        )
+
+        self.stderr_emit.assert_called_once()
+
+    async def test_health_deprecation_warning_stays_off_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).warning(
+                "The 'health' command is deprecated."
+            )
+        )
+
+        self.stderr_emit.assert_not_called()
+
+    async def test_health_deprecation_warning_still_reaches_the_debug_log(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).warning(
+                "The 'health' command is deprecated."
+            )
+        )
+
+        self.assertEqual(
+            self._debug_messages(), ["The 'health' command is deprecated."]
+        )
+
+    async def test_health_error_still_reaches_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).error("health failed")
         )
 
         self.stderr_emit.assert_called_once()

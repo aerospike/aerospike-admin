@@ -53,6 +53,7 @@ from lib.base_controller import (
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
+from lib.collectinfo_analyzer import health_check_controller as analyzer_health
 from lib.live_cluster.get_controller import (
     GetStatisticsController,
     GetConfigController,
@@ -71,7 +72,11 @@ from .show_controller import ShowController
 
 logger = logging.getLogger(__name__)
 
-_COMMAND_LOGGER_NAMES = (InfoController.__module__, ShowController.__module__)
+_COMMAND_LOGGER_NAMES = (
+    InfoController.__module__,
+    ShowController.__module__,
+    analyzer_health.__name__,
+)
 
 
 def _not_a_command_warning(record: logging.LogRecord) -> bool:
@@ -80,9 +85,9 @@ def _not_a_command_warning(record: logging.LogRecord) -> bool:
 
 @contextlib.contextmanager
 def _command_warnings_silenced():
-    """Only stdout is captured from the info and show commands collectinfo runs
-    for its logs, so their warnings would land on the operator's terminal. Only
-    the stderr handler is filtered: collectinfo_debug.log still records them."""
+    """Only stdout is captured from the info, show and health commands collectinfo
+    runs for its logs, so their warnings would land on the operator's terminal.
+    Only the stderr handler is filtered: collectinfo_debug.log still records them."""
     stderr_log_handler.addFilter(_not_a_command_warning)
 
     try:
