@@ -2853,11 +2853,23 @@ class Node(AsyncObject):
                 "benchmarks-udf",
                 "benchmarks-udf-sub",
                 "benchmarks-batch-sub",
-                "object-store-put",
-                "object-store-get",
-                "object-store-list",
-                "object-store-delete",
             ]
+
+            if (
+                self.build
+                and not isinstance(self.build, Exception)
+                and version.LooseVersion(self.build)
+                >= version.LooseVersion(
+                    constants.SERVER_OBJECT_STORE_LATENCIES_FIRST_VERSION
+                )
+            ):
+                micro_benchmarks += [
+                    "object-store-put",
+                    "object-store-get",
+                    "object-store-list",
+                    "object-store-delete",
+                ]
+
             cmd_latencies += [
                 "latencies:hist={%s}-%s" % (ns, optional)
                 for ns in namespaces

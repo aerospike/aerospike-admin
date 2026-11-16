@@ -20,6 +20,7 @@ import unittest
 from test.e2e import lib, util as test_util
 
 SERVER_TAG = "8.2.1.0-45_20261112T051802Z"
+OLDER_SERVER_TAG = "8.2.0.0_20260918T215052Z"
 PREVIEW = ["backup-restore"]
 OPS = ("put", "get", "list", "delete")
 BACKUP_PATH = "/opt/aerospike/backup-e2e"
@@ -198,3 +199,29 @@ class TestObjectStoreLatenciesWithoutPreview(unittest.TestCase):
 
         assert_clean_run(self, cp)
         self.assertNotIn("object-store", cp.stdout)
+
+
+class TestObjectStoreLatenciesOlderServer(unittest.TestCase):
+    """
+    Servers before 8.2.1 are never asked for the histograms. Each refused one would
+    log 'unrecognized histogram' on the server.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        lib.stop()
+        lib.start(num_nodes=1, docker_tag=OLDER_SERVER_TAG)
+        cls.args = "-h {}:{} -Uadmin -Padmin".format(lib.SERVER_IP, lib.PORT)
+
+    @classmethod
+    def tearDownClass(cls):
+        lib.stop()
+
+    def test_show_latencies_verbose_does_not_ask_for_them(self):
+        cp = test_util.run_asadm(
+            self.args + " --no-config-file -e 'show latencies -v' --json"
+        )
+        log = lib.NODES[0].logs().decode(errors="replace").splitlines()
+
+        assert_clean_run(self, cp)
+        self.assertEqual([line for line in log if "object-store" in line], [])

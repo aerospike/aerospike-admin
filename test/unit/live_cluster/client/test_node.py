@@ -2502,6 +2502,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with("latencies:", self.ip)
 
     async def test_info_latencies_verbose(self):
+        self.node.build = "8.2.1.0"
         raw = ""
         self.info_mock.side_effect = [
             "test",
@@ -2549,9 +2550,40 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
     def _latencies_responses(self, responses):
         self.info_mock.side_effect = lambda cmd, ip: responses.get(cmd, "")
 
+    def _sent_commands(self):
+        return [c.args[0] for c in self.info_mock.call_args_list]
+
+    async def test_info_latencies_verbose_skips_object_store_before_8_2_1(self):
+        """TOOLS-4583: older servers do not have the object-store histograms."""
+        self.node.build = "8.2.0.2"
+        self._latencies_responses({"namespaces": "test"})
+
+        result = await self.node.info_latencies(verbose=True)
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(self.info_mock.call_count, 10)
+        self.assertFalse([c for c in self._sent_commands() if "object-store" in c])
+
+    async def test_info_latencies_verbose_skips_object_store_when_build_unknown(self):
+        self._latencies_responses({"namespaces": "test"})
+
+        for build in (None, "", Exception("build failed")):
+            with self.subTest(build=build):
+                self.node.build = build
+                self.info_mock.reset_mock()
+
+                result = await self.node.info_latencies(verbose=True)
+
+                self.assertIsInstance(result, dict)
+                self.assertEqual(self.info_mock.call_count, 10)
+                self.assertFalse(
+                    [c for c in self._sent_commands() if "object-store" in c]
+                )
+
     async def test_info_latencies_verbose_labels_each_table_with_its_own_unit(self):
         """TOOLS-4583: object-store histograms are always msec, even on a node with
         microsecond-histograms true."""
+        self.node.build = "8.2.1.0"
         self._latencies_responses(
             {
                 "namespaces": "test",
@@ -2577,8 +2609,9 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_info_latencies_verbose_skips_object_store_bad_hist_name(self):
-        """CE, servers without SERVER-698 and EE without --preview backup-restore
-        answer ERROR:4:bad hist name."""
+        """8.2.1+ CE and EE without --preview backup-restore answer
+        ERROR:4:bad hist name."""
+        self.node.build = "8.2.1.0"
         write = "{test}-write:msec,10.0," + ",".join(["5.00"] * 17)
         responses = {"namespaces": "test", "latencies:": write}
         responses.update(
@@ -2598,6 +2631,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_info_latencies_verbose_skips_unused_object_store_histograms(self):
         """A histogram no backup or restore has used yet answers with no data."""
+        self.node.build = "8.2.1.0"
         self._latencies_responses(
             {
                 "namespaces": "test",
@@ -2614,11 +2648,12 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertListEqual(list(result.keys()), ["write"])
 
     async def test_info_latencies_verbose_object_store_only_for_ns_set(self):
+        self.node.build = "8.2.1.0"
         self._latencies_responses({"latencies:": ""})
 
         await self.node.info_latencies(verbose=True, ns_set={"bar"})
 
-        sent = [c.args[0] for c in self.info_mock.call_args_list]
+        sent = self._sent_commands()
         self.assertIn("latencies:hist={bar}-object-store-put", sent)
         self.assertFalse(any("{test}" in cmd for cmd in sent))
         self.assertNotIn("namespaces", sent)
