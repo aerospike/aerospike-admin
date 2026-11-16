@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import base64
 from contextlib import asynccontextmanager
 from ctypes import ArgumentError
 import copy
@@ -1578,6 +1579,16 @@ class Node(AsyncObject):
         return self._info_service_helper(resp)
 
     ###### Service End ######
+
+    @async_return_exceptions
+    async def info_usage(self) -> bytes:
+        """The cluster's usage export, decoded from the base64 the server sends."""
+        resp = await self._info("usage")
+
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get usage", resp)
+
+        return base64.b64decode(resp, validate=True)
 
     @async_return_exceptions
     async def info_statistics(self):

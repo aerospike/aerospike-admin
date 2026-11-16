@@ -16,19 +16,21 @@ from lib.base_controller import CommandHelp
 
 from .collectinfo_controller import CollectinfoController
 from .collectlogs_controller import CollectlogsController
+from .collectusage_controller import CollectusageController
 from .live_cluster_command_controller import LiveClusterCommandController
 
 
 @CommandHelp(
-    "Collects cluster info or logs to send to Aerospike Support.",
+    "Collects cluster info, logs or usage records to send to Aerospike.",
     "Without a subcommand, runs 'collect info'.",
-    short_msg="Collects cluster info or logs",
+    short_msg="Collects cluster info, logs or usage records",
 )
 class CollectController(LiveClusterCommandController):
     def __init__(self):
         self.controller_map = {
             "info": CollectinfoController,
             "logs": CollectlogsController,
+            "usage": CollectusageController,
         }
 
     @CommandHelp("Runs 'collect info'")

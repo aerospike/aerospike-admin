@@ -1498,6 +1498,11 @@ summary_cluster_sheet = Sheet(
             converter=Converters.list_to_comma_sep_str,
         ),
         Field(
+            "Cluster UUID",
+            Projectors.Identity("cluster_dict", "cluster_uuid"),
+            converter=Converters.list_to_comma_sep_str,
+        ),
+        Field(
             "Server Version",
             Projectors.Identity("cluster_dict", "server_version"),
             converter=Converters.list_to_comma_sep_str,
@@ -2513,6 +2518,69 @@ show_udfs = Sheet(
     from_source="data",
     for_each="data",
     order_by=FieldSorter("Filename"),
+)
+
+show_usage_samples = Sheet(
+    (
+        Field("Date", Projectors.String("samples", "date")),
+        Field("Time", Projectors.String("samples", "time")),
+        Subgroup(
+            "Nodes",
+            (
+                Field("Total", Projectors.Number("samples", "nodes")),
+                Field(
+                    "Reported",
+                    Projectors.Number("samples", "nodes_reported"),
+                    formatters=(
+                        Formatters.red_alert(
+                            lambda edata: edata.value < edata.record["Nodes"]["Total"]
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        Field(
+            "Migrating",
+            Projectors.Boolean("samples", "migrating"),
+            formatters=(Formatters.red_alert(lambda edata: edata.value),),
+        ),
+        Field(
+            "Data Used",
+            Projectors.Number("samples", "data_used"),
+            converter=Converters.byte,
+        ),
+        Field(
+            "License Usage",
+            Projectors.Number("samples", "license_usage"),
+            converter=Converters.byte,
+        ),
+    ),
+    from_source="samples",
+    for_each="samples",
+    order_by=(FieldSorter("Date"), FieldSorter("Time")),
+)
+
+show_usage_namespaces = Sheet(
+    (
+        Field("Namespace", Projectors.String("namespaces", "namespace")),
+        Field("Replication Factor", Projectors.Number("namespaces", "rf")),
+        Field("Compression Ratio", Projectors.Float("namespaces", "ratio")),
+        Field(
+            "Data Used",
+            Projectors.Number("namespaces", "data_used"),
+            converter=Converters.byte,
+            aggregator=Aggregators.sum(),
+        ),
+        Field(
+            "License Usage",
+            Projectors.Number("namespaces", "license_usage"),
+            converter=Converters.byte,
+            aggregator=Aggregators.sum(),
+        ),
+    ),
+    from_source="namespaces",
+    for_each="namespaces",
+    order_by=FieldSorter("Namespace"),
 )
 
 show_sindex = Sheet(

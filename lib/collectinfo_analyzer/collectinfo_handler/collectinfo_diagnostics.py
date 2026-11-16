@@ -386,6 +386,7 @@ class CollectinfoDiagnostics:
             self._check_dropped_or_missing_nodes,
             self._check_peer_visibility,
             self._check_missing_sysinfo,
+            self._check_usage_file,
             self._check_node_collection_errors,
             self._check_empty_and_partial_nodes,
             self._check_multiple_snapshots,
@@ -1015,6 +1016,25 @@ class CollectinfoDiagnostics:
                 known.update(endpoints)
 
         return known
+
+    def _check_usage_file(self) -> BundleWarning | None:
+        """Report a usage export the cluster has but the bundle lacks. A cluster
+        without usage reporting, or a bundle from before the usage file, says
+        nothing."""
+        usage = (self.meta.get("collection") or {}).get("usage")
+
+        if not isinstance(usage, dict) or usage.get("status") != "failed":
+            return None
+
+        node = usage.get("node")
+        reply = usage.get("reply", "")
+
+        return BundleWarning(
+            category="usage-not-collected",
+            severity=DiagSeverity.WARNING,
+            title="The usage file was not collected",
+            lines=[f"{node} replied {reply}" if node else str(reply)],
+        )
 
     def _check_missing_sysinfo(self) -> BundleWarning | None:
         """Report sysinfo coverage only when it differs from what was requested.
