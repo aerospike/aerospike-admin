@@ -592,6 +592,80 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                                 mock_isdir.assert_not_called()
 
 
+class OfflineCollectinfoFallbackTest(unittest.TestCase):
+    """When no node answers, 'asadm -e' still collects this host's system data
+    for every way of asking for collect info, and only for those."""
+
+    def run_main(self, commands):
+        args = Mock(
+            execute=commands,
+            debug=False,
+            help=False,
+            version=False,
+            no_color=False,
+            collectinfo=False,
+            log_analyzer=False,
+            json=False,
+            asinfo_mode=False,
+            sagent_config_errors=[],
+            services_alumni=False,
+            services_alternate=False,
+            tls_enable=False,
+            auth=AuthMode.INTERNAL,
+            profile=False,
+            out_file=None,
+            port=3000,
+        )
+        shell = Mock(connected=False, close=AsyncMock())
+
+        async def disconnected_shell(*_args, **_kwargs):
+            return shell
+
+        patch("asadm.conf.get_cli_args", return_value=args).start()
+        patch(
+            "asadm.conf.loadconfig", return_value=(args, [("127.0.0.1", 3000, None)])
+        ).start()
+        patch("asadm.conf.resolve_password_sources").start()
+        patch("asadm.parse_tls_input", return_value=None).start()
+        patch("asadm.AerospikeShell", side_effect=disconnected_shell).start()
+        patch("asadm.logger").start()
+        collect_sys_info = patch("asadm.common.collect_sys_info").start()
+        self.addCleanup(patch.stopall)
+
+        with self.assertRaises(SystemExit):
+            asyncio.run(asadm.main())
+
+        return collect_sys_info
+
+    @parameterized.expand(
+        [
+            ("collectinfo",),
+            ("collectinfo --output-prefix pre",),
+            ("collect",),
+            ("collect info",),
+            ("collect i",),
+            ("collect --output-prefix pre",),
+            ("collect with 1.2.3.4",),
+            ("collect info --output-prefix pre",),
+            ("summary; collect info",),
+        ]
+    )
+    def test_collect_info_collects_system_data(self, commands):
+        self.run_main(commands).assert_called_once_with(port=3000)
+
+    @parameterized.expand(
+        [
+            ("collect logs",),
+            ("collect l",),
+            ("collectlogs",),
+            ("info",),
+            ("summary",),
+        ]
+    )
+    def test_other_commands_do_not_collect_system_data(self, commands):
+        self.run_main(commands).assert_not_called()
+
+
 class CleanLineTest(unittest.TestCase):
     """Bare instance skips the async cluster-connect setup."""
 
