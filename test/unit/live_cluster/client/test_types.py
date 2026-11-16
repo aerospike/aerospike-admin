@@ -433,3 +433,18 @@ class ASPrivilegeTest(unittest.TestCase):
         self.assertEqual(
             ASPrivilege.str_to_enum("write-masked"), ASPrivilege.WRITE_MASKED
         )
+
+    def test_backup_and_restore_admin_privileges(self):
+        """TOOLS-4629: server codes 5 and 6, both global only."""
+        self.assertEqual(ASPrivilege.BACKUP_ADMIN, 5)
+        self.assertEqual(ASPrivilege.RESTORE_ADMIN, 6)
+        self.assertEqual(
+            ASPrivilege.str_to_enum("backup-admin"), ASPrivilege.BACKUP_ADMIN
+        )
+        self.assertEqual(
+            ASPrivilege.str_to_enum("RESTORE_admin"), ASPrivilege.RESTORE_ADMIN
+        )
+        self.assertEqual(str(ASPrivilege.BACKUP_ADMIN), "backup-admin")
+        self.assertEqual(str(ASPrivilege.RESTORE_ADMIN), "restore-admin")
+        self.assertTrue(ASPrivilege.BACKUP_ADMIN.is_global_only_scope())
+        self.assertTrue(ASPrivilege.RESTORE_ADMIN.is_global_only_scope())
