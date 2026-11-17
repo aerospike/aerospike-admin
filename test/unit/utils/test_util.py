@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 from parameterized import parameterized
 
+from lib.base_controller import ShellException
 from lib.utils import constants, util
 
 
@@ -809,6 +810,24 @@ class GetArgAndDeleteFromModsTest(unittest.TestCase):
         self.assertEqual(self._get(line, "-t", default=5), expected)
         self.assertEqual(line, [])
 
+    @parameterized.expand(
+        [
+            ("letters", "x"),
+            ("empty", ""),
+            ("decimal", "7.0"),
+            ("digit_separator", "1_0"),
+            ("leading_space", " 7"),
+            ("trailing_newline", "7\n"),
+            ("non_ascii_digit", "٣"),
+            ("another_flag", "-s"),
+        ]
+    )
+    def test_int_value_that_is_not_a_whole_number_is_an_error(self, _, raw):
+        with self.assertRaises(ShellException) as cm:
+            self._get(["-t", raw], "-t", default=5)
+
+        self.assertEqual(str(cm.exception), "-t must be an integer.")
+
     def test_takes_an_empty_string_value(self):
         line = ["--output-prefix", ""]
 
@@ -824,17 +843,17 @@ class GetArgAndDeleteFromModsTest(unittest.TestCase):
         self.assertEqual(self._get(line, "-t", default=9), 5)
         self.assertEqual(line, [])
 
+    def test_removes_the_token_after_the_flag_not_an_equal_earlier_one(self):
+        line = ["-n", "5", "-x", "-t", "5"]
+
+        self.assertEqual(self._get(line, "-t", default=9), 5)
+        self.assertEqual(line, ["-n", "5", "-x"])
+
     def test_missing_value_leaves_a_token_equal_to_the_default_alone(self):
         line = ["-n", "1", "-t"]
 
         self.assertEqual(self._get(line, "-t", default=1), 1)
         self.assertEqual(line, ["-n", "1"])
-
-    def test_unparsable_value_stays_on_the_line(self):
-        line = ["-t", "x", "-n", "5"]
-
-        self.assertEqual(self._get(line, "-t", default=5), 5)
-        self.assertEqual(line, ["x", "-n", "5"])
 
     def test_absent_flag_gives_the_default(self):
         line = ["-n", "3"]
@@ -857,9 +876,19 @@ class GetArgAndDeleteFromModsTest(unittest.TestCase):
         line = ["-n", "03"]
         mods = {"like": ["-n", "03", "x"]}
 
-        self._get(line, "-n", default=1, modifiers=["like"], mods=mods)
-
+        self.assertEqual(
+            self._get(line, "-n", default=1, modifiers=["like"], mods=mods), 3
+        )
+        self.assertEqual(line, [])
         self.assertEqual(mods, {"like": ["x"]})
+
+    def test_unconvertible_value_is_an_error_when_mods_are_given(self):
+        mods = {"like": ["-n", "x"]}
+
+        with self.assertRaises(ShellException) as cm:
+            self._get(["-n", "x"], "-n", default=1, modifiers=["like"], mods=mods)
+
+        self.assertEqual(str(cm.exception), "-n must be an integer.")
 
 
 class AggregateNsMemoryStatsTest(unittest.TestCase):

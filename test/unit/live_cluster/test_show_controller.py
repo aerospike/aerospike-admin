@@ -29,6 +29,7 @@ from lib.live_cluster.get_controller import (
     GetClusterMetadataController,
     GetConfigController,
     GetJobsController,
+    GetLatenciesController,
     GetMaskingRulesController,
     GetStatisticsController,
     GetUserAgentsController,
@@ -42,6 +43,7 @@ from lib.live_cluster.show_controller import (
     ShowController,
     ShowConfigXDRController,
     ShowJobsController,
+    ShowLatenciesController,
     ShowMaskingController,
     ShowRacksController,
     ShowRolesController,
@@ -321,6 +323,29 @@ class ShowConfigXDRControllerTest(unittest.IsolatedAsyncioTestCase):
         self.logger_mock.warning.assert_called_once_with(
             "Server version 5.3 or newer is required to run 'show config xdr filter'"
         )
+
+
+class ShowLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.controller = ShowLatenciesController()
+        self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.latency_getter = create_autospec(
+            GetLatenciesController
+        )
+        self.getter_mock.get_latencies_and_latency_nodes.return_value = (
+            ["1.1.1.1"],
+            [],
+        )
+        self.controller.view = create_autospec(CliView)
+        self.controller.mods = {}
+
+    @parameterized.expand([("buckets", "-b"), ("increment", "-e")])
+    async def test_value_that_is_not_a_whole_number_is_an_error(self, _, flag):
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute([flag, "abc"])
+
+        self.assertEqual(str(cm.exception), f"{flag} must be an integer.")
+        self.getter_mock.get_all.assert_not_called()
 
 
 class ShowStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):

@@ -56,7 +56,7 @@ from lib.live_cluster.collectinfo_controller import (
     _record_node_error,
     _severe_error_class,
 )
-from lib.base_controller import BaseController
+from lib.base_controller import BaseController, ShellException
 from lib.utils import constants
 from lib.utils import logger as logger_util
 from lib.view.sheet.render import get_style_json, set_style_json
@@ -950,15 +950,20 @@ class CollectinfoNumericFlagTest(unittest.IsolatedAsyncioTestCase):
             CollectinfoController, "_run_collectinfo", AsyncMock()
         ).start()
         self.addCleanup(patch.stopall)
+        logger_util.set_exit_code(0)
+        self.addCleanup(logger_util.set_exit_code, 0)
+
+    def _run_args(self):
+        call = self.run_mock.await_args
+        return self.run_signature.bind(
+            self.controller, *call.args, **call.kwargs
+        ).arguments
 
     async def _parse(self, *line):
         with self.assertNoLogs(LOGGER_NAME, level=logging.ERROR):
             await self.controller._do_default(list(line))
 
-        call = self.run_mock.await_args
-        args = self.run_signature.bind(
-            self.controller, *call.args, **call.kwargs
-        ).arguments
+        args = self._run_args()
         return args["snp_count"], args["wait_time"]
 
     @parameterized.expand(
@@ -970,10 +975,37 @@ class CollectinfoNumericFlagTest(unittest.IsolatedAsyncioTestCase):
             ("wait_double_zero", ["-t", "00"], (1, 0)),
             ("wait_negative_zero", ["-t", "-0"], (1, 0)),
             ("value_equal_to_another_flags", ["-n", "02", "-t", "2"], (2, 2)),
+            ("sleep_double_zero", ["-n", "2", "-s", "00"], (2, 0)),
+            ("sleep_leading_zero", ["-s", "07"], (1, 7)),
         ]
     )
     async def test_value_is_taken_as_written(self, _, line, expected):
         self.assertEqual(await self._parse(*line), expected)
+
+    @parameterized.expand(
+        [
+            ("letters", ["-t", "x"], "-t"),
+            ("digit_separator", ["-n", "1_0"], "-n"),
+            ("ssh_port", ["--ssh-port", "abc"], "--ssh-port"),
+        ]
+    )
+    async def test_value_that_is_not_a_whole_number_is_an_error(self, _, line, flag):
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute(line)
+
+        self.assertEqual(str(cm.exception), f"{flag} must be an integer.")
+        self.run_mock.assert_not_awaited()
+
+    async def test_int_flag_followed_by_another_flag_is_an_error(self):
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute(["-t", "-s", "5"])
+
+        self.assertEqual(str(cm.exception), "-t must be an integer.")
+        self.run_mock.assert_not_awaited()
+
+    async def test_flag_without_value_leaves_the_previous_flags_value_alone(self):
+        self.assertEqual(await self._parse("--output-prefix", "5", "-t"), (1, 5))
+        self.assertEqual(self._run_args()["output_prefix"], "5")
 
 
 class RunCollectinfoTestCase(unittest.IsolatedAsyncioTestCase):

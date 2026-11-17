@@ -240,6 +240,15 @@ def get_arg_and_delete_from_mods(
     index = line.index(arg)
     del line[index]
 
+    if (
+        return_type is int
+        and index < len(line)
+        and not re.fullmatch(r"[+-]?[0-9]+", line[index])
+    ):
+        from lib.base_controller import ShellException
+
+        raise ShellException("{} must be an integer.".format(arg))
+
     try:
         val = return_type(line[index])
 
