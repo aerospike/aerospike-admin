@@ -14,6 +14,7 @@
 
 import json
 import re
+import tarfile
 import time
 from typing import Any, Callable
 
@@ -270,6 +271,7 @@ class TestCollectinfo(unittest.IsolatedAsyncioTestCase):
         #     f.write(json.dumps(cls.live_mode_map, indent=2))
 
         collectinfo_path = util.get_collectinfo_path(live_mode_cp, "/tmp/asadm_test")
+        cls.collectinfo_path = collectinfo_path
 
         if not collectinfo_path:
             raise Exception(
@@ -355,3 +357,18 @@ class TestCollectinfo(unittest.IsolatedAsyncioTestCase):
             transform_recs=transform_recs,
         ):
             self.assertEqual(self.live_mode_map[cmd], self.collectinfo_map[cmd])
+
+    def _read_sysinfo(self) -> str:
+        with tarfile.open(self.collectinfo_path) as tar:
+            members = [m for m in tar.getmembers() if m.name.endswith("sysinfo.log")]
+            self.assertTrue(members, "no sysinfo.log in " + self.collectinfo_path)
+            return tar.extractfile(members[0]).read().decode(errors="replace")
+
+    def test_sysinfo_has_storage_backend_and_asd_cgroup_sections(self):
+        sysinfo = self._read_sysinfo()
+
+        self.assertIn("['storage backend']", sysinfo)
+        self.assertRegex(sysinfo, r"(?m)^\S+ transport=\S+")
+        self.assertIn("Network-backed block devices:", sysinfo)
+        self.assertIn("['asd cgroup']", sysinfo)
+        self.assertRegex(sysinfo, r"(?m)^pid \d+ \S+/cgroup:$")
