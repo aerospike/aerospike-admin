@@ -117,7 +117,7 @@ class HealthCheckControllerNumericFlagTest(HealthCheckControllerTestCase):
             await self.controller._do_default(["-n", "02", "-s", "03"])
 
         self.health_checker_mock.execute.assert_called_once_with(query_file=None)
-        self.assertIn(call(3.0), async_sleep_mock.await_args_list)
+        self.assertEqual(async_sleep_mock.await_args_list, [call(3.0)])
 
 
 class HealthCheckControllerSnapshotIntervalTest(HealthCheckControllerTestCase):
