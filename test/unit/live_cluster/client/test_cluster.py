@@ -26,6 +26,12 @@ from pytest import PytestUnraisableExceptionWarning
 import lib
 from lib.live_cluster.client.cluster import Cluster
 from lib.live_cluster.client.node import Node
+from lib.live_cluster.client.types import (
+    ASInfoNotAuthenticatedError,
+    ASProtocolConnectionError,
+    ASProtocolError,
+    ASResponse,
+)
 from lib.utils import constants
 
 
@@ -1229,6 +1235,141 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cluster.get_node("BB9000000000002"), [node])
         self.assertNotIn("BB9000000000001", cluster.node_lookup)
+
+    async def _cluster_with_two_live_nodes(self):
+        """The seed and a second live node, the principal by its higher node ID."""
+        cluster, seed, node = await self._cluster_with_offline_node()
+        node.node_id = "BB9000000000001"
+        node.alive = True
+        cluster.update_node(node)
+
+        return cluster, seed, node
+
+    @staticmethod
+    def _login_rejected():
+        return ASProtocolConnectionError(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "Login failed"
+        )
+
+    @parameterized.expand(
+        [
+            (
+                ASProtocolConnectionError(
+                    ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "Login failed"
+                ),
+            ),
+            (ASProtocolError(ASResponse.ERROR_QUERYING_LDAP_SERVER, "Login failed"),),
+            (
+                ASInfoNotAuthenticatedError(
+                    "Connection failed", "ERROR:80:not authenticated"
+                ),
+            ),
+        ]
+    )
+    async def test_node_rejecting_auth_on_refresh_goes_offline(self, error):
+        """The refresh completes, and only the node that rejected goes Offline."""
+        cluster, seed, node = await self._cluster_with_two_live_nodes()
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=error)
+
+        with self.assertLogs("lib.live_cluster.client.cluster", level="ERROR"):
+            await self._refresh(cluster)
+
+        self.assertFalse(node.alive)
+        self.assertTrue(seed.alive)
+        self.assertNotEqual(cluster.last_cluster_refresh_time, 0)
+
+    async def test_node_rejecting_auth_on_refresh_is_logged_with_its_address(self):
+        """The server's message is logged as is, after the node it came from."""
+        cluster, _, node = await self._cluster_with_two_live_nodes()
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=self._login_rejected())
+
+        with self.assertLogs("lib.live_cluster.client.cluster", level="ERROR") as logs:
+            await self._refresh(cluster)
+
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            ["192.1.1.2:3000: Login failed : No credential or bad credential."],
+        )
+
+    async def test_command_answers_from_live_nodes_when_one_rejects_auth(self):
+        """A node rejecting auth on refresh no longer fails the command."""
+        cluster, seed, node = await self._cluster_with_two_live_nodes()
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=self._login_rejected())
+        cluster.last_cluster_refresh_time = 0
+
+        with self.assertLogs("lib.live_cluster.client.cluster", level="ERROR"):
+            result = await cluster.call_node_method_async(
+                constants.NodeSelection.ALL, "info_build"
+            )
+
+        self.assertEqual(list(result), [seed.key])
+
+    async def test_node_after_one_rejecting_auth_still_refreshes(self):
+        """A node rejecting auth does not stop the nodes after it from refreshing."""
+        cluster, seed, node = await self._cluster_with_two_live_nodes()
+        self.assertEqual(list(cluster.nodes.values()), [seed, node])
+        seed.needs_refresh = AsyncMock(return_value=True)
+        seed.refresh_connection = AsyncMock(side_effect=self._login_rejected())
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock()
+
+        with self.assertLogs("lib.live_cluster.client.cluster", level="ERROR"):
+            await self._refresh(cluster)
+
+        node.refresh_connection.assert_awaited_once()
+
+    async def test_principal_moves_off_a_node_rejecting_auth_on_refresh(self):
+        """Principal calls go to a live node, and the old ID no longer resolves."""
+        cluster, seed, node = await self._cluster_with_two_live_nodes()
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [node])
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=self._login_rejected())
+
+        with self.assertLogs("lib.live_cluster.client.cluster", level="ERROR"):
+            await self._refresh(cluster)
+
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [seed])
+        self.assertNotIn("BB9000000000001", cluster.node_lookup)
+
+    async def test_node_rejecting_auth_comes_back_once_it_accepts(self):
+        """The next refresh retries the Offline node, and it rejoins when it accepts."""
+        cluster, _, node = await self._cluster_with_two_live_nodes()
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=self._login_rejected())
+
+        with self.assertLogs("lib.live_cluster.client.cluster", level="ERROR"):
+            await self._refresh(cluster)
+
+        async def accepted():
+            node.alive = True
+
+        del node.needs_refresh
+        node.refresh_connection = AsyncMock(side_effect=accepted)
+        await self._refresh(cluster)
+
+        node.refresh_connection.assert_awaited_once()
+        self.assertEqual(cluster.get_node("BB9000000000001"), [node])
+        self.assertEqual(cluster.get_nodes(constants.NodeSelection.PRINCIPAL), [node])
+
+    async def test_every_node_rejecting_auth_raises_the_no_usable_nodes_error(self):
+        """Each node's rejection is logged, then the usual no-usable-nodes error."""
+        cluster, seed, node = await self._cluster_with_two_live_nodes()
+        for n in (seed, node):
+            n.needs_refresh = AsyncMock(return_value=True)
+            n.refresh_connection = AsyncMock(side_effect=self._login_rejected())
+        cluster.last_cluster_refresh_time = 0
+
+        with self.assertLogs("lib.live_cluster.client.cluster", level="ERROR") as logs:
+            with self.assertRaises(IOError) as ctx:
+                await cluster.call_node_method_async(
+                    constants.NodeSelection.ALL, "info_build"
+                )
+
+        self.assertEqual(str(ctx.exception), "Unable to find any Aerospike nodes")
+        self.assertEqual(len(logs.records), 2)
 
     async def test_find_new_nodes_socket_reuse_optimization(self):
         """Test that socket reuse optimization works at cluster level"""
