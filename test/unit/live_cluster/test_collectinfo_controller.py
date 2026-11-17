@@ -37,6 +37,9 @@ from lib.live_cluster.client.types import (
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import (
     CollectinfoDiagnostics,
 )
+from lib.collectinfo_analyzer.collectinfo_root_controller import (
+    CollectinfoRootController,
+)
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
@@ -3505,6 +3508,67 @@ class CaptureStyleJsonTest(unittest.IsolatedAsyncioTestCase):
             await self.controller._collectinfo_capture_and_write_to_file("f", render)
 
         self.assertTrue(get_style_json())
+
+
+class RunCollectinfoLeavesNoAnalyzerFolderTest(RunCollectinfoTestCase):
+    """The analyzer built for summary.log and health.log makes a per-process
+    folder under ~/.aerospike/collectinfo/. The run must remove that folder only,
+    leaving other processes' folders and the bundle it archives."""
+
+    SNAPSHOT = {
+        "prod": {
+            "1.1.1.1:3000": {
+                "as_stat": {
+                    "meta_data": {"node_id": "BB1", "ip": "1.1.1.1:3000"},
+                },
+            }
+        }
+    }
+
+    async def test_a_run_leaves_no_folder_in_the_collectinfo_home(self):
+        collectinfo_home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, collectinfo_home, ignore_errors=True)
+        other_pid_dir = os.path.join(collectinfo_home, "99999999")
+        os.mkdir(other_pid_dir)
+        keep_file = os.path.join(other_pid_dir, "keep.txt")
+
+        with open(keep_file, "w") as f:
+            f.write("keep")
+
+        bundle_at_archive = []
+
+        def archive_dir(path):
+            bundle_at_archive.append(
+                sorted(os.listdir(path)) if os.path.isdir(path) else []
+            )
+            return path + ".tgz", True
+
+        self.archive_mock.side_effect = archive_dir
+        patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.COLLECTINFO_DIR",
+            collectinfo_home + os.sep,
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.CollectinfoRootController",
+            CollectinfoRootController,
+        ).start()
+        patch.object(CollectinfoRootController, "log_handler", None).start()
+        patch.object(CollectinfoRootController, "command", None).start()
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(return_value=(self.SNAPSHOT, {"no_data_nodes": []})),
+        ).start()
+
+        await self._run()
+
+        self.ascollectinfo_mock.assert_awaited_once()
+        self.assertEqual(
+            bundle_at_archive,
+            [["prefix_ascinfo.json", "prefix_" + constants.COLLECTINFO_META_FILENAME]],
+        )
+        self.assertTrue(os.path.isfile(keep_file))
+        self.assertEqual(sorted(os.listdir(collectinfo_home)), ["99999999"])
 
 
 if __name__ == "__main__":

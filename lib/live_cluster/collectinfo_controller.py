@@ -2599,6 +2599,10 @@ class CollectinfoController(LiveClusterCommandController):
                     BaseController.asadm_version = live_version
                     BaseController.asadm_build = live_build
 
+                    if self.collectinfo_root_controller is not None:
+                        self.collectinfo_root_controller.close()
+                        self.collectinfo_root_controller = None
+
             common.print_collectinfo_failed_cmds(self.failed_cmds)
 
             # Archive collectinfo directory
