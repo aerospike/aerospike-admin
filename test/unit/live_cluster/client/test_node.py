@@ -2659,6 +2659,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("namespaces", sent)
 
     async def test_info_latencies_default_skips_object_store(self):
+        self.node.build = "8.2.1.0"
         self._latencies_responses({"latencies:": ""})
 
         await self.node.info_latencies()
