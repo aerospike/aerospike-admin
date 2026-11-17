@@ -13,15 +13,22 @@
 # limitations under the License.
 
 import asyncio
+import select
 import socket
+import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from OpenSSL import SSL
+
 from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.live_cluster.client.assocket import ASSocket
+from lib.live_cluster.client.ssl_context import SSLContext
 from lib.utils.constants import AuthMode
 from test.unit import util
+from test.unit.secret_agent import pki
 
 
 class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
@@ -531,6 +538,21 @@ class ASSocketReuseTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.as_socket.is_connected())
         self.info_mock.assert_not_called()
 
+    async def test_socket_whose_reader_failed_is_not_reused(self):
+        self.used(0)
+        self.as_socket.reader.set_exception(SSL.ZeroReturnError())
+
+        self.assertFalse(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_last_used_after_now_is_checked_with_a_request(self):
+        """A wall-clock step back puts last_used in the future."""
+        self.used(-3600)
+
+        self.assertTrue(await self.as_socket.is_connected())
+        self.info_mock.assert_awaited_once()
+        self.assertEqual(self.info_mock.await_args.args[2], "node")
+
     async def test_socket_idle_for_long_is_checked_with_a_request(self):
         self.used(3600)
 
@@ -557,3 +579,91 @@ class ASSocketReuseTest(unittest.IsolatedAsyncioTestCase):
         self.as_socket.sock = None
 
         self.assertFalse(await self.as_socket.is_connected())
+
+
+class ASSocketTLSReuseTest(unittest.IsolatedAsyncioTestCase):
+    """Whether a pooled socket can be reused, on a real TLS connection to a server
+    that answers once and then closes when told to."""
+
+    async def asyncSetUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        certs = pki.generate(tmp.name)
+
+        listener = socket.create_server(("127.0.0.1", 0))
+        self.addCleanup(listener.close)
+        self.close_requested = threading.Event()
+        self.server_closed = threading.Event()
+        server = threading.Thread(
+            target=self.serve, args=(listener, certs.server_context()), daemon=True
+        )
+        server.start()
+        self.addCleanup(server.join, 5)
+        self.addCleanup(self.close_requested.set)
+
+        self.as_socket = ASSocket(
+            "127.0.0.1",
+            listener.getsockname()[1],
+            "127.0.0.1",
+            None,
+            None,
+            AuthMode.INTERNAL,
+            SSLContext(enable_tls=True, cafile=certs.ca_file).ctx,
+        )
+        self.assertTrue(await self.as_socket.connect())
+        self.addAsyncCleanup(self.as_socket.close)
+
+        self.as_socket.writer.write(b"ping")
+        await self.as_socket.writer.drain()
+        self.assertEqual(await self.as_socket.reader.readexactly(4), b"ping")
+        self.as_socket.last_used = time.time()
+
+        self.info_mock = patch(
+            "lib.live_cluster.client.assocket.info", AsyncMock(return_value="A0")
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def serve(self, listener, ctx):
+        conn, _ = listener.accept()
+
+        with ctx.wrap_socket(conn, server_side=True) as tls:
+            tls.sendall(tls.recv(4))
+            self.close_requested.wait(5)
+            tls.setblocking(False)
+
+            try:
+                tls.unwrap()
+            except OSError:
+                pass
+
+        self.server_closed.set()
+
+    def close_from_server(self):
+        self.close_requested.set()
+        self.assertTrue(self.server_closed.wait(5))
+
+    async def test_idle_socket_is_reused_without_a_request(self):
+        self.assertTrue(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_closed_while_the_loop_was_blocked_is_not_reused(self):
+        """The stream flags only change when the loop runs, so only the poll sees it."""
+        self.close_from_server()
+        readable, _, _ = select.select([self.as_socket.sock], [], [], 5)
+        self.assertTrue(readable)
+
+        self.assertFalse(self.as_socket.writer.is_closing())
+        self.assertFalse(self.as_socket.reader.at_eof())
+        self.assertIsNone(self.as_socket.reader.exception())
+        self.assertFalse(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
+
+    async def test_socket_the_server_closed_is_not_reused(self):
+        self.close_from_server()
+
+        with self.assertRaises(SSL.ZeroReturnError):
+            await asyncio.wait_for(self.as_socket.reader.read(1), 5)
+
+        self.assertTrue(self.as_socket.writer.is_closing())
+        self.assertFalse(await self.as_socket.is_connected())
+        self.info_mock.assert_not_called()
