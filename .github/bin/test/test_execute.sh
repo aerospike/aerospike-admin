@@ -27,6 +27,24 @@ if [ "$(uname)" = Linux ]; then
 		echo "error: asadm ships its own OpenSSL: $bundled" >&2
 		exit 1
 	fi
+
+	if command -v rpm >/dev/null && rpm -q aerospike-asadm >/dev/null 2>&1; then
+		if ! command -v objdump >/dev/null; then
+			echo "error: objdump (binutils) is needed to read the OpenSSL symbol versions the bundle imports" >&2
+			exit 1
+		fi
+		needed="$({ find "$bundle" -name '*.so*' -type f -exec objdump -T {} + 2>/dev/null || true; } |
+			sed -nE 's/.*OPENSSL_3\.([0-9]+).*/\1/p' | sort -n | tail -1)"
+		if [ "${needed:-0}" -gt 0 ]; then
+			requires="$(rpm -q --requires aerospike-asadm)"
+			declared="$(sed -nE 's/^openssl-libs >= 1:3\.([0-9]+).*/\1/p' <<< "$requires")"
+			if [ -z "$declared" ] || [ "$declared" -lt "$needed" ]; then
+				echo "error: the bundle imports OPENSSL_3.$needed symbols but the rpm requires: $(grep '^openssl' <<< "$requires")" >&2
+				exit 1
+			fi
+			echo "the rpm requires openssl-libs >= 1:3.$declared for the bundle's OPENSSL_3.$needed symbols"
+		fi
+	fi
 fi
 
 if command -v openssl >/dev/null &&

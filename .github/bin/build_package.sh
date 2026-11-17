@@ -56,12 +56,12 @@ function assert_system_openssl() {
 	fi
 
 	case "$ENV_DISTRO" in
-	el9 | el10)
+	el9 | el10 | amzn2023)
 		local above_floor
 		above_floor=$(find "$bundle" -name '*.so*' -type f -exec objdump -T {} + 2>/dev/null |
 			grep -oE 'OPENSSL_3\.[0-9]+' | sort -u | awk -F. '$2 > 2' | tr '\n' ' ')
 		if [ -n "$above_floor" ]; then
-			echo "the bundle needs OpenSSL symbols above the 3.2 GA floor ($above_floor); it will not load on older RHEL ${ENV_DISTRO#el}.x. Run pin_build_repos.sh before install_deps" >&2
+			echo "the bundle needs OpenSSL symbols above 3.2 ($above_floor), but the rpm requires only openssl-libs >= 1:3.2.2. Build against OpenSSL 3.2 (on el9 and el10, run pin_build_repos.sh before install_deps), or raise both the requirement in pkg/Makefile and the 3.2 floor in assert_system_openssl" >&2
 			fail=1
 		fi
 		;;

@@ -65,6 +65,28 @@ setup() {
   [ -z "$output" ]
 }
 
+@test "the rpm requires the OpenSSL its bundle links against" {
+  command -v rpm >/dev/null && rpm -q aerospike-asadm >/dev/null 2>&1 \
+    || skip "asadm was not installed from an rpm"
+  command -v objdump >/dev/null || {
+    echo "objdump (binutils) is needed to read the OpenSSL symbol versions the bundle imports"
+    return 1
+  }
+  local bundle needed declared
+  bundle="$(dirname "$(readlink -f "$(command -v asadm)")")"
+  needed="$(find "$bundle" -name '*.so*' -type f -exec objdump -T {} + |
+    sed -nE 's/.*OPENSSL_3\.([0-9]+).*/\1/p' | sort -n | tail -1)"
+  [ "${needed:-0}" -gt 0 ] || skip "the bundle imports nothing newer than OPENSSL_3.0"
+
+  run rpm -q --requires aerospike-asadm
+  [ "$status" -eq 0 ]
+  echo "the bundle imports OPENSSL_3.$needed symbols; the rpm requires:"
+  echo "$output"
+  declared="$(sed -nE 's/^openssl-libs >= 1:3\.([0-9]+).*/\1/p' <<< "$output")"
+  [ -n "$declared" ]
+  [ "$declared" -ge "$needed" ]
+}
+
 @test "asadm and asinfo start when the host's OpenSSL is in FIPS mode" {
   command -v openssl >/dev/null || skip "no openssl CLI to confirm FIPS mode can be forced"
   OPENSSL_FORCE_FIPS_MODE=1 openssl sha256 /dev/null >/dev/null 2>&1 \

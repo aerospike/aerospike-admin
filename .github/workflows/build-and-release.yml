@@ -637,10 +637,10 @@ jobs:
       - name: Pin EL build repos to frozen vault
         run: bash .github/bin/pin_build_repos.sh "${{ matrix.distro }}"
 
-      - name: Install the openssl CLI for the FIPS-mode test
+      - name: Install the openssl CLI and objdump for the OpenSSL tests
         run: |
           case "${{ matrix.distro }}" in
-            el*|amzn*) dnf -y install openssl ;;
+            el*|amzn*) dnf -y install openssl binutils ;;
           esac
 
       - name: Download signed artifacts
