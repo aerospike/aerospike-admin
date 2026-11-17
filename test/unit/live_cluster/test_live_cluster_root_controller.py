@@ -220,3 +220,12 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Usage:  collect info [-n <num-snapshots>]", help_text)
         self.assertIn("--output-prefix", help_text)
+
+    def test_help_collect_info_shows_ssh_key_pwd_takes_a_value(self):
+        help_text = ANSI.sub("", self.root.execute_help(["collect", "info"]))
+
+        self.assertIn("[--ssh-key-pwd <key-pwd>]", help_text)
+        self.assertEqual(
+            " ".join(help_line(help_text, "--ssh-key-pwd").split()),
+            "--ssh-key-pwd - Password for the SSH key file.",
+        )

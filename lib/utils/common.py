@@ -19,11 +19,13 @@
 import contextlib
 import datetime
 import functools
+import glob
 import json
 import logging
 import operator
 import os
 import platform
+import re
 import shutil
 import signal
 from typing import Any, Callable, TypedDict
@@ -2924,6 +2926,451 @@ def _collect_ip_link_details(cmd="", stop: threading.Event | None = None):
     return out, None
 
 
+# Filesystem types whose I/O leaves the host. Used to flag mounts that make
+# Aerospike's storage latency depend on a network and a remote backend.
+_NETWORK_FSTYPES = (
+    "nfs",
+    "nfs4",
+    "ceph",
+    "cifs",
+    "smb3",
+    "glusterfs",
+    "lustre",
+    "gpfs",
+    "beegfs",
+    "9p",
+    "virtiofs",
+)
+
+# Device model strings that identify a cloud volume unambiguously. The hint is
+# printed next to the transport; it never replaces it.
+_KNOWN_DEVICE_MODELS = (
+    # (substring of device/model, hint, network-attached). Cloud volumes are
+    # presented as local NVMe or SCSI disks, so only the model tells them apart.
+    # More specific needles come first ("nvme_card-pd" before "nvme_card").
+    ("Amazon Elastic Block Store", "AWS EBS, network-attached", True),
+    ("Amazon EC2 NVMe Instance Storage", "AWS instance store, local", False),
+    ("PersistentDisk", "GCP Persistent Disk, network-attached", True),
+    ("nvme_card-pd", "GCP Persistent Disk, network-attached", True),
+    ("nvme_card", "GCP Local SSD, local", False),
+    ("MSFT NVMe Accelerator", "Azure managed disk, network-attached", True),
+    ("Microsoft NVMe Direct Disk", "Azure local NVMe, local", False),
+)
+
+# Vendor or model prefixes of disks emulated by a hypervisor (QEMU/KVM incl.
+# OpenStack, VMware, Hyper-V/Azure). SCSI disks carry it in device/vendor; NVMe
+# exposes no vendor file, so their model is checked too. What backs such a
+# disk, local or network storage, is not visible from the guest.
+_HYPERVISOR_DEVICE_VENDORS = ("QEMU", "VMware", "Msft")
+
+
+def _read_sysfs(path):
+    try:
+        # sysfs and /proc strings are not guaranteed to be UTF-8; one bad
+        # byte must not cost the whole section.
+        with open(path, errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def _block_device_transport(name, dev_path, block_dir):
+    """
+    Returns (transport, is_network) for a block device using only facts that
+    sysfs exposes. Anything that cannot be told apart from sysfs is reported as
+    "scsi" and left to the model/vendor columns.
+    """
+    if name.startswith("rbd"):
+        return "ceph-rbd", True
+    if name.startswith("nbd"):
+        return "nbd", True
+    if name.startswith("dm-"):
+        return "device-mapper", False
+    if name.startswith("md"):
+        return "md-raid", False
+    if name.startswith(("loop", "ram", "zram")):
+        return "virtual", False
+    if name.startswith("nvme"):
+        transport = _read_sysfs(os.path.join(block_dir, "device", "transport"))
+        if not transport:
+            # Native NVMe multipath: the namespace hangs off the subsystem and
+            # each controller below it carries its own transport.
+            for path in sorted(
+                glob.glob(os.path.join(block_dir, "device", "*", "transport"))
+            ):
+                transport = _read_sysfs(path)
+                if transport:
+                    break
+        if not transport:
+            return "nvme", False
+        return "nvme-" + transport, transport not in ("pcie", "loop")
+    if "/session" in dev_path:
+        return "iscsi", True
+    if "/rport-" in dev_path:
+        # Fibre Channel remote port: a SAN LUN.
+        return "fc", True
+    if name.startswith("vd") or "/virtio" in dev_path:
+        return "virtio", False
+    if name.startswith("xvd"):
+        return "xen", False
+    if "/usb" in dev_path:
+        return "usb", False
+    return "scsi", False
+
+
+def _iscsi_target(dev_path, sys_root):
+    session = next((p for p in dev_path.split("/") if p.startswith("session")), None)
+    if not session:
+        return ""
+    target = _read_sysfs(
+        os.path.join(sys_root, "class", "iscsi_session", session, "targetname")
+    )
+    portals = []
+    for conn in sorted(
+        glob.glob(
+            os.path.join(
+                sys_root, "class", "iscsi_connection", "connection%s:*" % session[7:]
+            )
+        )
+    ):
+        addr = _read_sysfs(os.path.join(conn, "persistent_address"))
+        port = _read_sysfs(os.path.join(conn, "persistent_port"))
+        if addr:
+            portals.append("%s:%s" % (addr, port) if port else addr)
+    out = ""
+    if target:
+        out += " target=%s" % target
+    if portals:
+        out += " portal=%s" % ",".join(portals)
+    return out
+
+
+def _collect_storage_backend(cmd="", sys_root="/sys", proc_root="/proc"):
+    """
+    Identifies what each block device is actually made of, and which mounts
+    leave the host, from sysfs and /proc/mounts alone. Needs no root and no
+    vendor tooling (e.g. ceph-common), so it works inside a container.
+    """
+    out = ["['storage backend']"]
+    block_root = os.path.join(sys_root, "block")
+
+    try:
+        names = sorted(
+            os.listdir(block_root),
+            key=lambda n: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", n)],
+        )
+    except OSError as e:
+        return "['storage backend']\n%s not readable: %s" % (block_root, e), None
+
+    transports = {}
+    rows = []
+    skipped = []
+    hypervisor = set()
+
+    for name in names:
+        block_dir = os.path.join(block_root, name)
+        size = _read_sysfs(os.path.join(block_dir, "size"))
+        # Unattached loop, ram and nbd devices exist on most kernels with a
+        # size of 0. They hold no data and would otherwise be reported as
+        # network-backed (nbd).
+        if size == "0":
+            skipped.append(name)
+            continue
+
+        dev_path = os.path.realpath(block_dir)
+        transport, is_network = _block_device_transport(name, dev_path, block_dir)
+
+        model = _read_sysfs(os.path.join(block_dir, "device", "model")) or ""
+        vendor = _read_sysfs(os.path.join(block_dir, "device", "vendor")) or ""
+        known = next((k for k in _KNOWN_DEVICE_MODELS if k[0] in model), None)
+        if known and known[2]:
+            # Keep the transport as sysfs reports it, but count the volume as
+            # network-backed in the summaries.
+            is_network = True
+        transports[name] = (transport, is_network)
+
+        row = "%s transport=%s" % (name, transport)
+
+        if size and size.isdigit():
+            size_bytes = int(size) * 512
+            if size_bytes >= 1024**3:
+                row += " size=%.1fGiB" % (size_bytes / 1024**3)
+            else:
+                row += " size=%.1fMiB" % (size_bytes / 1024**2)
+
+        for label, rel in (
+            ("rotational", "queue/rotational"),
+            ("scheduler", "queue/scheduler"),
+            # A huge io_timeout (the EBS udev default is 4294967295 ms) lets a
+            # stalled volume hang I/O without logging an error.
+            ("io-timeout", "queue/io_timeout"),
+            ("write-cache", "queue/write_cache"),
+            ("vendor", "device/vendor"),
+            ("model", "device/model"),
+            ("dm-name", "dm/name"),
+        ):
+            val = _read_sysfs(os.path.join(block_dir, rel))
+            if val:
+                row += ' %s="%s"' % (label, val)
+
+        try:
+            slaves = sorted(os.listdir(os.path.join(block_dir, "slaves")))
+        except OSError:
+            slaves = []
+        if slaves:
+            row += " slaves=%s" % ",".join(slaves)
+
+        if transport == "ceph-rbd":
+            rbd_dir = os.path.join(sys_root, "bus", "rbd", "devices", name[3:])
+            for label in ("pool", "pool_ns", "name"):
+                val = _read_sysfs(os.path.join(rbd_dir, label))
+                if val:
+                    row += " rbd-%s=%s" % (label, val)
+        elif transport == "iscsi":
+            row += _iscsi_target(dev_path, sys_root)
+
+        if known:
+            row += ' hint="%s"' % known[1]
+        elif (
+            transport in ("virtio", "xen")
+            or vendor.startswith(_HYPERVISOR_DEVICE_VENDORS)
+            or model.startswith(_HYPERVISOR_DEVICE_VENDORS)
+        ):
+            hypervisor.add(name)
+            row += ' hint="hypervisor-presented, backend not visible from guest"'
+
+        rows.append((name, slaves, row))
+
+    def whole_disk(name):
+        # /sys/block lists whole disks only. A dm or md device built on a
+        # partition names the partition (sdb1) as its slave, so resolve it to
+        # its disk through /sys/class/block.
+        if os.path.isdir(os.path.join(block_root, name)):
+            return name
+        part = os.path.join(sys_root, "class", "block", name)
+        if os.path.exists(os.path.join(part, "partition")):
+            return os.path.basename(os.path.dirname(os.path.realpath(part)))
+        return name
+
+    def backed_by(name, is_match, seen=()):
+        name = whole_disk(name)
+        if name in seen:
+            return False
+        if is_match(name):
+            return True
+        try:
+            slaves = os.listdir(os.path.join(block_root, name, "slaves"))
+        except OSError:
+            return False
+        return any(backed_by(s, is_match, seen + (name,)) for s in slaves)
+
+    network_devices = []
+    hypervisor_devices = []
+    out.append("Block devices (%s):" % block_root)
+    for name, slaves, row in rows:
+        if backed_by(name, lambda n: transports.get(n, ("", False))[1]):
+            network_devices.append(name)
+            if not transports[name][1]:
+                row += " backing=network"
+        elif backed_by(name, lambda n: n in hypervisor):
+            hypervisor_devices.append(name)
+            if name not in hypervisor:
+                row += " backing=hypervisor"
+        out.append(row)
+
+    if skipped:
+        out.append(
+            "Skipped %d zero-size devices: %s" % (len(skipped), " ".join(skipped))
+        )
+
+    out.append("")
+    out.append(
+        "Network-backed block devices: %s"
+        % (", ".join(network_devices) if network_devices else "none detected")
+    )
+    out.append(
+        "Hypervisor-presented block devices: %s"
+        % (", ".join(hypervisor_devices) if hypervisor_devices else "none detected")
+    )
+
+    network_mounts = []
+    try:
+        with open(os.path.join(proc_root, "mounts"), errors="replace") as f:
+            for line in f:
+                fields = line.split()
+                if len(fields) < 3:
+                    continue
+                fstype = fields[2]
+                if fstype in _NETWORK_FSTYPES or fstype.startswith("fuse."):
+                    network_mounts.append(
+                        "%s on %s type %s" % (fields[0], fields[1], fstype)
+                    )
+    except OSError as e:
+        network_mounts.append("%s/mounts not readable: %s" % (proc_root, e))
+
+    out.append(
+        "Network or FUSE filesystems: %s"
+        % ("\n  " + "\n  ".join(network_mounts) if network_mounts else "none detected")
+    )
+
+    return "\n".join(out), None
+
+
+# cgroup files that answer "was asd throttled or memory-limited by its own
+# container?" Read from asd's cgroup, not the reader's, so the answer is right
+# whether collectinfo runs inside the pod or on the worker node.
+_CGROUP_V2_FILES = (
+    "cpu.max",
+    "cpu.stat",
+    "cpu.pressure",
+    "memory.current",
+    "memory.max",
+    "memory.high",
+    "memory.swap.current",
+    "memory.events",
+    "memory.pressure",
+    "io.pressure",
+    "memory.stat",
+)
+
+_CGROUP_V1_FILES = {
+    "cpu": ("cpu.cfs_quota_us", "cpu.cfs_period_us", "cpu.stat"),
+    "memory": (
+        "memory.limit_in_bytes",
+        "memory.usage_in_bytes",
+        "memory.max_usage_in_bytes",
+        "memory.failcnt",
+        "memory.oom_control",
+        "memory.stat",
+    ),
+}
+
+
+def _find_pids_by_comm(comm, proc_root="/proc"):
+    pids = []
+    try:
+        entries = os.listdir(proc_root)
+    except OSError:
+        return pids
+    for entry in entries:
+        if (
+            entry.isdigit()
+            and _read_sysfs(os.path.join(proc_root, entry, "comm")) == comm
+        ):
+            pids.append(entry)
+    return sorted(pids, key=int)
+
+
+def _parse_cgroup_lines(text):
+    """Maps each hierarchy's controller list ("" for v2) to its path."""
+    out = {}
+    for line in (text or "").splitlines():
+        parts = line.split(":", 2)
+        if len(parts) == 3:
+            out[parts[1]] = parts[2]
+    return out
+
+
+def _resolve_cgroup_dir(root, controllers, path, self_cgroups):
+    """
+    Returns the directory holding asd's cgroup files for one hierarchy, or None
+    when it is not visible from this reader.
+    """
+    if path.startswith("/.."):
+        # asd sits outside the reader's cgroup namespace, e.g. a sidecar that
+        # shares asd's pid namespace but not its cgroup namespace.
+        return None
+    directory = os.path.join(root, path.lstrip("/"))
+    if os.path.isdir(directory):
+        return directory
+    # Inside a container without a private cgroup namespace (v1, or v2 on
+    # older runtimes), /proc/<pid>/cgroup holds the host path while the
+    # container's own cgroup is mounted at the hierarchy root. That root is
+    # asd's only when the reader is in the same cgroup.
+    if self_cgroups.get(controllers) == path:
+        return root
+    return None
+
+
+def _collect_asd_cgroup(cmd="", proc_root="/proc", cgroup_root="/sys/fs/cgroup"):
+    out = ["['asd cgroup']"]
+    pids = _find_pids_by_comm("asd", proc_root)
+    self_cgroups = _parse_cgroup_lines(
+        _read_sysfs(os.path.join(proc_root, "self", "cgroup"))
+    )
+
+    if not pids:
+        out.append("No running asd process found.")
+        return "\n".join(out), None
+
+    for pid in pids:
+        cgroup = _read_sysfs(os.path.join(proc_root, pid, "cgroup"))
+        out.append("pid %s %s/%s/cgroup:" % (pid, proc_root, pid))
+        if not cgroup:
+            out.append("  not readable")
+            continue
+        out.extend("  " + line for line in cgroup.splitlines())
+
+        # (hierarchy root, path from /proc/<pid>/cgroup, files to read)
+        dirs = []
+        for line in cgroup.splitlines():
+            parts = line.split(":", 2)
+            if len(parts) != 3:
+                continue
+            _, controllers, path = parts
+            if controllers == "":
+                # Hybrid hosts mount the v2 hierarchy under "unified".
+                v2_root = os.path.join(cgroup_root, "unified")
+                if not os.path.isdir(v2_root):
+                    v2_root = cgroup_root
+                dirs.append((v2_root, controllers, path, _CGROUP_V2_FILES))
+                continue
+            for controller in controllers.split(","):
+                if controller not in _CGROUP_V1_FILES:
+                    continue
+                # v1 hierarchies are mounted per controller, sometimes
+                # comounted (cpu,cpuacct) with a symlink for each member.
+                for mount in (controllers, controller):
+                    base = os.path.join(cgroup_root, mount)
+                    if os.path.isdir(base):
+                        dirs.append(
+                            (base, controllers, path, _CGROUP_V1_FILES[controller])
+                        )
+                        break
+
+        for root, controllers, path, files in dirs:
+            directory = _resolve_cgroup_dir(root, controllers, path, self_cgroups)
+            if directory is None:
+                if path.startswith("/.."):
+                    out.append(
+                        "%s: asd's cgroup %s is outside this reader's cgroup "
+                        "namespace, its files are not visible from here" % (root, path)
+                    )
+                else:
+                    out.append(
+                        "%s: not found from this reader"
+                        % os.path.join(root, path.lstrip("/"))
+                    )
+                continue
+            if directory == root and path != "/":
+                out.append(
+                    "%s: reader shares asd's cgroup %s, reading the mounted root"
+                    % (root, path)
+                )
+            for f in files:
+                file_path = os.path.join(directory, f)
+                val = _read_sysfs(file_path)
+                if val is None:
+                    continue
+                if "\n" in val:
+                    out.append("%s:" % file_path)
+                    out.extend("  " + line for line in val.splitlines())
+                else:
+                    out.append("%s: %s" % (file_path, val))
+
+    return "\n".join(out), None
+
+
 def _stopped(stop: threading.Event | None):
     return stop is not None and stop.is_set()
 
@@ -3018,13 +3465,14 @@ def _zip_files(dir_path, _size=1):
             file_path = os.path.join(root, _file)
             size_mb = os.path.getsize(file_path) // (1024 * 1024)
             if size_mb >= _size:
-                os.chdir(root)
                 try:
                     # TODO: Investigate changing from zip to gzip to match collectlogs.
-                    newzip = zipfile.ZipFile(_file + ".zip", "w", zipfile.ZIP_DEFLATED)
-                    newzip.write(_file)
+                    newzip = zipfile.ZipFile(
+                        file_path + ".zip", "w", zipfile.ZIP_DEFLATED
+                    )
+                    newzip.write(file_path, arcname=_file)
                     newzip.close()
-                    os.remove(_file)
+                    os.remove(file_path)
                 except Exception as e:
                     print(e)
 
@@ -3127,6 +3575,39 @@ def get_system_commands(port=3000) -> list[list[str]]:
         [
             r'find /proc/sys/net/ipv4/neigh/default/ -name "gc_thresh*" -print -exec cat {} \;'
         ],
+        # Storage topology: which devices are network-backed.
+        [
+            "lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,ROTA,MODEL,SERIAL,TRAN",
+            "lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,ROTA,MODEL",
+        ],
+        ["ls -l /dev/disk/by-path/"],
+        # Host resource starvation: pressure stall information, swap, steal.
+        ["grep -H . /proc/pressure/cpu /proc/pressure/io /proc/pressure/memory"],
+        ["vmstat -w -t 1 5", "vmstat 1 5"],
+        [
+            'for p in $(pgrep -x asd); do grep -H -E "^(Threads|VmRSS|VmSwap|voluntary_ctxt_switches|nonvoluntary_ctxt_switches):" /proc/$p/status; done'
+        ],
+        # Hung tasks, OOM kills and I/O errors. The journal survives dmesg
+        # ring-buffer wrap, and reboots when it is persistent. The
+        # _TRANSPORT=kernel match is used instead of -k, which implies
+        # --boot=0 and would drop lines from before a reboot.
+        [
+            'sudo journalctl -q --no-pager -o short-iso --since "24 hours ago" _TRANSPORT=kernel | grep -iE "blocked for more than|hung_task|oom-kill|invoked oom-killer|out of memory|call trace|i/o error" | tail -n 500'
+        ],
+        # Time sync and timezone, so timestamps can be correlated across hosts.
+        ["timedatectl status", "date; ls -l /etc/localtime"],
+        ["chronyc tracking", "ntpq -pn"],
+        # Whether sysstat history exists for the incident window.
+        ["ls -la /var/log/sa/", "ls -la /var/log/sysstat/"],
+        # TCP, socket and conntrack counters.
+        ["ss -s"],
+        ["netstat -s", "cat /proc/net/snmp /proc/net/netstat"],
+        [
+            "grep -H . /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max"
+        ],
+        # The vm.* and fs.* keys are already in ascinfo.json (sysctlall).
+        # These keys are world-readable, so no sudo.
+        ["sysctl net.core.somaxconn net.core.rmem_max net.core.wmem_max"],
     ]
 
     uid = os.getuid()
@@ -3316,6 +3797,8 @@ def collect_sys_info(
             "Collecting infomation about network interfaces",
             functools.partial(_collect_ip_link_details, stop=stop),
         ),
+        ("Collecting information about the storage backend", _collect_storage_backend),
+        ("Collecting asd cgroup limits and usage", _collect_asd_cgroup),
     ]
 
     for description, func in sections:
