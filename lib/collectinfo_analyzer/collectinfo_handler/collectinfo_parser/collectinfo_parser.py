@@ -44,7 +44,7 @@ def parse_collectinfo_files(file_paths, parsed_map, ignore_exception=False):
             try:
                 with open(cinfo_path_name) as cinfo_json:
                     cinfo_map = json.load(cinfo_json, object_hook=_stringify)
-            except IOError as e:
+            except (IOError, ValueError) as e:
                 if not ignore_exception:
                     logger.error(str(e))
                     raise
@@ -94,7 +94,7 @@ def _match_nodeip(sys_map, known_ips):
 
 def _is_valid_collectinfo_json(cinfo_map):
     timestamp_format = constants.COLLECTINFO_TIMESTAMP_FORMAT
-    if len(cinfo_map) == 0:
+    if not isinstance(cinfo_map, dict) or len(cinfo_map) == 0:
         return False
     for timestamp in cinfo_map:
         try:
@@ -102,7 +102,10 @@ def _is_valid_collectinfo_json(cinfo_map):
         except ValueError:
             return False
 
-        if len(cinfo_map[timestamp]) == 0:
+        if not isinstance(cinfo_map[timestamp], dict) or len(cinfo_map[timestamp]) == 0:
+            return False
+
+        if not all(isinstance(nodes, dict) for nodes in cinfo_map[timestamp].values()):
             return False
     return True
 

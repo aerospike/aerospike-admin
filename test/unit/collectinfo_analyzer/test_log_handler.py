@@ -298,6 +298,30 @@ class NoSnapshotReasonTest(unittest.TestCase):
 
         return path
 
+    def _bundle_with_ascinfo(self, content):
+        path = os.path.join(self.bundle_dir, "content")
+
+        with open(path, "wb") as handle:
+            handle.write(content)
+
+        archive = os.path.join(self.bundle_dir, "collect_info_20261116_191136.tgz")
+
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(
+                path,
+                arcname="collect_info_20261116_191136/20261116_191136_ascinfo.json",
+            )
+
+        return archive
+
+    def _assert_no_snapshot_names_the_file(self, archive):
+        with self.assertRaises(LogHandlerException) as raised:
+            handler = CollectinfoLogHandler(archive)
+            self.addCleanup(handler.close)
+
+        self.assertIn("Could not read a cluster snapshot", str(raised.exception))
+        self.assertIn("20261116_191136_ascinfo.json", str(raised.exception))
+
     def test_an_archive_that_is_not_a_bundle_says_so(self):
         files = [self._write("Chart.yaml"), self._write("values.yaml")]
 
@@ -329,6 +353,35 @@ class NoSnapshotReasonTest(unittest.TestCase):
             self.addCleanup(handler.close)
 
         self.assertIn("No Aerospike collectinfo data found", str(raised.exception))
+
+    def test_a_bundle_whose_ascinfo_is_not_json_names_the_file(self):
+        """A non-JSON ascinfo.json used to escape as a JSONDecodeError, which
+        asadm printed as a traceback."""
+        archive = self._bundle_with_ascinfo(b"{not json")
+
+        self._assert_no_snapshot_names_the_file(archive)
+
+    def test_a_bundle_whose_ascinfo_is_not_utf8_names_the_file(self):
+        archive = self._bundle_with_ascinfo(
+            b'{"2026-11-16 19:11:36 UTC": {"c\xe9": {}}}'
+        )
+
+        self._assert_no_snapshot_names_the_file(archive)
+
+    def test_a_bundle_whose_ascinfo_is_a_bare_number_names_the_file(self):
+        archive = self._bundle_with_ascinfo(b"5")
+
+        self._assert_no_snapshot_names_the_file(archive)
+
+    def test_a_bundle_whose_snapshot_is_a_bare_number_names_the_file(self):
+        archive = self._bundle_with_ascinfo(b'{"2026-11-16 19:11:36 UTC": 5}')
+
+        self._assert_no_snapshot_names_the_file(archive)
+
+    def test_a_bundle_whose_cluster_is_a_bare_number_names_the_file(self):
+        archive = self._bundle_with_ascinfo(b'{"2026-11-16 19:11:36 UTC": {"c": 5}}')
+
+        self._assert_no_snapshot_names_the_file(archive)
 
 
 class NodeIdMappingTest(unittest.TestCase):
