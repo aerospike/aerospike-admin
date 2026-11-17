@@ -666,7 +666,8 @@ class Node(AsyncObject):
             # Set the user agent for this node
             await self._set_user_agent()
             self.alive = True
-        except (ASInfoNotAuthenticatedError, ASProtocolError):
+        except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
+            self.offline_reason = str(e) or type(e).__name__
             raise
         except Exception as e:
             logger.debug(e, exc_info=True)  # type: ignore

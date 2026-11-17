@@ -296,6 +296,23 @@ class NodeInitTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(n.alive)
         self.assertIsNone(n.offline_reason)
 
+    async def test_rejected_login_records_why(self):
+        with patch.object(
+            Node, "login", AsyncMock(side_effect=ConnectionError("refused"))
+        ):
+            n = await Node("192.1.1.1")
+
+        rejected = ASProtocolError(
+            ASResponse.NO_PASSWORD_OR_BAD_PASSWORD, "Login failed"
+        )
+        with patch.object(Node, "login", AsyncMock(side_effect=rejected)):
+            with self.assertRaises(ASProtocolError):
+                await n.connect("192.1.1.1", 3000)
+
+        self.assertEqual(
+            n.offline_reason, "Login failed : No password or bad password."
+        )
+
 
 class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
