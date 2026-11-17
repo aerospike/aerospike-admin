@@ -263,6 +263,14 @@ class Cluster(AsyncObject):
             logger.error(e)
             return ""
 
+    def hold_info_answers(self):
+        """Nodes keep every info answer until the block ends, rather than half a
+        second."""
+        return Node._info_cinfo.held()
+
+    def forget_info_answers(self):
+        Node._info_cinfo.forget()
+
     def get_principal_node(self) -> Node | None:
         """The live node with the highest node ID, or None when no node is live."""
         live_nodes = [node for node in self.nodes.values() if node.alive]
