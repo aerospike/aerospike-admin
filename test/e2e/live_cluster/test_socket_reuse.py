@@ -1,4 +1,4 @@
-# Copyright 2013-2025 Aerospike, Inc.
+# Copyright 2026 Aerospike, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import contextlib
 import unittest
 from unittest.mock import patch
 
@@ -35,6 +36,25 @@ def every_node_answered(answers):
     return len(answers) == NODE_COUNT and all(
         isinstance(answer, str) for answer in answers.values()
     )
+
+
+def every_node_said_ok(responses):
+    return len(responses) == NODE_COUNT and all(
+        err is None and resp.strip() == "ok" for err, resp in responses.values()
+    )
+
+
+@contextlib.contextmanager
+def recording_connects():
+    connects = []
+    open_socket = ASSocket.connect
+
+    async def recording_connect(sock):
+        connects.append((sock.ip, sock.port))
+        return await open_socket(sock)
+
+    with patch.object(ASSocket, "connect", recording_connect):
+        yield connects
 
 
 class SocketReuseTest(unittest.IsolatedAsyncioTestCase):
@@ -71,14 +91,7 @@ class SocketReuseTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("node", sent)
 
     async def test_connecting_opens_one_socket_per_node(self):
-        connects = []
-        open_socket = ASSocket.connect
-
-        async def recording_connect(sock):
-            connects.append((sock.ip, sock.port))
-            return await open_socket(sock)
-
-        with patch.object(ASSocket, "connect", recording_connect):
+        with recording_connects() as connects:
             cl = await connect()
 
             with patch.object(Cluster, "need_to_refresh_cluster", return_value=False):
@@ -94,7 +107,7 @@ class SocketReuseTest(unittest.IsolatedAsyncioTestCase):
         original = {node["proto-fd-idle-ms"] for node in config.values()}
         self.assertEqual(len(original), 1, original)
         await self.cl.info("statistics")
-        lib.CLIENT.info_all(
+        reaping = lib.CLIENT.info_all(
             "set-config:context=service;proto-fd-idle-ms=%d" % IDLE_REAP_MS
         )
 
@@ -102,14 +115,19 @@ class SocketReuseTest(unittest.IsolatedAsyncioTestCase):
             await self.cl.info("cluster-name")
             await asyncio.sleep(IDLE_REAP_MS / 1000 * 3)
 
-            with patch.object(Cluster, "need_to_refresh_cluster", return_value=False):
+            with recording_connects() as connects, patch.object(
+                Cluster, "need_to_refresh_cluster", return_value=False
+            ):
                 answers = await self.cl.info("edition")
         finally:
-            lib.CLIENT.info_all(
+            restored = lib.CLIENT.info_all(
                 "set-config:context=service;proto-fd-idle-ms=%s" % original.pop()
             )
 
+        self.assertTrue(every_node_said_ok(reaping), reaping)
+        self.assertTrue(every_node_said_ok(restored), restored)
         self.assertTrue(every_node_answered(answers), answers)
+        self.assertEqual(len(connects), NODE_COUNT, connects)
         self.assertEqual(len(self.cl.get_live_nodes()), NODE_COUNT)
 
     async def test_z_first_command_after_a_node_restart_reaches_every_node(self):
