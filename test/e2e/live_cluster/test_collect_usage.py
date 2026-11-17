@@ -20,11 +20,13 @@ with ASADM_E2E_USAGE_USER and ASADM_E2E_USAGE_PASSWORD for a user-admin user
 
 import base64
 import glob
+import io
 import json
 import os
 import re
 import shutil
 import tarfile
+import tempfile
 import unittest
 
 from lib.utils import version
@@ -99,6 +101,16 @@ def saved_path(stdout):
     match = re.search(r"^Saved\s+(\S+) \(", stdout, re.M)
 
     return match.group(1) if match else None
+
+
+def archived(archive, suffix):
+    members = bundle_members(archive)
+    names = [name for name in members if name.endswith(suffix)]
+
+    if len(names) != 1:
+        raise AssertionError(f"{archive} holds {sorted(members)}")
+
+    return members[names[0]]
 
 
 class CollectUsageWithoutUsageReportingTest(unittest.TestCase):
@@ -206,11 +218,13 @@ class CollectUsageTest(unittest.TestCase):
             f"{cls.connect} -e 'collect info --output-prefix {PREFIX}info_'"
         )
         cls.bundle = util.get_collectinfo_path(cls.collect_info, f"/tmp/{PREFIX}info_")
+        cls.archive = saved_path(cls.collect_usage.stdout)
         cls.file = b""
+        cls.meta = {}
 
-        if saved_path(cls.collect_usage.stdout):
-            with open(saved_path(cls.collect_usage.stdout), "rb") as f:
-                cls.file = f.read()
+        if cls.archive and tarfile.is_tarfile(cls.archive):
+            cls.file = archived(cls.archive, "_usage.json")
+            cls.meta = json.loads(archived(cls.archive, "_usage_meta.json"))
 
     @classmethod
     def tearDownClass(cls):
@@ -233,11 +247,22 @@ class CollectUsageTest(unittest.TestCase):
 
         self.assertIn(f"Cluster {self.uuid}", lines)
         self.assertTrue(any(line.startswith("Days    ") for line in lines), lines)
+        self.assertTrue(self.archive.startswith(f"/tmp/{PREFIX}collect_usage_"))
+        self.assertTrue(self.archive.endswith(".tgz"), self.archive)
+
+    def test_the_meta_file_names_the_cluster_and_the_nodes(self):
+        self.assertEqual(self.meta.get("cluster_uuid"), self.uuid, self.meta)
+        self.assertIn(self.meta.get("usage_node"), self.meta.get("responded_nodes"))
         self.assertTrue(
-            saved_path(self.collect_usage.stdout).startswith(
-                f"/tmp/{PREFIX}collect_usage_"
-            )
+            set(self.meta["responded_nodes"]) <= set(self.meta["expected_nodes"])
         )
+
+    def test_show_usage_reads_the_archive(self):
+        cp = util.run_asadm(f"-cf {self.archive} -e 'show usage'")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertNotIn("ERROR", cp.stderr)
+        self.assertIn(f"Cluster {self.uuid}", cp.stdout.splitlines())
 
     def test_collect_info_bundle_carries_the_same_file(self):
         members = bundle_members(self.bundle)
@@ -280,3 +305,80 @@ class CollectUsageTest(unittest.TestCase):
         cp = util.run_asadm(f"{self.connect} -e 'health'")
 
         self.assertNotIn("Different Cluster UUID", cp.stdout)
+
+
+class ShowUsageFromArchiveTest(unittest.TestCase):
+    """No server: the archive is laid out here the way 'collect usage' writes it."""
+
+    UUID = "963fa489-71bd-46a9-af70-765ce26c5a62"
+
+    def setUp(self):
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        self.archive = os.path.join(self.work_dir, "collect_usage_20261116_191136.tgz")
+        document = json.dumps(
+            {
+                "data": {
+                    "cluster": self.UUID,
+                    "feature_key": {"account-ID": "12345", "account-name": "Acme Corp"},
+                    "records": [],
+                    "schema": 1,
+                    "taken": "2026-11-16T19:11:36Z",
+                }
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        members = {
+            "20261116_191136_usage.json": document,
+            "20261116_191136_usage_meta.json": b'{"meta_format_version":1}',
+        }
+
+        with tarfile.open(self.archive, "w:gz") as tar:
+            for name, data in members.items():
+                info = tarfile.TarInfo("collect_usage_20261116_191136/" + name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+
+    def test_show_usage_reads_a_collect_usage_archive(self):
+        cp = util.run_asadm(f"-cf {self.archive} -e 'show usage'")
+
+        self.assertNotIn("ERROR", cp.stderr)
+        self.assertNotIn("WARNING", cp.stderr)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(
+            cp.stdout.splitlines()[:4],
+            [
+                f"Cluster {self.UUID}",
+                "Account Acme Corp (12345)",
+                "Days    none closed yet",
+                "Taken   2026-11-16 19:11:36 UTC",
+            ],
+        )
+
+    def test_an_abbreviated_show_usage_reads_the_archive(self):
+        for command in ("sh usage", "show usa"):
+            with self.subTest(command=command):
+                cp = util.run_asadm(f"-cf {self.archive} -e '{command}'")
+
+                self.assertNotIn("WARNING", cp.stderr)
+                self.assertEqual(cp.returncode, 0, cp.stderr)
+                self.assertEqual(cp.stdout.splitlines()[:1], [f"Cluster {self.UUID}"])
+
+    def test_other_commands_find_no_collectinfo_data_and_do_not_fail(self):
+        for command in ("info summary", "health", "info network", "show config"):
+            with self.subTest(command=command):
+                cp = util.run_asadm(f"-cf {self.archive} -e '{command}'")
+
+                self.assertNotIn("ERROR", cp.stderr)
+                self.assertNotIn("Traceback", cp.stdout + cp.stderr)
+                self.assertEqual(cp.returncode, 0, cp.stderr)
+                self.assertIn("no collectinfo data", cp.stderr)
+
+    def test_the_intro_names_a_usage_archive_and_points_to_show_usage(self):
+        cp = util.run_asadm(f"-cf {self.archive}", stdin_input="exit\n")
+        intro = cp.stdout.lower()
+
+        self.assertIn("usage archive", intro)
+        self.assertIn("show usage", intro)
+        self.assertNotIn("ERROR", cp.stderr)

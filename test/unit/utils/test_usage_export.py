@@ -292,17 +292,17 @@ class UsageFilePathTest(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("no_prefix", "", "/tmp/collect_usage_20261004_101502.json"),
-            ("prefix", "acme", "/tmp/acme_collect_usage_20261004_101502.json"),
+            ("no_prefix", "", "/tmp/collect_usage_20261004_101502.tgz"),
+            ("prefix", "acme", "/tmp/acme_collect_usage_20261004_101502.tgz"),
             (
                 "prefix_with_dash",
                 "acme-",
-                "/tmp/acme-collect_usage_20261004_101502.json",
+                "/tmp/acme-collect_usage_20261004_101502.tgz",
             ),
             (
                 "prefix_with_underscore",
                 "acme_",
-                "/tmp/acme_collect_usage_20261004_101502.json",
+                "/tmp/acme_collect_usage_20261004_101502.tgz",
             ),
         ]
     )

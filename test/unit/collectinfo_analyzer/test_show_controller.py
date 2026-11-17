@@ -50,9 +50,16 @@ from lib.collectinfo_analyzer.show_controller import (
     ShowUsersController,
     ShowUsersStatsController,
 )
-from lib.base_controller import ShellException
+from lib.base_controller import BaseController, ShellException
+from lib.collectinfo_analyzer.collectinfo_root_controller import (
+    CollectinfoRootController,
+)
 from lib.utils import constants
 from lib.utils.constants import Modifiers
+from test.unit.collectinfo_analyzer.test_log_handler import (
+    USAGE_DOCUMENT,
+    write_usage_archive,
+)
 
 NO_DATA_LOGGER = "lib.collectinfo_analyzer.collectinfo_command_controller"
 
@@ -154,6 +161,65 @@ class ShowUsageControllerTest(unittest.TestCase):
 
         self.view_mock.show_usage.assert_not_called()
         self.assertIn("20261116_191136_usage.json", cm.records[0].getMessage())
+
+
+class ShowUsageFromUsageArchiveTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        for cls, attr in (
+            (BaseController, "asadm_version"),
+            (BaseController, "asadm_build"),
+            (CollectinfoRootController, "log_handler"),
+            (CollectinfoRootController, "command"),
+        ):
+            patch.object(cls, attr, getattr(cls, attr)).start()
+
+        patch.object(
+            CollectinfoCommandController, "log_handler", None, create=True
+        ).start()
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.COLLECTINFO_DIR",
+            os.path.join(self.work_dir, "extracted") + os.sep,
+        ).start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.addCleanup(patch.stopall)
+
+    async def test_show_usage_reads_a_collect_usage_archive(self):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir)
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        await root.execute(["show", "usage"])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
+
+    @parameterized.expand(
+        [("sh_usage", ["sh", "usage"]), ("show_usa", ["show", "usa"])]
+    )
+    async def test_an_abbreviated_show_usage_reads_the_archive(self, _, command):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir)
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="WARNING"):
+            await root.execute(list(command))
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
 
 
 class ShowControllerAliasTest(unittest.TestCase):

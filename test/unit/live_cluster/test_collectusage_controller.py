@@ -18,12 +18,15 @@ import io
 import json
 import os
 import shutil
+import tarfile
 import tempfile
+import time
 import unittest
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from parameterized import parameterized
 
+from lib.base_controller import BaseController
 from lib.live_cluster import collectinfo_controller, collectusage_controller
 from lib.live_cluster.client.types import ASInfoResponseError
 from lib.live_cluster.collectinfo_controller import CollectinfoController
@@ -43,7 +46,10 @@ from test.unit.live_cluster.test_collectinfo_controller import RunCollectinfoTes
 
 PRINCIPAL = "10.0.0.3:3000"
 OTHER = "10.0.0.1:3000"
+SILENT = "10.0.0.5:3000"
 CLUSTER = "963fa489-71bd-46a9-af70-765ce26c5a62"
+ARCHIVE = "collect_usage_20261116_191136.tgz"
+TS = time.strptime("20261116_191136", "%Y%m%d_%H%M%S")
 NO_COMMAND = "ERROR:4:unrecognized command"
 ROLE_VIOLATION = "ERROR:81:role violation - requires permission 'user-admin'"
 OLDER_SERVERS = "'collect usage' is not supported on aerospike versions < 8.2.1"
@@ -70,6 +76,25 @@ def document(value):
 
 def info_error(reply):
     return ASInfoResponseError("Failed to get usage", reply)
+
+
+def archive_members(path):
+    with tarfile.open(path) as tar:
+        return {
+            os.path.basename(member.name): tar.extractfile(member).read()
+            for member in tar.getmembers()
+            if member.isfile() and not os.path.basename(member.name).startswith("._")
+        }
+
+
+def archived_export(path):
+    members = archive_members(path)
+    usage = [name for name in members if name.endswith("_usage.json")]
+
+    if len(usage) != 1:
+        raise AssertionError(f"{path} holds {sorted(members)}")
+
+    return members[usage[0]]
 
 
 class UsageSupportedTest(unittest.IsolatedAsyncioTestCase):
@@ -206,7 +231,10 @@ class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
 
 class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        patch.object(LiveClusterCommandController, "cluster", MagicMock()).start()
+        cluster = MagicMock()
+        cluster.info_build = AsyncMock(return_value={PRINCIPAL: "8.2.1.0"})
+        cluster.info = AsyncMock(return_value={PRINCIPAL: "prod"})
+        patch.object(LiveClusterCommandController, "cluster", cluster).start()
         self.fetch = patch.object(
             collectusage_controller, "fetch_usage", AsyncMock()
         ).start()
@@ -215,7 +243,7 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
         ).start()
         self.work_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
-        self.path = os.path.join(self.work_dir, "collect_usage_20261116_191136.json")
+        self.path = os.path.join(self.work_dir, ARCHIVE)
         self.path_mock = patch.object(
             collectusage_controller.common,
             "get_usage_file_path",
@@ -238,19 +266,47 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
 
         return out.getvalue().splitlines()
 
+    def assert_archive(self):
+        self.assertTrue(tarfile.is_tarfile(self.path), f"{self.path} is not a .tgz")
+
     async def test_writes_the_export_byte_for_byte(self):
         self.exports(export(["2026-10-02", "2026-10-03"]))
 
         await self.run_command()
 
-        with open(self.path, "rb") as f:
-            self.assertEqual(f.read(), document(export(["2026-10-02", "2026-10-03"])))
+        self.assert_archive()
+        self.assertEqual(
+            archived_export(self.path), document(export(["2026-10-02", "2026-10-03"]))
+        )
+
+    async def test_the_archive_holds_the_export_and_a_meta_file_only(self):
+        self.exports(export(["2026-10-03"]))
+
+        with patch("time.gmtime", return_value=TS):
+            await self.run_command()
+
+        self.assert_archive()
+        self.assertEqual(
+            sorted(archive_members(self.path)),
+            ["20261116_191136_usage.json", "20261116_191136_usage_meta.json"],
+        )
+        self.assertEqual(os.listdir(self.work_dir), [ARCHIVE])
+
+    async def test_an_export_of_1_mib_or_more_is_not_zipped(self):
+        value = export(["2026-10-03"])
+        value["data"]["padding"] = "x" * (1024 * 1024)
+        self.exports(value)
+
+        await self.run_command()
+
+        self.assert_archive()
+        self.assertEqual(archived_export(self.path), document(value))
 
     async def test_prints_cluster_account_days_and_the_saved_file(self):
         self.exports(export(["2026-10-02", "2026-10-03"]))
-        size = file_size.size(len(document(export(["2026-10-02", "2026-10-03"]))))
 
         lines = await self.run_command()
+        size = file_size.size(os.path.getsize(self.path))
 
         self.assertEqual(
             lines[:4],
@@ -365,6 +421,71 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
             await self.run_command("--bogus")
 
         self.assertEqual(cm.records[0].getMessage(), "Unrecognized option(s): --bogus")
+
+
+class CollectUsageMetaFileTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.cluster = MagicMock()
+        self.cluster.info_build = AsyncMock(
+            side_effect=lambda **_: {
+                PRINCIPAL: "8.2.1.0",
+                OTHER: "8.2.1.0",
+                SILENT: TimeoutError("info timed out after 1s"),
+            }
+        )
+        self.cluster.info_usage = AsyncMock(
+            return_value={PRINCIPAL: document(export(["2026-10-03"]))}
+        )
+        self.cluster.info = AsyncMock(return_value={PRINCIPAL: "prod"})
+        patch.object(LiveClusterCommandController, "cluster", self.cluster).start()
+        patch.object(BaseController, "asadm_version", "5.2.0").start()
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        self.path = os.path.join(self.work_dir, ARCHIVE)
+        patch.object(
+            collectusage_controller.common,
+            "get_usage_file_path",
+            return_value=self.path,
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def meta(self):
+        with patch("time.gmtime", return_value=TS):
+            with contextlib.redirect_stdout(io.StringIO()):
+                await CollectusageController().execute([])
+
+        self.assertTrue(tarfile.is_tarfile(self.path), f"{self.path} is not a .tgz")
+
+        return json.loads(archive_members(self.path)["20261116_191136_usage_meta.json"])
+
+    async def test_names_asadm_the_time_the_cluster_and_the_nodes(self):
+        self.assertEqual(
+            await self.meta(),
+            {
+                "meta_format_version": 1,
+                "asadm_version": "5.2.0",
+                "collected_ts_utc": "2026-11-16 19:11:36 UTC",
+                "cluster_name": "prod",
+                "cluster_uuid": CLUSTER,
+                "expected_nodes": [OTHER, PRINCIPAL, SILENT],
+                "responded_nodes": [OTHER, PRINCIPAL],
+                "usage_node": PRINCIPAL,
+            },
+        )
+
+    async def test_a_cluster_name_or_uuid_it_cannot_learn_is_null(self):
+        value = export()
+        del value["data"]["cluster"]
+        self.cluster.info_usage.return_value = {PRINCIPAL: document(value)}
+        self.cluster.info.return_value = {
+            PRINCIPAL: TimeoutError("info timed out after 1s")
+        }
+
+        meta = await self.meta()
+
+        self.assertEqual(
+            (meta["cluster_name"], meta["cluster_uuid"]), (None, None), meta
+        )
 
 
 class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):

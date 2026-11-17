@@ -108,7 +108,10 @@ class CollectinfoLogHandler(object):
     def __str__(self):
         status_str = ""
         if not self.all_cinfo_logs:
-            return status_str
+            return (
+                "\nThis is a usage archive from 'collect usage', with no collectinfo "
+                "data. Run 'show usage' to view it.\n"
+            )
 
         i = 1
         for timestamp in sorted(self.all_cinfo_logs.keys()):
@@ -619,8 +622,16 @@ class CollectinfoLogHandler(object):
         self.all_cinfo_logs = cinfo_log.snapshots
         self.bundle_snapshot_count = len(cinfo_log.data or {})
 
-        if not self.all_cinfo_logs:
+        if not self.all_cinfo_logs and not self._is_usage_archive(files):
             raise LogHandlerException(self._no_snapshot_reason(cinfo_path, files))
+
+    def _is_usage_archive(self, files) -> bool:
+        """A 'collect usage' archive: a usage file and no ascinfo.json."""
+        return not any(
+            file.endswith(constants.COLLECTINFO_DATA_FILENAME) for file in files
+        ) and any(
+            file.endswith("_" + constants.COLLECTINFO_USAGE_FILENAME) for file in files
+        )
 
     def _no_snapshot_reason(self, cinfo_path, files) -> str:
         """Why no cluster snapshot could be read, in terms of what the path holds.

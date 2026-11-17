@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import calendar
+import io
+import json
 import logging
+import os
+import tarfile
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -47,10 +52,12 @@ class UsageExport:
     data: dict[str, Any]
 
 
-async def usage_supported(cluster) -> bool:
+async def usage_supported(cluster, builds=None) -> bool:
     """Whether every node runs a release with usage reporting. Older servers are
     never sent the command: they log every info command they do not know."""
-    builds = await GetClusterMetadataController(cluster).get_builds(nodes="all")
+    if builds is None:
+        builds = await GetClusterMetadataController(cluster).get_builds(nodes="all")
+
     support = await util.check_version_support(
         feature_versions={"usage": constants.SERVER_USAGE_REPORTING_FIRST_VERSION},
         builds=builds,
@@ -115,7 +122,8 @@ def log_unavailable(command: str, error: UsageUnavailable, hint: str = "") -> No
 
 
 @CommandHelp(
-    "Exports the cluster's usage records to a JSON file to send to Aerospike.",
+    "Exports the cluster's usage records to a .tgz archive to send to Aerospike.",
+    "Open the archive with 'asadm -cf <archive>' and run 'show usage' to view it.",
     "Needs server v. {} or later and a user with the user-admin privilege.".format(
         constants.SERVER_USAGE_REPORTING_FIRST_VERSION
     ),
@@ -141,7 +149,11 @@ class CollectusageController(LiveClusterCommandController):
         if line:
             logger.error("Unrecognized option(s): {}".format(", ".join(line)))
 
-        if not await usage_supported(self.cluster):
+        builds = await self.cluster.info_build(nodes="all")
+        expected_nodes = sorted(builds)
+        builds = util.filter_exceptions(builds)
+
+        if not await usage_supported(self.cluster, builds):
             logger.warning(
                 "%s. Use 'collect info' instead.",
                 older_servers_message("collect usage"),
@@ -154,13 +166,42 @@ class CollectusageController(LiveClusterCommandController):
             log_unavailable("collect usage", e, " Use 'collect info' instead.")
             return
 
-        path = common.get_usage_file_path(time.gmtime(), output_prefix)
+        try:
+            names = await self.cluster.info("cluster-name", nodes=[export.node])
+            cluster_name = names.get(export.node)
+        except Exception:
+            cluster_name = None
+
+        timestamp = time.gmtime()
+        path = common.get_usage_file_path(timestamp, output_prefix)
+        meta = {
+            "meta_format_version": 1,
+            "asadm_version": str(self.asadm_version),
+            "collected_ts_utc": time.strftime(
+                constants.COLLECTINFO_TIMESTAMP_FORMAT, timestamp
+            ),
+            "cluster_name": cluster_name if isinstance(cluster_name, str) else None,
+            "cluster_uuid": export.data.get("cluster"),
+            "expected_nodes": expected_nodes,
+            "responded_nodes": sorted(builds),
+            "usage_node": export.node,
+        }
+        output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
+        top_dir = os.path.basename(path).removesuffix(".tgz")
+        members = {
+            f"{output_time}_{constants.COLLECTINFO_USAGE_FILENAME}": export.document,
+            f"{output_time}_usage_meta.json": json.dumps(meta, indent=2).encode(),
+        }
 
         try:
-            with open(path, "xb") as f:
-                f.write(export.document)
+            with tarfile.open(path, "x:gz") as tar:
+                for name, data in members.items():
+                    member = tarfile.TarInfo(f"{top_dir}/{name}")
+                    member.size = len(data)
+                    member.mtime = calendar.timegm(timestamp)
+                    tar.addfile(member, io.BytesIO(data))
         except OSError as e:
             logger.error("Failed to write %s: %s", path, e)
             return
 
-        self.view.print_usage_saved(export.data, path, len(export.document))
+        self.view.print_usage_saved(export.data, path, os.path.getsize(path))

@@ -3177,7 +3177,7 @@ def _output_name_prefix(output_prefix) -> str:
 def get_usage_file_path(timestamp, output_prefix="") -> str:
     output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
 
-    return f"/tmp/{_output_name_prefix(output_prefix)}collect_usage_{output_time}.json"
+    return f"/tmp/{_output_name_prefix(output_prefix)}collect_usage_{output_time}.tgz"
 
 
 def get_collectinfo_path(timestamp, output_prefix=""):
