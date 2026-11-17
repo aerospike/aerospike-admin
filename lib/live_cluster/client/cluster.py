@@ -431,7 +431,11 @@ class Cluster(AsyncObject):
             async def refresh(node):
                 if await node.needs_refresh():
                     logger.debug("Node %s:%s needs refresh", node.ip, node.port)
-                    await node.refresh_connection()
+                    try:
+                        await node.refresh_connection()
+                    except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
+                        logger.error("%s: %s", node.key, e)
+                        node.alive = False
 
             nodes = list(self.nodes.items())
             await asyncio.gather(*(refresh(node) for _, node in nodes))
