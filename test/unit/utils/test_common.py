@@ -4368,6 +4368,40 @@ class CollectSysInfoStopTest(unittest.TestCase):
         self.assertEqual(len(self.commands), 1)
         self.sleep_mock.assert_not_called()
 
+    def _patch_new_sections(self):
+        patch("lib.utils.common.request.urlopen", side_effect=OSError).start()
+        patch("lib.utils.common.socket.setdefaulttimeout").start()
+        backend = patch(
+            "lib.utils.common._collect_storage_backend",
+            return_value=("['storage backend']\nbackend-ok", None),
+        ).start()
+        cgroup = patch(
+            "lib.utils.common._collect_asd_cgroup",
+            return_value=("['asd cgroup']\ncgroup-ok", None),
+        ).start()
+        return backend, cgroup
+
+    def test_new_sections_do_not_run_when_stopped(self):
+        backend, cgroup = self._patch_new_sections()
+        self.stop.set()
+
+        self.collect()
+
+        backend.assert_not_called()
+        cgroup.assert_not_called()
+
+    def test_a_failing_collector_does_not_stop_the_next(self):
+        backend, _ = self._patch_new_sections()
+        patch.object(self.stop, "wait", return_value=False).start()
+        backend.side_effect = RuntimeError("boom")
+
+        self.collect()
+
+        with open(self.outfile) as f:
+            out = f.read()
+        self.assertIn("boom", out)
+        self.assertIn("cgroup-ok", out)
+
 
 class ArchiveDirTest(unittest.TestCase):
     def test_a_failed_tar_is_reported(self):
@@ -4503,9 +4537,14 @@ class CollectStorageBackendTest(unittest.TestCase):
             "pci0000:00/0000:00:1f.0/nvme/nvme1",
             {"device/transport": "pcie", "device/model": "Amazon Elastic Block Store"},
         )
+        self._device(
+            "dm-0", "virtual/block", {"dm/name": "vg-data"}, slaves=("nvme1n1",)
+        )
         out = self._collect()
         self.assertIn("nvme1n1 transport=nvme-pcie", out)
         self.assertIn('hint="AWS EBS, network-attached"', out)
+        self.assertIn("slaves=nvme1n1 backing=network", out)
+        self.assertIn("Network-backed block devices: dm-0, nvme1n1", out)
 
     def test_nvme_over_tcp_is_network(self):
         self._device(
@@ -4612,7 +4651,7 @@ class CollectStorageBackendTest(unittest.TestCase):
         self._device("rbd0", "virtual/block", {})
         out = self._collect()
         self.assertIn("Hypervisor-presented block devices: none detected", out)
-        self.assertIn("Network-backed block devices: rbd0", out)
+        self.assertIn("Network-backed block devices: nvme1n1, rbd0", out)
 
     def test_zero_size_devices_are_skipped(self):
         for name in ("nbd0", "nbd10", "nbd2", "loop0"):
@@ -4628,6 +4667,171 @@ class CollectStorageBackendTest(unittest.TestCase):
         shutil.rmtree(os.path.join(self.sys, "block"))
         out = self._collect()
         self.assertIn("not readable", out)
+
+    def _partition(self, disk, part):
+        """sys/devices/.../<disk>/<part> with a partition file, linked from
+        sys/class/block/<part>, as the kernel lays it out."""
+        real = os.path.join(
+            os.path.realpath(os.path.join(self.sys, "block", disk)), part
+        )
+        self._write(os.path.join(real, "partition"), "1\n")
+        os.makedirs(os.path.join(self.sys, "class", "block"), exist_ok=True)
+        os.symlink(real, os.path.join(self.sys, "class", "block", part))
+
+    def _slave_on_partition(self, name, part, files=None):
+        real = os.path.join(self.sys, "devices", "virtual/block", name)
+        os.makedirs(os.path.join(real, "slaves"))
+        for rel, content in (files or {}).items():
+            self._write(os.path.join(real, rel), content + "\n")
+        os.symlink(
+            os.path.join(self.sys, "class", "block", part),
+            os.path.join(real, "slaves", part),
+        )
+        os.symlink(real, os.path.join(self.sys, "block", name))
+
+    def test_lvm_on_a_partition_of_an_iscsi_disk_is_network(self):
+        self._device("sdb", "platform/host3/session1/target3:0:0/3:0:0:0/block", {})
+        self._partition("sdb", "sdb1")
+        self._slave_on_partition("dm-0", "sdb1", {"dm/name": "vg-data"})
+        out = self._collect()
+        self.assertIn("slaves=sdb1 backing=network", out)
+        self.assertIn("Network-backed block devices: dm-0, sdb", out)
+
+    def test_md_on_an_nvme_tcp_partition_is_network(self):
+        self._device(
+            "nvme0n1", "virtual/nvme-fabrics/ctl/nvme0", {"device/transport": "tcp"}
+        )
+        self._partition("nvme0n1", "nvme0n1p1")
+        self._slave_on_partition("md0", "nvme0n1p1")
+        out = self._collect()
+        self.assertIn("md0 transport=md-raid slaves=nvme0n1p1 backing=network", out)
+        self.assertIn("Network-backed block devices: md0, nvme0n1", out)
+
+    def test_lvm_on_a_virtio_partition_is_hypervisor(self):
+        self._device("vda", "pci0000:00/0000:00:05.0/virtio2/block", {})
+        self._partition("vda", "vda1")
+        self._slave_on_partition("dm-0", "vda1")
+        out = self._collect()
+        self.assertIn("slaves=vda1 backing=hypervisor", out)
+        self.assertIn("Hypervisor-presented block devices: dm-0, vda", out)
+
+    def test_multipath_over_fibre_channel_is_network(self):
+        for name, rport in (("sdc", "rport-0:0-0"), ("sdd", "rport-1:0-0")):
+            self._device(
+                name,
+                "pci0000:00/0000:00:02.0/host0/%s/target0:0:0/0:0:0:1/block" % rport,
+                {"device/vendor": "PURE", "device/model": "FlashArray"},
+            )
+        self._device(
+            "dm-0", "virtual/block", {"dm/name": "mpatha"}, slaves=("sdc", "sdd")
+        )
+        out = self._collect()
+        self.assertIn("sdc transport=fc", out)
+        self.assertIn("slaves=sdc,sdd backing=network", out)
+        self.assertIn("Network-backed block devices: dm-0, sdc, sdd", out)
+
+    def test_native_nvme_multipath_reads_the_controller_transport(self):
+        # The namespace hangs off nvme-subsys0 and has no transport of its own.
+        self._device(
+            "nvme0n1",
+            "virtual/nvme-subsystem/nvme-subsys0",
+            {"device/nvme0/transport": "tcp", "device/nvme1/transport": "tcp"},
+        )
+        out = self._collect()
+        self.assertIn("nvme0n1 transport=nvme-tcp", out)
+        self.assertIn("Network-backed block devices: nvme0n1", out)
+
+    def test_nvme_loop_is_not_network(self):
+        self._device(
+            "nvme0n1", "virtual/nvme-fabrics/ctl/nvme0", {"device/transport": "loop"}
+        )
+        out = self._collect()
+        self.assertIn("nvme0n1 transport=nvme-loop", out)
+        self.assertIn("Network-backed block devices: none detected", out)
+
+    @parameterized.expand([("rdma",), ("fc",)])
+    def test_nvme_fabrics_are_network(self, transport):
+        self._device(
+            "nvme0n1",
+            "virtual/nvme-fabrics/ctl/nvme0",
+            {"device/transport": transport},
+        )
+        out = self._collect()
+        self.assertIn("nvme0n1 transport=nvme-%s" % transport, out)
+        self.assertIn("Network-backed block devices: nvme0n1", out)
+
+    def test_attached_nbd_is_network(self):
+        self._device("nbd0", "virtual/block", {"size": "8"})
+        out = self._collect()
+        self.assertIn("nbd0 transport=nbd", out)
+        self.assertIn("Network-backed block devices: nbd0", out)
+
+    def test_xen_disk_is_hypervisor(self):
+        self._device("xvda", "vbd-768/block", {})
+        out = self._collect()
+        self.assertIn("xvda transport=xen", out)
+        self.assertIn("Hypervisor-presented block devices: xvda", out)
+
+    @parameterized.expand(
+        [
+            ("nvme_card-pd", "GCP Persistent Disk, network-attached", True),
+            ("nvme_card", "GCP Local SSD, local", False),
+            (
+                "MSFT NVMe Accelerator v1.0",
+                "Azure managed disk, network-attached",
+                True,
+            ),
+            ("Microsoft NVMe Direct Disk", "Azure local NVMe, local", False),
+        ]
+    )
+    def test_cloud_nvme_models(self, model, hint, network):
+        self._device(
+            "nvme0n1",
+            "pci0000:00/0000:00:04.0/nvme/nvme0",
+            {"device/transport": "pcie", "device/model": model},
+        )
+        out = self._collect()
+        self.assertIn('hint="%s"' % hint, out)
+        self.assertIn(
+            "Network-backed block devices: %s"
+            % ("nvme0n1" if network else "none detected"),
+            out,
+        )
+        self.assertIn("Hypervisor-presented block devices: none detected", out)
+
+    @parameterized.expand([("QEMU NVMe Ctrl",), ("VMware Virtual NVMe Disk",)])
+    def test_hypervisor_nvme_models(self, model):
+        self._device(
+            "nvme0n1",
+            "pci0000:00/0000:00:04.0/nvme/nvme0",
+            {"device/transport": "pcie", "device/model": model},
+        )
+        out = self._collect()
+        self.assertIn("Hypervisor-presented block devices: nvme0n1", out)
+
+    def test_io_timeout_and_write_cache(self):
+        self._device(
+            "nvme1n1",
+            "pci0000:00/0000:00:1f.0/nvme/nvme1",
+            {
+                "device/transport": "pcie",
+                "queue/io_timeout": "4294967295",
+                "queue/write_cache": "write back",
+            },
+        )
+        out = self._collect()
+        self.assertIn('io-timeout="4294967295" write-cache="write back"', out)
+
+    def test_a_non_utf8_byte_does_not_lose_the_section(self):
+        self._device(
+            "sdb",
+            "pci0000:00/0000:00:10.0/host2/target2:0:0/2:0:0:0/block",
+            {"device/vendor": "ATA"},
+        )
+        with open(os.path.join(self.sys, "block", "sdb", "device", "model"), "wb") as f:
+            f.write(b"DISK\xff\n")
+        out = self._collect()
+        self.assertIn("sdb transport=scsi", out)
 
 
 class CollectAsdCgroupTest(unittest.TestCase):
@@ -4699,3 +4903,77 @@ class CollectAsdCgroupTest(unittest.TestCase):
         out = self._collect()
         self.assertIn("cpu,cpuacct/docker/abc/cpu.cfs_quota_us: 200000", out)
         self.assertIn("memory/docker/abc/memory.failcnt: 3", out)
+
+    def _asd(self, cgroup):
+        self._write(os.path.join(self.proc, "42", "comm"), "asd\n")
+        self._write(os.path.join(self.proc, "42", "cgroup"), cgroup)
+
+    def test_outside_the_readers_cgroup_namespace_says_so(self):
+        # A sidecar sharing asd's pid namespace, with a private cgroupns.
+        self._asd("0::/../cbceb7b48824\n")
+        out = self._collect()
+        self.assertIn("asd's cgroup /../cbceb7b48824 is outside this reader's", out)
+
+    def test_missing_directory_says_so(self):
+        self._asd("0::/system.slice/aerospike.service\n")
+        out = self._collect()
+        self.assertIn(
+            os.path.join(self.cg, "system.slice/aerospike.service")
+            + ": not found from this reader",
+            out,
+        )
+
+    def test_v1_in_the_same_container_reads_the_mounted_root(self):
+        line = "4:memory:/kubepods/pod1/abc\n"
+        self._asd(line)
+        self._write(os.path.join(self.proc, "self", "cgroup"), line)
+        self._write(os.path.join(self.cg, "memory", "memory.failcnt"), "3\n")
+        out = self._collect()
+        self.assertIn("reader shares asd's cgroup /kubepods/pod1/abc", out)
+        self.assertIn(os.path.join(self.cg, "memory", "memory.failcnt") + ": 3", out)
+
+    def test_v1_in_another_cgroup_does_not_read_the_root(self):
+        self._asd("4:memory:/kubepods/pod1/abc\n")
+        self._write(os.path.join(self.proc, "self", "cgroup"), "4:memory:/user.slice\n")
+        self._write(os.path.join(self.cg, "memory", "memory.failcnt"), "3\n")
+        out = self._collect()
+        self.assertNotIn("memory.failcnt", out)
+        self.assertIn("not found from this reader", out)
+
+    def test_a_non_utf8_process_name_does_not_lose_the_section(self):
+        os.makedirs(os.path.join(self.proc, "7"))
+        with open(os.path.join(self.proc, "7", "comm"), "wb") as f:
+            f.write(b"\xff\xfe\n")
+        self._asd("0::/\n")
+        self._write(os.path.join(self.cg, "memory.max"), "max\n")
+        out = self._collect()
+        self.assertIn(os.path.join(self.cg, "memory.max") + ": max", out)
+
+
+class GetSystemCommandsTest(unittest.TestCase):
+    # Number of commands before TOOLS-4511, whose order and content must not
+    # change: the new ones are appended after them.
+    PREVIOUS_COUNT = 45
+
+    def test_new_commands_come_after_the_previous_ones(self):
+        cmds = common.get_system_commands()
+        self.assertListEqual(cmds[0], ["hostname -I", "hostname"])
+        self.assertIn("gc_thresh", cmds[self.PREVIOUS_COUNT - 1][0])
+        self.assertTrue(cmds[self.PREVIOUS_COUNT][0].startswith("lsblk "))
+
+    @patch("lib.utils.common.os.getuid", return_value=0)
+    def test_no_sudo_as_root(self, _):
+        for cmd_list in common.get_system_commands():
+            for cmd in cmd_list:
+                self.assertNotIn("sudo ", cmd)
+
+    def test_kernel_journal_is_not_limited_to_the_current_boot(self):
+        journal = [
+            c
+            for cmd_list in common.get_system_commands()
+            for c in cmd_list
+            if "journalctl" in c
+        ]
+        self.assertEqual(len(journal), 1)
+        self.assertIn("_TRANSPORT=kernel", journal[0])
+        self.assertNotIn(" -k ", journal[0])
