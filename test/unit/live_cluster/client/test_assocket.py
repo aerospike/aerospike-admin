@@ -13,19 +13,161 @@
 # limitations under the License.
 
 import asyncio
+import contextlib
 import socket
 import unittest
 import warnings
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from lib.live_cluster.client import ASProtocolError, ASResponse
-from lib.live_cluster.client.assocket import ASSocket
+from lib.live_cluster.client.assocket import SSL, ASSocket
 from lib.utils.constants import AuthMode
 from test.unit import util
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     from OpenSSL import SSL
+
+
+async def _hang(*args, **kwargs):
+    await asyncio.Event().wait()
+
+
+class ASSocketFailureTest(unittest.IsolatedAsyncioTestCase):
+    """TOOLS-4644: a failure says which step failed and why."""
+
+    IPV6 = (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", 999, 0, 0))
+    IPV4 = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.2.3.4", 999))
+
+    async def asyncSetUp(self) -> None:
+        self.as_socket = ASSocket(
+            "1.2.3.4",
+            999,
+            "tls-name",
+            "test-user",
+            "test-password",
+            AuthMode.INTERNAL,
+            None,
+            timeout=0.05,
+        )
+
+    def _patched(self, tls=False):
+        stack = contextlib.ExitStack()
+        sock = stack.enter_context(patch("socket.socket")).return_value
+        tls_sock = stack.enter_context(
+            patch("lib.live_cluster.client.assocket._AsyncioSSLConnectionAdapter")
+        ).return_value
+        loop = stack.enter_context(patch("asyncio.get_event_loop")).return_value
+        stack.enter_context(
+            patch(
+                "asyncio.open_connection",
+                AsyncMock(return_value=(AsyncMock(), AsyncMock())),
+            )
+        )
+        loop.getaddrinfo = AsyncMock(return_value=[self.IPV4])
+        loop.sock_connect = AsyncMock()
+        self.as_socket.ssl_context = Mock() if tls else None
+
+        return stack, sock, tls_sock, loop
+
+    async def test_refused_connect_raises_the_os_error(self):
+        stack, sock, _, loop = self._patched()
+        refused = ConnectionRefusedError(61, "Connect call failed ('1.2.3.4', 999)")
+        loop.sock_connect.side_effect = refused
+
+        with stack, self.assertRaises(ConnectionRefusedError) as cm:
+            await self.as_socket.connect()
+
+        self.assertIs(cm.exception, refused)
+        sock.close.assert_called_once()
+
+    async def test_connect_timeout_names_the_step(self):
+        """Raised as a ConnectionError, not a TimeoutError, so the node is still
+        marked not alive."""
+        stack, sock, _, loop = self._patched()
+        loop.sock_connect.side_effect = _hang
+
+        with stack, self.assertRaises(ConnectionError) as cm:
+            await self.as_socket.connect()
+
+        self.assertEqual(str(cm.exception), "connect timed out after 0.05s")
+        self.assertNotIsInstance(cm.exception, TimeoutError)
+        sock.close.assert_called_once()
+
+    async def test_tls_handshake_failure_names_the_step(self):
+        for error, reason in (
+            (
+                SSL.Error([("SSL routines", "", "certificate verify failed")]),
+                "TLS handshake failed: [('SSL routines', '', 'certificate verify failed')]",
+            ),
+            (
+                Exception("Wrong tls_name 'tls-name'"),
+                "TLS handshake failed: Wrong tls_name 'tls-name'",
+            ),
+            (SSL.WantReadError(), "TLS handshake timed out after 0.05s"),
+        ):
+            with self.subTest(reason=reason):
+                stack, _, tls_sock, _ = self._patched(tls=True)
+                tls_sock.do_handshake.side_effect = error
+
+                with stack, self.assertRaises(ConnectionError) as cm:
+                    await self.as_socket.connect()
+
+                self.assertEqual(str(cm.exception), reason)
+                self.assertNotIsInstance(cm.exception, TimeoutError)
+                tls_sock.close.assert_called_once()
+
+    async def test_tries_every_address_before_failing(self):
+        stack, _, _, loop = self._patched()
+        loop.getaddrinfo.return_value = [self.IPV6, self.IPV4]
+        loop.sock_connect.side_effect = [
+            ConnectionRefusedError(61, "Connect call failed ('::1', 999, 0, 0)"),
+            None,
+        ]
+
+        with stack:
+            self.assertTrue(await self.as_socket.connect())
+
+        self.assertEqual(loop.sock_connect.await_count, 2)
+
+    async def test_raises_the_last_error_when_every_address_fails(self):
+        stack, _, _, loop = self._patched()
+        loop.getaddrinfo.return_value = [self.IPV6, self.IPV4]
+        last = ConnectionRefusedError(61, "Connect call failed ('1.2.3.4', 999)")
+        loop.sock_connect.side_effect = [
+            ConnectionRefusedError(61, "Connect call failed ('::1', 999, 0, 0)"),
+            last,
+        ]
+
+        with stack, self.assertRaises(ConnectionRefusedError) as cm:
+            await self.as_socket.connect()
+
+        self.assertIs(cm.exception, last)
+
+    async def test_timeout_after_connect_names_the_step(self):
+        """Still a TimeoutError, so a slow reply does not mark the node dead
+        (TOOLS-3596)."""
+        self.as_socket.sock = Mock()
+        self.as_socket.reader = AsyncMock()
+        self.as_socket.writer = AsyncMock()
+
+        for step, target, call in (
+            ("login", "login", lambda: self.as_socket.login()),
+            (
+                "authenticate",
+                "authenticate_with_token",
+                lambda: self.as_socket.authenticate("token"),
+            ),
+            ("info", "info", lambda: self.as_socket.info("build")),
+        ):
+            with self.subTest(step=step), patch(
+                f"lib.live_cluster.client.assocket.{target}",
+                AsyncMock(side_effect=_hang),
+            ):
+                with self.assertRaises(asyncio.TimeoutError) as cm:
+                    await call()
+
+                self.assertEqual(str(cm.exception), f"{step} timed out after 0.05s")
 
 
 class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
@@ -370,7 +512,7 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             ASProtocolError,
             "Failed to query users : No credential or bad credential.",
             self.as_socket.query_users,
-            *args
+            *args,
         )
 
     @patch("lib.live_cluster.client.assocket.query_user", new_callable=AsyncMock)
@@ -389,7 +531,7 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             ASProtocolError,
             "Failed to query user : No credential or bad credential.",
             self.as_socket.query_user,
-            *args
+            *args,
         )
 
     @patch("lib.live_cluster.client.assocket.create_role", new_callable=AsyncMock)
@@ -474,7 +616,7 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             ASProtocolError,
             "Failed to query roles : No credential or bad credential.",
             self.as_socket.query_roles,
-            *args
+            *args,
         )
 
     @patch("lib.live_cluster.client.assocket.query_role", new_callable=AsyncMock)
@@ -493,7 +635,7 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
             ASProtocolError,
             "Failed to query role : No credential or bad credential.",
             self.as_socket.query_role,
-            *args
+            *args,
         )
 
 
@@ -553,5 +695,8 @@ class ASSocketTLSHandshakeTest(unittest.IsolatedAsyncioTestCase):
         self.as_socket.settimeout(0.2)
         self.tls.do_handshake.side_effect = SSL.WantReadError()
 
-        self.assertIsNone(await self.connect())
+        with self.assertRaises(ConnectionError) as cm:
+            await self.connect()
+
+        self.assertEqual(str(cm.exception), "TLS handshake timed out after 0.2s")
         self.tls.close.assert_called_once()

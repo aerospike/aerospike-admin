@@ -35,6 +35,8 @@ from lib.live_cluster.client.types import (
 )
 from lib.utils import constants
 
+CLUSTER_LOGGER = "lib.live_cluster.client.cluster"
+
 
 class ClusterTest(unittest.IsolatedAsyncioTestCase):
     async def get_cluster_mock(self, node_count, return_key_value={}):
@@ -1649,6 +1651,95 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
             node.refresh_connection.call_count for node in nodes.values()
         )
         self.assertEqual(total_refresh_calls, 2)  # Only odd-numbered indices (1, 3)
+
+    @staticmethod
+    def _refresh_outcomes(node, *reasons):
+        """Each refresh leaves node Offline with the next reason, or Online for None."""
+        reasons = iter(reasons)
+
+        async def refresh():
+            reason = next(reasons)
+            node.alive = reason is None
+            node.offline_reason = reason
+
+        node.needs_refresh = AsyncMock(return_value=True)
+        node.refresh_connection = AsyncMock(side_effect=refresh)
+
+    async def test_offline_node_is_reported_once_with_why(self):
+        """TOOLS-4644"""
+        cluster, _, node = await self._cluster_with_offline_node()
+        self._refresh_outcomes(
+            node, "login timed out after 1s", "login timed out after 1s"
+        )
+
+        with self.assertLogs(CLUSTER_LOGGER, "WARNING") as cm:
+            await self._refresh(cluster)
+
+        self.assertEqual(
+            cm.output,
+            [
+                f"WARNING:{CLUSTER_LOGGER}:192.1.1.2:3000 is Offline: login timed out after 1s"
+            ],
+        )
+
+        with self.assertNoLogs(CLUSTER_LOGGER, "WARNING"):
+            await self._refresh(cluster)
+
+    async def test_offline_node_is_reported_again_when_why_changes(self):
+        cluster, _, node = await self._cluster_with_offline_node()
+        self._refresh_outcomes(
+            node, "connect timed out after 1s", "TLS handshake timed out after 1s"
+        )
+
+        with self.assertLogs(CLUSTER_LOGGER, "WARNING"):
+            await self._refresh(cluster)
+
+        with self.assertLogs(CLUSTER_LOGGER, "WARNING") as cm:
+            await self._refresh(cluster)
+
+        self.assertEqual(
+            cm.output,
+            [
+                f"WARNING:{CLUSTER_LOGGER}:192.1.1.2:3000 is Offline: TLS handshake timed out after 1s"
+            ],
+        )
+
+    async def test_node_that_drops_again_after_coming_back_is_reported_again(self):
+        cluster, _, node = await self._cluster_with_offline_node()
+        self._refresh_outcomes(
+            node, "login timed out after 1s", None, "login timed out after 1s"
+        )
+
+        with self.assertLogs(CLUSTER_LOGGER, "WARNING"):
+            await self._refresh(cluster)
+
+        with self.assertNoLogs(CLUSTER_LOGGER, "WARNING"):
+            await self._refresh(cluster)
+
+        with self.assertLogs(CLUSTER_LOGGER, "WARNING") as cm:
+            await self._refresh(cluster)
+
+        self.assertEqual(
+            cm.output,
+            [
+                f"WARNING:{CLUSTER_LOGGER}:192.1.1.2:3000 is Offline: login timed out after 1s"
+            ],
+        )
+
+    async def test_seed_offline_at_startup_is_reported_with_why(self):
+        with patch.object(
+            Node,
+            "login",
+            AsyncMock(side_effect=ConnectionError("connect timed out after 1s")),
+        ), self.assertLogs(CLUSTER_LOGGER, "WARNING") as cm:
+            await Cluster([("192.1.1.1", 3000, None)])
+
+        self.assertEqual(
+            cm.output,
+            [
+                f"WARNING:{CLUSTER_LOGGER}:192.1.1.1:3000 is Offline: connect timed out after 1s"
+            ],
+        )
 
 
 class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
