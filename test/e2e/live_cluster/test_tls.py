@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import re
 import time
 import unittest
 
@@ -172,6 +173,72 @@ class TestTLS(unittest.TestCase):
             cp.stdout,
             "Should have failed due to TLS name mismatch",
         )
+
+    def test_tls_name_mismatch_is_reported_with_why(self):
+        """TOOLS-4644"""
+        cp = test_util.run_asadm(
+            f"-h {self.host} --tls-enable --tls-name wrong_name "
+            f"--tls-cafile {self.ca} -Uadmin -Padmin -e 'info network'",
+            strip_header=False,
+        )
+
+        self.assertIn(
+            f"WARNING: {self.host} is Offline: TLS handshake failed: "
+            "Wrong tls_name 'wrong_name'",
+            cp.stderr,
+        )
+
+    def test_wrong_ca_is_reported_with_why(self):
+        """TOOLS-4644"""
+        wrong_ca = os.path.join(self.certs, "wrong_ca.pem")
+        cp = test_util.run_asadm(
+            f"-h {self.host} --tls-enable --tls-name localhost "
+            f"--tls-cafile {wrong_ca} -Uadmin -Padmin -e 'info network'",
+            strip_header=False,
+        )
+
+        self.assertRegex(
+            cp.stderr,
+            rf"WARNING: {re.escape(self.host)} is Offline: TLS handshake failed: \S",
+        )
+
+    def test_frozen_node_is_reported_with_why(self):
+        """TOOLS-4644: the node accepts connections but never answers."""
+        node = lib.NODES[0]
+        node.pause()
+
+        try:
+            cp = self._run("--timeout 1")
+        finally:
+            node.unpause()
+
+        self.assertIn(
+            f"WARNING: {self.host} is Offline: TLS handshake timed out after 1s",
+            cp.stderr,
+        )
+
+    def test_tls_to_the_clear_port_is_reported_with_why(self):
+        """TOOLS-4644"""
+        clear = f"{lib.SERVER_IP}:{lib.PORT}"
+        cp = test_util.run_asadm(
+            f"-h {clear} --tls-enable --tls-name localhost --tls-cafile {self.ca}"
+            " -Uadmin -Padmin --timeout 1 -e 'info network'",
+            strip_header=False,
+        )
+
+        self.assertRegex(
+            cp.stderr,
+            rf"WARNING: {re.escape(clear)} is Offline: TLS handshake failed: \S",
+        )
+
+    def test_clear_connection_to_the_tls_port_is_reported_with_why(self):
+        """TOOLS-4644"""
+        cp = test_util.run_asadm(
+            f"-h {self.host} -Uadmin -Padmin --timeout 1 -e 'info network'",
+            strip_header=False,
+        )
+
+        self.assertRegex(cp.stderr, rf"WARNING: {re.escape(self.host)} is Offline: \S")
 
     def test_wrong_ca(self):
         """Handshake fails when CA didn't sign the server cert"""

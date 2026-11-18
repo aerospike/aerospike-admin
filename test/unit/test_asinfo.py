@@ -14,6 +14,7 @@
 
 import base64
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -57,6 +58,10 @@ exec "$ASADM_PYTHON" "$ASADM_SCRIPT" "$@"
 NO_USER_WARNING = "WARNING: --password: ignored because no user is set"
 READ_WARNING = (
     "WARNING: Config file read error : /etc/aerospike/astools.conf Permission denied"
+)
+REFUSED_CONNECT_ERROR = (
+    r"ERROR: Not able to connect any cluster with \('127\.0\.0\.1', 1, None\):"
+    r" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', 1\)\n\Z"
 )
 
 
@@ -215,10 +220,8 @@ class AsinfoRealAsadmTest(unittest.TestCase):
 
         self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
         self.assertEqual(cp.stdout, "")
-        self.assertEqual(
-            cp.stderr,
-            NO_USER_WARNING
-            + "\nERROR: Not able to connect any cluster with ('127.0.0.1', 1, None).\n",
+        self.assertRegex(
+            cp.stderr, r"\A" + re.escape(NO_USER_WARNING + "\n") + REFUSED_CONNECT_ERROR
         )
 
     def test_read_warning_from_asadm_is_passed_through(self):
@@ -256,10 +259,8 @@ class AsinfoRealAsadmTest(unittest.TestCase):
             )
         )
         self.assertEqual(cp.stdout, "")
-        self.assertEqual(
-            cp.stderr,
-            warning
-            + "\nERROR: Not able to connect any cluster with ('127.0.0.1', 1, None).\n",
+        self.assertRegex(
+            cp.stderr, r"\A" + re.escape(warning + "\n") + REFUSED_CONNECT_ERROR
         )
 
 
@@ -702,10 +703,7 @@ class AsinfoModeExitCodeTest(unittest.TestCase):
         )
 
         self.assertEqual(cp.returncode, 1)
-        self.assertEqual(
-            cp.stderr,
-            "ERROR: Not able to connect any cluster with ('127.0.0.1', 1, None).\n",
-        )
+        self.assertRegex(cp.stderr, r"\A" + REFUSED_CONNECT_ERROR)
 
     def test_bad_host_is_reported_without_a_traceback(self):
         home = tempfile.TemporaryDirectory()

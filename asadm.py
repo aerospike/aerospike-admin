@@ -777,7 +777,13 @@ async def execute_asinfo_commands(
         timeout=timeout,
         credential=credential,
     )
-    if not await assock.connect():
+    try:
+        connected = await assock.connect()
+    except Exception as e:
+        logger.critical("Not able to connect any cluster with %s: %s", seed, e)
+        return
+
+    if not connected:
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return
 
