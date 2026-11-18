@@ -78,3 +78,29 @@ class SummaryControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             metadata["os_version"]["1.1.1.1"]["description"], "Ubuntu 24.04 (6.8.0)"
         )
+
+    async def test_a_failed_system_statistics_call_raises(self):
+        self.cluster_mock.info_system_statistics.side_effect = RuntimeError(
+            "sysinfo failed"
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "sysinfo failed"):
+            await self.controller.execute([])
+
+        self.create_summary.assert_not_called()
+
+    async def test_one_node_failing_keeps_the_kernel_on_the_others(self):
+        self.cluster_mock.info_system_statistics.return_value = {
+            "1.1.1.1": RuntimeError("ssh failed"),
+            "2.2.2.2": {
+                "lsb": {"description": "Ubuntu 24.04"},
+                "uname": {"kernel_release": "6.8.0"},
+            },
+        }
+
+        await self.controller.execute([])
+
+        metadata = self.create_summary.call_args.kwargs["metadata"]
+        self.assertEqual(
+            metadata["os_version"]["2.2.2.2"]["description"], "Ubuntu 24.04 (6.8.0)"
+        )

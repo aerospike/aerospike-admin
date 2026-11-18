@@ -1000,6 +1000,26 @@ class GetStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
         except asyncio.TimeoutError:
             self.fail("the namespaces were asked for only after the dcs came back")
 
+    async def test_get_xdr_namespaces_raises_when_asking_for_dcs_fails(self):
+        self.cluster_mock.info_dcs.side_effect = RuntimeError("dcs failed")
+        self.cluster_mock.info_namespaces.return_value = {"1.1.1.1": ["test"]}
+        self.cluster_mock.info_all_xdr_namespaces_statistics.return_value = {}
+
+        with self.assertRaisesRegex(RuntimeError, "dcs failed"):
+            await self.controller.get_xdr_namespaces()
+
+        self.cluster_mock.info_all_xdr_namespaces_statistics.assert_not_called()
+
+    async def test_get_xdr_namespaces_raises_when_asking_for_namespaces_fails(self):
+        self.cluster_mock.info_dcs.return_value = {"1.1.1.1": ["aaa"]}
+        self.cluster_mock.info_namespaces.side_effect = RuntimeError("ns failed")
+        self.cluster_mock.info_all_xdr_namespaces_statistics.return_value = {}
+
+        with self.assertRaisesRegex(RuntimeError, "ns failed"):
+            await self.controller.get_xdr_namespaces()
+
+        self.cluster_mock.info_all_xdr_namespaces_statistics.assert_not_called()
+
 
 class GetPmapControllerTest(unittest.IsolatedAsyncioTestCase):
     def mock_info_call(self, cmd, nodes="all"):
@@ -1539,6 +1559,26 @@ class GetConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(self.controller.get_xdr_namespaces(), 2)
         except asyncio.TimeoutError:
             self.fail("the namespaces were asked for only after the dcs came back")
+
+    async def test_get_xdr_namespaces_raises_when_asking_for_dcs_fails(self):
+        self.cluster_mock.info_dcs.side_effect = RuntimeError("dcs failed")
+        self.cluster_mock.info_namespaces.return_value = {"1.1.1.1": ["test"]}
+        self.cluster_mock.info_xdr_namespaces_config.return_value = {}
+
+        with self.assertRaisesRegex(RuntimeError, "dcs failed"):
+            await self.controller.get_xdr_namespaces()
+
+        self.cluster_mock.info_xdr_namespaces_config.assert_not_called()
+
+    async def test_get_xdr_namespaces_raises_when_asking_for_namespaces_fails(self):
+        self.cluster_mock.info_dcs.return_value = {"1.1.1.1": ["aaa"]}
+        self.cluster_mock.info_namespaces.side_effect = RuntimeError("ns failed")
+        self.cluster_mock.info_xdr_namespaces_config.return_value = {}
+
+        with self.assertRaisesRegex(RuntimeError, "ns failed"):
+            await self.controller.get_xdr_namespaces()
+
+        self.cluster_mock.info_xdr_namespaces_config.assert_not_called()
 
     @patch("lib.live_cluster.get_controller._get_all_dcs")
     @patch("lib.live_cluster.get_controller._get_all_namespaces")
