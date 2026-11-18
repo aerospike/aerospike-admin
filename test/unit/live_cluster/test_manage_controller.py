@@ -5734,7 +5734,10 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
             ("--timeout 0", "--timeout must be between 1 and 3600."),
             ("--timeout 3601", "--timeout must be between 1 and 3600."),
             ("--timeout abc", "--timeout must be an integer."),
+            ("--timeout 1_0", "--timeout must be an integer."),
+            ("--timeout --poll-interval 5", "--timeout must be an integer."),
             ("--poll-interval 0", "--poll-interval must be between 1 and 300."),
+            ("--poll-interval 1_0", "--poll-interval must be an integer."),
             (
                 "--timeout 60 --poll-interval 120",
                 "--poll-interval must be between 1 and 60.",
@@ -5742,14 +5745,16 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
         ]
     )
     async def test_rejects_bad_flag_values(self, flag, message):
-        await test_util.assert_exception_async(
-            self,
-            ShellException,
-            message,
-            self.controller.execute,
-            "{} --no-warn with 1.1.1.1:3000".format(flag).split(),
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("done", 11, 11)]
         )
 
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute(
+                "{} --no-warn with 1.1.1.1:3000".format(flag).split()
+            )
+
+        self.assertEqual(str(cm.exception), message)
         self.cluster_mock.info_checkpoint_save.assert_not_called()
 
     async def test_warn_is_on_by_default(self):

@@ -996,12 +996,8 @@ class CollectinfoNumericFlagTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(cm.exception), f"{flag} must be an integer.")
         self.run_mock.assert_not_awaited()
 
-    async def test_int_flag_followed_by_another_flag_is_an_error(self):
-        with self.assertRaises(ShellException) as cm:
-            await self.controller.execute(["-t", "-s", "5"])
-
-        self.assertEqual(str(cm.exception), "-t must be an integer.")
-        self.run_mock.assert_not_awaited()
+    async def test_int_flag_followed_by_another_flag_takes_its_default(self):
+        self.assertEqual(await self._parse("-n", "-t", "2"), (1, 2))
 
     async def test_flag_without_value_leaves_the_previous_flags_value_alone(self):
         self.assertEqual(await self._parse("--output-prefix", "5", "-t"), (1, 5))

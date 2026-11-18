@@ -816,10 +816,10 @@ class GetArgAndDeleteFromModsTest(unittest.TestCase):
             ("empty", ""),
             ("decimal", "7.0"),
             ("digit_separator", "1_0"),
+            ("negative_digit_separator", "-1_0"),
             ("leading_space", " 7"),
             ("trailing_newline", "7\n"),
             ("non_ascii_digit", "٣"),
-            ("another_flag", "-s"),
         ]
     )
     def test_int_value_that_is_not_a_whole_number_is_an_error(self, _, raw):
@@ -827,6 +827,34 @@ class GetArgAndDeleteFromModsTest(unittest.TestCase):
             self._get(["-t", raw], "-t", default=5)
 
         self.assertEqual(str(cm.exception), "-t must be an integer.")
+
+    @parameterized.expand([("short_flag", "-s"), ("long_flag", "--flip")])
+    def test_int_flag_followed_by_another_flag_gives_the_default(self, _, flag):
+        line = ["-t", flag, "7"]
+
+        self.assertEqual(self._get(line, "-t", default=9), 9)
+        self.assertEqual(line, [flag, "7"])
+
+    @parameterized.expand([("diff", "diff"), ("like", "like"), ("with", "with")])
+    def test_int_flag_followed_by_a_modifier_word_gives_the_default(self, _, word):
+        line = ["-r", word, "7"]
+        modifiers = ["diff", "like", "with", "for"]
+        mods = {"diff": [], "like": [], "with": [], "for": [], "line": ["-r"]}
+
+        self.assertEqual(
+            self._get(line, "-r", default=0, modifiers=modifiers, mods=mods), 0
+        )
+        self.assertEqual(line, [word, "7"])
+
+    def test_int_flag_followed_by_a_word_that_is_not_a_modifier_is_an_error(self):
+        mods = {"with": [], "line": ["-r", "like", "7"]}
+
+        with self.assertRaises(ShellException) as cm:
+            self._get(
+                ["-r", "like", "7"], "-r", default=0, modifiers=["with"], mods=mods
+            )
+
+        self.assertEqual(str(cm.exception), "-r must be an integer.")
 
     def test_takes_an_empty_string_value(self):
         line = ["--output-prefix", ""]
