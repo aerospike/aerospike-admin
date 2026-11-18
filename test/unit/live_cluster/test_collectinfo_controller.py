@@ -3414,10 +3414,18 @@ class AsinfoCaptureFormatTest(unittest.IsolatedAsyncioTestCase):
             if isinstance(cmd, str):
                 return {"A": "answer to " + cmd, "B": self.timeout}
 
-            return {"A": {name: "answer to " + name for name in cmd}, "B": self.timeout}
+            return {
+                "A": {
+                    name: "answer to " + name
+                    for name in cmd
+                    if name not in self.unknown
+                },
+                "B": self.timeout,
+            }
 
         self.controller.cluster = MagicMock()
         self.controller.cluster.info = info
+        self.unknown = set()
         self.written = []
 
         patch.object(
@@ -3443,6 +3451,24 @@ class AsinfoCaptureFormatTest(unittest.IsolatedAsyncioTestCase):
                 + str({"A": "answer to " + cmd, "B": self.timeout}),
                 self.written,
             )
+
+    def _section(self, cmd):
+        header = constants.COLLECTINFO_SEPERATOR + cmd + "\n"
+        return next(c[len(header) :] for c in self.written if c.startswith(header))
+
+    async def test_a_command_missing_from_a_node_reply_is_written_as_invalid(self):
+        self.unknown = {"connection"}
+
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertEqual(
+            self._section("connection"),
+            str({"A": ASInfoError("Invalid command 'connection'"), "B": self.timeout}),
+        )
+        self.assertEqual(
+            self._section("roster:"),
+            str({"A": "answer to roster:", "B": self.timeout}),
+        )
 
 
 class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):

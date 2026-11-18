@@ -93,16 +93,32 @@ _host_ips: (
 
 
 async def _get_host_ips() -> list[str]:
-    """The addresses `hostname -I` lists, asked once however many nodes connect."""
+    """The addresses `hostname -I` lists, asked once however many nodes connect.
+    An empty or failed answer is not kept, so the next node asks again."""
     loop = asyncio.get_running_loop()
 
     if loop not in _host_ips:
         _host_ips[loop] = loop.create_task(_run_hostname())
 
-    if isinstance(_host_ips[loop], asyncio.Task):
-        _host_ips[loop] = await asyncio.shield(_host_ips[loop])
+    task = _host_ips[loop]
 
-    return _host_ips[loop]
+    if not isinstance(task, asyncio.Task):
+        return task
+
+    try:
+        ips = await asyncio.shield(task)
+    except Exception:
+        if _host_ips.get(loop) is task:
+            del _host_ips[loop]
+        raise
+
+    if _host_ips.get(loop) is task:
+        if ips:
+            _host_ips[loop] = ips
+        else:
+            del _host_ips[loop]
+
+    return ips
 
 
 async def _run_hostname() -> list[str]:
@@ -1688,6 +1704,9 @@ class Node(AsyncObject):
 
         for ns, command in zip(namespaces, commands):
             try:
+                if command not in responses:
+                    raise ASInfoError("Invalid command '%s'" % command)
+
                 stats[ns] = self._parse_namespace_statistics(ns, responses[command])
             except Exception as e:
                 stats[ns] = e
@@ -2655,6 +2674,11 @@ class Node(AsyncObject):
         str_command = "xdr-get-filter:dc={}".format(dc)
         b64_command = str_command + ";b64=true"
         responses = await self._info((str_command, b64_command))
+
+        for command in (str_command, b64_command):
+            if command not in responses:
+                raise ASInfoError("Invalid command '%s'" % command)
+
         str_resp = client_util.info_to_dict_multi_level(
             responses[str_command], keyname="namespace"
         )
@@ -3467,6 +3491,10 @@ class Node(AsyncObject):
                 command, "" if command.endswith(":") else ";"
             )
             responses = await self._info((command, b64_command))
+
+            if command not in responses:
+                raise ASInfoError("Invalid command '%s'" % command)
+
             resp = responses[command]
         else:
             resp = await self._info(command)
@@ -3588,6 +3616,9 @@ class Node(AsyncObject):
 
         for sindex, command in commands.items():
             try:
+                if command not in responses:
+                    raise ASInfoError("Invalid command '%s'" % command)
+
                 result[sindex] = self._parse_sindex_statistics(responses[command])
             except Exception as e:
                 result[sindex] = e

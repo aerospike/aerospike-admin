@@ -2260,7 +2260,11 @@ class CollectinfoController(LiveClusterCommandController):
                         complete_filename,
                         [cmd],
                         {
-                            node: resp.get(cmd) if isinstance(resp, dict) else resp
+                            node: (
+                                resp.get(cmd, ASInfoError("Invalid command '%s'" % cmd))
+                                if isinstance(resp, dict)
+                                else resp
+                            )
                             for node, resp in results.items()
                         },
                     )
