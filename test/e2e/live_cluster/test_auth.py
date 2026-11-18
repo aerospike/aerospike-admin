@@ -89,6 +89,12 @@ async def wait_for_every_node_to_answer(cl: Cluster):
     )
 
 
+def set_session_ttl(ttl):
+    replies = lib.CLIENT.info_all("set-config:context=security;session-ttl=%s" % ttl)
+
+    return [reply.strip() for _, reply in replies.values()]
+
+
 def nodes_showing_build(info_network, build):
     """The nodes whose `info network` row shows the build, so the ones that answered."""
     lines = info_network.splitlines()
@@ -257,39 +263,41 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
             for response in lib.CLIENT.info_all("get-config:context=security").values()
         }
         self.assertEqual(len(original_ttls), 1, original_ttls)
-        lib.CLIENT.info_all(
-            "set-config:context=security;session-ttl=%d" % SHORTEST_SESSION_TTL
-        )
+        original_ttl = original_ttls.pop()
+
+        def restore_session_ttl():
+            try:
+                replies = set_session_ttl(original_ttl)
+            except Exception:
+                lib.CLIENT.close()
+                lib.connect_client()
+                replies = set_session_ttl(original_ttl)
+
+            self.assertEqual(replies, ["ok"] * NODE_COUNT)
+
+        self.addCleanup(restore_session_ttl)
+        replies = set_session_ttl(SHORTEST_SESSION_TTL)
+        self.assertEqual(replies, ["ok"] * NODE_COUNT)
+        cl = await connect()
 
         try:
-            cl = await connect()
+            await wait_for_every_node_to_answer(cl)
+            await asyncio.sleep(SHORTEST_SESSION_TTL + 5)
 
-            try:
-                await wait_for_every_node_to_answer(cl)
-                await asyncio.sleep(SHORTEST_SESSION_TTL + 5)
+            for n in cl.nodes.values():
+                await n.close()
+                n._initialize_socket_pool()
 
-                for node in cl.nodes.values():
-                    await node.close()
-                    node._initialize_socket_pool()
+            with patch.object(Cluster, "need_to_refresh_cluster", return_value=False):
+                answers = await cl.info("node")
 
-                with patch.object(
-                    Cluster, "need_to_refresh_cluster", return_value=False
-                ):
-                    answers = await cl.info("node")
-
-                live = len(cl.get_live_nodes())
-            finally:
-                await cl.close()
+            alive = [n.alive for n in cl.nodes.values()]
         finally:
-            lib.CLIENT.close()
-            lib.connect_client()
-            lib.CLIENT.info_all(
-                "set-config:context=security;session-ttl=%s" % original_ttls.pop()
-            )
+            await cl.close()
 
         self.assertEqual(len(answers), NODE_COUNT)
         self.assertTrue(all(isinstance(a, str) for a in answers.values()), answers)
-        self.assertEqual(live, NODE_COUNT)
+        self.assertEqual(alive, [True] * NODE_COUNT)
 
     async def test_node_rejecting_the_login_after_a_restart_goes_offline(self):
         """The password changed mid-session, then node 2, the principal, restarted. It
