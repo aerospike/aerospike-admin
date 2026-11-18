@@ -183,6 +183,7 @@ class Node(AsyncObject):
     security_disabled_warning = False  # We only want to warn the user once.
     # Not alive because it is parked by checkpoint-save, as opposed to being down.
     checkpoint_parked = False
+    offline_reason = None
 
     async def __init__(
         self,
@@ -558,6 +559,7 @@ class Node(AsyncObject):
         # Cleared on every attempt so a node that is reaped and restarted stops being
         # reported as parked.
         self.checkpoint_parked = False
+        self.offline_reason = None
 
         try:
             if not await self.login():
@@ -664,7 +666,8 @@ class Node(AsyncObject):
             # Set the user agent for this node
             await self._set_user_agent()
             self.alive = True
-        except (ASInfoNotAuthenticatedError, ASProtocolError):
+        except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
+            self.offline_reason = str(e) or type(e).__name__
             raise
         except Exception as e:
             logger.debug(e, exc_info=True)  # type: ignore
@@ -673,6 +676,7 @@ class Node(AsyncObject):
             # still serving checkpoint-status, and that is the one thing callers need
             # to tell it apart from a node that is genuinely down.
             self.checkpoint_parked = isinstance(e, ASInfoCheckpointParkedError)
+            self.offline_reason = str(e) or type(e).__name__
             # Node is offline... fake a node
             self.ip = address
             self.fqdn = address
@@ -1108,11 +1112,16 @@ class Node(AsyncObject):
 
                     return sock
                 elif (
-                    e.as_response == ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL
+                    e.as_response
+                    in (
+                        ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,
+                        ASResponse.EXPIRED_SESSION,
+                    )
                     and token is not None
-                    and self.user
+                    and (self.user or self.auth_mode == constants.AuthMode.PKI)
                 ):
-                    # The node no longer accepts the token, e.g. it has restarted.
+                    # The node no longer accepts the token: it restarted, or the
+                    # session expired.
                     logger.debug(
                         "trying to sock login again %s ip=%s port=%s auth_mode=%s",
                         id(sock),
