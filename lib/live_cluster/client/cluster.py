@@ -438,7 +438,13 @@ class Cluster(AsyncObject):
                         node.alive = False
 
             nodes = list(self.nodes.items())
-            await asyncio.gather(*(refresh(node) for _, node in nodes))
+            results = await asyncio.gather(
+                *(refresh(node) for _, node in nodes), return_exceptions=True
+            )
+
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
 
             for node_key, node in nodes:
                 if node.key != node_key:

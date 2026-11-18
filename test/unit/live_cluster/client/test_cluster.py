@@ -1482,6 +1482,72 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
         except asyncio.TimeoutError:
             self.fail("refresh_connection ran one node at a time")
 
+    async def _nodes_needing_refresh(self, count):
+        cluster = await Cluster([("192.1.1.1", 3000, None)])
+        nodes = []
+
+        for i in range(1, count + 1):
+            node = await Node("192.1.1.%d" % i, 3000)
+            node.needs_refresh = AsyncMock(return_value=True)
+            node.refresh_connection = AsyncMock()
+            node.service_addresses = [("192.1.1.%d" % i, 3000, None)]
+            node.peers = []
+            nodes.append(node)
+
+        cluster.nodes = {node.key: node for node in nodes}
+        return cluster, nodes
+
+    async def test_a_failed_refresh_waits_for_the_other_nodes(self):
+        cluster, (failing, slow) = await self._nodes_needing_refresh(2)
+        finished = []
+
+        async def slow_refresh():
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+            finished.append(slow.key)
+
+        failing.refresh_connection.side_effect = RuntimeError("refresh failed")
+        slow.refresh_connection.side_effect = slow_refresh
+
+        with self.assertRaisesRegex(RuntimeError, "refresh failed"):
+            await self._refresh(cluster)
+
+        self.assertEqual(finished, ["192.1.1.2:3000"])
+
+    async def test_a_failed_refresh_leaves_a_moved_node_for_the_next_refresh(self):
+        cluster, (failing, moved) = await self._nodes_needing_refresh(2)
+
+        async def move():
+            moved.ip = "192.1.1.9"
+            moved._service_IP_port = moved.create_key("192.1.1.9", 3000)
+
+        failing.refresh_connection.side_effect = RuntimeError("refresh failed")
+        moved.refresh_connection.side_effect = move
+
+        with self.assertRaisesRegex(RuntimeError, "refresh failed"):
+            await self._refresh(cluster)
+
+        failing.refresh_connection.side_effect = None
+        await cluster._refresh_cluster()
+
+        self.assertEqual(sorted(cluster.nodes), ["192.1.1.1:3000", "192.1.1.9:3000"])
+        self.assertIs(cluster.nodes["192.1.1.9:3000"], moved)
+        self.assertEqual(cluster.get_node("192.1.1.9:3000"), [moved])
+
+    async def test_failed_refreshes_raise_the_first_error_in_node_order(self):
+        cluster, (first, second) = await self._nodes_needing_refresh(2)
+
+        async def fail_after_the_other():
+            await asyncio.sleep(0)
+            raise RuntimeError("first node failed")
+
+        first.refresh_connection.side_effect = fail_after_the_other
+        second.refresh_connection.side_effect = RuntimeError("second node failed")
+
+        with self.assertRaisesRegex(RuntimeError, "first node failed"):
+            await self._refresh(cluster)
+
     async def test_load_balancer_integration_scenario(self):
         """Test integration scenario: cluster with load balancer nodes"""
         cluster = await Cluster([("load-balancer.com", 3000, None)])
