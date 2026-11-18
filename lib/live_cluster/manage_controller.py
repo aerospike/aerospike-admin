@@ -4231,7 +4231,13 @@ class ManageJobsKillTridController(ManageLeafCommandController):
         if not requests_:
             logger.error("The provided trid(s) could not be found.")
 
-        responses_ = await asyncio.gather(*(request[3] for request in requests_))
+        responses_ = await asyncio.gather(
+            *(request[3] for request in requests_), return_exceptions=True
+        )
+
+        for resp in responses_:
+            if isinstance(resp, BaseException):
+                raise resp
 
         for request, resp in zip(requests_, responses_):
             host, trid, job_data, _ = request
