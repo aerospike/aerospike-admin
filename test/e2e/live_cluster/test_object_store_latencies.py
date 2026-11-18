@@ -26,7 +26,7 @@ OPS = ("put", "get", "list", "delete")
 BACKUP_PATH = "/opt/aerospike/backup-e2e"
 
 
-def object_store_template():
+def object_store_template(microsecond_histograms=True):
     """
     Microsecond histograms put the client tables in us while the object-store ones
     stay in ms. A short ticker gets the histograms past their baseline dump quickly.
@@ -39,9 +39,12 @@ def object_store_template():
     if marker not in content:
         raise AssertionError("service stanza anchor missing from the template")
 
-    return content.replace(
-        marker, marker + "\tticker-interval 2\n\tmicrosecond-histograms true\n"
-    )
+    service = "\tticker-interval 2\n"
+
+    if microsecond_histograms:
+        service += "\tmicrosecond-histograms true\n"
+
+    return content.replace(marker, marker + service)
 
 
 def info(cmd):
@@ -58,6 +61,18 @@ def wait_for(predicate, what, timeout=90):
         time.sleep(1)
 
     raise AssertionError("timed out after {}s waiting for {}".format(timeout, what))
+
+
+def server_log():
+    return lib.NODES[0].logs().decode(errors="replace").splitlines()
+
+
+def populate_and_wait_for_writes():
+    lib.populate_db("object-store-latencies")
+    wait_for(
+        lambda: "{%s}-write:msec," % lib.NAMESPACE in info("latencies:"),
+        "the write histogram to report",
+    )
 
 
 def assert_clean_run(tc, cp):
@@ -181,7 +196,12 @@ class TestObjectStoreLatenciesWithoutPreview(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         lib.stop()
-        lib.start(num_nodes=1, docker_tag=SERVER_TAG)
+        lib.start(
+            num_nodes=1,
+            docker_tag=SERVER_TAG,
+            template_content=object_store_template(microsecond_histograms=False),
+        )
+        populate_and_wait_for_writes()
         cls.args = "-h {}:{} -Uadmin -Padmin".format(lib.SERVER_IP, lib.PORT)
 
     @classmethod
@@ -193,12 +213,20 @@ class TestObjectStoreLatenciesWithoutPreview(unittest.TestCase):
             info("latencies:hist={%s}-object-store-put" % lib.NAMESPACE)
 
     def test_show_latencies_verbose_is_unaffected(self):
-        cp = test_util.run_asadm(
-            self.args + " --no-config-file -e 'show latencies -v' --json"
-        )
+        before = len(server_log())
+
+        cp, records = latency_records(self.args + " -e 'show latencies -v'")
+        refused = "\n".join(server_log()[before:])
 
         assert_clean_run(self, cp)
         self.assertNotIn("object-store", cp.stdout)
+        self.assertIn("write", by_histogram(records))
+
+        for op in OPS:
+            self.assertIn(
+                "unrecognized histogram: {%s}-object-store-%s" % (lib.NAMESPACE, op),
+                refused,
+            )
 
 
 class TestObjectStoreLatenciesOlderServer(unittest.TestCase):
@@ -210,7 +238,12 @@ class TestObjectStoreLatenciesOlderServer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         lib.stop()
-        lib.start(num_nodes=1, docker_tag=OLDER_SERVER_TAG)
+        lib.start(
+            num_nodes=1,
+            docker_tag=OLDER_SERVER_TAG,
+            template_content=object_store_template(microsecond_histograms=False),
+        )
+        populate_and_wait_for_writes()
         cls.args = "-h {}:{} -Uadmin -Padmin".format(lib.SERVER_IP, lib.PORT)
 
     @classmethod
@@ -218,10 +251,9 @@ class TestObjectStoreLatenciesOlderServer(unittest.TestCase):
         lib.stop()
 
     def test_show_latencies_verbose_does_not_ask_for_them(self):
-        cp = test_util.run_asadm(
-            self.args + " --no-config-file -e 'show latencies -v' --json"
-        )
-        log = lib.NODES[0].logs().decode(errors="replace").splitlines()
+        cp, records = latency_records(self.args + " -e 'show latencies -v'")
+        log = server_log()
 
         assert_clean_run(self, cp)
+        self.assertIn("write", by_histogram(records))
         self.assertEqual([line for line in log if "object-store" in line], [])

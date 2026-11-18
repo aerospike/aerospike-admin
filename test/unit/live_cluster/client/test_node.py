@@ -2731,7 +2731,12 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def test_info_latencies_verbose_skips_object_store_when_build_unknown(self):
         self._latencies_responses({"namespaces": "test"})
 
-        for build in (None, "", Exception("build failed")):
+        for build in (
+            None,
+            "",
+            Exception("build failed"),
+            "ERROR::not authenticated",
+        ):
             with self.subTest(build=build):
                 self.node.build = build
                 self.info_mock.reset_mock()
@@ -2813,12 +2818,13 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_info_latencies_verbose_object_store_only_for_ns_set(self):
         self.node.build = "8.2.1.0"
-        self._latencies_responses({"latencies:": ""})
+        self._latencies_responses({"namespaces": "test;bar", "latencies:": ""})
 
         await self.node.info_latencies(verbose=True, ns_set={"bar"})
 
         sent = self._sent_commands()
-        self.assertIn("latencies:hist={bar}-object-store-put", sent)
+        for op in ("put", "get", "list", "delete"):
+            self.assertIn("latencies:hist={bar}-object-store-%s" % op, sent)
         self.assertFalse(any("{test}" in cmd for cmd in sent))
         self.assertNotIn("namespaces", sent)
 
