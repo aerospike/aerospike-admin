@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import asyncio
+import contextlib
 import os
 import shutil
+import tempfile
 import threading
 import time
 import unittest
@@ -28,6 +30,7 @@ from lib.utils import constants
 from test.e2e import lib, util
 
 NODE_COUNT = 2
+OFFLINE_NODE_ID = "000000000000000"
 RECOVERY_SECONDS = 20
 SSH_PASSWORD = "E2E-ssh-Pw0rd-marker"
 NON_ASCII_USER = "e2e-non-ascii"
@@ -57,6 +60,30 @@ class AsyncCallRecorder:
     async def __call__(self, *args, **kwargs):
         self.calls.append(args)
         return await self.func(*args, **kwargs)
+
+
+@contextlib.contextmanager
+def frozen_node(index):
+    """Pauses node `index`, which then accepts connections but never answers, and
+    yields its address."""
+    container = lib.NODES[index - 1]
+    conf = lib.NODE_CONFS[index - 1]
+    container.pause()
+
+    try:
+        yield f"{conf['access_address']}:{conf['port_base']}"
+    finally:
+        container.reload()
+
+        if container.status == "paused":
+            container.unpause()
+
+        lib.wait_for_cluster(NODE_COUNT)
+
+
+def offline_warnings(stderr, address):
+    prefix = f"WARNING: {address} is Offline: "
+    return [line for line in stderr.splitlines() if line.startswith(prefix)]
 
 
 async def connect(user="admin", password="admin"):
@@ -136,6 +163,146 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertIn("Network Information", cp.stdout)
+
+    def test_unreachable_seed_is_reported_with_why(self):
+        """TOOLS-4644"""
+        cp = util.run_asadm(
+            f"-h {lib.SERVER_IP}:{lib.PORT},127.0.0.1:1 -Uadmin -Padmin"
+            " -e 'info network'"
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("Network Information", cp.stdout)
+        self.assertRegex(
+            cp.stderr,
+            r"WARNING: 127\.0\.0\.1:1 is Offline: \[Errno \d+\] Connect call failed"
+            r" \('127\.0\.0\.1', 1\)",
+        )
+
+    def test_asinfo_mode_says_why_it_cannot_connect(self):
+        """TOOLS-4644"""
+        cp = util.run_asadm(
+            "-h 127.0.0.1:1 -Uadmin -Padmin --asinfo-mode -e build",
+            strip_header=False,
+        )
+
+        self.assertRegex(
+            cp.stderr,
+            r"ERROR: Not able to connect any cluster with \('127\.0\.0\.1', 1, None\):"
+            r" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', 1\)",
+        )
+
+    def test_asinfo_wrapper_says_why_it_cannot_connect(self):
+        """TOOLS-4644"""
+        cp = util.run_asinfo("-h 127.0.0.1 -p 1 -U admin -P admin -v build")
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertRegex(
+            cp.stdout,
+            r"ERROR: Not able to connect any cluster with \('127\.0\.0\.1', 1, None\):"
+            r" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', 1\)",
+        )
+
+    def test_unresolvable_seed_is_reported_with_why(self):
+        """TOOLS-4644"""
+        cp = util.run_asadm(
+            f"-h {lib.SERVER_IP}:{lib.PORT},nosuchhost.invalid:3000 -Uadmin -Padmin"
+            " -e 'info network'"
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertRegex(
+            cp.stderr,
+            r"WARNING: nosuchhost\.invalid:3000 is Offline: \[Errno -?\d+\] \S",
+        )
+
+    def test_frozen_node_at_startup_is_reported_with_why(self):
+        """TOOLS-4644: the SUP-172 case. The banner still lists the node Offline."""
+        with frozen_node(2) as frozen, tempfile.TemporaryDirectory() as home:
+            with patch.dict(os.environ, {"HOME": home}):
+                cp = util.run_asadm(
+                    f"-h {lib.SERVER_IP}:{lib.PORT},{frozen} -Uadmin -Padmin"
+                    " --timeout 1",
+                    stdin_input="info network\nexit\n",
+                )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(
+            offline_warnings(cp.stderr, frozen),
+            [f"WARNING: {frozen} is Offline: login timed out after 1s"],
+        )
+        self.assertIn(f"Offline: {frozen}", cp.stdout)
+        self.assertIn("Network Information", cp.stdout)
+
+    def test_frozen_seed_is_reported_with_why(self):
+        """TOOLS-4644"""
+        with frozen_node(2) as frozen:
+            cp = util.run_asadm(
+                f"-h {frozen} -Uadmin -Padmin --timeout 1 -e 'info network'"
+            )
+
+        self.assertEqual(
+            offline_warnings(cp.stderr, frozen),
+            [f"WARNING: {frozen} is Offline: login timed out after 1s"],
+        )
+        self.assertIn("Not able to connect any cluster", cp.stderr)
+
+    def test_node_lost_mid_session_is_reported_with_why(self):
+        """TOOLS-4644: reported when it drops, not again on every command. Unbuffered,
+        so the first table arrives while asadm is still running."""
+        proc = util.AsadmProcess(
+            f"-h {lib.SERVER_IP}:{lib.PORT} -Uadmin -Padmin --timeout 1"
+            " -e 'watch 4 3 info network'",
+            env=dict(os.environ, PYTHONUNBUFFERED="1"),
+        )
+
+        try:
+            self.assertTrue(proc.wait_for_stdout("Network Information", 30))
+            self.assertIsNone(proc.proc.poll(), "asadm finished before the drop")
+
+            with frozen_node(2) as frozen:
+                returncode, _ = proc.wait(60)
+        finally:
+            proc.kill()
+
+        stderr = proc.output.stderr
+        warnings = offline_warnings(stderr, frozen)
+        self.assertEqual(returncode, 0, stderr)
+        self.assertTrue(warnings, stderr)
+        self.assertRegex(warnings[0], r"is Offline: \w+ timed out after 1s$")
+
+        for earlier, later in zip(warnings, warnings[1:]):
+            self.assertNotEqual(earlier, later)
+
+    def test_node_back_from_offline_is_used_again(self):
+        """TOOLS-4644: the next refresh picks it up, with no further warning."""
+        with frozen_node(2) as frozen:
+            proc = util.AsadmProcess(
+                f"-h {lib.SERVER_IP}:{lib.PORT},{frozen} -Uadmin -Padmin --timeout 1"
+                " -e 'watch 4 3 info network'",
+                env=dict(os.environ, PYTHONUNBUFFERED="1"),
+            )
+
+            try:
+                self.assertTrue(proc.wait_for_stdout("Network Information", 30))
+                self.assertIsNone(
+                    proc.proc.poll(), "asadm finished before the node came back"
+                )
+                lib.NODES[1].unpause()
+                returncode, _ = proc.wait(60)
+            finally:
+                proc.kill()
+
+        output = proc.output
+        tables = output.stdout.split("Network Information")[1:]
+        self.assertEqual(returncode, 0, output.stderr)
+        self.assertIn(OFFLINE_NODE_ID, tables[0])
+        self.assertNotIn(OFFLINE_NODE_ID, tables[-1])
+        self.assertIn(frozen, tables[-1])
+        self.assertEqual(
+            offline_warnings(output.stderr, frozen),
+            [f"WARNING: {frozen} is Offline: login timed out after 1s"],
+        )
 
     def test_non_ascii_password_logs_in(self):
         cp = util.run_asadm(
@@ -344,6 +511,33 @@ class SecurityDisabledTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(hashpw.threads), 1)
         self.assertListEqual(authenticate.calls, [])
+
+    def test_unreachable_seed_is_reported_with_why(self):
+        """TOOLS-4644: without security there is no login, and the failure comes
+        from the first info call."""
+        cp = util.run_asadm(
+            f"-h {lib.SERVER_IP}:{lib.PORT},127.0.0.1:1 -e 'info network'"
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertRegex(
+            cp.stderr,
+            r"WARNING: 127\.0\.0\.1:1 is Offline: \[Errno \d+\] Connect call failed"
+            r" \('127\.0\.0\.1', 1\)",
+        )
+
+    def test_frozen_node_is_reported_with_why(self):
+        """TOOLS-4644"""
+        with frozen_node(2) as frozen:
+            cp = util.run_asadm(
+                f"-h {lib.SERVER_IP}:{lib.PORT},{frozen} --timeout 1 -e 'info network'"
+            )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(
+            offline_warnings(cp.stderr, frozen),
+            [f"WARNING: {frozen} is Offline: info timed out after 1s"],
+        )
 
 
 async def roll_security(cl: Cluster, enable_security):
