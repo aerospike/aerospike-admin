@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from parameterized import parameterized
 
+from lib.base_controller import ShellException
 from lib.live_cluster import live_cluster_root_controller
 from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.live_cluster.collectlogs_controller import CollectlogsController
@@ -78,6 +79,25 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
         await self.root.execute(["collect", "with", "1.2.3.4"])
 
         self.assertEqual(self.collectinfo.call_args.args[0].nodes, ["1.2.3.4"])
+
+    @parameterized.expand(
+        [
+            (["collect", "lgos"], "lgos"),
+            (["collect", "help"], "help"),
+            (["collect", "lgos", "-n", "2"], "lgos"),
+        ]
+    )
+    async def test_collect_refuses_an_unknown_subcommand(self, line, word):
+        with self.assertRaisesRegex(
+            ShellException,
+            re.escape(
+                f"collect: '{word}' is not a valid subcommand. "
+                "See 'help collect' for available subcommands."
+            ),
+        ):
+            await self.root.execute(line)
+
+        self.collectinfo.assert_not_awaited()
 
     async def test_collect_info_runs_collectinfo(self):
         await self.root.execute(["collect", "info", "--output-prefix", "pre"])
