@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import errno
+import ipaddress
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ from lib.utils import password_source, secret_agent_conf
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
+ASINFO_DEFAULT_TIMEOUT = 5
 
 logger = logging.getLogger(__name__)
 
@@ -443,6 +445,10 @@ def _getseeds(conf):
                     seeds.append((str(g[0]).strip("[]"), port, tls_name))
                     continue
 
+                if _is_ipv6_address(host):
+                    seeds.append((host, port, tls_name))
+                    continue
+
                 m = re_ipv4hostnameport.match(host)
                 if m and len(m.groups()) == 3:
                     g = m.groups()
@@ -465,11 +471,34 @@ def _getseeds(conf):
                 seeds.append((str(host), port, tls_name))
 
             except Exception as e:
-                print("host parse error " + str(e) + " " + str(hosts))
+                logger.critical("Not able to parse host %s: %s", host, e)
 
         return seeds
     else:
         return []
+
+
+def _is_ipv6_address(host):
+    try:
+        ipaddress.IPv6Address(host)
+    except ValueError:
+        return False
+
+    return True
+
+
+def _positive_seconds(value):
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = None
+
+    if seconds is None or not seconds > 0:
+        raise argparse.ArgumentTypeError(
+            'invalid value "{}", expected a number greater than 0'.format(value)
+        )
+
+    return seconds
 
 
 def loadconfig(cli_args):
@@ -540,6 +569,10 @@ def loadconfig(cli_args):
 
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
+
+    # asinfo documents its own default and reads no [asadm] section.
+    if cli_args.asinfo_mode and cli_args.timeout is None:
+        asadm_dict["timeout"] = ASINFO_DEFAULT_TIMEOUT
 
     asadm_dict["config_file_options"] = [
         key.replace("_", "-")
@@ -821,8 +854,8 @@ def print_config_file_option():
         "                      Enable use of services-alumni-list instead of services-list"
     )
     print(
-        " --timeout=value      Set timeout value in seconds for node level operations. \n"
-        "                      TLS connection does not support timeout. Default: 1 seconds"
+        " --timeout=value      Set timeout value in seconds for node level operations.\n"
+        "                      Default: 1 seconds"
     )
     print(
         " --enable             Run commands in privileged mode.  Must be used with the\n"
@@ -955,7 +988,7 @@ def get_cli_args():
 
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
-    add_fn("--timeout", type=float)
+    add_fn("--timeout", type=_positive_seconds)
 
     add_fn("--sa-address")
     add_fn("--sa-port")

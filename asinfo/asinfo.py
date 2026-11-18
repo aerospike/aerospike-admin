@@ -34,6 +34,7 @@ DEFAULTPASSWORD = "SomeRandomDefaultPassword"
 WARNINGS = re.compile(
     r"WARNING: .+: ignored because no user is set"
     r"|WARNING: Config file read error : .+"
+    r"|WARNING: Login failed : Security not enabled\."
 )
 
 
@@ -58,6 +59,24 @@ def split_warnings(err):
     return "\n".join(errors), warnings
 
 
+def positive_seconds(value):
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = None
+
+    if seconds is None or not seconds > 0:
+        raise argparse.ArgumentTypeError(
+            'invalid value "{}", expected a number greater than 0'.format(value)
+        )
+
+    return seconds
+
+
+def is_error_reply(out):
+    return any(line.lower().startswith("error:") for line in out.splitlines())
+
+
 def print_config_help():
     print("\n")
     print("Usage: asinfo [OPTIONS]")
@@ -70,8 +89,8 @@ def print_config_help():
     print(" -v --value           Fetch single value (Default: all).")
     print(" -l --line-separator  Print in separate lines (Default: False).")
     print(
-        " --timeout=value      Set timeout value in seconds. \n"
-        "                      TLS connection does not support timeout. Default: 5 seconds"
+        " --timeout=value      Set timeout value in seconds.\n"
+        "                      Default: 5 seconds"
     )
 
     print_config_file_option()
@@ -323,7 +342,7 @@ def get_cli_args():
     add_fn("--tls_crl_check", action="store_true")
     add_fn("--tls_crl_check_all", action="store_true")
 
-    add_fn("--timeout", type=float)
+    add_fn("--timeout", type=positive_seconds)
 
     return parser.parse_args()
 
@@ -411,37 +430,32 @@ if asinfo_cmd:
     cmd.extend(["-e", asinfo_cmd])
 
 p = Popen(cmd, stdout=PIPE, stderr=PIPE, shell=False)
-out, err = p.communicate()
-out = bytes_to_str(out)
+
+try:
+    out, err = p.communicate()
+except KeyboardInterrupt:
+    p.kill()
+    p.wait()
+    sys.exit(130)
+
+out = str(bytes_to_str(out)).strip()
 err, warnings = split_warnings(bytes_to_str(err))
 
 for warning in warnings:
     print(warning, file=sys.stderr)
 
-if err:
-    if out:
-        print(out)
+if out:
+    print(out)
 
-    print(str(err))
+if err:
+    print(str(err), file=sys.stderr)
     sys.exit(1)
 
-elif out:
-    out = str(out).strip()
+if p.returncode:
+    print("ERROR: asadm exited with code %d" % p.returncode, file=sys.stderr)
+    sys.exit(1)
 
-    connection_errors = ["Not able to connect any cluster", "Could not connect to node"]
-    if any(ce in out for ce in connection_errors):
-        # print "request to ",args.host,":",args.port," returned error"
-        print(out)
-        sys.exit(1)
+connection_errors = ["Not able to connect any cluster", "Could not connect to node"]
 
-    if "error:" in out.lower():
-        print(str(out))
-        sys.exit(1)
-
-    if p.returncode:
-        print("request to ", args.host, ":", args.port, " returned error")
-        if out:
-            print(out)
-        sys.exit(1)
-
-    print(out.strip())
+if any(ce in out for ce in connection_errors) or is_error_reply(out):
+    sys.exit(1)

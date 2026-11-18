@@ -10,8 +10,8 @@ Usage: asinfo [OPTIONS]
  -E --help            Show program usage.
  -v --value           Fetch single value (Default: all).
  -l --line-separator  Print in separate lines (Default: False).
- --timeout=value      Set timeout value in seconds. 
-                      TLS connection does not support timeout. Default: 5 seconds
+ --timeout=value      Set timeout value in seconds.
+                      Default: 5 seconds
 
 
 Configuration File Allowed Options
