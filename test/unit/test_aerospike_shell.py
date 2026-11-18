@@ -4,6 +4,7 @@ import asadm
 import asyncio
 import io
 import os
+import socket
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -1275,6 +1276,22 @@ class AsinfoCredentialTest(unittest.IsolatedAsyncioTestCase):
             asadm.info._hash_password("admin"), writer.write.call_args.args[0]
         )
         self.assertEqual(asinfo_view.call_args.args[0], {"1.1.1.1:3000": "8.1.0.0"})
+
+    async def test_connect_failure_says_why(self):
+        """TOOLS-4644"""
+        with socket.socket() as closed:
+            closed.bind(("127.0.0.1", 0))
+            port = closed.getsockname()[1]
+
+        with patch("asadm.logger") as logger:
+            await asadm.execute_asinfo_commands("build", ("127.0.0.1", port, None))
+
+        message, *args = logger.critical.call_args.args
+        self.assertRegex(
+            message % tuple(args),
+            rf"^Not able to connect any cluster with \('127\.0\.0\.1', {port}, None\):"
+            rf" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', {port}\)$",
+        )
 
 
 class PromptedKeyfilePasswordTest(unittest.TestCase):
