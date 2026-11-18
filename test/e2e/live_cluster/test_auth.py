@@ -15,6 +15,7 @@
 import asyncio
 import contextlib
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -32,6 +33,7 @@ from test.e2e import lib, util
 NODE_COUNT = 2
 OFFLINE_NODE_ID = "000000000000000"
 RECOVERY_SECONDS = 20
+SHORTEST_SESSION_TTL = 120
 SSH_PASSWORD = "E2E-ssh-Pw0rd-marker"
 NON_ASCII_USER = "e2e-non-ascii"
 NON_ASCII_PASSWORD = "pässwörd-ü-密码"
@@ -112,6 +114,12 @@ async def wait_for_every_node_to_answer(cl: Cluster):
     raise AssertionError(
         "nodes did not answer within %ds: %r" % (RECOVERY_SECONDS, answers)
     )
+
+
+def set_session_ttl(ttl):
+    replies = lib.CLIENT.info_all("set-config:context=security;session-ttl=%s" % ttl)
+
+    return [reply.strip() for _, reply in replies.values()]
 
 
 def nodes_showing_build(info_network, build):
@@ -413,6 +421,50 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
                 await cl.close()
 
         self.assertEqual(failures_left, 0)
+
+    async def test_a_command_after_the_session_expires_reaches_every_node(self):
+        """Open connections outlive the session, but a new socket authenticates with
+        the expired token, so the node has to log in again."""
+        original_ttls = {
+            re.search(r"session-ttl=(\d+)", response[1]).group(1)
+            for response in lib.CLIENT.info_all("get-config:context=security").values()
+        }
+        self.assertEqual(len(original_ttls), 1, original_ttls)
+        original_ttl = original_ttls.pop()
+
+        def restore_session_ttl():
+            try:
+                replies = set_session_ttl(original_ttl)
+            except Exception:
+                lib.CLIENT.close()
+                lib.connect_client()
+                replies = set_session_ttl(original_ttl)
+
+            self.assertEqual(replies, ["ok"] * NODE_COUNT)
+
+        self.addCleanup(restore_session_ttl)
+        replies = set_session_ttl(SHORTEST_SESSION_TTL)
+        self.assertEqual(replies, ["ok"] * NODE_COUNT)
+        cl = await connect()
+
+        try:
+            await wait_for_every_node_to_answer(cl)
+            await asyncio.sleep(SHORTEST_SESSION_TTL + 5)
+
+            for n in cl.nodes.values():
+                await n.close()
+                n._initialize_socket_pool()
+
+            with patch.object(Cluster, "need_to_refresh_cluster", return_value=False):
+                answers = await cl.info("node")
+
+            alive = [n.alive for n in cl.nodes.values()]
+        finally:
+            await cl.close()
+
+        self.assertEqual(len(answers), NODE_COUNT)
+        self.assertTrue(all(isinstance(a, str) for a in answers.values()), answers)
+        self.assertEqual(alive, [True] * NODE_COUNT)
 
     async def test_node_rejecting_the_login_after_a_restart_goes_offline(self):
         """The password changed mid-session, then node 2, the principal, restarted. It
