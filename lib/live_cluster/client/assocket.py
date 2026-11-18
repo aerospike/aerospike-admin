@@ -148,33 +148,44 @@ class ASSocket:
                     await asyncio.wait_for(_handshake(), self._timeout)
 
                 except Exception as tlse:
-                    logger.debug(f"TLS connection exception {type(tlse)}: {str(tlse)}")
-                    if sock:
-                        sock.close()
-                        sock = None
-                    return None
+                    raise ConnectionError(
+                        self._failure("TLS handshake", tlse)
+                    ) from tlse
 
         except Exception as e:
-            logger.debug("Failed to connect to socket %s", e)
-            sock = None
-            pass
+            if sock:
+                sock.close()
+            # An OSError but not a TimeoutError, so the node is still marked not alive.
+            if isinstance(e, OSError) and not isinstance(e, asyncio.TimeoutError):
+                raise
+            raise ConnectionError(self._failure("connect", e)) from e
 
         return sock
 
+    def _failure(self, step, e):
+        if isinstance(e, asyncio.TimeoutError) and not e.args:
+            return f"{step} timed out after {self._timeout:g}s"
+        return f"{step} failed: {e}"
+
+    async def _wait_for(self, aw, step):
+        try:
+            return await asyncio.wait_for(aw, self._timeout)
+        except asyncio.TimeoutError as e:
+            raise asyncio.TimeoutError(self._failure(step, e)) from e
+
     async def _create_socket(self):
-        sock = None
+        error = None
         for addrinfo in await asyncio.get_event_loop().getaddrinfo(
             self.ip, self.port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
         ):
             # for DNS it will try all possible addresses
             try:
-                sock = await self._create_socket_for_addrinfo(addrinfo)
-                if sock:
-                    break
-            except Exception:
-                logger.debug("Failed to create socket to %s", addrinfo)
-                raise
-        return sock
+                return await self._create_socket_for_addrinfo(addrinfo)
+            except Exception as e:
+                error = e
+        if error:
+            raise error
+        return None
 
     async def login(self):
         if self.auth_mode != AuthMode.PKI and self.user is None:
@@ -183,7 +194,7 @@ class ASSocket:
         if not self.sock:
             return False
 
-        resp_code, self.session_token, self.session_expiration = await asyncio.wait_for(
+        resp_code, self.session_token, self.session_expiration = await self._wait_for(
             login(
                 self.reader,
                 self.writer,
@@ -192,7 +203,7 @@ class ASSocket:
                 self.credential,
                 self.auth_mode,
             ),
-            self._timeout,
+            "login",
         )
 
         if resp_code != ASResponse.OK:
@@ -211,11 +222,11 @@ class ASSocket:
         if session_token is None:
             return True
 
-        resp_code = await asyncio.wait_for(
+        resp_code = await self._wait_for(
             authenticate_with_token(
                 self.reader, self.writer, self.user, session_token, self.auth_mode
             ),
-            self._timeout,
+            "authenticate",
         )
 
         if resp_code != ASResponse.OK:
@@ -288,9 +299,7 @@ class ASSocket:
         return
 
     async def info(self, command):
-        return await asyncio.wait_for(
-            info(self.reader, self.writer, command), self._timeout
-        )
+        return await self._wait_for(info(self.reader, self.writer, command), "info")
 
     async def create_user(self, user, password, roles):
         rsp_code = await asyncio.wait_for(
