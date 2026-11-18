@@ -39,7 +39,7 @@ USAGE_PASSWORD = os.environ.get("ASADM_E2E_USAGE_PASSWORD", "admin")
 BASE64_VALUE = re.compile(r"^(eyJ[A-Za-z0-9+/=]+|ERROR\S*.*)$", re.M)
 FIRST_VERSION = "8.2.1"
 OLDER_SERVERS = "is not supported on aerospike versions < 8.2.1"
-UNKNOWN_USAGE_COMMAND = "unrecognized command - 'usage'"
+UNKNOWN_USAGE_COMMAND = "unrecognized command - 'usage-export'"
 
 
 def remove_outputs():
@@ -51,7 +51,7 @@ def remove_outputs():
 
 
 def usage_reply(connect):
-    cp = util.run_asadm(f"{connect} --enable -e 'asinfo -v usage'")
+    cp = util.run_asadm(f"{connect} --enable -e 'asinfo -v usage-export'")
     match = BASE64_VALUE.search(cp.stdout)
 
     if not match:
@@ -173,7 +173,7 @@ class CollectUsageWithoutUsageReportingTest(unittest.TestCase):
             json.loads(members[meta_name])["collection"]["usage"],
             {"status": "unsupported", "min_version": FIRST_VERSION},
         )
-        self.assertNotIn("'usage'", self.collect_info.stderr)
+        self.assertNotIn("'usage-export'", self.collect_info.stderr)
 
     def test_show_usage_on_that_bundle_warns(self):
         cp = util.run_asadm(f"-cf {self.bundle} -e 'show usage'")

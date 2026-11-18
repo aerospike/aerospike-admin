@@ -176,9 +176,12 @@ class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             ("role_violation", ROLE_VIOLATION),
-            ("not_formed", "ERROR::cluster not yet formed"),
-            ("no_identity", "ERROR::cluster identifier not yet known"),
-            ("upgrading", "ERROR::2 of 3 nodes run a version without usage reporting"),
+            ("not_formed", "ERROR:11:cluster not yet formed"),
+            ("no_identity", "ERROR:11:cluster identifier not yet known"),
+            (
+                "upgrading",
+                "ERROR:11:2 of 3 nodes run a version without usage reporting",
+            ),
         ]
     )
     async def test_server_errors_pass_through_verbatim(self, _, reply):
@@ -536,7 +539,7 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
                 "file": "prefix_" + constants.COLLECTINFO_USAGE_FILENAME,
             },
         )
-        self.assertNotIn("usage", self.reported_failures())
+        self.assertNotIn("usage-export", self.reported_failures())
 
     async def test_cluster_without_usage_reporting_bundles_as_before(self):
         self.fetch.side_effect = UsageUnavailable(
@@ -553,7 +556,7 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
             self.meta()["collection"]["usage"],
             {"status": "unsupported", "node": PRINCIPAL, "reply": NO_COMMAND},
         )
-        self.assertNotIn("usage", self.reported_failures())
+        self.assertNotIn("usage-export", self.reported_failures())
         self.archive_mock.assert_called_once_with(self.work_dir)
 
     async def test_an_older_server_is_never_asked_and_bundles_as_before(self):
@@ -567,7 +570,7 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
             self.meta()["collection"]["usage"],
             {"status": "unsupported", "min_version": "8.2.1"},
         )
-        self.assertNotIn("usage", self.reported_failures())
+        self.assertNotIn("usage-export", self.reported_failures())
 
     async def test_a_server_error_is_recorded_and_listed_as_a_failed_command(self):
         self.fetch.side_effect = UsageUnavailable(PRINCIPAL, ROLE_VIOLATION)
@@ -581,7 +584,7 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
             self.meta()["collection"]["usage"],
             {"status": "failed", "node": PRINCIPAL, "reply": ROLE_VIOLATION},
         )
-        self.assertIn("usage", self.reported_failures())
+        self.assertIn("usage-export", self.reported_failures())
         self.assertEqual(logger_util.get_exit_code(), 0)
         self.archive_mock.assert_called_once_with(self.work_dir)
 
@@ -594,6 +597,7 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
             self.meta()["collection"]["usage"],
             {"status": "failed", "node": "", "reply": "boom"},
         )
+        self.assertIn("usage-export", self.reported_failures())
         self.assertIs(self.meta()["collection"]["aborted"], False)
         self.ascollectinfo_mock.assert_awaited_once()
         self.archive_mock.assert_called_once_with(self.work_dir)

@@ -5577,7 +5577,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         result = await self.node.info_usage()
 
         self.assertEqual(result, export)
-        self.info_mock.assert_called_with("usage", self.ip)
+        self.info_mock.assert_called_with("usage-export", self.ip)
 
     async def test_info_usage_error_keeps_the_raw_reply(self):
         reply = "ERROR:81:role violation - requires permission 'user-admin'"
