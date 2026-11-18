@@ -51,7 +51,7 @@ CLUSTER = "963fa489-71bd-46a9-af70-765ce26c5a62"
 ARCHIVE = "collect_usage_20261116_191136.tgz"
 TS = time.strptime("20261116_191136", "%Y%m%d_%H%M%S")
 NO_COMMAND = "ERROR:4:unrecognized command"
-ROLE_VIOLATION = "ERROR:81:role violation - requires permission 'user-admin'"
+NOT_FORMED = "ERROR:11:cluster not yet formed"
 OLDER_SERVERS = "'collect usage' is not supported on aerospike versions < 8.2.1"
 
 
@@ -175,8 +175,8 @@ class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand(
         [
-            ("role_violation", ROLE_VIOLATION),
-            ("not_formed", "ERROR:11:cluster not yet formed"),
+            ("not_authenticated", "ERROR:80:not authenticated"),
+            ("not_formed", NOT_FORMED),
             ("no_identity", "ERROR:11:cluster identifier not yet known"),
             (
                 "upgrading",
@@ -376,14 +376,14 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(logger_util.get_exit_code(), 0)
 
     async def test_server_error_is_shown_verbatim_and_writes_nothing(self):
-        self.fetch.side_effect = UsageUnavailable(PRINCIPAL, ROLE_VIOLATION)
+        self.fetch.side_effect = UsageUnavailable(PRINCIPAL, NOT_FORMED)
 
         with self.assertLogs("lib", level="ERROR") as cm:
             lines = await self.run_command()
 
         self.assertEqual(
             cm.records[0].getMessage(),
-            f"Failed to get usage from {PRINCIPAL}: {ROLE_VIOLATION}",
+            f"Failed to get usage from {PRINCIPAL}: {NOT_FORMED}",
         )
         self.assertEqual(lines, [])
         self.assertEqual(os.listdir(self.work_dir), [])
@@ -573,7 +573,7 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
         self.assertNotIn("usage-export", self.reported_failures())
 
     async def test_a_server_error_is_recorded_and_listed_as_a_failed_command(self):
-        self.fetch.side_effect = UsageUnavailable(PRINCIPAL, ROLE_VIOLATION)
+        self.fetch.side_effect = UsageUnavailable(PRINCIPAL, NOT_FORMED)
 
         await self._run()
 
@@ -582,7 +582,7 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
         )
         self.assertEqual(
             self.meta()["collection"]["usage"],
-            {"status": "failed", "node": PRINCIPAL, "reply": ROLE_VIOLATION},
+            {"status": "failed", "node": PRINCIPAL, "reply": NOT_FORMED},
         )
         self.assertIn("usage-export", self.reported_failures())
         self.assertEqual(logger_util.get_exit_code(), 0)

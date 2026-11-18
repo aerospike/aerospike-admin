@@ -1686,7 +1686,7 @@ class ShowUsageControllerTest(unittest.IsolatedAsyncioTestCase):
         self.view_mock.show_usage.assert_not_called()
 
     async def test_a_server_error_is_shown_verbatim(self):
-        reply = "ERROR:81:role violation - requires permission 'user-admin'"
+        reply = "ERROR:11:cluster not yet formed"
         self.fetch.side_effect = UsageUnavailable("10.0.0.3:3000", reply)
 
         with self.assertLogs("lib", level="ERROR") as cm:

@@ -15,8 +15,9 @@
 
 The harness server predates usage reporting, so it covers the "no usage
 reporting" path. Point ASADM_E2E_USAGE_SEED (host:port) at a server that has it,
-with ASADM_E2E_USAGE_USER and ASADM_E2E_USAGE_PASSWORD for a user-admin user
-(default admin/admin), to cover the export itself. That server is only read."""
+with ASADM_E2E_USAGE_USER and ASADM_E2E_USAGE_PASSWORD (default admin/admin), to
+cover the export itself. That server is only read, apart from one user with no
+roles that is created and dropped when security is enabled."""
 
 import base64
 import glob
@@ -33,6 +34,7 @@ from lib.utils import version
 from test.e2e import lib, util
 
 PREFIX = "asadm_collect_usage_test_"
+NO_ROLES_USER = f"{PREFIX}no_roles"
 USAGE_SEED = os.environ.get("ASADM_E2E_USAGE_SEED", "")
 USAGE_USER = os.environ.get("ASADM_E2E_USAGE_USER", "admin")
 USAGE_PASSWORD = os.environ.get("ASADM_E2E_USAGE_PASSWORD", "admin")
@@ -305,6 +307,64 @@ class CollectUsageTest(unittest.TestCase):
         cp = util.run_asadm(f"{self.connect} -e 'health'")
 
         self.assertNotIn("Different Cluster UUID", cp.stdout)
+
+
+@unittest.skipUnless(
+    USAGE_SEED, "set ASADM_E2E_USAGE_SEED to a server with usage reporting"
+)
+class CollectUsageWithoutPrivilegesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        admin = f"-h {USAGE_SEED} -U{USAGE_USER} -P{USAGE_PASSWORD} --enable"
+        created = util.run_asadm(
+            f"{admin} -e 'manage acl create user {NO_ROLES_USER} password {PREFIX}'"
+        )
+
+        if f"Successfully created user {NO_ROLES_USER}" not in created.stdout:
+            raise unittest.SkipTest(
+                f"could not create a user on the usage server:\n{created.stdout}"
+                f"\n{created.stderr}"
+            )
+
+        cls.addClassCleanup(
+            util.run_asadm, f"{admin} -e 'manage acl delete user {NO_ROLES_USER}'"
+        )
+        cls.addClassCleanup(remove_outputs)
+        cls.connect = f"-h {USAGE_SEED} -U{NO_ROLES_USER} -P{PREFIX}"
+        cls.uuid = cluster_uuid(f"-h {USAGE_SEED} -U{USAGE_USER} -P{USAGE_PASSWORD}")
+        cls.collect_usage = util.run_asadm(
+            f"{cls.connect} -e 'collect usage --output-prefix {PREFIX}'"
+        )
+        cls.show_usage = util.run_asadm(f"{cls.connect} -e 'show usage'")
+        cls.collect_info = util.run_asadm(
+            f"{cls.connect} -e 'collect info --output-prefix {PREFIX}info_'"
+        )
+        cls.bundle = util.get_collectinfo_path(cls.collect_info, f"/tmp/{PREFIX}info_")
+
+    def test_collect_usage_writes_the_archive(self):
+        self.assertEqual(self.collect_usage.returncode, 0, self.collect_usage.stderr)
+        self.assertNotIn("ERROR", self.collect_usage.stderr)
+        self.assertIn(f"Cluster {self.uuid}", self.collect_usage.stdout.splitlines())
+        self.assertTrue(
+            tarfile.is_tarfile(saved_path(self.collect_usage.stdout)),
+            self.collect_usage.stdout,
+        )
+
+    def test_show_usage_reads_the_cluster(self):
+        self.assertEqual(self.show_usage.returncode, 0, self.show_usage.stderr)
+        self.assertNotIn("ERROR", self.show_usage.stderr)
+        self.assertIn(f"Cluster {self.uuid}", self.show_usage.stdout.splitlines())
+
+    def test_collect_info_bundle_carries_the_usage_file(self):
+        members = bundle_members(self.bundle)
+        meta_name = next(
+            name for name in members if name.endswith("collectinfo_meta.json")
+        )
+
+        self.assertEqual(
+            json.loads(members[meta_name])["collection"]["usage"]["status"], "written"
+        )
+        self.assertNotIn("'usage-export'", self.collect_info.stderr)
 
 
 class ShowUsageFromArchiveTest(unittest.TestCase):

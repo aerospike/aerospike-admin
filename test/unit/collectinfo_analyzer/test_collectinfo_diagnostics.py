@@ -2917,7 +2917,7 @@ class SnapshotHelperTest(unittest.TestCase):
 
 
 class UsageFileDiagnosticsTest(unittest.TestCase):
-    ROLE_VIOLATION = "ERROR:81:role violation - requires permission 'user-admin'"
+    NOT_FORMED = "ERROR:11:cluster not yet formed"
 
     def warnings_for(self, usage):
         meta = meta_with()
@@ -2927,14 +2927,14 @@ class UsageFileDiagnosticsTest(unittest.TestCase):
 
     def test_a_failed_usage_fetch_is_reported_with_the_servers_reply(self):
         warnings = self.warnings_for(
-            {"status": "failed", "node": "1.1.1.1:3000", "reply": self.ROLE_VIOLATION}
+            {"status": "failed", "node": "1.1.1.1:3000", "reply": self.NOT_FORMED}
         )
 
         warning = find(warnings, "usage-not-collected")
 
         self.assertEqual(warning.severity, DiagSeverity.WARNING)
         self.assertIn(
-            f"1.1.1.1:3000 replied {self.ROLE_VIOLATION}", "\n".join(warning.lines)
+            f"1.1.1.1:3000 replied {self.NOT_FORMED}", "\n".join(warning.lines)
         )
 
     def test_a_failure_before_any_node_answered(self):

@@ -5744,7 +5744,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with("usage-export", self.ip)
 
     async def test_info_usage_error_keeps_the_raw_reply(self):
-        reply = "ERROR:81:role violation - requires permission 'user-admin'"
+        reply = "ERROR:11:cluster not yet formed"
         self.info_mock.return_value = reply
 
         result = await self.node.info_usage()

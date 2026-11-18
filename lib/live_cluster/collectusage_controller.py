@@ -124,7 +124,7 @@ def log_unavailable(command: str, error: UsageUnavailable, hint: str = "") -> No
 @CommandHelp(
     "Exports the cluster's usage records to a .tgz archive to send to Aerospike.",
     "Open the archive with 'asadm -cf <archive>' and run 'show usage' to view it.",
-    "Needs server v. {} or later and a user with the user-admin privilege.".format(
+    "Needs server v. {} or later.".format(
         constants.SERVER_USAGE_REPORTING_FIRST_VERSION
     ),
     usage="[--output-prefix <prefix>]",
