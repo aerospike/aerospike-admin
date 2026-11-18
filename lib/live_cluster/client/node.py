@@ -2867,6 +2867,7 @@ class Node(AsyncObject):
             if (
                 self.build
                 and not isinstance(self.build, Exception)
+                and not self.build.startswith(("ERROR", "error"))
                 and version.LooseVersion(self.build)
                 >= version.LooseVersion(
                     constants.SERVER_OBJECT_STORE_LATENCIES_FIRST_VERSION
