@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import time
 import unittest
 
 from test.e2e import util as test_util, lib
@@ -223,6 +224,46 @@ class TestTLS(unittest.TestCase):
             "Network Information",
             cp.stdout,
             "Should have failed – server cert is revoked (crl-check-all)",
+        )
+
+    def test_asinfo_mode_frozen_node_honors_timeout(self):
+        """TOOLS-4655: --timeout bounds the TLS handshake too."""
+        node = lib.NODES[0]
+        node.pause()
+
+        try:
+            start = time.monotonic()
+            cp = test_util.run_asadm(
+                f"-h {self.host} --tls-enable --tls-name localhost "
+                f"--tls-cafile {self.ca} -Uadmin -Padmin --asinfo-mode --timeout 1"
+                " -e build",
+                strip_header=False,
+            )
+            elapsed = time.monotonic() - start
+        finally:
+            node.unpause()
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn("ERROR: Not able to connect any cluster with", cp.stderr)
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_mode_clear_client_on_the_tls_port(self):
+        """TOOLS-4655: the server drops the clear connection, which is one error
+        line."""
+        cp = test_util.run_asadm(
+            f"-h {self.host} -Uadmin -Padmin --asinfo-mode --timeout 1 -e build",
+            strip_header=False,
+        )
+
+        lines = cp.stderr.splitlines()
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(len(lines), 1, cp.stderr)
+        self.assertTrue(
+            lines[0].startswith(
+                "ERROR: Not able to login and authenticate any cluster with"
+                f" ('{lib.SERVER_IP}', {lib.TLS_PORT}, None): "
+            ),
+            cp.stderr,
         )
 
 

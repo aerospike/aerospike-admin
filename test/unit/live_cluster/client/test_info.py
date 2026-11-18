@@ -34,6 +34,7 @@ from lib.live_cluster.client.info import (
     delete_whitelist,
     drop_user,
     grant_roles,
+    info,
     login,
     query_roles,
     query_users,
@@ -983,3 +984,32 @@ class ReceiveDataTest(unittest.IsolatedAsyncioTestCase):
         reader = DummyReader([b""])
         with self.assertRaises(ConnectionResetError):
             await _receive_data(reader, 5)
+
+
+class InfoReplyHeaderTest(unittest.IsolatedAsyncioTestCase):
+    """The 8-byte reply header can arrive in pieces, like the body after it."""
+
+    BODY = b"build\t8.2.0.0\n"
+
+    def setUp(self):
+        self.writer = Mock()
+        self.writer.drain = AsyncMock()
+
+    def header(self):
+        return ((2 << 56) | (1 << 48) | len(self.BODY)).to_bytes(8, "big")
+
+    async def test_header_in_two_pieces(self):
+        header = self.header()
+        reader = DummyReader([header[:4], header[4:], self.BODY])
+
+        self.assertEqual(await info(reader, self.writer, "build"), "8.2.0.0")
+
+    async def test_closed_before_or_inside_the_header(self):
+        for chunks in ([], [self.header()[:3]]):
+            with self.subTest(received=sum(map(len, chunks))):
+                with self.assertRaises(IOError) as cm:
+                    await info(DummyReader(chunks), self.writer, "build")
+
+                self.assertEqual(
+                    str(cm.exception), "Error: Connection closed by server."
+                )

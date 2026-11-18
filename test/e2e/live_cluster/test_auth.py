@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import contextlib
 import os
 import shutil
 import threading
@@ -57,6 +58,36 @@ class AsyncCallRecorder:
     async def __call__(self, *args, **kwargs):
         self.calls.append(args)
         return await self.func(*args, **kwargs)
+
+
+@contextlib.contextmanager
+def frozen_node(index):
+    """Pauses node `index`, which then accepts connections but never answers, and
+    yields its address."""
+    container = lib.NODES[index - 1]
+    conf = lib.NODE_CONFS[index - 1]
+    container.pause()
+
+    try:
+        yield f"{conf['access_address']}:{conf['port_base']}"
+    finally:
+        container.reload()
+
+        if container.status == "paused":
+            container.unpause()
+
+        lib.wait_for_cluster(NODE_COUNT)
+
+
+def run_timed(run, args, **kwargs):
+    start = time.monotonic()
+    cp = run(args, **kwargs)
+    return cp, time.monotonic() - start
+
+
+def seed_text(address):
+    host, port = address.rsplit(":", 1)
+    return f"('{host}', {port}, None)"
 
 
 async def connect(user="admin", password="admin"):
@@ -153,6 +184,51 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
         self.assertIn(self.build, cp.stdout)
+
+    def test_asinfo_mode_frozen_node_login_timeout(self):
+        """TOOLS-4655: one error line within --timeout, and exit code 1."""
+        with frozen_node(2) as frozen:
+            cp, elapsed = run_timed(
+                util.run_asadm,
+                f"-h {frozen} -Uadmin -Padmin --asinfo-mode --timeout 1 -e build",
+                strip_header=False,
+            )
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                "ERROR: Not able to login and authenticate any cluster with"
+                f" {seed_text(frozen)}: login timed out after 1s"
+            ],
+        )
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_wrapper_frozen_node_honors_timeout(self):
+        """TOOLS-4655"""
+        with frozen_node(2) as frozen:
+            host, port = frozen.rsplit(":", 1)
+            cp, elapsed = run_timed(
+                util.run_asinfo,
+                f"-h {host} -p {port} -U admin -P admin --timeout 1 -v build",
+            )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertIn("login timed out after 1s", cp.stderr)
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_mode_refused_seed_exits_1(self):
+        """TOOLS-4655"""
+        cp = util.run_asadm(
+            "-h 127.0.0.1:1 -Uadmin -Padmin --asinfo-mode -e build",
+            strip_header=False,
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn(
+            "ERROR: Not able to connect any cluster with ('127.0.0.1', 1, None)",
+            cp.stderr,
+        )
 
     def test_collectinfo_does_not_write_passwords(self):
         """Nothing listens on the SSH port, so collectinfo logs the failure and
@@ -320,6 +396,51 @@ class SecurityDisabledTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertIn("Network Information", cp.stdout)
+
+    def test_asinfo_mode_frozen_node_info_timeout(self):
+        """TOOLS-4655: without security there is no login, so the first info call
+        is the one that waits."""
+        with frozen_node(2) as frozen:
+            cp, elapsed = run_timed(
+                util.run_asadm,
+                f"-h {frozen} --asinfo-mode --timeout 1 -e build",
+                strip_header=False,
+            )
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                f"ERROR: Not able to get info from {seed_text(frozen)}:"
+                " info timed out after 1s"
+            ],
+        )
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_mode_user_given_warns_and_runs(self):
+        """TOOLS-4655: as in normal mode."""
+        cp = util.run_asadm(
+            f"-h {lib.SERVER_IP}:{lib.PORT} -Uadmin -Padmin --asinfo-mode -e build",
+            strip_header=False,
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn(lib.server_build(), cp.stdout)
+        self.assertEqual(
+            cp.stderr.splitlines(), ["WARNING: Login failed : Security not enabled."]
+        )
+
+    def test_asinfo_wrapper_user_given_warns_and_runs(self):
+        """TOOLS-4655"""
+        cp = util.run_asinfo(
+            f"-h {lib.SERVER_IP} -p {lib.PORT} -U admin -P admin -v build"
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn(lib.server_build(), cp.stdout)
+        self.assertEqual(
+            cp.stderr.splitlines(), ["WARNING: Login failed : Security not enabled."]
+        )
 
     async def test_user_given_hashes_once_and_never_authenticates(self):
         """No session token comes back, so a new socket has nothing to authenticate

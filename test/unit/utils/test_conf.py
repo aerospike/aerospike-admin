@@ -2143,6 +2143,123 @@ class PasswordHelpTest(unittest.TestCase):
         ):
             self.assertIn(text, out.getvalue())
 
+    def test_help_timeout_block(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        self.assertIn(
+            " --timeout=value      Set timeout value in seconds for node level"
+            " operations.\n"
+            "                      Default: 1 seconds\n",
+            out.getvalue(),
+        )
+        self.assertNotIn("TLS connection does not support timeout", out.getvalue())
+
+
+class TimeoutOptionTest(PasswordSourcesTestCase):
+    """asinfo documents a 5 s default and reads no [asadm] section, so asinfo
+    mode takes only --timeout. asadm defaults to 1 s and reads [asadm]."""
+
+    ASADM_SECTION = "[asadm]\ntimeout = 3\n"
+
+    def test_asinfo_mode_defaults_to_5s(self):
+        self.assertEqual(self.load("--asinfo-mode").timeout, 5)
+
+    def test_asinfo_mode_takes_the_command_line(self):
+        self.assertEqual(self.load("--asinfo-mode", "--timeout", "0.5").timeout, 0.5)
+        self.assertEqual(
+            self.load(
+                "--asinfo-mode", "--timeout", "2", config=self.ASADM_SECTION
+            ).timeout,
+            2,
+        )
+
+    def test_asinfo_mode_ignores_the_asadm_section(self):
+        self.assertEqual(
+            self.load("--asinfo-mode", config=self.ASADM_SECTION).timeout, 5
+        )
+
+    def test_asadm_default_section_and_command_line(self):
+        self.assertEqual(self.load().timeout, 1)
+        self.assertEqual(self.load(config=self.ASADM_SECTION).timeout, 3)
+        self.assertEqual(
+            self.load("--timeout", "2", config=self.ASADM_SECTION).timeout, 2
+        )
+
+
+class TimeoutValueTest(unittest.TestCase):
+    """A timeout that is not above zero fails every request, so it is refused."""
+
+    def parse(self, value):
+        with patch("sys.argv", ["asadm", "--timeout=" + value]):
+            return conf.get_cli_args().timeout
+
+    def test_refuses_values_not_above_zero(self):
+        for value in ("0", "-1", "nan", "-inf"):
+            with self.subTest(value=value):
+                err = io.StringIO()
+
+                with patch("sys.stderr", err), self.assertRaises(SystemExit) as cm:
+                    self.parse(value)
+
+                self.assertEqual(cm.exception.code, 2)
+                self.assertIn(
+                    'argument --timeout: invalid value "{}", expected a number'
+                    " greater than 0".format(value),
+                    err.getvalue(),
+                )
+
+    def test_accepts_values_above_zero(self):
+        for value, expected in (("0.5", 0.5), ("2", 2), ("inf", float("inf"))):
+            with self.subTest(value=value):
+                self.assertEqual(self.parse(value), expected)
+
+
+class SeedTest(unittest.TestCase):
+    def test_unbracketed_ipv6_takes_the_port_option(self):
+        for host in ("::1", "2001:db8::1", "fe80::1", "::ffff:127.0.0.1"):
+            with self.subTest(host=host):
+                self.assertEqual(
+                    conf._getseeds({"host": host, "port": 3100}), [(host, 3100, None)]
+                )
+
+    def test_unbracketed_ipv6_takes_the_tls_name_option(self):
+        self.assertEqual(
+            conf._getseeds(
+                {"host": "::1", "port": 4333, "tls_enable": True, "tls_name": "t1"}
+            ),
+            [("::1", 4333, "t1")],
+        )
+
+    def test_other_host_forms(self):
+        for host, seeds in (
+            ("[::1]", [("::1", 3100, None)]),
+            ("[::1]:3200", [("::1", 3200, None)]),
+            ("[::1]:t1:3200", [("::1", 3200, "t1")]),
+            ("127.0.0.1", [("127.0.0.1", 3100, None)]),
+            ("127.0.0.1:3200", [("127.0.0.1", 3200, None)]),
+            ("127.0.0.1:t1:3200", [("127.0.0.1", 3200, "t1")]),
+            ("host1,host2:3200", [("host1", 3100, None), ("host2", 3200, None)]),
+        ):
+            with self.subTest(host=host):
+                self.assertEqual(conf._getseeds({"host": host, "port": 3100}), seeds)
+
+    def test_host_parse_error_goes_to_the_log(self):
+        out = io.StringIO()
+
+        with patch("sys.stdout", out), patch("lib.utils.conf.logger") as logger:
+            seeds = conf._getseeds({"host": "127.0.0.1:abc,host2", "port": 3100})
+
+        self.assertEqual(seeds, [("host2", 3100, None)])
+        self.assertEqual(out.getvalue(), "")
+        logger.critical.assert_called_once()
+        self.assertEqual(
+            logger.critical.call_args.args[0] % logger.critical.call_args.args[1:],
+            "Not able to parse host 127.0.0.1:abc: invalid literal for int() with"
+            " base 10: 'abc'",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
