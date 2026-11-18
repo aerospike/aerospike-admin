@@ -1402,8 +1402,10 @@ class AsinfoModeMainTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_login_timeout_is_one_error_line(self):
+        timeout = asyncio.TimeoutError("login timed out after 2.5s")
+
         code, _, view = await self._run_main(
-            self._socket(login=asyncio.TimeoutError()), user="admin", password="admin"
+            self._socket(login=timeout), user="admin", password="admin"
         )
 
         self.assertEqual(code, 1)
@@ -1416,7 +1418,8 @@ class AsinfoModeMainTest(unittest.IsolatedAsyncioTestCase):
         view.assert_not_called()
 
     async def test_info_timeout_stops_the_run(self):
-        assock = self._socket(info=("8.1.0.0", asyncio.TimeoutError(), "never"))
+        timeout = asyncio.TimeoutError("info timed out after 2.5s")
+        assock = self._socket(info=("8.1.0.0", timeout, "never"))
 
         code, _, view = await self._run_main(assock, execute="build;statistics;status")
 

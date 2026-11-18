@@ -789,14 +789,6 @@ async def execute_asinfo_commands(
 
     try:
         logged_in = await assock.login()
-    except asyncio.TimeoutError:
-        logger.critical(
-            "Not able to login and authenticate any cluster with %s:"
-            " login timed out after %gs",
-            seed,
-            timeout,
-        )
-        return
     except OSError as e:
         logger.critical(
             "Not able to login and authenticate any cluster with %s: %s", seed, e
@@ -822,11 +814,6 @@ async def execute_asinfo_commands(
 
         try:
             result = await assock.info(command)
-        except asyncio.TimeoutError:
-            logger.critical(
-                "Not able to get info from %s: info timed out after %gs", seed, timeout
-            )
-            return
         except OSError as e:
             logger.critical("Not able to get info from %s: %s", seed, e)
             return
