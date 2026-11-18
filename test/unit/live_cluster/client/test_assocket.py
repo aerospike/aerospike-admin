@@ -16,17 +16,12 @@ import asyncio
 import contextlib
 import socket
 import unittest
-import warnings
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from lib.live_cluster.client import ASProtocolError, ASResponse
 from lib.live_cluster.client.assocket import SSL, ASSocket
 from lib.utils.constants import AuthMode
 from test.unit import util
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    from OpenSSL import SSL
 
 
 async def _hang(*args, **kwargs):
@@ -53,10 +48,14 @@ class ASSocketFailureTest(unittest.IsolatedAsyncioTestCase):
 
     def _patched(self, tls=False):
         stack = contextlib.ExitStack()
+        near, far = socket.socketpair()
+        stack.callback(near.close)
+        stack.callback(far.close)
         sock = stack.enter_context(patch("socket.socket")).return_value
         tls_sock = stack.enter_context(
             patch("lib.live_cluster.client.assocket._AsyncioSSLConnectionAdapter")
         ).return_value
+        tls_sock.fileno.return_value = near.fileno()
         loop = stack.enter_context(patch("asyncio.get_event_loop")).return_value
         stack.enter_context(
             patch(

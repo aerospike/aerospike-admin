@@ -451,6 +451,31 @@ class HostIpsTest(unittest.TestCase):
 
         self.assertEqual(asyncio.run(ask_twice()), ["10.0.0.1"])
 
+    def test_waiters_on_a_failed_hostname_all_get_the_empty_answer(self):
+        failed = AsyncMock(spec=asyncio.subprocess.Process)
+        failed.returncode = 1
+        self.shell_mock.side_effect = [failed, self.process]
+
+        async def ask():
+            waiters = await asyncio.gather(_get_host_ips(), _get_host_ips())
+            self.assertEqual(self.shell_mock.await_count, 1)
+            return waiters, await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask()), ([[], []], ["10.0.0.1"]))
+        self.assertEqual(self.shell_mock.await_count, 2)
+
+    def test_waiters_on_a_hostname_that_raised_all_get_its_error(self):
+        self.process.stdout.read.side_effect = [OSError("read failed"), b"10.0.0.1"]
+
+        async def ask():
+            waiters = await asyncio.gather(
+                _get_host_ips(), _get_host_ips(), return_exceptions=True
+            )
+            self.assertEqual(self.shell_mock.await_count, 1)
+            return [type(e) for e in waiters], await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask()), ([OSError, OSError], ["10.0.0.1"]))
+
 
 class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -812,6 +837,67 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(await self.node.info("statistics"), "uptime=1")
         self.assertTrue(self.node.alive)
+
+    def _answer_over_a_socket(self, responses):
+        patch.object(Node, "_info_cinfo", _REAL_INFO_CINFO).start()
+        sock = AsyncMock()
+        sock.info.side_effect = info_server(responses)
+        patch.object(self.node, "_get_connection", AsyncMock(return_value=sock)).start()
+        patch.object(self.node, "_return_to_pool", AsyncMock()).start()
+        return sock
+
+    async def test_a_batch_sends_only_the_commands_not_already_held(self):
+        sock = self._answer_over_a_socket(
+            {"build": "8.1.0.0", "peers-generation": "7", "roster:": "roster=null"}
+        )
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info("build")
+            await self.node.info("peers-generation")
+            answers = await self.node.info(("build", "peers-generation", "roster:"))
+
+        self.assertEqual(
+            answers,
+            {"build": "8.1.0.0", "peers-generation": "7", "roster:": "roster=null"},
+        )
+        self.assertEqual(
+            commands_sent(sock.info), ["build", "peers-generation", "roster:"]
+        )
+
+    async def test_a_batch_of_held_commands_sends_nothing(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0", "peers-generation": "7"})
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info("build")
+            await self.node.info("peers-generation")
+            answers = await self.node.info(("build", "peers-generation"))
+
+        self.assertEqual(answers, {"build": "8.1.0.0", "peers-generation": "7"})
+        self.assertEqual(
+            [request.args[0] for request in sock.info.call_args_list],
+            ["build", "peers-generation"],
+        )
+
+    async def test_a_single_command_is_answered_from_a_held_batch(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0", "peers-generation": "7"})
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info(("build", "peers-generation"))
+            answer = await self.node.info("peers-generation")
+
+        self.assertEqual(answer, "7")
+        self.assertEqual(commands_sent(sock.info), ["build", "peers-generation"])
+
+    async def test_a_command_missing_from_a_batch_reply_is_asked_again(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0"})
+
+        with _REAL_INFO_CINFO.held():
+            first = await self.node.info(("build", "roster:"))
+            second = await self.node.info(("build", "roster:"))
+
+        self.assertEqual(first, {"build": "8.1.0.0"})
+        self.assertEqual(second, {"build": "8.1.0.0"})
+        self.assertEqual(commands_sent(sock.info), ["build", "roster:", "roster:"])
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_get_connection_auth_success_does_not_relogin(self, as_socket_mock):

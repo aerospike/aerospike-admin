@@ -149,6 +149,7 @@ class RoundTripTest(unittest.IsolatedAsyncioTestCase):
         )
 
         batched = await self.cl.info(stable + changing)
+        self.cl.forget_info_answers()
 
         for command in stable + changing:
             single = await self.cl.info(command)

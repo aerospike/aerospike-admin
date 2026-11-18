@@ -3573,14 +3573,22 @@ class ManageJobsKillTridControllerTest(unittest.IsolatedAsyncioTestCase):
             "scan": {"1.1.1.1": {"123": {"trid": "123"}}},
             "query": {"1.1.1.1": {"456": {"trid": "456"}}},
         }
+        finished = []
+
+        async def query_abort(trid, nodes):
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+            finished.append(trid)
+            return {nodes[0]: ASINFO_RESPONSE_OK}
+
         self.cluster_mock.info_scan_abort.side_effect = RuntimeError("abort failed")
-        self.cluster_mock.info_query_abort.return_value = {
-            "1.1.1.1": ASINFO_RESPONSE_OK
-        }
+        self.cluster_mock.info_query_abort.side_effect = query_abort
 
         with self.assertRaisesRegex(RuntimeError, "abort failed"):
             await self.controller.execute(["123", "456"])
 
+        self.assertEqual(finished, ["456"], "the other kill was still running")
         self.cluster_mock.info_query_abort.assert_awaited_once_with(
             "456", nodes=["1.1.1.1"]
         )
