@@ -4383,6 +4383,11 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
                 "The 'ael_b64' modifier requires a base64 encoded AEL path, e.g. ael_b64 JC5wcm9maWxlLnNzbg==."
             )
 
+        if "bin" in line and not any(self.mods["bin"]):
+            raise ShellException(
+                "The 'bin' modifier requires a bin name, e.g. bin ssn."
+            )
+
         if len(self.mods["ael"]) > 1:
             raise ShellException(
                 f"The 'ael' modifier takes one quoted path, but '{' '.join(self.mods['ael'][1:])}' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'."

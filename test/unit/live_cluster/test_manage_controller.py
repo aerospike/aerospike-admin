@@ -4655,6 +4655,7 @@ class ManageRosterStageObservedControllerTest(unittest.IsolatedAsyncioTestCase):
 
 BARE_AEL_ERROR = "The 'ael' modifier requires an AEL path, e.g. ael '$.profile.ssn'."
 BARE_AEL_B64_ERROR = "The 'ael_b64' modifier requires a base64 encoded AEL path, e.g. ael_b64 JC5wcm9maWxlLnNzbg==."
+BARE_BIN_ERROR = "The 'bin' modifier requires a bin name, e.g. bin ssn."
 
 
 class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
@@ -4923,9 +4924,14 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             (["bin", "ssn", "ael_b64"], BARE_AEL_B64_ERROR),
             (["ael", ""], BARE_AEL_ERROR),
             (["ael_b64", ""], BARE_AEL_B64_ERROR),
+            (["bin", "", "ael", "$.x"], BARE_BIN_ERROR),
+            (["ael", "$.x", "bin", ""], BARE_BIN_ERROR),
+            (["ael", "$.x", "bin"], BARE_BIN_ERROR),
+            (["bin", ""], BARE_BIN_ERROR),
+            (["bin"], BARE_BIN_ERROR),
         ]
     )
-    async def test_add_rule_bare_ael_keyword(self, target, exp_error):
+    async def test_add_rule_bare_target_keyword(self, target, exp_error):
         line = "redact namespace test set demo".split() + target
         self.cluster_mock.info_masking_add_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
@@ -5411,9 +5417,14 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
             (["bin", "profile", "ael_b64"], BARE_AEL_B64_ERROR),
             (["ael", ""], BARE_AEL_ERROR),
             (["ael_b64", ""], BARE_AEL_B64_ERROR),
+            (["bin", "", "ael", "$.x"], BARE_BIN_ERROR),
+            (["ael", "$.x", "bin", ""], BARE_BIN_ERROR),
+            (["ael", "$.x", "bin"], BARE_BIN_ERROR),
+            (["bin", ""], BARE_BIN_ERROR),
+            (["bin"], BARE_BIN_ERROR),
         ]
     )
-    async def test_drop_rule_bare_ael_keyword(self, target, exp_error):
+    async def test_drop_rule_bare_target_keyword(self, target, exp_error):
         line = "namespace test set demo".split() + target
         self.cluster_mock.info_masking_remove_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
