@@ -1583,7 +1583,7 @@ class Node(AsyncObject):
     @async_return_exceptions
     async def info_usage(self) -> bytes:
         """The cluster's usage export, decoded from the base64 the server sends."""
-        resp = await self._info("usage")
+        resp = await self._info("usage-export")
 
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get usage", resp)

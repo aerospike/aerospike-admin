@@ -1952,12 +1952,12 @@ class CollectinfoController(LiveClusterCommandController):
             )
 
             if e.supported:
-                self.failed_cmds.append("usage")
+                self.failed_cmds.append("usage-export")
 
             return {"status": status, "node": e.node, "reply": e.reply}
         except Exception as e:
             logger.debug("Usage file not written: %s", e, exc_info=True)
-            self.failed_cmds.append("usage")
+            self.failed_cmds.append("usage-export")
 
             return {"status": "failed", "node": "", "reply": str(e)}
 

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Reading the export the server's `usage` info command returns."""
+"""Reading the export the server's `usage-export` info command returns."""
 
 import datetime
 import hashlib
