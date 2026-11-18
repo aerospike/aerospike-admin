@@ -110,6 +110,7 @@ class Cluster(AsyncObject):
         # crawl the cluster search for nodes in addition to the seed nodes.
         self.last_cluster_refresh_time = 0
         self.only_connect_seed = only_connect_seed
+        self._offline_reasons: dict[str, str | None] = {}
         await self._refresh_cluster()
 
         # to avoid same label (NODE column) for multiple nodes we need to keep track
@@ -543,6 +544,19 @@ class Cluster(AsyncObject):
             ((node.ip, node.port, node.tls_name) for node in live_nodes)
         )
 
+    def _report_offline_nodes(self):
+        reasons = {
+            node.key: node.offline_reason
+            for node in self.nodes.values()
+            if not node.alive
+        }
+
+        for key, reason in reasons.items():
+            if self._offline_reasons.get(key) != reason:
+                logger.warning("%s is Offline: %s", key, reason)
+
+        self._offline_reasons = reasons
+
     def update_node(self, node):
         self.nodes[node.key] = node
         self._add_to_lookup(self.node_lookup, node)
@@ -788,6 +802,7 @@ class Cluster(AsyncObject):
                     await self._crawl()
                     # Not in _crawl(): it returns early when there are no new peers.
                     self._rebuild_node_lookup()
+                    self._report_offline_nodes()
                     self.last_cluster_refresh_time = time()
             except Exception:
                 raise
