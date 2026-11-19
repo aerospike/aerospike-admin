@@ -407,6 +407,7 @@ class Node(AsyncObject):
         the append, so a concurrent return cannot fill the pool in between."""
         pool = self.socket_pool.setdefault(port, deque(maxlen=MAX_SOCKET_POOL_SIZE))
         oldest = pool.popleft() if len(pool) == pool.maxlen else None
+        sock.last_used = time.time()
         pool.append(sock)
 
         if oldest is not None:
@@ -597,8 +598,6 @@ class Node(AsyncObject):
             # else : might be it's IP is not available, node should try all old
             # service addresses
 
-            await self.close()
-            self._initialize_socket_pool()
             current_host = (self.ip, self.port, self.tls_name)
 
             if not self.service_addresses or current_host not in self.service_addresses:
@@ -616,10 +615,6 @@ class Node(AsyncObject):
                         s,
                         current_host,
                     )
-                    # calling update ip again because info_service may have provided a
-                    # different IP than what was seeded.
-                    self.ip = s[0]
-                    self.port = s[1]
 
                     # Most common case
                     if s[0] == current_host[0] and s[1] == current_host[1] and i == 0:
@@ -627,6 +622,15 @@ class Node(AsyncObject):
                         # The following info requests were already made
                         # no need to do again
                         break
+
+                    # Seed sockets, as to a load balancer, must not reach this address.
+                    await self.close()
+                    self._initialize_socket_pool()
+
+                    # calling update ip again because info_service may have provided a
+                    # different IP than what was seeded.
+                    self.ip = s[0]
+                    self.port = s[1]
 
                     # IP address have changed. Not common.
                     # Re-fetch all node info including build version, as this could be
@@ -2874,6 +2878,23 @@ class Node(AsyncObject):
                 "benchmarks-udf-sub",
                 "benchmarks-batch-sub",
             ]
+
+            if (
+                self.build
+                and not isinstance(self.build, Exception)
+                and not self.build.startswith(("ERROR", "error"))
+                and version.LooseVersion(self.build)
+                >= version.LooseVersion(
+                    constants.SERVER_OBJECT_STORE_LATENCIES_FIRST_VERSION
+                )
+            ):
+                micro_benchmarks += [
+                    "object-store-put",
+                    "object-store-get",
+                    "object-store-list",
+                    "object-store-delete",
+                ]
+
             cmd_latencies += [
                 "latencies:hist={%s}-%s" % (ns, optional)
                 for ns in namespaces
@@ -2904,9 +2925,8 @@ class Node(AsyncObject):
         hist_name = None
         ns = None
         unit_mapping = {"msec": "ms", "usec": "us"}
-        time_units = None
         exponent_increment = 1 if exponent_increment <= 0 else exponent_increment
-        columns = [
+        thresholds = [
             ">1",
             ">2",
             ">4",
@@ -2950,13 +2970,8 @@ class Node(AsyncObject):
                 hist_name = None
                 continue
 
-            if time_units is None:
-                time_units = hist_data.pop(0)
-                columns = ["ops/sec"] + [
-                    (col + unit_mapping[time_units]) for col in list(columns)
-                ]
-            else:
-                hist_data.pop(0)
+            time_units = unit_mapping[hist_data.pop(0)]
+            columns = ["ops/sec"] + [col + time_units for col in thresholds]
 
             latency_data = [float(r) for r in hist_data]
             # Remove ops/sec and then add it back in after getting correct latency buckets.
