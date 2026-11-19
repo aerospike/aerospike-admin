@@ -876,8 +876,12 @@ async def main():
     if cli_args.execute is not None:
         execute_only_mode = True
 
-    # Only create ADMIN_HOME if not in execute mode (avoids issues on read-only filesystems)
-    if not execute_only_mode and not os.path.isdir(ADMIN_HOME):
+    # Only create ADMIN_HOME if not in execute or asinfo mode (avoids issues on read-only filesystems)
+    if (
+        not execute_only_mode
+        and not cli_args.asinfo_mode
+        and not os.path.isdir(ADMIN_HOME)
+    ):
         try:
             os.makedirs(ADMIN_HOME)
         except (OSError, PermissionError) as e:

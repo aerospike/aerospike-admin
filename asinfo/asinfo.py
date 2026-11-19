@@ -455,7 +455,5 @@ if p.returncode:
     print("ERROR: asadm exited with code %d" % p.returncode, file=sys.stderr)
     sys.exit(1)
 
-connection_errors = ["Not able to connect any cluster", "Could not connect to node"]
-
-if any(ce in out for ce in connection_errors) or is_error_reply(out):
+if is_error_reply(out):
     sys.exit(1)

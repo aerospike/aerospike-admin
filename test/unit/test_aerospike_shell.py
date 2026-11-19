@@ -481,6 +481,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.password = None
                 mock_args.tls_enable = False
                 mock_args.sagent_config_errors = []
+                mock_args.asinfo_mode = False
+                mock_args.out_file = None
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -490,7 +492,9 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                         with patch("asadm.conf.loadconfig") as mock_loadconfig:
                             mock_loadconfig.return_value = (mock_args, [])
 
-                            with patch("asadm.AerospikeShell") as mock_shell:
+                            with patch(
+                                "asadm.AerospikeShell", new_callable=AsyncMock
+                            ) as mock_shell:
                                 mock_shell.return_value = AsyncMock()
                                 mock_shell.return_value.connected = False
 
@@ -521,6 +525,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.password = None
                 mock_args.tls_enable = False
                 mock_args.sagent_config_errors = []
+                mock_args.asinfo_mode = False
+                mock_args.out_file = None
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -535,7 +541,9 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                             with patch("asadm.conf.loadconfig") as mock_loadconfig:
                                 mock_loadconfig.return_value = (mock_args, [])
 
-                                with patch("asadm.AerospikeShell") as mock_shell:
+                                with patch(
+                                    "asadm.AerospikeShell", new_callable=AsyncMock
+                                ) as mock_shell:
                                     mock_shell.return_value = AsyncMock()
                                     mock_shell.return_value.connected = False
 
@@ -574,6 +582,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.password = None
                 mock_args.tls_enable = False
                 mock_args.sagent_config_errors = []
+                mock_args.asinfo_mode = False
+                mock_args.out_file = None
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -581,7 +591,9 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                         with patch("asadm.conf.loadconfig") as mock_loadconfig:
                             mock_loadconfig.return_value = (mock_args, [])
 
-                            with patch("asadm.AerospikeShell") as mock_shell:
+                            with patch(
+                                "asadm.AerospikeShell", new_callable=AsyncMock
+                            ) as mock_shell:
                                 mock_shell.return_value = AsyncMock()
                                 mock_shell.return_value.connected = False
 

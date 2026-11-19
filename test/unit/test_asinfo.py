@@ -147,6 +147,18 @@ class AsinfoStderrTest(unittest.TestCase):
         self.assertEqual(cp.stdout, reply + "\n")
         self.assertEqual(cp.stderr, "")
 
+    def test_reply_mentioning_a_connect_failure_succeeds(self):
+        for reply in (
+            "ns=test:set=Could not connect to node:objects=100:tombstones=0",
+            "ns=test:set=Not able to connect any cluster:objects=100:tombstones=0",
+        ):
+            with self.subTest(reply=reply):
+                cp = self.run_asinfo("", stdout=reply)
+
+                self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+                self.assertEqual(cp.stdout, reply + "\n")
+                self.assertEqual(cp.stderr, "")
+
     def test_error_reply_fails(self):
         for reply in (
             "ERROR:4:unrecognized command",
@@ -617,6 +629,86 @@ class AsinfoModeClosedConnectionTest(unittest.TestCase):
         )
 
 
+def _close_with_notify(sock):
+    sock.recv(65536)
+    sock.unwrap()
+
+
+def _close_without_notify(sock):
+    sock.recv(65536)
+
+
+class AsinfoModeTLSClosedConnectionTest(unittest.TestCase):
+    """The same over TLS, where pyOpenSSL raises its own errors instead of
+    OSErrors."""
+
+    def setUp(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.env = dict(os.environ, HOME=home.name)
+
+        directory = os.path.join(home.name, "ca")
+        os.mkdir(directory)
+        self.pki = pki.generate(directory)
+
+    def run_asadm(self, handler, *argv):
+        node = FakeSecretAgent(
+            handler=handler, ssl_context=self.pki.server_context()
+        ).start()
+        self.addCleanup(node.stop)
+        self.seed = "('127.0.0.1', {}, 'localhost')".format(node.port)
+
+        return subprocess.run(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", "127.0.0.1:localhost:{}".format(node.port), "--tls-enable"]
+            + ["--tls-cafile", self.pki.ca_file, "--timeout", "3", *argv]
+            + ["-e", "build"],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            timeout=60,
+        )
+
+    def test_close_notify_at_login_is_one_error_line(self):
+        cp = self.run_asadm(_close_with_notify, "-U", "admin", "-P", "admin")
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to login and authenticate any cluster with {}:"
+            " Error: Connection closed by server.\n".format(self.seed),
+        )
+
+    def test_close_notify_at_info_is_one_error_line(self):
+        cp = self.run_asadm(_close_with_notify)
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to get info from {}: Error: Connection closed by"
+            " server.\n".format(self.seed),
+        )
+
+    def test_closed_without_notify_at_login_is_one_error(self):
+        """A source run also prints asyncio's "Fatal read error" block here, so
+        only the ERROR lines are checked."""
+        cp = self.run_asadm(_close_without_notify, "-U", "admin", "-P", "admin")
+        errors = [line for line in cp.stderr.splitlines() if line.startswith("ERROR:")]
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(len(errors), 1, cp.stderr)
+        self.assertTrue(
+            errors[0].startswith(
+                "ERROR: Not able to login and authenticate any cluster with {}:"
+                " Error: ".format(self.seed)
+            ),
+            cp.stderr,
+        )
+
+
 class AsinfoWrapperTest(unittest.TestCase):
     def setUp(self):
         self.env = dict(os.environ)
@@ -726,6 +818,96 @@ class AsinfoModeExitCodeTest(unittest.TestCase):
             " with base 10: 'abc'\n"
             "ERROR: Not able to connect any cluster with [].\n",
         )
+
+
+def _recv_exact(sock, size):
+    data = b""
+
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            return None
+        data += chunk
+
+    return data
+
+
+def _answer_info(received):
+    """Replies "<name>\\t8.2.0.0" to each name asked for, and to build when the
+    request names none."""
+
+    def handler(sock):
+        while True:
+            header = _recv_exact(sock, 8)
+            if header is None:
+                return
+
+            names = _recv_exact(sock, int.from_bytes(header[2:], "big")).split()
+            received.append([name.decode() for name in names])
+            reply = b"".join(name + b"\t8.2.0.0\n" for name in names or [b"build"])
+            header = ((2 << 56) | (1 << 48) | len(reply)).to_bytes(8, "big")
+            sock.sendall(header + reply)
+
+    return handler
+
+
+class AsinfoAnsweringNodeTest(unittest.TestCase):
+    """asinfo and the real asadm against a node that answers info requests."""
+
+    def setUp(self):
+        self.received = []
+        self.node = FakeSecretAgent(handler=_answer_info(self.received)).start()
+        self.addCleanup(self.node.stop)
+
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        self.home = os.path.join(tmpdir.name, "home")
+        self.cwd = os.path.join(tmpdir.name, "cwd")
+        os.mkdir(self.home)
+        os.mkdir(self.cwd)
+
+        bindir = install_asadm(self, REAL_ASADM)
+        self.env = dict(
+            os.environ,
+            HOME=self.home,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=ASADM,
+        )
+
+    def run_asinfo(self, *argv):
+        return subprocess.run(
+            [sys.executable, ASINFO, "--no-config-file", "-h", self.node.host]
+            + ["-p", str(self.node.port), *argv],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            cwd=self.cwd,
+            timeout=60,
+        )
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_all_values_on_a_read_only_home_succeeds(self):
+        """TOOLS-4655: asinfo mode has no history, so it makes no ~/.aerospike."""
+        os.chmod(self.home, 0o500)
+        self.addCleanup(os.chmod, self.home, 0o700)
+
+        cp = self.run_asinfo()
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "1 :  build\n     8.2.0.0\n")
+        self.assertEqual(cp.stderr, "")
+
+    def test_value_naming_a_file_in_the_cwd_is_sent_as_given(self):
+        with open(os.path.join(self.cwd, "build"), "w") as f:
+            f.write("statistics\n")
+
+        cp = self.run_asinfo("-v", "build")
+
+        self.assertEqual(self.received, [["build"]])
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "8.2.0.0\n")
+        self.assertEqual(cp.stderr, "")
 
 
 if __name__ == "__main__":
