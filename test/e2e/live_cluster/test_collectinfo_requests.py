@@ -109,9 +109,9 @@ class CollectinfoRequestsTest(unittest.IsolatedAsyncioTestCase):
         send = ASSocket.info
 
         async def recording_send(sock, command):
-            if command != "node":
-                key = command if isinstance(command, str) else tuple(command)
-                asked[(sock.port, key)] += 1
+            for name in [command] if isinstance(command, str) else command:
+                if name != "node":
+                    asked[(sock.port, name)] += 1
 
             return await send(sock, command)
 

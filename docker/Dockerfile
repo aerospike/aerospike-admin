@@ -21,7 +21,7 @@ ARG ASADM_AMD64_SHA256=""
 ARG ASADM_ARM64_URL=""
 ARG ASADM_ARM64_SHA256=""
 
-FROM ubuntu:24.04@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
 
 ARG ASADM_AMD64_URL
 ARG ASADM_AMD64_SHA256
@@ -62,6 +62,8 @@ SHELL ["/bin/bash", "-Eeuo", "pipefail", "-c"]
 # transitive Depends from the .deb (currently none declared) and the .deb's
 # PyInstaller bundle relies only on libs already present in ubuntu:24.04.
 # curl is installed only when we need to download, then purged.
+# apt-get upgrade applies the Ubuntu fixes released after the pinned base
+# digest; the release refuses to publish an image with a High or Critical CVE.
 # Then record, from the installed package's own file list, the executables it
 # put on PATH: docker-entrypoint.sh reads /usr/local/share/aerospike/tools and
 # image-info to print usage, so the usage text follows the package.
@@ -77,6 +79,7 @@ RUN --mount=type=bind,source=.,target=/build-ctx \
         LOCAL_PKG="${ASADM_LOCAL_PKG_ARM64:-${ASADM_LOCAL_PKG}}"; \
     fi && \
     apt-get update -y && \
+    apt-get upgrade -y && \
     if [ -n "${LOCAL_PKG}" ]; then \
         if [ ! -f "/build-ctx/${LOCAL_PKG}" ]; then \
             echo "ERROR: ${LOCAL_PKG} not in the build context." >&2; \
