@@ -68,6 +68,8 @@ ARCH = $(shell uname -m)
 # reports arm64 -- the dpkg spelling, but not rpm's.
 DEB_ARCH = $(patsubst noarch,all,$(patsubst aarch64,arm64,$(patsubst x86_64,amd64,$(ARCH))))
 RPM_ARCH = $(patsubst arm64,aarch64,$(ARCH))
+# Keep the 1: epoch: without it any 1:3.x openssl-libs satisfies the version.
+RPM_OPENSSL_DEPENDS = $(if $(filter el9 el10 amzn2023,$(BUILD_DISTRO)),openssl-libs >= 1:3.2.2,openssl-libs)
 
 
 .PHONY: all
@@ -85,6 +87,7 @@ deb: prep
 		--version $(PKG_VERSION) \
 		--iteration $(DEB_ITERATION) \
 		--maintainer $(MAINTAINER) \
+		--depends "libssl3 | libssl3t64" \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \
@@ -107,6 +110,7 @@ rpm: prep
 		--version $(RPM_VERSION) \
 		--iteration $(ITERATION) \
 		--maintainer $(MAINTAINER) \
+		--depends "$(RPM_OPENSSL_DEPENDS)" \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \

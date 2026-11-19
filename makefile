@@ -121,6 +121,7 @@ init:
 
 UNIT_TEST_CMD=pytest --disable-warnings test/unit
 E2E_TEST_CMD=pytest --disable-warnings test/e2e/live_cluster
+FIPS_TEST_CMD=pytest --disable-warnings test/e2e/fips
 COVERAGE_CONF=$(SOURCE_ROOT)/tox.ini
 
 .PHONY: unit
@@ -130,6 +131,10 @@ unit:
 .PHONY: integration
 integration:
 	FEATKEY=$(FEATKEY) $(E2E_TEST_CMD)
+
+.PHONY: fips
+fips:
+	FEATKEY=$(FEATKEY) $(FIPS_TEST_CMD)
 
 .PHONY: unit-cov
 unit-cov:
