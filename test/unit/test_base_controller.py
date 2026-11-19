@@ -155,6 +155,7 @@ class ExactCommandNameTest(unittest.IsolatedAsyncioTestCase):
         help_text = self.root().execute_help(["fake"])
 
         self.assertIn("Fake Command 1 Help", help_text)
+        self.assertIn("Usage:  fake", help_text)
 
     def test_complete_after_full_name_offers_its_subcommands(self):
         self.assertEqual(self.root().complete(["fake", ""]), ["cmd"])

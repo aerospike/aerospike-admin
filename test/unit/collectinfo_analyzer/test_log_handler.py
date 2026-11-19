@@ -353,6 +353,7 @@ class NoSnapshotReasonTest(unittest.TestCase):
             self.addCleanup(handler.close)
 
         self.assertIn("No Aerospike collectinfo data found", str(raised.exception))
+        self.assertIn('`asadm -e "collect info"`', str(raised.exception))
 
     def test_a_bundle_whose_ascinfo_is_not_json_names_the_file(self):
         """A non-JSON ascinfo.json used to escape as a JSONDecodeError, which
