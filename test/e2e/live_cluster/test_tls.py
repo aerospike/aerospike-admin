@@ -14,6 +14,7 @@
 
 import os
 import re
+import socket
 import time
 import unittest
 
@@ -311,7 +312,15 @@ class TestTLS(unittest.TestCase):
             node.unpause()
 
         self.assertEqual(cp.returncode, 1, cp.stderr)
-        self.assertIn("ERROR: Not able to connect any cluster with", cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                "ERROR: Not able to connect any cluster with"
+                f" ('{lib.SERVER_IP}', {lib.TLS_PORT}, 'localhost'):"
+                " TLS handshake timed out after 1s"
+            ],
+        )
         self.assertLess(elapsed, 4.5)
 
     def test_asinfo_mode_clear_client_on_the_tls_port(self):
@@ -332,6 +341,44 @@ class TestTLS(unittest.TestCase):
             ),
             cp.stderr,
         )
+
+    def test_asinfo_mode_clear_info_on_the_tls_port(self):
+        """TOOLS-4655: without a user the info call is the first read, and the
+        server drops it. The reason depends on whether it closes or resets."""
+        cp = test_util.run_asadm(
+            f"-h {self.host} --asinfo-mode --timeout 1 -e build",
+            strip_header=False,
+        )
+
+        lines = cp.stderr.splitlines()
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(len(lines), 1, cp.stderr)
+        self.assertTrue(
+            lines[0].startswith(
+                "ERROR: Not able to get info from"
+                f" ('{lib.SERVER_IP}', {lib.TLS_PORT}, None): Error: "
+            ),
+            cp.stderr,
+        )
+        self.assertNotIn("unpack_from", lines[0])
+
+    def test_asinfo_mode_unbracketed_ipv6_takes_port_and_tls_name(self):
+        """TOOLS-4655: -p and -t apply to a bare IPv6 address."""
+        try:
+            socket.create_connection(("::1", lib.TLS_PORT), 1).close()
+        except OSError as e:
+            self.skipTest(f"::1 is not reachable: {e}")
+
+        cp = test_util.run_asadm(
+            f"-h ::1 -p {lib.TLS_PORT} -t localhost --tls-enable"
+            f" --tls-cafile {self.ca} -Uadmin -Padmin --asinfo-mode -e build",
+            strip_header=False,
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn(lib.server_build(), cp.stdout)
+        self.assertEqual(cp.stderr, "")
 
 
 class TestPKI(unittest.TestCase):
