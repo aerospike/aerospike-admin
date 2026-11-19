@@ -428,8 +428,8 @@ class Cluster(AsyncObject):
         peers = []
         aliases = {}
         if self.nodes:
-            for node_key in list(self.nodes.keys()):
-                node = self.nodes[node_key]
+
+            async def refresh(node):
                 if await node.needs_refresh():
                     logger.debug("Node %s:%s needs refresh", node.ip, node.port)
                     try:
@@ -437,6 +437,17 @@ class Cluster(AsyncObject):
                     except (ASInfoNotAuthenticatedError, ASProtocolError) as e:
                         logger.error("%s: %s", node.key, e)
                         node.alive = False
+
+            nodes = list(self.nodes.items())
+            results = await asyncio.gather(
+                *(refresh(node) for _, node in nodes), return_exceptions=True
+            )
+
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+
+            for node_key, node in nodes:
                 if node.key != node_key:
                     # change in service list
                     self.nodes.pop(node_key)
