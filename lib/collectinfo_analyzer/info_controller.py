@@ -27,6 +27,7 @@ from .collectinfo_command_controller import (
     has_node_data,
     warn_no_data,
 )
+from .summary_controller import SummaryController
 from lib.base_controller import ShellException
 
 Modifiers = constants.Modifiers
@@ -43,7 +44,9 @@ class InfoController(CollectinfoCommandController):
         self.stats_getter = GetStatisticsController(self.log_handler)
         self.config_getter = GetConfigController(self.log_handler)
         self.controller_map = dict(
-            namespace=InfoNamespaceController, transactions=InfoTransactionsController
+            namespace=InfoNamespaceController,
+            transactions=InfoTransactionsController,
+            summary=SummaryController,
         )
 
     @CommandHelp("Displays network, namespace, and xdr summary information.")

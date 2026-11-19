@@ -39,6 +39,9 @@ from lib.live_cluster.client.types import (
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import (
     CollectinfoDiagnostics,
 )
+from lib.collectinfo_analyzer.collectinfo_root_controller import (
+    CollectinfoRootController,
+)
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
@@ -3350,6 +3353,12 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("memory", self.captured)
 
+    async def test_summary_log_runs_info_summary_not_the_deprecated_command(self):
+        await self.controller._dump_collectinfo_summary("prefix_", "header\n")
+
+        self.assertIn("info summary", self.captured)
+        self.assertNotIn("summary", self.captured)
+
     async def test_one_failed_info_command_does_not_drop_the_rest(self):
         self.fail_on = {"network"}
 
@@ -3496,6 +3505,7 @@ class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
     collectinfo_debug.log, which hangs off the same logger at DEBUG."""
 
     COMMAND_LOGGER = "lib.live_cluster.info_controller"
+    HEALTH_LOGGER = "lib.collectinfo_analyzer.health_check_controller"
 
     async def asyncSetUp(self):
         self.controller = CollectinfoController()
@@ -3555,6 +3565,33 @@ class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
     async def test_command_error_still_reaches_the_terminal(self):
         await self._capture(
             lambda: logging.getLogger(self.COMMAND_LOGGER).log(logging.ERROR, "boom")
+        )
+
+        self.stderr_emit.assert_called_once()
+
+    async def test_health_deprecation_warning_stays_off_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).warning(
+                "The 'health' command is deprecated."
+            )
+        )
+
+        self.stderr_emit.assert_not_called()
+
+    async def test_health_deprecation_warning_still_reaches_the_debug_log(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).warning(
+                "The 'health' command is deprecated."
+            )
+        )
+
+        self.assertEqual(
+            self._debug_messages(), ["The 'health' command is deprecated."]
+        )
+
+    async def test_health_error_still_reaches_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).error("health failed")
         )
 
         self.stderr_emit.assert_called_once()
@@ -3648,6 +3685,67 @@ class CaptureStyleJsonTest(unittest.IsolatedAsyncioTestCase):
             await self.controller._collectinfo_capture_and_write_to_file("f", render)
 
         self.assertTrue(get_style_json())
+
+
+class RunCollectinfoLeavesNoAnalyzerFolderTest(RunCollectinfoTestCase):
+    """The analyzer built for summary.log and health.log makes a per-process
+    folder under ~/.aerospike/collectinfo/. The run must remove that folder only,
+    leaving other processes' folders and the bundle it archives."""
+
+    SNAPSHOT = {
+        "prod": {
+            "1.1.1.1:3000": {
+                "as_stat": {
+                    "meta_data": {"node_id": "BB1", "ip": "1.1.1.1:3000"},
+                },
+            }
+        }
+    }
+
+    async def test_a_run_leaves_no_folder_in_the_collectinfo_home(self):
+        collectinfo_home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, collectinfo_home, ignore_errors=True)
+        other_pid_dir = os.path.join(collectinfo_home, "99999999")
+        os.mkdir(other_pid_dir)
+        keep_file = os.path.join(other_pid_dir, "keep.txt")
+
+        with open(keep_file, "w") as f:
+            f.write("keep")
+
+        bundle_at_archive = []
+
+        def archive_dir(path):
+            bundle_at_archive.append(
+                sorted(os.listdir(path)) if os.path.isdir(path) else []
+            )
+            return path + ".tgz", True
+
+        self.archive_mock.side_effect = archive_dir
+        patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.COLLECTINFO_DIR",
+            collectinfo_home + os.sep,
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.CollectinfoRootController",
+            CollectinfoRootController,
+        ).start()
+        patch.object(CollectinfoRootController, "log_handler", None).start()
+        patch.object(CollectinfoRootController, "command", None).start()
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(return_value=(self.SNAPSHOT, {"no_data_nodes": []})),
+        ).start()
+
+        await self._run()
+
+        self.ascollectinfo_mock.assert_awaited_once()
+        self.assertEqual(
+            bundle_at_archive,
+            [["prefix_ascinfo.json", "prefix_" + constants.COLLECTINFO_META_FILENAME]],
+        )
+        self.assertTrue(os.path.isfile(keep_file))
+        self.assertEqual(sorted(os.listdir(collectinfo_home)), ["99999999"])
 
 
 class CollectinfoSnapshotWaitFlagTest(unittest.IsolatedAsyncioTestCase):

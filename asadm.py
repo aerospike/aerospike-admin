@@ -57,6 +57,7 @@ else:
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
+from lib.live_cluster.collect_controller import CollectController
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
@@ -102,6 +103,66 @@ DEFAULT_PROMPT = "Admin> "
 PRIVILEGED_PROMPT = "Admin+> "
 ADMIN_DEFAULT_PROMPT = "ADMIN> "
 ADMIN_PRIVILEGED_PROMPT = "ADMIN+> "
+
+
+def split_commands(line):
+    # get rid of extra whitespace
+    lexer = shlex.shlex(line, posix=True)
+    # TODO: shlex is not working with 'with' ip addresses. Need to write a
+    #       new parser or correct shlex behavior.
+    commands = []
+    command = []
+
+    # Maybe someday we should not allow most of the characters below without
+    # quotes surrounding them.  These characters below define what can be in
+    # an unquoted string.
+    lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|:<>,./\?"
+    lexer.escapedquotes += "'"
+
+    try:
+        for token in lexer:
+            if token == ";":
+                if command:
+                    commands.append(command)
+                    command = []
+            else:
+                command.append(token)
+
+        if command:
+            commands.append(command)
+    except ValueError as e:
+        raise ShellException("{}. Check that quotes are balanced.".format(e))
+
+    return commands
+
+
+def runs_collect_info(commands):
+    """Whether an 'asadm -e' command string asks for collect info by any of its names."""
+    if "collectinfo" in commands:
+        return True
+
+    try:
+        command_lines = split_commands(commands)
+    except ShellException:
+        return False
+
+    for words in command_lines:
+        if words[0] != "collect":
+            continue
+
+        if len(words) == 1:
+            return True
+
+        named = [
+            name
+            for name in CollectController().controller_map
+            if name.startswith(words[1])
+        ]
+
+        if named == ["info"] or words[1] == "with" or words[1].startswith("-"):
+            return True
+
+    return False
 
 
 class AerospikeShell(cmd.Cmd, AsyncObject):
@@ -390,34 +451,7 @@ class AerospikeShell(cmd.Cmd, AsyncObject):
             self.set_prompt(PRIVILEGED_PROMPT, "red")
 
     def clean_line(self, line):
-        # get rid of extra whitespace
-        lexer = shlex.shlex(line, posix=True)
-        # TODO: shlex is not working with 'with' ip addresses. Need to write a
-        #       new parser or correct shlex behavior.
-        commands = []
-        command = []
-
-        # Maybe someday we should not allow most of the characters below without
-        # quotes surrounding them.  These characters below define what can be in
-        # an unquoted string.
-        lexer.wordchars += r"`~!@#$%^&*()_-+={}[]|:<>,./\?"
-        lexer.escapedquotes += "'"
-
-        try:
-            for token in lexer:
-                if token == ";":
-                    if command:
-                        commands.append(command)
-                        command = []
-                else:
-                    command.append(token)
-
-            if command:
-                commands.append(command)
-        except ValueError as e:
-            raise ShellException("{}. Check that quotes are balanced.".format(e))
-
-        return commands
+        return split_commands(line)
 
     # This was copied from the base class then turned async.
     async def cmdloop(self, intro=None):
@@ -1007,7 +1041,7 @@ async def main():
                 args = (line,)
 
             else:
-                if "collectinfo" in commands_arg:
+                if runs_collect_info(commands_arg):
                     logger.warning(
                         "Collecting only System data. Not able to connect any cluster with "
                         + str(seeds)
