@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from lib.base_controller import CommandHelp, ModifierHelp
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 from lib.live_cluster.client.types import ASInfoResponseError
 from lib.live_cluster.get_controller import GetClusterMetadataController
 from lib.utils import common, constants, usage_export, util
@@ -136,6 +136,12 @@ class CollectusageController(LiveClusterCommandController):
         self.modifiers = set()
 
     async def _do_default(self, line):
+        if line and line[0] in ("-h", "--help"):
+            command = " ".join(self._context)
+            raise ShellException(
+                f"{command}: '{line[0]}' is not a valid option. See 'help {command}' for available options."
+            )
+
         output_prefix = util.get_arg_and_delete_from_mods(
             line=line,
             arg="--output-prefix",
