@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import unittest
 import warnings
+from contextlib import redirect_stderr
 from socket import error as SocketError
 from unittest.mock import AsyncMock, Mock, patch
 
+from OpenSSL import SSL
 from pytest import PytestUnraisableExceptionWarning
 
 from lib.utils.constants import AuthMode
@@ -180,6 +183,30 @@ class SecurityTest(unittest.IsolatedAsyncioTestCase):
         self.assertTupleEqual(actual, (ASResponse.INVALID_COMMAND, None, 0))
         hash_mock.assert_not_called()
 
+    async def test_login_tls_connection_closed_is_an_io_error(self):
+        """TOOLS-4655: pyOpenSSL errors are not OSErrors."""
+        for error, reason in (
+            (SSL.SysCallError(-1, "Unexpected EOF"), "Error: (-1, 'Unexpected EOF')"),
+            (
+                SSL.Error([("SSL routines", "", "tlsv13 alert certificate required")]),
+                "Error: [('SSL routines', '', 'tlsv13 alert certificate required')]",
+            ),
+        ):
+            with self.subTest(reason=reason):
+                self.reader_mock.read.side_effect = error
+
+                with self.assertRaises(IOError) as cm:
+                    await login(
+                        self.reader_mock,
+                        self.writer_mock,
+                        "admin",
+                        "admin",
+                        b"hash",
+                        AuthMode.INTERNAL,
+                    )
+
+                self.assertEqual(str(cm.exception), reason)
+
     def test_hash_password_treats_none_as_empty(self):
         self.assertEqual(_hash_password(None), _hash_password(""))
 
@@ -198,6 +225,26 @@ class SecurityTest(unittest.IsolatedAsyncioTestCase):
 
         self.writer_mock.write.assert_called_with(expected_send_buf)
         self.assertEqual(actual_return_code, expected_return_code)
+
+    async def test_authenticate_with_token_connection_closed_is_one_error(self):
+        """TOOLS-4655: no traceback on stderr and one Error: prefix."""
+        tls_reader = AsyncMock()
+        tls_reader.read.side_effect = SSL.SysCallError(-1, "Unexpected EOF")
+
+        for reader, reason in (
+            (DummyReader([]), "Error: Connection closed by server."),
+            (tls_reader, "Error: (-1, 'Unexpected EOF')"),
+        ):
+            with self.subTest(reason=reason):
+                err = io.StringIO()
+
+                with redirect_stderr(err), self.assertRaises(IOError) as cm:
+                    await authenticate_with_token(
+                        reader, self.writer_mock, "admin", b"token", AuthMode.INTERNAL
+                    )
+
+                self.assertEqual(str(cm.exception), reason)
+                self.assertEqual(err.getvalue(), "")
 
     async def test_create_user_with_roles(self):
         expected_send_buf = b"\x00\x02\x00\x00\x00\x00\x00p\x00\x00\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x00bob\x00\x00\x00=\x01$2a$10$7EqJtq98hPqEX7fNZaFWoOv0hwU68nwGK8WvAqb5nnU0s/92caKv6\x00\x00\x00\x13\n\x02\nuser-admin\x05write"

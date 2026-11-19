@@ -19,13 +19,26 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from lib.live_cluster.client import ASProtocolError, ASResponse
-from lib.live_cluster.client.assocket import SSL, ASSocket
+from lib.live_cluster.client.assocket import (
+    SSL,
+    ASSocket,
+    _AsyncioSSLConnectionAdapter,
+)
 from lib.utils.constants import AuthMode
 from test.unit import util
 
 
 async def _hang(*args, **kwargs):
     await asyncio.Event().wait()
+
+
+class AsyncioSSLConnectionAdapterTest(unittest.TestCase):
+    def test_close_notify_reads_as_end_of_data(self):
+        """TOOLS-4655: asyncio reads b"" as the server closing, as on a clear socket."""
+        conn = _AsyncioSSLConnectionAdapter(SSL.Context(SSL.TLS_METHOD), None)
+
+        with patch.object(SSL.Connection, "recv", side_effect=SSL.ZeroReturnError()):
+            self.assertEqual(conn.recv(8), b"")
 
 
 class ASSocketFailureTest(unittest.IsolatedAsyncioTestCase):

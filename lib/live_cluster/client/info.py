@@ -454,10 +454,9 @@ async def _authenticate(
             reader, writer, send_buf
         )
         return return_code
+    except OSError:
+        raise
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
         raise IOError("Error: %s" % str(e))
 
 
@@ -1210,7 +1209,7 @@ async def login(
 
         return 0, session_token, session_expiration
 
-    except SocketError as e:
+    except Exception as e:
         raise IOError("Error: %s" % str(e))
 
 
