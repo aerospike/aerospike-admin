@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import asyncio
+import gc
 import socket
 import threading
 import time
 import unittest
 import warnings
+import weakref
 from collections import deque
 from ctypes import ArgumentError
 from typing import Any
@@ -37,8 +39,9 @@ from lib.live_cluster.client import (
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.ctx import CDTContext, CTXItems
+from lib.live_cluster.client.info import info
 from lib.live_cluster.client.msgpack import pack_ael_expression
-from lib.live_cluster.client.node import _SysCmd, Node
+from lib.live_cluster.client.node import _SysCmd, Node, _get_host_ips
 from lib.live_cluster.client.types import (
     ASProtocolError,
     ASProtocolExcFactory,
@@ -112,6 +115,29 @@ class FakeAuthSocket:
 
     async def close(self):
         self.closed = True
+
+
+def info_server(responses: dict[str, str]):
+    """An _info_cinfo stand-in that answers one command, or several in one request.
+    A batched reply leaves out a command it does not know, as servers before 7.1 do."""
+
+    def answer(command, *args, **kwargs):
+        if isinstance(command, str):
+            return responses[command]
+
+        return {name: responses[name] for name in command if name in responses}
+
+    return answer
+
+
+def commands_sent(info_mock) -> list[str]:
+    sent = []
+
+    for request in info_mock.call_args_list:
+        command = request.args[0]
+        sent += [command] if isinstance(command, str) else list(command)
+
+    return sent
 
 
 class NodeInitTest(unittest.IsolatedAsyncioTestCase):
@@ -377,6 +403,142 @@ class NodeInitTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class NodeConnectRequestsTest(unittest.IsolatedAsyncioTestCase):
+    """What connecting a node costs in requests and subprocesses."""
+
+    async def asyncSetUp(self):
+        patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name",
+            return_value="host.domain.local",
+        ).start()
+        patch(
+            "socket.getaddrinfo",
+            side_effect=lambda host, port, *args, **kwargs: [
+                (2, 1, 6, "", (host, port))
+            ],
+        ).start()
+        self.info_mock = patch.object(
+            Node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+        self.info_mock.side_effect = self.answer
+        self.shell_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command"
+        ).start()
+        self.shell_mock.side_effect = self.hostname
+        self.addCleanup(patch.stopall)
+
+    def answer(self, command, ip=None, *args, **kwargs):
+        responses = {
+            "node": "A0",
+            "build": "8.1.0.0",
+            "peers-generation": "1",
+            "connection": "admin=false",
+            "service-clear-std": "%s:3000" % ip,
+            "peers-clear-std": "1,3000,[]",
+        }
+        return info_server(responses)(command)
+
+    async def hostname(self, cmd):
+        await asyncio.sleep(0)
+        process = AsyncMock(spec=asyncio.subprocess.Process)
+        process.returncode = 0
+        process.stdout = MagicMock(spec=asyncio.StreamReader)
+        process.stdout.read.return_value = b"10.0.0.1 10.0.0.2"
+        return process
+
+    async def test_connect_asks_for_the_build_once(self):
+        node = await Node("10.0.0.1")
+
+        self.assertTrue(node.alive)
+        self.assertEqual(commands_sent(self.info_mock).count("build"), 1)
+        self.assertTrue(node.new_histogram_version)
+
+    async def test_hostname_runs_once_for_every_node(self):
+        await asyncio.gather(Node("10.0.0.1"), Node("10.0.0.2"), Node("10.0.0.3"))
+        await Node("10.0.0.4")
+
+        hostname_calls = [
+            c for c in self.shell_mock.await_args_list if c.args == ("hostname -I",)
+        ]
+        self.assertEqual(len(hostname_calls), 1)
+
+    async def test_each_node_is_matched_against_the_host_addresses(self):
+        on_host, elsewhere = await asyncio.gather(Node("10.0.0.2"), Node("10.0.0.9"))
+
+        self.assertTrue(on_host.is_localhost())
+        self.assertFalse(elsewhere.is_localhost())
+
+
+class HostIpsTest(unittest.TestCase):
+    def setUp(self):
+        self.process = AsyncMock(spec=asyncio.subprocess.Process)
+        self.process.returncode = 0
+        self.process.stdout = MagicMock(spec=asyncio.StreamReader)
+        self.process.stdout.read.return_value = b"10.0.0.1"
+        self.shell_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command",
+            AsyncMock(return_value=self.process),
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def test_a_finished_loop_is_released(self):
+        async def ask():
+            await _get_host_ips()
+            return weakref.ref(asyncio.get_running_loop())
+
+        loop_ref = asyncio.run(ask())
+        gc.collect()
+
+        self.assertIsNone(loop_ref())
+
+    def test_a_failed_hostname_is_asked_again(self):
+        failed = AsyncMock(spec=asyncio.subprocess.Process)
+        failed.returncode = 1
+        self.shell_mock.side_effect = [failed, self.process]
+
+        async def ask_twice():
+            return await _get_host_ips(), await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask_twice()), ([], ["10.0.0.1"]))
+        self.assertEqual(self.shell_mock.await_count, 2)
+
+    def test_a_hostname_that_raised_is_asked_again(self):
+        self.process.stdout.read.side_effect = [OSError("read failed"), b"10.0.0.1"]
+
+        async def ask_twice():
+            with self.assertRaises(OSError):
+                await _get_host_ips()
+
+            return await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask_twice()), ["10.0.0.1"])
+
+    def test_waiters_on_a_failed_hostname_all_get_the_empty_answer(self):
+        failed = AsyncMock(spec=asyncio.subprocess.Process)
+        failed.returncode = 1
+        self.shell_mock.side_effect = [failed, self.process]
+
+        async def ask():
+            waiters = await asyncio.gather(_get_host_ips(), _get_host_ips())
+            self.assertEqual(self.shell_mock.await_count, 1)
+            return waiters, await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask()), ([[], []], ["10.0.0.1"]))
+        self.assertEqual(self.shell_mock.await_count, 2)
+
+    def test_waiters_on_a_hostname_that_raised_all_get_its_error(self):
+        self.process.stdout.read.side_effect = [OSError("read failed"), b"10.0.0.1"]
+
+        async def ask():
+            waiters = await asyncio.gather(
+                _get_host_ips(), _get_host_ips(), return_exceptions=True
+            )
+            self.assertEqual(self.shell_mock.await_count, 1)
+            return [type(e) for e in waiters], await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask()), ([OSError, OSError], ["10.0.0.1"]))
+
+
 class NodeLoginSocketTest(unittest.IsolatedAsyncioTestCase):
     """The socket a node logs in on carries its later requests."""
 
@@ -514,16 +676,6 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.node.session_expiration = time.time() + 60
 
         self.assertTrue(await self.node.login())
-
-    async def test_is_new_histogram_version_uses_disable_cache(self):
-        lib.live_cluster.client.node.Node.info_build.reset_mock()
-        lib.live_cluster.client.node.Node.info_build.return_value = "8.1.0.0"
-
-        await self.node._is_new_histogram_version()
-
-        lib.live_cluster.client.node.Node.info_build.assert_awaited_once_with(
-            disable_cache=True
-        )
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_login_returns_true_if_login_was_successful(self, as_socket_mock):
@@ -836,6 +988,67 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(await self.node.info("statistics"), "uptime=1")
         self.assertTrue(self.node.alive)
+
+    def _answer_over_a_socket(self, responses):
+        patch.object(Node, "_info_cinfo", _REAL_INFO_CINFO).start()
+        sock = AsyncMock()
+        sock.info.side_effect = info_server(responses)
+        patch.object(self.node, "_get_connection", AsyncMock(return_value=sock)).start()
+        patch.object(self.node, "_return_to_pool", AsyncMock()).start()
+        return sock
+
+    async def test_a_batch_sends_only_the_commands_not_already_held(self):
+        sock = self._answer_over_a_socket(
+            {"build": "8.1.0.0", "peers-generation": "7", "roster:": "roster=null"}
+        )
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info("build")
+            await self.node.info("peers-generation")
+            answers = await self.node.info(("build", "peers-generation", "roster:"))
+
+        self.assertEqual(
+            answers,
+            {"build": "8.1.0.0", "peers-generation": "7", "roster:": "roster=null"},
+        )
+        self.assertEqual(
+            commands_sent(sock.info), ["build", "peers-generation", "roster:"]
+        )
+
+    async def test_a_batch_of_held_commands_sends_nothing(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0", "peers-generation": "7"})
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info("build")
+            await self.node.info("peers-generation")
+            answers = await self.node.info(("build", "peers-generation"))
+
+        self.assertEqual(answers, {"build": "8.1.0.0", "peers-generation": "7"})
+        self.assertEqual(
+            [request.args[0] for request in sock.info.call_args_list],
+            ["build", "peers-generation"],
+        )
+
+    async def test_a_single_command_is_answered_from_a_held_batch(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0", "peers-generation": "7"})
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info(("build", "peers-generation"))
+            answer = await self.node.info("peers-generation")
+
+        self.assertEqual(answer, "7")
+        self.assertEqual(commands_sent(sock.info), ["build", "peers-generation"])
+
+    async def test_a_command_missing_from_a_batch_reply_is_asked_again(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0"})
+
+        with _REAL_INFO_CINFO.held():
+            first = await self.node.info(("build", "roster:"))
+            second = await self.node.info(("build", "roster:"))
+
+        self.assertEqual(first, {"build": "8.1.0.0"})
+        self.assertEqual(second, {"build": "8.1.0.0"})
+        self.assertEqual(commands_sent(sock.info), ["build", "roster:", "roster:"])
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_get_connection_auth_success_does_not_relogin(self, as_socket_mock):
@@ -1639,11 +1852,13 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_info_all_namespace_statistics(self):
-        self.info_mock.side_effect = [
-            "foo;bar",
-            "asdf=1;b=b;c=!@#$%^&*()",
-            "cdef=2;c=c;d=)(*&^%$#@!",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "namespaces": "foo;bar",
+                "namespace/foo": "asdf=1;b=b;c=!@#$%^&*()",
+                "namespace/bar": "cdef=2;c=c;d=)(*&^%$#@!",
+            }
+        )
         expected = {
             "foo": {"asdf": "1", "b": "b", "c": "!@#$%^&*()"},
             "bar": {"cdef": "2", "c": "c", "d": ")(*&^%$#@!"},
@@ -1651,11 +1866,46 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.node.info_all_namespace_statistics()
 
-        self.assertEqual(self.info_mock.call_count, 3)
-        self.info_mock.assert_any_call("namespaces", self.ip)
-        self.info_mock.assert_any_call("namespace/foo", self.ip)
-        self.info_mock.assert_any_call("namespace/bar", self.ip)
         self.assertEqual(actual, expected)
+        self.assertEqual(
+            self.info_mock.call_count,
+            2,
+            "one request for the namespaces and one for all their statistics",
+        )
+        self.assertCountEqual(
+            commands_sent(self.info_mock),
+            ["namespaces", "namespace/foo", "namespace/bar"],
+        )
+
+    async def test_info_all_namespace_statistics_keeps_each_namespace_result(self):
+        self.info_mock.side_effect = info_server(
+            {
+                "namespaces": "foo;bar;gone",
+                "namespace/foo": "a=1",
+                "namespace/bar": "ERROR::not found",
+                "namespace/gone": "type=unknown",
+            }
+        )
+
+        actual = await self.node.info_all_namespace_statistics()
+
+        self.assertEqual(actual["foo"], {"a": "1"})
+        self.assertIsInstance(actual["bar"], ASInfoResponseError)
+        self.assertEqual(actual["gone"], {})
+
+    async def test_info_all_namespace_statistics_marks_a_namespace_missing_from_the_reply_invalid(
+        self,
+    ):
+        self.info_mock.side_effect = info_server(
+            {"namespaces": "foo;bar", "namespace/foo": "a=1"}
+        )
+
+        actual = await self.node.info_all_namespace_statistics()
+
+        self.assertEqual(
+            actual,
+            {"foo": {"a": "1"}, "bar": ASInfoError("Invalid command 'namespace/bar'")},
+        )
 
     async def info_all_namespace_statistics(self):
         self.info_mock.return_value = (
@@ -2880,57 +3130,105 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertDictEqual(result, expected)
         self.info_mock.assert_called_with("latencies:", self.ip)
 
+    VERBOSE_LATENCIES = [
+        "latencies:",
+        "latencies:hist={test}-proxy",
+        "latencies:hist={test}-benchmarks-ops-sub",
+        "latencies:hist={test}-benchmarks-read",
+        "latencies:hist={test}-benchmarks-write",
+        "latencies:hist={test}-benchmarks-udf",
+        "latencies:hist={test}-benchmarks-udf-sub",
+        "latencies:hist={test}-benchmarks-batch-sub",
+        "latencies:hist=benchmarks-fabric",
+    ]
+
     async def test_info_latencies_verbose(self):
         self.node.build = "8.2.1.0"
-        raw = ""
-        self.info_mock.side_effect = [
-            "test",
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
+        object_store = [
+            "latencies:hist={test}-object-store-%s" % op
+            for op in ("put", "get", "list", "delete")
         ]
+        self.info_mock.side_effect = info_server(
+            {
+                "namespaces": "test",
+                **{cmd: "" for cmd in self.VERBOSE_LATENCIES + object_store},
+            }
+        )
 
         _ = await self.node.info_latencies(verbose=True)
 
-        self.assertEqual(self.info_mock.call_count, 14)
-        self.info_mock.assert_any_call("latencies:", self.ip)
-        self.info_mock.assert_any_call("latencies:hist={test}-proxy", self.ip)
-        self.info_mock.assert_any_call("latencies:hist=benchmarks-fabric", self.ip)
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-ops-sub", self.ip
+        self.assertCountEqual(
+            commands_sent(self.info_mock),
+            ["namespaces"] + self.VERBOSE_LATENCIES + object_store,
         )
-        self.info_mock.assert_any_call("latencies:hist={test}-benchmarks-read", self.ip)
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-write", self.ip
-        )
-        self.info_mock.assert_any_call("latencies:hist={test}-benchmarks-udf", self.ip)
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-udf-sub", self.ip
-        )
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-batch-sub", self.ip
+        self.assertEqual(
+            self.info_mock.call_count,
+            2,
+            "one request for the namespaces and one for every histogram",
         )
 
-        for op in ("put", "get", "list", "delete"):
-            self.info_mock.assert_any_call(
-                "latencies:hist={test}-object-store-%s" % op, self.ip
-            )
+    async def test_info_latencies_verbose_with_namespaces_given_sends_one_request(
+        self,
+    ):
+        self.info_mock.side_effect = info_server(
+            {cmd: "" for cmd in self.VERBOSE_LATENCIES}
+        )
+
+        await self.node.info_latencies(verbose=True, ns_set=["test"])
+
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertCountEqual(commands_sent(self.info_mock), self.VERBOSE_LATENCIES)
+
+    async def test_info_latencies_verbose_skips_a_histogram_the_server_rejects(self):
+        raw = (
+            "{test}-read:msec,1.0,2.00,3.00,4.00,5.00,6.00,7.00,8.00,9.00,10.00,"
+            "11.00,12.00,13.00,14.00,15.00,16.00,17.00,18.00"
+        )
+        responses = {cmd: "" for cmd in self.VERBOSE_LATENCIES}
+        responses["latencies:"] = raw
+        responses["latencies:hist={test}-proxy"] = "ERROR::not found"
+        self.info_mock.side_effect = info_server(responses)
+
+        actual = await self.node.info_latencies(verbose=True, ns_set=["test"])
+
+        self.assertEqual(
+            actual,
+            {
+                "read": {
+                    "namespace": {
+                        "test": {
+                            "columns": ["ops/sec", ">1ms", ">8ms", ">64ms"],
+                            "values": [[1.0, 2.0, 5.0, 8.0]],
+                        }
+                    },
+                    "total": {
+                        "columns": ["ops/sec", ">1ms", ">8ms", ">64ms"],
+                        "values": [[1.0, 2.0, 5.0, 8.0]],
+                    },
+                }
+            },
+        )
+
+    async def test_info_latencies_verbose_returns_nothing_when_the_request_fails(
+        self,
+    ):
+        self.info_mock.side_effect = IOError("connection reset")
+
+        actual = await self.node.info_latencies(verbose=True, ns_set=["test"])
+
+        self.assertEqual(actual, {})
 
     def _latencies_responses(self, responses):
-        self.info_mock.side_effect = lambda cmd, ip: responses.get(cmd, "")
+        def answer(command, *args, **kwargs):
+            if isinstance(command, str):
+                return responses.get(command, "")
+
+            return {name: responses.get(name, "") for name in command}
+
+        self.info_mock.side_effect = answer
 
     def _sent_commands(self):
-        return [c.args[0] for c in self.info_mock.call_args_list]
+        return commands_sent(self.info_mock)
 
     async def test_info_latencies_verbose_skips_object_store_before_8_2_1(self):
         """TOOLS-4583: older servers do not have the object-store histograms."""
@@ -2940,7 +3238,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         result = await self.node.info_latencies(verbose=True)
 
         self.assertIsInstance(result, dict)
-        self.assertEqual(self.info_mock.call_count, 10)
+        self.assertEqual(len(self._sent_commands()), 10)
         self.assertFalse([c for c in self._sent_commands() if "object-store" in c])
 
     async def test_info_latencies_verbose_skips_object_store_when_build_unknown(self):
@@ -2959,7 +3257,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
                 result = await self.node.info_latencies(verbose=True)
 
                 self.assertIsInstance(result, dict)
-                self.assertEqual(self.info_mock.call_count, 10)
+                self.assertEqual(len(self._sent_commands()), 10)
                 self.assertFalse(
                     [c for c in self._sent_commands() if "object-store" in c]
                 )
@@ -3008,9 +3306,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         result = await self.node.info_latencies(verbose=True)
 
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-object-store-put", self.ip
-        )
+        self.assertIn("latencies:hist={test}-object-store-put", self._sent_commands())
         self.assertListEqual(list(result.keys()), ["write"])
 
     async def test_info_latencies_verbose_skips_unused_object_store_histograms(self):
@@ -3026,9 +3322,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         result = await self.node.info_latencies(verbose=True)
 
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-object-store-put", self.ip
-        )
+        self.assertIn("latencies:hist={test}-object-store-put", self._sent_commands())
         self.assertListEqual(list(result.keys()), ["write"])
 
     async def test_info_latencies_verbose_object_store_only_for_ns_set(self):
@@ -3574,12 +3868,14 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
     @patch("lib.live_cluster.client.node.Node.info_dcs")
     async def test_info_get_xdr_filter(self, info_dcs_mock: AsyncMock):
         info_dcs_mock.return_value = ["dc1", "dc2"]
-        self.info_mock.side_effect = [
-            "namespace=test:exp=1;namespace=bar:exp=2",
-            "namespace=test:exp=3;namespace=bar:exp=4",
-            "namespace=test:exp=5;namespace=bar:exp=6",
-            "namespace=test:exp=7;namespace=bar:exp=8",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "xdr-get-filter:dc=dc1": "namespace=test:exp=1;namespace=bar:exp=2",
+                "xdr-get-filter:dc=dc1;b64=true": "namespace=test:exp=3;namespace=bar:exp=4",
+                "xdr-get-filter:dc=dc2": "namespace=test:exp=5;namespace=bar:exp=6",
+                "xdr-get-filter:dc=dc2;b64=true": "namespace=test:exp=7;namespace=bar:exp=8",
+            }
+        )
         expected = {
             "dc1": {
                 "test": {"namespace": "test", "exp": "1", "b64-exp": "3"},
@@ -3594,6 +3890,28 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_get_xdr_filter()
 
         self.assertDictEqual(actual, expected)
+        self.assertEqual(
+            self.info_mock.call_count, 2, "one request per dc for both filter forms"
+        )
+
+    @parameterized.expand(
+        [("xdr-get-filter:dc=dc1",), ("xdr-get-filter:dc=dc1;b64=true",)]
+    )
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_get_xdr_filter_marks_a_filter_missing_from_the_reply_invalid(
+        self, missing, info_dcs_mock: AsyncMock
+    ):
+        info_dcs_mock.return_value = ["dc1"]
+        responses = {
+            "xdr-get-filter:dc=dc1": "namespace=test:exp=1",
+            "xdr-get-filter:dc=dc1;b64=true": "namespace=test:exp=2",
+        }
+        del responses[missing]
+        self.info_mock.side_effect = info_server(responses)
+
+        actual = await self.node.info_get_xdr_filter()
+
+        self.assertEqual(actual, ASInfoError("Invalid command '%s'" % missing))
 
     async def test_info_histogram(self):
         raw = """
@@ -4714,13 +5032,32 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         """Server >= 8.2: the v2 sindex-list format is requested so the renamed
         'integer' type is reported."""
         self.node.build = "8.2.0.0"
-        self.info_mock.side_effect = ["a=1:b=2;", "a=1:b=2;"]
+        self.info_mock.side_effect = info_server(
+            {"sindex-list:v=v2": "a=1:b=2;", "sindex-list:v=v2;b64=true": "a=1:b=2;"}
+        )
         expected = [{"a": "1", "b": "2"}]
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_any_call("sindex-list:v=v2", self.ip)
+        self.assertIn("sindex-list:v=v2", commands_sent(self.info_mock))
         self.assertListEqual(actual, expected)
+
+    async def test_info_sindex_asks_for_both_lists_in_one_request(self):
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=a:exp=null",
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=a:exp=null",
+            }
+        )
+
+        await self.node.info_sindex()
+
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertCountEqual(
+            commands_sent(self.info_mock),
+            ["sindex-list:v=v2", "sindex-list:v=v2;b64=true"],
+        )
 
     async def test_info_sindex_v2_when_build_unavailable(self):
         """If the build version is unknown, fall back to the default (v1) format."""
@@ -4738,25 +5075,21 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.node.build = "8.2.0.0"
         ael_src = "$.campaign1:INT + $.campaign2:INT"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            'ns=test:indexname=ael-idx:exp=add(bin_int("campaign1"), bin_int("campaign2")):state=RW;'
-            "ns=test:indexname=exp-idx:exp={}:state=RW;".format(compiled_exp)
-            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
-            "ns=test:indexname=ael-idx:exp={}:state=RW;".format(
-                pack_ael_expression(ael_src)
-            )
-            + "ns=test:indexname=exp-idx:exp=lBSTUQKpY2FtcGFpZ24x:state=RW;"
-            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": 'ns=test:indexname=ael-idx:exp=add(bin_int("campaign1"), bin_int("campaign2")):state=RW;'
+                "ns=test:indexname=exp-idx:exp={}:state=RW;".format(compiled_exp)
+                + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=ael-idx:exp={}:state=RW;".format(
+                    pack_ael_expression(ael_src)
+                )
+                + "ns=test:indexname=exp-idx:exp=lBSTUQKpY2FtcGFpZ24x:state=RW;"
+                + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_has_calls(
-            [
-                call("sindex-list:v=v2", self.ip),
-                call("sindex-list:v=v2;b64=true", self.ip),
-            ]
-        )
         self.assertEqual(actual[0]["ael"], ael_src)
         self.assertEqual(actual[0]["exp"], "null")
         self.assertEqual(actual[1]["exp"], compiled_exp)
@@ -4768,37 +5101,57 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         """A failed b64 call leaves the default response untouched."""
         self.node.build = "8.2.0.0"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
-            "ERROR::bad b64",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=exp-idx:exp={}:state=RW".format(
+                    compiled_exp
+                ),
+                "sindex-list:v=v2;b64=true": "ERROR::bad b64",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
         self.assertEqual(actual[0]["exp"], compiled_exp)
 
-    @parameterized.expand(
-        [
-            ("as_info_error", ASInfoError("Invalid command")),
-            ("os_error", OSError("connection reset")),
-            ("timeout", asyncio.TimeoutError()),
-        ]
-    )
-    async def test_info_sindex_ael_ignores_raised_base64_list(self, _, exc):
-        """A raised b64 call must not cost the caller the sindex list already
-        fetched, nor mark the node dead."""
+    async def test_info_sindex_ael_ignores_a_base64_list_that_does_not_parse(self):
+        """A b64 answer that cannot be read leaves the default response untouched."""
         self.node.build = "8.2.0.0"
         self.node.alive = True
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
-            exc,
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=exp-idx:exp={}:state=RW".format(
+                    compiled_exp
+                ),
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=exp-idx:exp=!!!:state=RW",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
         self.assertEqual(actual[0]["exp"], compiled_exp)
         self.assertTrue(self.node.alive)
+
+    async def test_info_sindex_ael_ignores_a_base64_list_missing_from_the_reply(self):
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = info_server(
+            {"sindex-list:v=v2": "ns=test:indexname=a:exp=null"}
+        )
+
+        actual = await self.node.info_sindex()
+
+        self.assertEqual(actual, [{"ns": "test", "indexname": "a", "exp": "null"}])
+
+    async def test_info_sindex_marks_a_list_missing_from_the_reply_invalid(self):
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = info_server(
+            {"sindex-list:v=v2;b64=true": "ns=test:indexname=a:exp=null"}
+        )
+
+        actual = await self.node.info_sindex()
+
+        self.assertEqual(actual, ASInfoError("Invalid command 'sindex-list:v=v2'"))
 
     async def test_info_sindex_statistics(self):
         self.info_mock.return_value = "a=b;c=d;e=f"
@@ -4810,6 +5163,67 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             "sindex-stat:namespace={};indexname={}".format("foo", "bar"), self.ip
         )
         self.assertDictEqual(actual, expected)
+
+    async def test_info_all_sindex_statistics_sends_one_request(self):
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-stat:namespace=foo;indexname=a": "x=1;y=2",
+                "sindex-stat:namespace=bar;indexname=b": "ERROR::no index",
+            }
+        )
+
+        actual = await self.node.info_all_sindex_statistics(
+            [("foo", "a"), ("bar", "b")]
+        )
+
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertEqual(actual[("foo", "a")], {"x": "1", "y": "2"})
+        self.assertIsInstance(actual[("bar", "b")], ASInfoResponseError)
+
+    async def test_info_all_sindex_statistics_marks_an_index_missing_from_the_reply_invalid(
+        self,
+    ):
+        self.info_mock.side_effect = info_server(
+            {"sindex-stat:namespace=foo;indexname=a": "x=1"}
+        )
+
+        actual = await self.node.info_all_sindex_statistics(
+            [("foo", "a"), ("foo", "b")]
+        )
+
+        self.assertEqual(
+            actual,
+            {
+                ("foo", "a"): {"x": "1"},
+                ("foo", "b"): ASInfoError(
+                    "Invalid command 'sindex-stat:namespace=foo;indexname=b'"
+                ),
+            },
+        )
+
+    async def test_info_all_sindex_statistics_answers_a_non_ascii_index_name(self):
+        reply = (
+            "sindex-stat:namespace=test;indexname=idx_a\tentries=1\n"
+            "sindex-stat:namespace=test;indexname=idx_é\tentries=2\n"
+        ).encode()
+        reader = AsyncMock()
+        reader.read.side_effect = [b"\x02\x01" + len(reply).to_bytes(6, "big"), reply]
+        writer = Mock()
+        writer.drain = AsyncMock()
+
+        async def over_the_wire(command, *args, **kwargs):
+            return await info(reader, writer, command)
+
+        self.info_mock.side_effect = over_the_wire
+
+        actual = await self.node.info_all_sindex_statistics(
+            [("test", "idx_a"), ("test", "idx_é")]
+        )
+
+        self.assertEqual(
+            actual,
+            {("test", "idx_a"): {"entries": "1"}, ("test", "idx_é"): {"entries": "2"}},
+        )
 
     async def test_info_sindex_create_success(self):
         self.info_mock.return_value = "OK"
