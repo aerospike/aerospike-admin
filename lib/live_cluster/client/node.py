@@ -4366,13 +4366,13 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_masking_add_rule(
-        self, namespace, set_, bin_, bin_type, func_name, func_params
+        self, namespace, set_, bin_, bin_type, func_name, func_params, ael_b64=None
     ):
         """
-        Add a masking rule.
+        Add a masking rule on a bin, or on the element an AEL path names.
         """
-        req = "masking:namespace={};set={};bin={};type={};function={}".format(
-            namespace, set_, bin_, bin_type, func_name
+        req = "masking:namespace={};set={};{}type={};function={}".format(
+            namespace, set_, self._masking_target(bin_, ael_b64), bin_type, func_name
         )
 
         # Add function parameters to the request
@@ -4387,12 +4387,14 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_masking_remove_rule(self, namespace, set_, bin_, bin_type):
+    async def info_masking_remove_rule(
+        self, namespace, set_, bin_, bin_type, ael_b64=None
+    ):
         """
-        Remove a masking rule.
+        Remove the masking rule on a bin, or on the element an AEL path names.
         """
-        req = "masking:namespace={};set={};bin={};type={};function=remove".format(
-            namespace, set_, bin_, bin_type
+        req = "masking:namespace={};set={};{}type={};function=remove".format(
+            namespace, set_, self._masking_target(bin_, ael_b64), bin_type
         )
         resp = await self._info(req)
 
@@ -4400,6 +4402,18 @@ class Node(AsyncObject):
             raise ASInfoResponseError("Failed to remove masking rule", resp)
 
         return ASINFO_RESPONSE_OK
+
+    @staticmethod
+    def _masking_target(bin_, ael_b64):
+        fields = []
+
+        if bin_:
+            fields.append("bin={}".format(bin_))
+
+        if ael_b64 is not None:
+            fields.append("ael_b64={}".format(ael_b64))
+
+        return "".join(field + ";" for field in fields)
 
     @async_return_exceptions
     async def info_masking_list_rules(self, namespace=None, set_=None):
@@ -4409,7 +4423,7 @@ class Node(AsyncObject):
         # namespace and set are optional
         masking_show_req = "masking-show:"
         if namespace is not None:
-            masking_show_req += "ns={};".format(namespace)
+            masking_show_req += "namespace={};".format(namespace)
         if set_ is not None:
             masking_show_req += "set={};".format(set_)
 
@@ -4418,11 +4432,26 @@ class Node(AsyncObject):
         if resp.startswith("error") or resp.startswith("ERROR"):
             raise ASInfoResponseError("Failed to list masking rules", resp)
 
-        result = [
-            client_util.info_to_dict(v, ";")
-            for v in client_util.info_to_list(resp, delimiter=":")
-            if v != ""
-        ]
+        result = []
+        pending = None
+        pending_rule = {}
+        # A ':' inside a value splits its rule, and the piece after it is not a
+        # complete rule on its own, so join pieces from the end until they form one.
+        for piece in reversed(client_util.info_to_list(resp, delimiter=":")):
+            pending = piece if pending is None else piece + ":" + pending
+            pending_rule = {}
+            for token in client_util.info_to_list(pending, ";"):
+                key, sep, value = token.partition("=")
+                if sep:
+                    pending_rule.setdefault(key, value)
+            if "=" in pending.split(";", 1)[0] and util.is_complete_masking_rule(
+                pending_rule
+            ):
+                result.append(pending_rule)
+                pending = None
+        if pending:
+            result.append(pending_rule)
+        result.reverse()
         logger.debug(
             "info_masking_list_rules node=%s namespace=%s set=%s response=%s",
             self.ip,

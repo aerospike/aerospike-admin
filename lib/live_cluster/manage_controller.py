@@ -1123,7 +1123,7 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ),
         ModifierHelp(
             "ctx",
-            "A list of context items describing how to index into a CDT. Possible values include: list_index(<int>) list_rank(<int>) list_value(<value>), map_index(<int>), map_rank(<int>) map_key(<value>), and map_value(<value>). Where <value> i <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64 encoded byte array (no quotes).",
+            "A list of context items describing how to index into a CDT. Possible values include: list_index(<int>) list_rank(<int>) list_value(<value>), map_index(<int>), map_rank(<int>) map_key(<value>), and map_value(<value>). Where <value> is <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64 encoded byte array (no quotes).",
         ),
         ModifierHelp(
             "ctx_base64",
@@ -1138,9 +1138,9 @@ class ManageSIndexController(LiveClusterManageCommandController):
             "AEL (Aerospike Expression Language) source for the server to compile, e.g."
             " ael '$.a:INT + $.b:INT'. Surround it with single quotes: without them the"
             " expression is split on spaces, a '#' truncates it and a ';' ends the"
-            " command. Even inside quotes a backslash escapes the character after it,"
-            " so use 'ael_b64' for source containing backslashes. bin, ctx,"
-            " ctx_base64, exp_base64 and ael_b64 will not be allowed when ael is specified."
+            " command. Inside the quotes only \\\\ and \\' are escapes; double a"
+            " backslash or use 'ael_b64'. bin, ctx, ctx_base64, exp_base64 and"
+            " ael_b64 will not be allowed when ael is specified."
             f" Requires server >= {constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION}.",
         ),
         ModifierHelp(
@@ -2758,7 +2758,7 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Truncate or detruncate a namespace or set in the Aerospike cluster",
+    "Truncate or detruncate a namespace or set in the Aerospike cluster.",
     'Since the changes performed by this command are critical "--warn" is on by default.',
     modifiers=(
         ModifierHelp(
@@ -4355,7 +4355,7 @@ class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController)
 
 
 @CommandHelp(
-    "Manage masking rules",
+    "Manage masking rules.",
     "Data masking allows you to obscure sensitive data in bins. Use 'add' to create",
     "masking rules and 'drop' to remove them. View existing rules with 'show masking'.",
     short_msg="Manage masking rules",
@@ -4368,9 +4368,107 @@ class ManageMaskingController(LiveClusterManageCommandController):
         }
 
 
+class ManageMaskingLeafCommandController(ManageLeafCommandController):
+    def _refuse_unsafe_words(self, fields):
+        """Refuse a (name, word) sent in the info command that the server would split."""
+        error = util.masking_word_error(fields)
+
+        if error:
+            raise ShellException(error)
+
+    def _parse_target(self, line):
+        """Return (bin, ael_b64, path modifier or None, prompt text) for the one target.
+        A bare keyword parses as empty and an unquoted path as several words."""
+        if "ael" in line and not any(self.mods["ael"]):
+            raise ShellException(
+                "The 'ael' modifier requires an AEL path, e.g. ael '$.profile.ssn'."
+            )
+
+        if "ael_b64" in line and not any(self.mods["ael_b64"]):
+            raise ShellException(
+                "The 'ael_b64' modifier requires a base64 encoded AEL path, e.g. ael_b64 JC5wcm9maWxlLnNzbg==."
+            )
+
+        if "bin" in line and not any(self.mods["bin"]):
+            raise ShellException(
+                "The 'bin' modifier requires a bin name, e.g. bin ssn."
+            )
+
+        if len(self.mods["ael"]) > 1:
+            raise ShellException(
+                f"The 'ael' modifier takes one quoted path, but '{' '.join(self.mods['ael'][1:])}' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'."
+            )
+
+        if len(self.mods["ael_b64"]) > 1:
+            raise ShellException(
+                f"The 'ael_b64' modifier takes one base64 encoded path, but '{' '.join(self.mods['ael_b64'][1:])}' follows it."
+            )
+
+        bin_name = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="bin",
+            return_type=str,
+            default="",
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        ael = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ael",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+        ael_b64 = util.get_arg_and_delete_from_mods(
+            line=line,
+            arg="ael_b64",
+            return_type=str,
+            default=None,
+            modifiers=self.required_modifiers,
+            mods=self.mods,
+        )
+
+        if ael is not None and ael_b64 is not None:
+            raise ShellException(
+                "Cannot use both 'ael' and 'ael_b64' modifiers together. Use either 'ael' to specify an AEL path, or 'ael_b64' to specify the same path base64 encoded."
+            )
+
+        path_mod = (
+            "ael" if ael is not None else "ael_b64" if ael_b64 is not None else None
+        )
+
+        if bin_name and path_mod:
+            raise ShellException(
+                f"Cannot use both 'bin' and '{path_mod}' modifiers together. Use either 'bin' to mask a whole bin, or '{path_mod}' to mask the element an AEL path names."
+            )
+
+        if not bin_name and not path_mod:
+            raise ShellException(
+                "Either 'bin', 'ael' or 'ael_b64' modifier is required. Use 'bin' to mask a whole bin, or 'ael'/'ael_b64' to mask the element an AEL path names."
+            )
+
+        if line:
+            raise ShellException(f"Unexpected words '{' '.join(line)}'.")
+
+        if ael is not None:
+            target = f"path '{ael}'"
+            ael_b64 = binascii.b2a_base64(ael.encode("utf-8"), newline=False).decode(
+                "utf-8"
+            )
+        elif ael_b64 is not None:
+            path, decoded = util.masking_path_text(ael_b64)
+            target = f"path '{path}'" if decoded else f"path {path}"
+        else:
+            target = f"bin '{bin_name}'"
+
+        return bin_name, ael_b64, path_mod, target
+
+
 @CommandHelp(
-    "Add masking rules to redact or replace sensitive data in bins.",
-    usage="<function> [function-args] namespace <namespace> set <set> bin <bin> [type <type>]",
+    "Add masking rules to redact or replace sensitive data in bins, or in an element",
+    "of a list or map bin addressed by an AEL path.",
+    usage="<function> [function-args] namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <base64>) [type <type>]",
     modifiers=(
         ModifierHelp(
             "function",
@@ -4378,18 +4476,40 @@ class ManageMaskingController(LiveClusterManageCommandController):
         ),
         ModifierHelp(
             "function-args",
-            "Function parameters in key-value pairs (e.g. position 0 length 4 value *)",
+            "Function parameters in key-value pairs (e.g. position 0 length 4 value *)."
+            " 'default' is what redact returns for a value of another type, and a redact"
+            " rule on an AEL path requires it. Quote a value containing '#', e.g."
+            " value '#', since an unquoted '#' starts a comment.",
         ),
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
         ModifierHelp("bin", "The bin to apply the rule to"),
-        ModifierHelp("type", "The bin type for the masking rule", default="string"),
+        ModifierHelp(
+            "ael",
+            "AEL (Aerospike Expression Language) path to the element to mask, starting at"
+            " the bin, e.g. ael '$.profile.ssn' or ael '$.cards.[0]'. Surround it"
+            " with single quotes. Inside the quotes only \\\\ and \\' are escapes;"
+            " double a backslash or use 'ael_b64'."
+            f" Requires every node at server v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later.",
+        ),
+        ModifierHelp(
+            "ael_b64",
+            "The base64 encoding of an AEL path. Same as 'ael' but pre-encoded, so the"
+            " command parser cannot alter it."
+            f" Requires every node at server v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later.",
+        ),
+        ModifierHelp(
+            "type",
+            "The type of the bin, or of the element the AEL path names",
+            default="string",
+        ),
     ),
     short_msg="Add masking rules with dynamic function support",
 )
-class ManageMaskingAddController(ManageLeafCommandController):
+class ManageMaskingAddController(ManageMaskingLeafCommandController):
     def __init__(self):
-        self.required_modifiers = set(["namespace", "set", "bin"])
+        self.required_modifiers = set(["namespace", "set"])
+        self.modifiers = set(["bin", "ael", "ael_b64", "type"])
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
     async def _do_default(self, line):
@@ -4423,14 +4543,6 @@ class ManageMaskingAddController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
-        bin_name = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="bin",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
 
         # Parse optional type parameter
         bin_type = util.get_arg_and_delete_from_mods(
@@ -4443,8 +4555,29 @@ class ManageMaskingAddController(ManageLeafCommandController):
         )
 
         # Validate required parameters
-        if not all([namespace, set_name, bin_name]):
-            raise ShellException("All parameters are required: namespace, set, bin")
+        if not all([namespace, set_name]):
+            raise ShellException("All parameters are required: namespace, set")
+
+        bin_name, ael_b64, path_mod, target = self._parse_target(line)
+
+        self._refuse_unsafe_words(
+            [
+                ("function", function_name),
+                ("namespace", namespace),
+                ("set", set_name),
+                ("bin", bin_name),
+                ("ael_b64", ael_b64),
+                ("type", bin_type),
+            ]
+            + [("parameter name", name) for name in function_params]
+            + list(function_params.items())
+        )
+
+        for param_name in function_params:
+            if "=" in param_name:
+                raise ShellException(
+                    f"The parameter name '{param_name}' cannot contain '='."
+                )
 
         # check if the cluster supports data masking
         builds = await self.meta_getter.get_builds(nodes=self.nodes)
@@ -4452,6 +4585,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
         feature_support = await util.check_version_support(
             feature_versions={
                 "data_masking": constants.SERVER_DATA_MASKING_FIRST_VERSION,
+                "masking_ael": constants.SERVER_MASKING_ON_AEL_FIRST_VERSION,
             },
             builds=builds,
         )
@@ -4463,11 +4597,18 @@ class ManageMaskingAddController(ManageLeafCommandController):
                 )
             )
 
+        if path_mod is not None and not feature_support["masking_ael"]:
+            raise ShellException(
+                "The '{}' modifier requires every node at server v. {} or later.".format(
+                    path_mod, constants.SERVER_MASKING_ON_AEL_FIRST_VERSION
+                )
+            )
+
         # Build function string for display
         function_str = self._build_function_string(function_name, function_params)
 
         if self.warn and not self.prompt_challenge(
-            f"You're about to add a masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}' with function '{function_str}'."
+            f"You're about to add a masking rule for {target} in namespace '{namespace}', set '{set_name}' with function '{function_str}'."
         ):
             return
 
@@ -4479,6 +4620,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
                 bin_type,
                 function_name,
                 function_params,
+                ael_b64,
                 nodes="principal",
             )
         except Exception as e:
@@ -4496,12 +4638,7 @@ class ManageMaskingAddController(ManageLeafCommandController):
     def _parse_function_params(self, line):
         """Parse function parameters dynamically."""
         function_params = {}
-        reserved_keywords = {
-            "namespace",
-            "set",
-            "bin",
-            "type",
-        }  # Use set for O(1) lookup
+        reserved_keywords = self.required_modifiers | self.modifiers
 
         # Count parameters first for validation (single pass)
         param_count = 0
@@ -4519,14 +4656,9 @@ class ManageMaskingAddController(ManageLeafCommandController):
 
         # Parse parameters in pairs (single pass, no copying)
         while line and line[0] not in reserved_keywords:
-            if len(line) >= 2:
-                param_name = line.pop(0)
-                param_value = line.pop(0)
-                function_params[param_name] = param_value
-            else:
-                raise ShellException(
-                    "Unexpected parameter parsing state - insufficient arguments remaining"
-                )
+            param_name = line.pop(0)
+            param_value = line.pop(0)
+            function_params[param_name] = param_value
 
         return function_params
 
@@ -4539,19 +4671,37 @@ class ManageMaskingAddController(ManageLeafCommandController):
 
 
 @CommandHelp(
-    "Drop masking rules. Removes any masking rule applied to the specified bin",
-    usage="namespace <namespace> set <set> bin <bin> [type <type>]",
+    "Drop masking rules. Removes the masking rule on the specified bin, or on the",
+    "element the specified AEL path names. Dropping a bin rule does not drop the",
+    "path rules on that bin.",
+    usage="namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <base64>) [type <type>]",
     modifiers=(
         ModifierHelp("namespace", "The namespace to remove the rule from"),
         ModifierHelp("set", "The set to remove the rule from"),
         ModifierHelp("bin", "The bin to remove the rule from"),
-        ModifierHelp("type", "The bin type for the masking rule", default="string"),
+        ModifierHelp(
+            "ael",
+            "AEL path of the rule to remove, e.g. ael '$.profile.ssn'. Surround it with"
+            " single quotes, and use 'ael_b64' for a path containing backslashes."
+            f" Requires server >= {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION}.",
+        ),
+        ModifierHelp(
+            "ael_b64",
+            "The base64 encoding of an AEL path. Same as 'ael' but pre-encoded."
+            f" Requires server >= {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION}.",
+        ),
+        ModifierHelp(
+            "type",
+            "The type of the bin, or of the element the AEL path names",
+            default="string",
+        ),
     ),
     short_msg="Drop masking rules",
 )
-class ManageMaskingDropController(ManageLeafCommandController):
+class ManageMaskingDropController(ManageMaskingLeafCommandController):
     def __init__(self):
-        self.required_modifiers = set(["namespace", "set", "bin"])
+        self.required_modifiers = set(["namespace", "set"])
+        self.modifiers = set(["bin", "ael", "ael_b64", "type"])
 
     async def _do_default(self, line):
 
@@ -4572,14 +4722,6 @@ class ManageMaskingDropController(ManageLeafCommandController):
             modifiers=self.required_modifiers,
             mods=self.mods,
         )
-        bin_name = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="bin",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
 
         # Parse optional type parameter
         bin_type = util.get_arg_and_delete_from_mods(
@@ -4592,17 +4734,29 @@ class ManageMaskingDropController(ManageLeafCommandController):
         )
 
         # Validate required parameters
-        if not all([namespace, set_name, bin_name]):
-            raise ShellException("All parameters are required: namespace, set, bin")
+        if not all([namespace, set_name]):
+            raise ShellException("All parameters are required: namespace, set")
+
+        bin_name, ael_b64, _, target = self._parse_target(line)
+
+        self._refuse_unsafe_words(
+            [
+                ("namespace", namespace),
+                ("set", set_name),
+                ("bin", bin_name),
+                ("ael_b64", ael_b64),
+                ("type", bin_type),
+            ]
+        )
 
         if self.warn and not self.prompt_challenge(
-            f"You're about to drop the masking rule for bin '{bin_name}' in namespace '{namespace}', set '{set_name}'."
+            f"You're about to drop the masking rule for {target} in namespace '{namespace}', set '{set_name}'."
         ):
             return
 
         try:
             remove_resp = await self.cluster.info_masking_remove_rule(
-                namespace, set_name, bin_name, bin_type, nodes="principal"
+                namespace, set_name, bin_name, bin_type, ael_b64, nodes="principal"
             )
         except Exception as e:
             raise ShellException(f"Failed to remove masking rule: {str(e)}") from e

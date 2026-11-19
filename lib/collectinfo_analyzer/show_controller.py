@@ -2151,9 +2151,10 @@ class ShowUserAgentsController(CollectinfoCommandController):
 
 
 @CommandHelp(
-    "Display masking rules",
+    "Display masking rules.",
     "Shows all configured data masking rules from collectinfo. Rules can be filtered by namespace",
-    "and set.",
+    "and set. Enforced is the overlap state the principal reported: False marks a",
+    "rule that an enforced rule overlaps.",
     modifiers=(
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
@@ -2210,6 +2211,23 @@ class ShowMaskingController(CollectinfoCommandController):
         if not masking_rules:
             warn_no_data("show masking", "masking rules")
             return
+
+        # Older asadm split rules at ':' and stored the pieces as rules of their own.
+        merged_rules = []
+        pending = {}
+        for piece in reversed(masking_rules):
+            rule = dict(piece)
+            for key, value in pending.items():
+                rule.setdefault(key, value)
+            if util.is_complete_masking_rule(rule):
+                merged_rules.append(rule)
+                pending = {}
+            else:
+                pending = rule
+        if pending:
+            merged_rules.append(pending)
+        merged_rules.reverse()
+        masking_rules = merged_rules
 
         # Apply filtering if specified
         if namespace or set_name:
