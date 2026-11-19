@@ -237,6 +237,7 @@ SERVER_SINDEX_INTEGER_TYPE_FIRST_VERSION = "8.2"  # "numeric" type renamed "inte
 SERVER_SINDEX_ON_AEL_FIRST_VERSION = "8.2"  # server compiles AEL source itself
 SERVER_INDEX_CHECKPOINT_FIRST_VERSION = "8.2"  # EE only, preview-gated on the server
 SERVER_MEMORY_ALLOC_STATS_FIRST_VERSION = "8.2"  # index/sindex alloc + cgroup stats
+SERVER_OBJECT_STORE_LATENCIES_FIRST_VERSION = "8.2.1"  # {ns}-object-store-* histograms
 SERVER_DATA_MASKING_FIRST_VERSION = "8.1.1"
 SERVER_RELEASE_INFO_FIRST_VERSION = "8.1.1"
 SERVER_INFO_NAMESPACE_SELECTOR_VERSION = "7.2"  # before this namespace can be id/ns
