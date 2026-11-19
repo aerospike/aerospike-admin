@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lib.base_controller import CommandHelp
+from lib.base_controller import CommandHelp, ShellException
 
 from .collectinfo_controller import CollectinfoController
 from .collectlogs_controller import CollectlogsController
@@ -24,6 +24,7 @@ from .live_cluster_command_controller import LiveClusterCommandController
     "Collects cluster info, logs or usage records to send to Aerospike.",
     "Without a subcommand, runs 'collect info'.",
     short_msg="Collects cluster info, logs or usage records",
+    usage=CommandHelp.usage(CollectinfoController),
 )
 class CollectController(LiveClusterCommandController):
     def __init__(self):
@@ -35,4 +36,12 @@ class CollectController(LiveClusterCommandController):
 
     @CommandHelp("Runs 'collect info'")
     async def _do_default(self, line):
+        if line and (
+            line[0] in ("-h", "--help")
+            or (line[0] != "with" and not line[0].startswith("-"))
+        ):
+            raise ShellException(
+                f"collect: '{line[0]}' is not a valid subcommand. See 'help collect' for available subcommands."
+            )
+
         return await self.controller_map["info"]()(line)

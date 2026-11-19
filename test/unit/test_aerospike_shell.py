@@ -669,6 +669,15 @@ class OfflineCollectinfoFallbackTest(unittest.TestCase):
     def test_other_commands_do_not_collect_system_data(self, commands):
         self.run_main(commands).assert_not_called()
 
+    @parameterized.expand(
+        [
+            ("collect lgos",),
+            ("collect lgos --output-prefix pre",),
+        ]
+    )
+    def test_unknown_collect_subcommand_does_not_collect_system_data(self, commands):
+        self.run_main(commands).assert_not_called()
+
 
 class CleanLineTest(unittest.TestCase):
     """Bare instance skips the async cluster-connect setup."""

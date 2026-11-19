@@ -34,6 +34,7 @@ from lib.live_cluster.client.info import (
     delete_whitelist,
     drop_user,
     grant_roles,
+    info,
     login,
     query_roles,
     query_users,
@@ -42,6 +43,11 @@ from lib.live_cluster.client.info import (
     set_quotas,
     set_whitelist,
     _receive_data,
+)
+from lib.live_cluster.client.constants import ErrorsMsgs
+from lib.live_cluster.client.types import (
+    ASInfoNotAuthenticatedError,
+    ASInfoResponseError,
 )
 
 
@@ -983,3 +989,94 @@ class ReceiveDataTest(unittest.IsolatedAsyncioTestCase):
         reader = DummyReader([b""])
         with self.assertRaises(ConnectionResetError):
             await _receive_data(reader, 5)
+
+
+class InfoBatchedReplyTest(unittest.IsolatedAsyncioTestCase):
+    NAMES = ("sindex-list:v=v2", "sindex-list:v=v2;b64=true")
+
+    async def _info(self, reply, names=NAMES):
+        with patch(
+            "lib.live_cluster.client.info._info_request",
+            AsyncMock(return_value=reply),
+        ):
+            return await info(Mock(), Mock(), names)
+
+    async def test_a_set_named_not_authenticated_is_returned_as_data(self):
+        sindexes = "ns=test:indexname=idx:set=not authenticated:bin=a;"
+        reply = "sindex-list:v=v2\t{0}\nsindex-list:v=v2;b64=true\t{0}\n".format(
+            sindexes
+        )
+
+        self.assertEqual(
+            await self._info(reply.encode()),
+            {"sindex-list:v=v2": sindexes, "sindex-list:v=v2;b64=true": sindexes},
+        )
+
+    async def test_an_index_named_not_authenticated_is_returned_as_data(self):
+        names = (
+            "sindex-stat:namespace=test;indexname=not authenticated",
+            "sindex-stat:namespace=test;indexname=Not Authenticated 2",
+        )
+        stats = (
+            "entries=0;used_bytes=16777216;entries_per_bval=0;entries_per_rec=0;"
+            "load_pct=100;load_time=0;stat_gc_recs=0"
+        )
+        reply = "".join("{}\t{}\n".format(name, stats) for name in names)
+
+        self.assertEqual(
+            await self._info(reply.encode(), names), dict.fromkeys(names, stats)
+        )
+
+    async def test_the_server_auth_failure_line_still_raises(self):
+        with self.assertRaises(ASInfoNotAuthenticatedError):
+            await self._info(b"ERROR:80:not authenticated\n")
+
+    async def test_a_server_error_line_raises_with_the_line(self):
+        with self.assertRaises(ASInfoResponseError) as cm:
+            await self._info(b"ERROR:9:timeout\n")
+
+        self.assertEqual(
+            cm.exception,
+            ASInfoResponseError(
+                ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, "ERROR:9:timeout"
+            ),
+        )
+        self.assertNotIsInstance(cm.exception, ASInfoNotAuthenticatedError)
+
+
+class InfoRequestTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.reader_mock = AsyncMock()
+        self.writer_mock = Mock()
+        self.writer_mock.drain = AsyncMock()
+
+    def _reply(self, body):
+        self.reader_mock.read.side_effect = [
+            b"\x02\x01" + len(body).to_bytes(6, "big"),
+            body,
+        ]
+
+    async def test_a_non_ascii_command_is_sent_as_utf8(self):
+        self._reply("namespace/bär\tobjects=1\n".encode())
+
+        actual = await info(self.reader_mock, self.writer_mock, "namespace/bär")
+
+        self.writer_mock.write.assert_called_once_with(
+            b"\x02\x01\x00\x00\x00\x00\x00\x0f" + b"namespace/b\xc3\xa4r\n"
+        )
+        self.assertEqual(actual, "objects=1")
+
+    async def test_a_batch_with_a_non_ascii_command_is_sent_as_utf8(self):
+        self._reply("namespace/bär\tobjects=1\nnamespace/test\tobjects=2\n".encode())
+
+        actual = await info(
+            self.reader_mock, self.writer_mock, ("namespace/bär", "namespace/test")
+        )
+
+        self.writer_mock.write.assert_called_once_with(
+            b"\x02\x01\x00\x00\x00\x00\x00\x1e"
+            + b"namespace/b\xc3\xa4r\nnamespace/test\n"
+        )
+        self.assertEqual(
+            actual, {"namespace/bär": "objects=1", "namespace/test": "objects=2"}
+        )

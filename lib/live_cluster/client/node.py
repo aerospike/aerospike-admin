@@ -24,6 +24,7 @@ from collections import deque
 from OpenSSL import SSL
 import threading
 import time
+import weakref
 import base64
 from typing import Any, Callable, Optional, Union
 from lib.live_cluster.ssh import (
@@ -85,6 +86,49 @@ def get_fully_qualified_domain_name(address, timeout=0.5):
     t.join(timeout)
 
     return result[0]
+
+
+_host_ips: (
+    "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task | list[str]]"
+) = weakref.WeakKeyDictionary()
+
+
+async def _get_host_ips() -> list[str]:
+    """The addresses `hostname -I` lists, asked once however many nodes connect.
+    An empty or failed answer is not kept, so the next node asks again."""
+    loop = asyncio.get_running_loop()
+
+    if loop not in _host_ips:
+        _host_ips[loop] = loop.create_task(_run_hostname())
+
+    task = _host_ips[loop]
+
+    if not isinstance(task, asyncio.Task):
+        return task
+
+    try:
+        ips = await asyncio.shield(task)
+    except Exception:
+        if _host_ips.get(loop) is task:
+            del _host_ips[loop]
+        raise
+
+    if _host_ips.get(loop) is task:
+        if ips:
+            _host_ips[loop] = ips
+        else:
+            del _host_ips[loop]
+
+    return ips
+
+
+async def _run_hostname() -> list[str]:
+    p = await util.async_shell_command("hostname -I")
+
+    if p and p.returncode == 0 and p.stdout:
+        return (await p.stdout.read()).decode("utf-8").strip().split()
+
+    return []
 
 
 def async_return_exceptions(func):
@@ -381,11 +425,7 @@ class Node(AsyncObject):
                 by hostname -I. This could occur in cloud environments where the
                 external IP is different than the internal IP.
                 """
-                p = await util.async_shell_command("hostname -I")
-
-                if p and p.returncode == 0 and p.stdout:
-                    stdout = (await p.stdout.read()).decode("utf-8").strip()
-                    self.localhost = self._is_any_my_ip(stdout.split())
+                self.localhost = self._is_any_my_ip(await _get_host_ips())
             except Exception as e:
                 pass
 
@@ -989,8 +1029,7 @@ class Node(AsyncObject):
             return True
 
     async def _is_new_histogram_version(self):
-        # Always fetch a fresh build for histogram compatibility checks
-        as_version = await self.info_build(disable_cache=True)
+        as_version = await self.info_build()
         if isinstance(as_version, Exception):
             logger.error("failed to get histogram version: %s", as_version)
             return False
@@ -1644,7 +1683,18 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
 
-        resp = await self._info("namespace/%s" % namespace)
+        ns_stat = self._parse_namespace_statistics(
+            namespace, await self._info("namespace/%s" % namespace)
+        )
+        logger.debug(
+            "info_namespace_statistics for node %s namespace %s returned: %s",
+            self.ip,
+            namespace,
+            ns_stat,
+        )
+        return ns_stat
+
+    def _parse_namespace_statistics(self, namespace, resp):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError(
                 "Failed to get namespace statistics for {}".format(namespace), resp
@@ -1662,12 +1712,7 @@ class Node(AsyncObject):
             and ns_stat["type"] == "unknown"
         ):
             ns_stat = {}
-        logger.debug(
-            "info_namespace_statistics for node %s namespace %s returned: %s",
-            self.ip,
-            namespace,
-            ns_stat,
-        )
+
         return ns_stat
 
     @async_return_exceptions
@@ -1678,8 +1723,17 @@ class Node(AsyncObject):
             return namespaces
 
         stats = {}
-        for ns in namespaces:
-            stats[ns] = await self.info_namespace_statistics(ns)
+        commands = tuple("namespace/%s" % ns for ns in namespaces)
+        responses = await self._info(commands) if commands else {}
+
+        for ns, command in zip(namespaces, commands):
+            try:
+                if command not in responses:
+                    raise ASInfoError("Invalid command '%s'" % command)
+
+                stats[ns] = self._parse_namespace_statistics(ns, responses[command])
+            except Exception as e:
+                stats[ns] = e
 
         logger.debug(
             "info_all_namespace_statistics for node %s returned: %s", self.ip, stats
@@ -2641,12 +2695,19 @@ class Node(AsyncObject):
     async def _get_xdr_filter_helper(
         self, dc: str
     ) -> common.NamespaceDict[dict[str, str]]:
+        str_command = "xdr-get-filter:dc={}".format(dc)
+        b64_command = str_command + ";b64=true"
+        responses = await self._info((str_command, b64_command))
+
+        for command in (str_command, b64_command):
+            if command not in responses:
+                raise ASInfoError("Invalid command '%s'" % command)
+
         str_resp = client_util.info_to_dict_multi_level(
-            await self._info("xdr-get-filter:dc={}".format(dc)), keyname="namespace"
+            responses[str_command], keyname="namespace"
         )
         b64_resp = client_util.info_to_dict_multi_level(
-            await self._info("xdr-get-filter:dc={};b64=true".format(dc)),
-            keyname="namespace",
+            responses[b64_command], keyname="namespace"
         )
 
         for ns in b64_resp.keys():
@@ -2904,16 +2965,22 @@ class Node(AsyncObject):
             # TOOLS-2984: benchmarks-fabric is not at namespace-level
             cmd_latencies.append("latencies:hist=benchmarks-fabric")
 
+        try:
+            if len(cmd_latencies) == 1:
+                responses = {cmd_latencies[0]: await self._info(cmd_latencies[0])}
+            else:
+                responses = await self._info(tuple(cmd_latencies))
+        except Exception:
+            return data
+
         hist_info = []
         for cmd in cmd_latencies:
-            try:
-                hist_info.append(await self._info(cmd))
-            except Exception:
-                return data
+            resp = responses.get(cmd, "")
             # TOOLS-2964: Error came as ERROR for 7.2 onwards
-            if hist_info[-1].startswith("error") or hist_info[-1].startswith("ERROR"):
-                hist_info.pop()
+            if resp.startswith("error") or resp.startswith("ERROR"):
                 continue
+
+            hist_info.append(resp)
 
         # example hist info after join:
         # batch-index:;{test}-read:msec,0.0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00, /
@@ -3447,7 +3514,25 @@ class Node(AsyncObject):
         ):
             command = "sindex-list:v=v2"
 
-        resp = await self._info(command)
+        merge_ael = (
+            self.build is not None
+            and not isinstance(self.build, Exception)
+            and version.LooseVersion(self.build)
+            >= version.LooseVersion(constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION)
+        )
+
+        if merge_ael:
+            b64_command = "{}{}b64=true".format(
+                command, "" if command.endswith(":") else ";"
+            )
+            responses = await self._info((command, b64_command))
+
+            if command not in responses:
+                raise ASInfoError("Invalid command '%s'" % command)
+
+            resp = responses[command]
+        else:
+            resp = await self._info(command)
 
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get sindex list", resp)
@@ -3458,20 +3543,13 @@ class Node(AsyncObject):
             if v != ""
         ]
 
-        if (
-            self.build is not None
-            and not isinstance(self.build, Exception)
-            and version.LooseVersion(self.build)
-            >= version.LooseVersion(constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION)
-        ):
-            await self._merge_ael_expressions(command, result)
+        if merge_ael:
+            self._merge_ael_expressions(responses.get(b64_command), result)
 
         logger.debug("info_sindex node=%s response=%s", self.ip, result)
         return result
 
-    async def _merge_ael_expressions(
-        self, command: str, sindexes: list[dict[str, str]]
-    ):
+    def _merge_ael_expressions(self, resp: str | None, sindexes: list[dict[str, str]]):
         """
         Move an index created from AEL out of the "exp" field and into an "ael"
         field holding its source, so an index reports either AEL or a compiled
@@ -3480,23 +3558,14 @@ class Node(AsyncObject):
         both forms are requested and joined per index.
 
         Interim: SERVER-1401 returns AEL in the default output, after which this
-        second call and the join go away (TOOLS-4227).
+        second command and the join go away (TOOLS-4227).
         """
-        b64_command = "{}{}b64=true".format(
-            command, "" if command.endswith(":") else ";"
-        )
-        # A failure here must not cost the caller the sindex list already in
-        # hand, so it degrades to the server's compiled-expression rendering.
-        try:
-            resp = await self._info(b64_command)
-
-            if resp.startswith("ERROR") or resp.startswith("error"):
-                raise ASInfoResponseError("Failed to get base64 sindex list", resp)
-        except Exception as e:
+        # A failed b64 list degrades to the server's compiled-expression rendering.
+        if not resp or resp.startswith("ERROR") or resp.startswith("error"):
             logger.debug(
                 "info_sindex node=%s failed to get base64 sindex list: %s",
                 self.ip,
-                e,
+                resp,
             )
             return
 
@@ -3551,13 +3620,11 @@ class Node(AsyncObject):
         dict -- {stat_name : stat_value, ...}
         """
 
-        resp = await self._info(
-            "sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname)
+        result = self._parse_sindex_statistics(
+            await self._info(
+                "sindex-stat:namespace=%s;indexname=%s" % (namespace, indexname)
+            )
         )
-        if resp.startswith("ERROR") or resp.startswith("error"):
-            raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp)
-
-        result = client_util.info_to_dict(resp)
         logger.debug(
             "info_sindex_statistics node=%s namespace=%s indexname=%s response=%s",
             self.ip,
@@ -3566,6 +3633,39 @@ class Node(AsyncObject):
             result,
         )
         return result
+
+    @async_return_exceptions
+    async def info_all_sindex_statistics(self, sindexes: list[tuple[str, str]]):
+        """
+        Get statistics for several sindexes in one request.
+
+        Returns:
+        dict -- {(namespace, indexname): {stat_name : stat_value, ...} or Exception}
+        """
+        commands = {
+            sindex: "sindex-stat:namespace=%s;indexname=%s" % sindex
+            for sindex in sindexes
+        }
+        responses = await self._info(tuple(commands.values())) if commands else {}
+        result = {}
+
+        for sindex, command in commands.items():
+            try:
+                if command not in responses:
+                    raise ASInfoError("Invalid command '%s'" % command)
+
+                result[sindex] = self._parse_sindex_statistics(responses[command])
+            except Exception as e:
+                result[sindex] = e
+
+        logger.debug("info_all_sindex_statistics node=%s response=%s", self.ip, result)
+        return result
+
+    def _parse_sindex_statistics(self, resp):
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, resp)
+
+        return client_util.info_to_dict(resp)
 
     @async_return_exceptions
     async def info_sindex_create(

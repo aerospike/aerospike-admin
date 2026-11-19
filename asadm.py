@@ -159,7 +159,7 @@ def runs_collect_info(commands):
             if name.startswith(words[1])
         ]
 
-        if named in ([], ["info"]):
+        if named == ["info"] or words[1] == "with" or words[1].startswith("-"):
             return True
 
     return False

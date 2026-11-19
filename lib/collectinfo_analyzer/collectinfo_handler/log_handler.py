@@ -652,7 +652,7 @@ class CollectinfoLogHandler(object):
         if not data_files:
             return (
                 "No Aerospike collectinfo data found in %s. A collectinfo bundle "
-                "holds an %s written by `asadm -e collectinfo`; this path holds %d "
+                'holds an %s written by `asadm -e "collect info"`; this path holds %d '
                 "other file(s)."
                 % (cinfo_path, constants.COLLECTINFO_DATA_FILENAME, len(files))
             )

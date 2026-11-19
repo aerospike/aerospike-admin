@@ -575,6 +575,7 @@ class SysinfoCoverageTest(unittest.TestCase):
         body = " ".join(warning.lines)
         self.assertIn("any of the 3 nodes", body)
         self.assertIn("--enable-ssh", body)
+        self.assertIn("`info summary` reports no OS version", body)
 
     def test_one_node_of_many_is_the_ordinary_local_collect_and_stays_silent(self):
         """A plain collect covers exactly the node asadm ran on. That is the
@@ -600,7 +601,7 @@ class SysinfoCoverageTest(unittest.TestCase):
         self.assertEqual(warning.title, "System information covers 2 of 4 nodes")
         body = " ".join(warning.lines)
         self.assertIn("OS, CPU, memory, disks or network settings", body)
-        self.assertIn("`summary` reports no OS version", body)
+        self.assertIn("`info summary` reports no OS version", body)
         self.assertNotIn("`health`", body)
 
     def _ssh_meta(self, covered, uncovered):
@@ -1424,6 +1425,7 @@ class CuratedAnomalyTest(unittest.TestCase):
         self.assertIn("7.2.0.0", body)
         self.assertIn("8.0.0.0", body)
         self.assertIn("editions", body)
+        self.assertIn("Run `info summary` for the per-node breakdown.", body)
 
     def test_edition_only_mix_is_not_called_a_version_mix(self):
         """Same build on every node; only the edition differs, so the title must not
@@ -2526,7 +2528,7 @@ class NodeSelectionTest(unittest.TestCase):
 
         self.assertIsNotNone(warning)
         self.assertEqual(
-            warning.title, "Collection was limited to 3 nodes by `collectinfo with`"
+            warning.title, "Collection was limited to 3 nodes by `collect info with`"
         )
 
     def test_a_requested_node_that_was_never_collected_is_a_warning(self):

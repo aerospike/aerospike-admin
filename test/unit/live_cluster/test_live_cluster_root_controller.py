@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import re
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from parameterized import parameterized
 
+from lib.base_controller import ShellException
+from lib.utils import logger as logger_util
 from lib.live_cluster import live_cluster_root_controller
 from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.live_cluster.collectlogs_controller import CollectlogsController
@@ -78,6 +81,27 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
         await self.root.execute(["collect", "with", "1.2.3.4"])
 
         self.assertEqual(self.collectinfo.call_args.args[0].nodes, ["1.2.3.4"])
+
+    @parameterized.expand(
+        [
+            (["collect", "lgos"], "lgos"),
+            (["collect", "help"], "help"),
+            (["collect", "lgos", "-n", "2"], "lgos"),
+            (["collect", "-h"], "-h"),
+            (["collect", "--help"], "--help"),
+        ]
+    )
+    async def test_collect_refuses_an_unknown_subcommand(self, line, word):
+        with self.assertRaisesRegex(
+            ShellException,
+            re.escape(
+                f"collect: '{word}' is not a valid subcommand. "
+                "See 'help collect' for available subcommands."
+            ),
+        ):
+            await self.root.execute(line)
+
+        self.collectinfo.assert_not_awaited()
 
     async def test_collect_info_runs_collectinfo(self):
         await self.root.execute(["collect", "info", "--output-prefix", "pre"])
@@ -225,6 +249,11 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Usage:  collect info [-n <num-snapshots>]", help_text)
         self.assertIn("--output-prefix", help_text)
 
+    def test_help_collect_shows_collect_info_usage(self):
+        help_text = ANSI.sub("", self.root.execute_help(["collect"]))
+
+        self.assertIn("Usage:  collect [-n <num-snapshots>]", help_text)
+
     def test_help_collect_info_shows_ssh_key_pwd_takes_a_value(self):
         help_text = ANSI.sub("", self.root.execute_help(["collect", "info"]))
 
@@ -233,3 +262,173 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
             " ".join(help_line(help_text, "--ssh-key-pwd").split()),
             "--ssh-key-pwd - Password for the SSH key file.",
         )
+
+
+RUN_COLLECTINFO = CollectinfoController._run_collectinfo
+COLLECT_INFO_NAMES = [(["collectinfo"],), (["collect", "info"],), (["collect"],)]
+COLLECT_LOGS_NAMES = [(["collectlogs"],), (["collect", "logs"],)]
+
+
+class CollectOptionsTest(unittest.IsolatedAsyncioTestCase):
+    """collect info and collect logs parse their own options here. Only the
+    collection and the log download are stubbed."""
+
+    async def asyncSetUp(self):
+        patch.object(LiveClusterCommandController, "cluster", None).start()
+        patch.object(LiveClusterRootController, "cluster", None, create=True).start()
+        patch.object(
+            live_cluster_root_controller,
+            "Cluster",
+            AsyncMock(return_value=MagicMock()),
+        ).start()
+        self.run_collectinfo = patch.object(
+            CollectinfoController, "_run_collectinfo", autospec=True
+        ).start()
+        self.gather_logs = patch.object(
+            CollectlogsController, "_gather_logs", autospec=True, return_value=False
+        ).start()
+        self.makedirs = patch(
+            "lib.live_cluster.collectlogs_controller.os.makedirs"
+        ).start()
+        patch.object(CollectlogsController, "setup_loggers").start()
+        patch.object(CollectlogsController, "teardown_loggers").start()
+        self.addCleanup(patch.stopall)
+        self.addCleanup(logger_util.set_exit_code, 0)
+
+        self.root = await LiveClusterRootController()
+
+    @parameterized.expand(
+        [
+            (["collect", "info", "-h"], "collect info", "-h"),
+            (["collect", "info", "--help"], "collect info", "--help"),
+            (["collectinfo", "-h"], "collectinfo", "-h"),
+            (["collectinfo", "--help"], "collectinfo", "--help"),
+        ]
+    )
+    async def test_help_flag_is_refused_without_collecting(self, line, command, flag):
+        with self.assertRaisesRegex(
+            ShellException,
+            re.escape(
+                f"{command}: '{flag}' is not a valid option. "
+                f"See 'help {command}' for available options."
+            ),
+        ):
+            await self.root.execute(line)
+
+        self.run_collectinfo.assert_not_awaited()
+
+    @parameterized.expand(
+        [
+            (["collect", "logs", "-h"], "collect logs", "-h"),
+            (["collect", "logs", "--help"], "collect logs", "--help"),
+            (["collectlogs", "-h"], "collectlogs", "-h"),
+            (["collectlogs", "--help"], "collectlogs", "--help"),
+        ]
+    )
+    async def test_help_flag_is_refused_without_downloading_logs(
+        self, line, command, flag
+    ):
+        with self.assertRaisesRegex(
+            ShellException,
+            re.escape(
+                f"{command}: '{flag}' is not a valid option. "
+                f"See 'help {command}' for available options."
+            ),
+        ):
+            await self.root.execute(line)
+
+        self.gather_logs.assert_not_awaited()
+        self.makedirs.assert_not_called()
+
+    @parameterized.expand(COLLECT_INFO_NAMES)
+    async def test_collect_info_options_still_reach_the_collection(self, command):
+        with self.assertNoLogs("lib", level="ERROR"):
+            await self.root.execute(
+                command
+                + [
+                    "-n",
+                    "2",
+                    "-s",
+                    "1",
+                    "--output-prefix",
+                    "pre",
+                    "--enable-ssh",
+                    "--ssh-user",
+                    "admin",
+                    "--ssh-port",
+                    "2222",
+                    "--asconfig-file",
+                    "/etc/aerospike/aerospike.conf",
+                ]
+            )
+
+        self.run_collectinfo.assert_awaited_once_with(
+            ANY,
+            ssh_user="admin",
+            ssh_pwd=None,
+            ssh_port=2222,
+            ssh_key=None,
+            ssh_key_pwd=None,
+            snp_count=2,
+            wait_time=1,
+            ignore_errors=False,
+            enable_ssh=True,
+            output_prefix="pre",
+            config_path="/etc/aerospike/aerospike.conf",
+        )
+
+    @parameterized.expand(COLLECT_INFO_NAMES)
+    async def test_collect_info_with_still_selects_the_nodes(self, command):
+        await self.root.execute(command + ["with", "1.2.3.4", "-n", "2"])
+
+        self.run_collectinfo.assert_awaited_once()
+        call = self.run_collectinfo.await_args
+        args = inspect.signature(RUN_COLLECTINFO).bind(*call.args, **call.kwargs)
+        self.assertEqual(args.arguments["self"].nodes, ["1.2.3.4"])
+        self.assertEqual(args.arguments["snp_count"], 2)
+
+    @parameterized.expand(COLLECT_INFO_NAMES)
+    async def test_collect_info_unknown_option_is_reported_and_still_collects(
+        self, command
+    ):
+        with self.assertLogs("lib", level="ERROR") as logs:
+            await self.root.execute(command + ["--no-such-option"])
+
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            ["Unrecognized option(s): --no-such-option"],
+        )
+        self.run_collectinfo.assert_awaited_once()
+
+    @parameterized.expand(COLLECT_LOGS_NAMES)
+    async def test_collect_logs_ssh_options_still_reach_the_download(self, command):
+        await self.root.execute(
+            command
+            + [
+                "--enable-ssh",
+                "--ssh-user",
+                "admin",
+                "--ssh-pwd",
+                "secret",
+                "--ssh-port",
+                "2222",
+                "--ssh-key",
+                "/keys/id_rsa",
+                "--ssh-key-pwd",
+                "keypass",
+                "--output-prefix",
+                "pre",
+            ]
+        )
+
+        self.gather_logs.assert_awaited_once_with(
+            ANY,
+            ANY,
+            enable_ssh=True,
+            ssh_user="admin",
+            ssh_pwd="secret",
+            ssh_key="/keys/id_rsa",
+            ssh_key_pwd="keypass",
+            ssh_port=2222,
+        )
+        self.assertIn("/pre_collect_logs_", self.gather_logs.await_args.args[1])
