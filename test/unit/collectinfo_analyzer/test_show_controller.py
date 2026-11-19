@@ -1458,6 +1458,90 @@ class ShowDistributionDefaultTest(AnalyzerControllerTestCase):
         self.assertEqual(self.view_mock.show_distribution.call_count, 2)
 
 
+class ShowLatenciesControllerTest(AnalyzerControllerTestCase):
+    """TOOLS-4583: a bundle's msec object-store tables reach the view next to
+    the usec client tables, with and without a for filter."""
+
+    USEC = ["ops/sec", ">1us", ">8us", ">64us"]
+    MSEC = ["ops/sec", ">1ms", ">8ms", ">64ms"]
+    WRITE_TEST = {"columns": USEC, "values": [[10.0, 5.0, 5.0, 5.0]]}
+    WRITE_BAR = {"columns": USEC, "values": [[2.0, 1.0, 0.0, 0.0]]}
+    WRITE_TOTAL = {"columns": USEC, "values": [[12.0, 4.33, 4.17, 4.17]]}
+    PUT_TEST = {"columns": MSEC, "values": [[1.0, 50.0, 50.0, 50.0]]}
+    PUT_BAR = {"columns": MSEC, "values": [[3.0, 10.0, 0.0, 0.0]]}
+    PUT_TOTAL = {"columns": MSEC, "values": [[4.0, 20.0, 12.5, 12.5]]}
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowLatenciesController()
+        self.log_handler.info_latency.return_value = {
+            "ts": {
+                "n1": {
+                    "write": {
+                        "namespace": {"test": self.WRITE_TEST, "bar": self.WRITE_BAR},
+                        "total": self.WRITE_TOTAL,
+                    },
+                    "object-store-put": {
+                        "namespace": {"test": self.PUT_TEST, "bar": self.PUT_BAR},
+                        "total": self.PUT_TOTAL,
+                    },
+                }
+            }
+        }
+        self.log_handler.info_namespaces.return_value = {"ts": {"n1": ["test", "bar"]}}
+
+    def _shown(self):
+        self.view_mock.show_latency.assert_called_once()
+        args, kwargs = self.view_mock.show_latency.call_args
+        return args[0], kwargs["show_ns_details"]
+
+    def test_without_for_passes_every_table_through(self):
+        self.controller.mods = {"like": [], "for": []}
+
+        self.controller._do_default([])
+
+        latency, show_ns_details = self._shown()
+        self.assertEqual(
+            latency,
+            {
+                "n1": {
+                    "write": {
+                        "namespace": {"test": self.WRITE_TEST, "bar": self.WRITE_BAR},
+                        "total": self.WRITE_TOTAL,
+                    },
+                    "object-store-put": {
+                        "namespace": {"test": self.PUT_TEST, "bar": self.PUT_BAR},
+                        "total": self.PUT_TOTAL,
+                    },
+                }
+            },
+        )
+        self.assertFalse(show_ns_details)
+
+    def test_for_keeps_only_that_namespace_in_both_units(self):
+        self.controller.mods = {"like": [], "for": ["test"]}
+
+        self.controller._do_default([])
+
+        latency, show_ns_details = self._shown()
+        self.assertEqual(
+            latency,
+            {
+                "n1": {
+                    "write": {
+                        "namespace": {"test": self.WRITE_TEST},
+                        "total": self.WRITE_TOTAL,
+                    },
+                    "object-store-put": {
+                        "namespace": {"test": self.PUT_TEST},
+                        "total": self.PUT_TOTAL,
+                    },
+                }
+            },
+        )
+        self.assertTrue(show_ns_details)
+
+
 EMPTY_NODE = {"ts": {"n1": {}}}
 EMPTY_SNAPSHOT = {"ts": {}}
 CONFIG_MODS = {"like": [], "diff": [], "for": []}
