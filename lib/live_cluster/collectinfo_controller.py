@@ -2679,6 +2679,12 @@ class CollectinfoController(LiveClusterCommandController):
                 terminal.enable_color(True)
 
     async def _do_default(self, line):
+        if line and line[0] in ("-h", "--help"):
+            command = " ".join(self._context)
+            raise ShellException(
+                f"{command}: '{line[0]}' is not a valid option. See 'help {command}' for available options."
+            )
+
         snp_count = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-n",

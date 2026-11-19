@@ -312,7 +312,7 @@ class BaseController(object):
 
     def _set_command_contexts(self):
         for command in self.controller_map:
-            controller: BaseController = self.commands[command][0]
+            controller: BaseController = self.commands.get_exact(command)
             context_cpy = list(self._context)
             context_cpy.append(command)
             controller.set_context(context_cpy)

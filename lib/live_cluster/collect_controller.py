@@ -23,6 +23,7 @@ from .live_cluster_command_controller import LiveClusterCommandController
     "Collects cluster info or logs to send to Aerospike Support.",
     "Without a subcommand, runs 'collect info'.",
     short_msg="Collects cluster info or logs",
+    usage=CommandHelp.usage(CollectinfoController),
 )
 class CollectController(LiveClusterCommandController):
     def __init__(self):
@@ -33,7 +34,10 @@ class CollectController(LiveClusterCommandController):
 
     @CommandHelp("Runs 'collect info'")
     async def _do_default(self, line):
-        if line and line[0] != "with" and not line[0].startswith("-"):
+        if line and (
+            line[0] in ("-h", "--help")
+            or (line[0] != "with" and not line[0].startswith("-"))
+        ):
             raise ShellException(
                 f"collect: '{line[0]}' is not a valid subcommand. See 'help collect' for available subcommands."
             )
