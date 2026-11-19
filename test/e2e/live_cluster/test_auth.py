@@ -83,6 +83,17 @@ def frozen_node(index):
         lib.wait_for_cluster(NODE_COUNT)
 
 
+def run_timed(run, args, **kwargs):
+    start = time.monotonic()
+    cp = run(args, **kwargs)
+    return cp, time.monotonic() - start
+
+
+def seed_text(address):
+    host, port = address.rsplit(":", 1)
+    return f"('{host}', {port}, None)"
+
+
 def offline_warnings(stderr, address):
     prefix = f"WARNING: {address} is Offline: "
     return [line for line in stderr.splitlines() if line.startswith(prefix)]
@@ -205,10 +216,11 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
         cp = util.run_asinfo("-h 127.0.0.1 -p 1 -U admin -P admin -v build")
 
         self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
         self.assertRegex(
-            cp.stdout,
-            r"ERROR: Not able to connect any cluster with \('127\.0\.0\.1', 1, None\):"
-            r" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', 1\)",
+            cp.stderr,
+            r"\AERROR: Not able to connect any cluster with \('127\.0\.0\.1', 1, None\):"
+            r" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', 1\)\Z",
         )
 
     def test_unresolvable_seed_is_reported_with_why(self):
@@ -328,6 +340,89 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
         self.assertIn(self.build, cp.stdout)
+
+    def test_asinfo_mode_frozen_node_login_timeout(self):
+        """TOOLS-4655: one error line within --timeout, and exit code 1."""
+        with frozen_node(2) as frozen:
+            cp, elapsed = run_timed(
+                util.run_asadm,
+                f"-h {frozen} -Uadmin -Padmin --asinfo-mode --timeout 1 -e build",
+                strip_header=False,
+            )
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                "ERROR: Not able to login and authenticate any cluster with"
+                f" {seed_text(frozen)}: login timed out after 1s"
+            ],
+        )
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_wrapper_frozen_node_honors_timeout(self):
+        """TOOLS-4655"""
+        with frozen_node(2) as frozen:
+            host, port = frozen.rsplit(":", 1)
+            cp, elapsed = run_timed(
+                util.run_asinfo,
+                f"-h {host} -p {port} -U admin -P admin --timeout 1 -v build",
+            )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                "ERROR: Not able to login and authenticate any cluster with"
+                f" {seed_text(frozen)}: login timed out after 1s"
+            ],
+        )
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_wrapper_frozen_node_defaults_to_5s(self):
+        """TOOLS-4655: asinfo mode keeps its 5 s default and ignores the [asadm]
+        timeout."""
+        with tempfile.TemporaryDirectory() as tmp:
+            conf = os.path.join(tmp, "astools.conf")
+
+            with open(conf, "w") as f:
+                f.write("[asadm]\ntimeout = 1\n")
+
+            with frozen_node(2) as frozen:
+                host, port = frozen.rsplit(":", 1)
+                cp, elapsed = run_timed(
+                    util.run_asinfo,
+                    f"-h {host} -p {port} -U admin -P admin"
+                    f" --only-config-file {conf} -v build",
+                )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                "ERROR: Not able to login and authenticate any cluster with"
+                f" {seed_text(frozen)}: login timed out after 5s"
+            ],
+        )
+        self.assertGreaterEqual(elapsed, 4.5)
+        self.assertLess(elapsed, 9)
+
+    def test_asinfo_mode_refused_seed_exits_1(self):
+        """TOOLS-4655"""
+        cp = util.run_asadm(
+            "-h 127.0.0.1:1 -Uadmin -Padmin --asinfo-mode -e build",
+            strip_header=False,
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertRegex(
+            cp.stderr,
+            r"\AERROR: Not able to connect any cluster with \('127\.0\.0\.1', 1, None\):"
+            r" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', 1\)\Z",
+        )
 
     def test_collectinfo_does_not_write_passwords(self):
         """Nothing listens on the SSH port, so collectinfo logs the failure and
@@ -539,6 +634,115 @@ class SecurityDisabledTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertIn("Network Information", cp.stdout)
+
+    def test_asinfo_mode_frozen_node_info_timeout(self):
+        """TOOLS-4655: without security there is no login, so the first info call
+        is the one that waits."""
+        with frozen_node(2) as frozen:
+            cp, elapsed = run_timed(
+                util.run_asadm,
+                f"-h {frozen} --asinfo-mode --timeout 1 -e build",
+                strip_header=False,
+            )
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                f"ERROR: Not able to get info from {seed_text(frozen)}:"
+                " info timed out after 1s"
+            ],
+        )
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_mode_user_given_warns_and_runs(self):
+        """TOOLS-4655: as in normal mode."""
+        cp = util.run_asadm(
+            f"-h {lib.SERVER_IP}:{lib.PORT} -Uadmin -Padmin --asinfo-mode -e build",
+            strip_header=False,
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn(lib.server_build(), cp.stdout)
+        self.assertEqual(
+            cp.stderr.splitlines(), ["WARNING: Login failed : Security not enabled."]
+        )
+
+    def test_asinfo_wrapper_user_given_warns_and_runs(self):
+        """TOOLS-4655"""
+        cp = util.run_asinfo(
+            f"-h {lib.SERVER_IP} -p {lib.PORT} -U admin -P admin -v build"
+        )
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn(lib.server_build(), cp.stdout)
+        self.assertEqual(
+            cp.stderr.splitlines(), ["WARNING: Login failed : Security not enabled."]
+        )
+
+    def test_asinfo_wrapper_reply_naming_set_app_error_succeeds(self):
+        """TOOLS-4655: only a reply line that starts with error: fails."""
+        lib.populate_db("app_error")
+
+        cp = util.run_asinfo(f"-h {lib.SERVER_IP} -p {lib.PORT} -v sets")
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn("set=app_error:", cp.stdout)
+        self.assertEqual(cp.stderr, "")
+
+    def test_asinfo_wrapper_reply_naming_a_connect_failure_succeeds(self):
+        """TOOLS-4655: asadm reports a failed connect on stderr, never in the reply."""
+        lib.populate_db("Could not connect to node")
+
+        cp = util.run_asinfo(f"-h {lib.SERVER_IP} -p {lib.PORT} -v sets")
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertIn("set=Could not connect to node:", cp.stdout)
+        self.assertEqual(cp.stderr, "")
+
+    def test_asinfo_wrapper_error_reply_fails(self):
+        """TOOLS-4655"""
+        cp = util.run_asinfo(
+            f"-h {lib.SERVER_IP} -p {lib.PORT} -v 'get-config:context=nosuchcontext'"
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertTrue(cp.stdout.lower().startswith("error:"), cp.stdout)
+        self.assertEqual(cp.stderr, "")
+
+    def test_undecodable_command_file_exits_1(self):
+        """TOOLS-4655: asadm has connected by the time it reads the file."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "commands.txt")
+
+            with open(path, "wb") as f:
+                f.write(b"info network\n\xff\xfe\n")
+
+            cp = util.run_asadm(f"-h {lib.SERVER_IP}:{lib.PORT} -e {path}")
+
+        errors = [line for line in cp.stderr.splitlines() if line.startswith("ERROR:")]
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertNotIn("Network Information", cp.stdout)
+        self.assertEqual(len(errors), 1, cp.stderr)
+        self.assertTrue(
+            errors[0].startswith(f"ERROR: Not able to read the command file {path}: "),
+            cp.stderr,
+        )
+
+    def test_bad_host_among_good_seeds_runs_and_exits_1(self):
+        """TOOLS-4655: the command runs on the good seed, and the bad one fails
+        the exit code."""
+        cp = util.run_asadm(
+            f"-h 127.0.0.1:abc,{lib.SERVER_IP}:{lib.PORT} -e 'info network'"
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn("Network Information", cp.stdout)
+        self.assertIn(
+            "ERROR: Not able to parse host 127.0.0.1:abc: invalid literal for int()"
+            " with base 10: 'abc'",
+            cp.stderr.splitlines(),
+        )
 
     async def test_user_given_hashes_once_and_never_authenticates(self):
         """No session token comes back, so a new socket has nothing to authenticate
