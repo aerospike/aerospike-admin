@@ -20,6 +20,8 @@ class ErrorsMsgs:
 
 DEFAULT_CONFIG_PATH = "/etc/aerospike/aerospike.conf"
 MAX_SOCKET_POOL_SIZE = 16
+# Only a request sees a drop with no FIN, and firewalls drop idle sockets after minutes.
+POOLED_SOCKET_PROBE_AFTER_IDLE_SECONDS = 60
 
 # A node parked by checkpoint-save refuses every info command except checkpoint-status
 # and a re-issued checkpoint-save. The error code is not a discriminator - the server
