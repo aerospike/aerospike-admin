@@ -2151,9 +2151,10 @@ class ShowUserAgentsController(CollectinfoCommandController):
 
 
 @CommandHelp(
-    "Display masking rules",
+    "Display masking rules.",
     "Shows all configured data masking rules from collectinfo. Rules can be filtered by namespace",
-    "and set.",
+    "and set. Enforced is the overlap state the principal reported: False marks a",
+    "rule that an enforced rule overlaps.",
     modifiers=(
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
@@ -2218,9 +2219,7 @@ class ShowMaskingController(CollectinfoCommandController):
             rule = dict(piece)
             for key, value in pending.items():
                 rule.setdefault(key, value)
-            if ("namespace" in rule or "ns" in rule) and all(
-                k in rule for k in ("set", "type", "function")
-            ):
+            if util.is_complete_masking_rule(rule):
                 merged_rules.append(rule)
                 pending = {}
             else:

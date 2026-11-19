@@ -54,6 +54,48 @@ from test.unit import util
 _REAL_INFO_BUILD = Node.info_build
 _REAL_INFO_CINFO = Node.__dict__["_info_cinfo"]
 
+RELEASED_SERVER_MASKING_SHOW = (
+    "namespace=test;set=other;bin=e;type=string;function=redact"
+    ":namespace=test;set=demo;bin=n;type=integer;function=constant;value=0"
+    ":namespace=test;set=demo;bin=email;type=string;function=constant;value=REDACTED"
+    ":namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*"
+)
+RELEASED_SERVER_MASKING_RULES = [
+    {
+        "namespace": "test",
+        "set": "other",
+        "bin": "e",
+        "type": "string",
+        "function": "redact",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "n",
+        "type": "integer",
+        "function": "constant",
+        "value": "0",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "email",
+        "type": "string",
+        "function": "constant",
+        "value": "REDACTED",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "ssn",
+        "type": "string",
+        "function": "redact",
+        "position": "0",
+        "length": "4",
+        "value": "*",
+    },
+]
+
 
 def info_server(responses: dict[str, str]):
     """An _info_cinfo stand-in that answers one command, or several in one request.
@@ -3398,6 +3440,17 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual.message, "Failed to add UDF")
         self.assertEqual(actual.response, "invalid_base64_content")
 
+    async def test_info_udf_put_compile_error_shows_whole_reply(self):
+        self.info_mock.return_value = "error=compile_error;file=x.lua;line=2;message=PG5hbWU+IG9yICcuLi4nIGV4cGVjdGVkIG5lYXIgJ3JldHVybic="
+
+        actual = await self.node.info_udf_put("x.lua", "udf_str", "LUA")
+
+        self.assertEqual(actual.message, "Failed to add UDF")
+        self.assertEqual(
+            actual.response,
+            "compile_error;file=x.lua;line=2;message=PG5hbWU+IG9yICcuLi4nIGV4cGVjdGVkIG5lYXIgJ3JldHVybic=",
+        )
+
     @patch("lib.live_cluster.client.node.Node.info_udf_list")
     async def test_info_udf_remove_success(self, info_udf_list_mock):
         info_udf_list_mock.return_value = {
@@ -6349,9 +6402,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ASINFO_RESPONSE_OK)
 
     async def test_info_masking_add_rule_keeps_whole_server_error(self):
-        self.info_mock.return_value = (
-            "ERROR:4:bad path '$.p.x +', at offset 6: unexpected '+'"
-        )
+        self.info_mock.return_value = "ERROR:4:bad path, at offset 0: unresolved bin type, use $.bin:LIST or $.bin:MAP"
 
         result = await self.node.info_masking_add_rule(
             "test", "demo", "", "string", "redact", {}, "JC5wLnggKw=="
@@ -6359,7 +6410,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(
-            result.response, "bad path '$.p.x +', at offset 6: unexpected '+'"
+            result.response,
+            "bad path, at offset 0: unresolved bin type, use $.bin:LIST or $.bin:MAP",
         )
 
     async def test_info_masking_list_rules_with_path_rule(self):
@@ -6697,6 +6749,135 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
                 dict(rule, bin="a3", value="::"),
             ],
         )
+
+    async def test_info_masking_list_rules_incomplete_first_piece_is_its_own_row(
+        self,
+    ):
+        self.info_mock.return_value = (
+            "value=x:k=1;namespace=test;set=demo;bin=t;type=string;function=constant"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {"value": "x"},
+                {
+                    "k": "1",
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            ("no_function", "namespace=x;set=y;type=z"),
+            ("no_type", "namespace=x;set=y;function=z"),
+        ]
+    )
+    async def test_info_masking_list_rules_piece_missing_a_key_joins_the_rule_before(
+        self, _, piece
+    ):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=t;type=string;function=constant;value=a:"
+            + piece
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "a:namespace=x",
+                }
+            ],
+        )
+
+    async def test_info_masking_list_rules_released_server_reply(self):
+        self.info_mock.return_value = RELEASED_SERVER_MASKING_SHOW + (
+            ":namespace=test;set=demo;bin=t;type=string;function=constant;value=12:30"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            RELEASED_SERVER_MASKING_RULES
+            + [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "12:30",
+                }
+            ],
+        )
+
+    async def test_info_masking_list_rules_released_server_reply_as_on_master(self):
+        self.info_mock.return_value = RELEASED_SERVER_MASKING_SHOW
+
+        result = await self.node.info_masking_list_rules()
+
+        self.info_mock.assert_called_with("masking-show:", self.ip)
+        self.assertEqual(result, RELEASED_SERVER_MASKING_RULES)
+
+    @parameterized.expand(
+        [
+            (
+                "add_redact",
+                "info_masking_add_rule",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "redact",
+                    {"position": "0", "length": "4", "value": "*"},
+                ),
+                "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*",
+            ),
+            (
+                "add_constant_integer",
+                "info_masking_add_rule",
+                ("test", "demo", "n", "integer", "constant", {"value": "0"}),
+                "masking:namespace=test;set=demo;bin=n;type=integer;function=constant;value=0",
+            ),
+            (
+                "remove_string",
+                "info_masking_remove_rule",
+                ("test", "demo", "ssn", "string"),
+                "masking:namespace=test;set=demo;bin=ssn;type=string;function=remove",
+            ),
+            (
+                "remove_integer",
+                "info_masking_remove_rule",
+                ("test", "demo", "n", "integer"),
+                "masking:namespace=test;set=demo;bin=n;type=integer;function=remove",
+            ),
+        ]
+    )
+    async def test_info_masking_bin_rule_request_as_on_master(
+        self, _, method, args, exp_req
+    ):
+        self.info_mock.return_value = "ok"
+
+        result = await getattr(self.node, method)(*args)
+
+        self.info_mock.assert_called_with(exp_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
 
     async def test_info_masking_list_rules_success(self):
         """Test successful masking rules listing"""

@@ -48,7 +48,7 @@ from lib.collectinfo_analyzer.show_controller import (
     ShowUsersStatsController,
 )
 from lib.base_controller import ShellException
-from lib.utils import constants
+from lib.utils import constants, util
 from lib.utils.constants import Modifiers
 
 NO_DATA_LOGGER = "lib.collectinfo_analyzer.collectinfo_command_controller"
@@ -181,6 +181,51 @@ MERGED_OLD_BUNDLE_MASKING_RULES = [
     OLD_BUNDLE_MASKING_RULES[15],
 ]
 
+RELEASED_ASADM_BUNDLE_MASKING_RULES = [
+    {
+        "namespace": "test",
+        "set": "other",
+        "bin": "e",
+        "type": "string",
+        "function": "redact",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "n",
+        "type": "integer",
+        "function": "constant",
+        "value": "0",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "email",
+        "type": "string",
+        "function": "constant",
+        "value": "REDACTED",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "ssn",
+        "type": "string",
+        "function": "redact",
+        "position": "0",
+        "length": "4",
+        "value": "*",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "t",
+        "type": "string",
+        "function": "constant",
+        "value": "12",
+    },
+    {},
+]
+
 BRANCH_BUNDLE_MASKING_RULES = [
     OLD_BUNDLE_MASKING_RULES[0],
     OLD_BUNDLE_MASKING_RULES[1],
@@ -250,6 +295,11 @@ class ShowMaskingControllerTest(unittest.TestCase):
     def tearDown(self):
         patch.stopall()
 
+    def test_help_first_line_ends_with_period(self):
+        help_text = " ".join(self.controller.execute_help([]).split())
+
+        self.assertIn("Display masking rules. Shows all configured", help_text)
+
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
     def test_do_default_success(self, getter_class_mock):
         """Test successful display of masking rules"""
@@ -316,7 +366,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         getter_mock.get_masking_rules.assert_called_once_with()
 
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
-    def test_do_default_filters_path_rules_by_namespace_and_set(
+    def test_do_default_filters_complete_path_rules_by_namespace_and_set(
         self, getter_class_mock
     ):
         getter_mock = MagicMock()
@@ -438,6 +488,92 @@ class ShowMaskingControllerTest(unittest.TestCase):
                 after,
             ],
             timestamp="2023-01-01",
+        )
+
+    @parameterized.expand(
+        [
+            ("no_filter", [], RELEASED_ASADM_BUNDLE_MASKING_RULES[:4]),
+            (
+                "namespace_and_set",
+                ["namespace", "test", "set", "demo"],
+                RELEASED_ASADM_BUNDLE_MASKING_RULES[1:4],
+            ),
+        ]
+    )
+    def test_do_default_released_asadm_bundle_as_on_master(self, _, line, expected):
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy(RELEASED_ASADM_BUNDLE_MASKING_RULES[:4])
+            }
+        }
+
+        self.controller._do_default(line)
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            expected, timestamp="2023-01-01"
+        )
+
+    def test_do_default_released_asadm_bundle_with_split_value(self):
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy(RELEASED_ASADM_BUNDLE_MASKING_RULES)
+            }
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            RELEASED_ASADM_BUNDLE_MASKING_RULES[:5], timestamp="2023-01-01"
+        )
+
+    def test_do_default_old_bundle_piece_with_key_the_rule_lacks_joins_it(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "t",
+            "type": "string",
+            "function": "constant",
+            "value": "a",
+        }
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy([rule, {"b": "c"}])}
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [dict(rule, b="c")], timestamp="2023-01-01"
+        )
+        shown = self.view_mock.show_masking_rules.call_args.args[0][0]
+        self.assertEqual(
+            util.normalize_masking_rule_data(shown)["function"], "constant value a b c"
+        )
+
+    @parameterized.expand(
+        [
+            ("no_function", {"namespace": "x", "set": "y", "type": "z"}),
+            ("no_type", {"namespace": "x", "set": "y", "function": "z"}),
+        ]
+    )
+    def test_do_default_old_bundle_piece_missing_a_key_joins_the_rule_before(
+        self, _, piece
+    ):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "t",
+            "type": "string",
+            "function": "constant",
+            "value": "a",
+        }
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy([rule, piece])}
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [rule], timestamp="2023-01-01"
         )
 
     @parameterized.expand(

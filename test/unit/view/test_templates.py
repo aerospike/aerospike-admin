@@ -834,8 +834,8 @@ class ShowMaskingRulesSheetTest(unittest.TestCase):
         }
         records = self.render(
             [
-                dict(rule, ael_b64="JC5wcm9maWxlLnNzbg=="),
-                dict(rule, ael_b64="JC5wcm9maWxl", enforced="false"),
+                dict(rule, ael_b64="JC5wcm9maWxlLnNzbg==", enforced="false"),
+                dict(rule, ael_b64="JC5wcm9maWxl"),
             ]
         )
 
@@ -849,8 +849,8 @@ class ShowMaskingRulesSheetTest(unittest.TestCase):
                 for r in records
             ],
             [
-                ("$.profile", "redact", False),
-                ("$.profile.ssn", "redact", True),
+                ("$.profile", "redact", True),
+                ("$.profile.ssn", "redact", False),
             ],
         )
 
@@ -897,3 +897,94 @@ class ShowMaskingRulesSheetTest(unittest.TestCase):
         )
 
         self.assertEqual(list(records[0])[-3:], ["Function", "Default", "Enforced"])
+        self.assertNotIn("AEL", records[0])
+
+    def test_released_server_rules_show_without_ael_and_default(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "n",
+                    "type": "integer",
+                    "function": "constant",
+                    "value": "0",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                    "position": "0",
+                    "length": "4",
+                    "value": "*",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [
+                (
+                    list(r),
+                    r["Bin"]["raw"],
+                    r["Function"]["raw"],
+                    r["Enforced"]["raw"],
+                )
+                for r in records
+            ],
+            [
+                (
+                    ["Namespace", "Set", "Bin", "Type", "Function", "Enforced"],
+                    "n",
+                    "constant value 0",
+                    True,
+                ),
+                (
+                    ["Namespace", "Set", "Bin", "Type", "Function", "Enforced"],
+                    "ssn",
+                    "redact position 0 length 4 value *",
+                    True,
+                ),
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                {"bin": "ssn"},
+                ["Namespace", "Set", "Bin", "Type", "Function", "Enforced"],
+            ),
+            (
+                "path_rule_with_default",
+                {"ael_b64": "JC5wcm9maWxlLnNzbg==", "default": "N/A"},
+                [
+                    "Namespace",
+                    "Set",
+                    "Bin",
+                    "Type",
+                    "AEL",
+                    "Function",
+                    "Default",
+                    "Enforced",
+                ],
+            ),
+        ]
+    )
+    def test_empty_columns_hide_and_the_rest_keep_their_order(
+        self, _, target, exp_columns
+    ):
+        records = self.render(
+            [
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="redact",
+                    **target,
+                )
+            ]
+        )
+
+        self.assertEqual(list(records[0]), exp_columns)

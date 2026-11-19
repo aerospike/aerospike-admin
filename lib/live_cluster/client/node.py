@@ -4434,24 +4434,23 @@ class Node(AsyncObject):
 
         result = []
         pending = None
+        pending_rule = {}
         # A ':' inside a value splits its rule, and the piece after it is not a
         # complete rule on its own, so join pieces from the end until they form one.
         for piece in reversed(client_util.info_to_list(resp, delimiter=":")):
             pending = piece if pending is None else piece + ":" + pending
-            rule = {}
+            pending_rule = {}
             for token in client_util.info_to_list(pending, ";"):
                 key, sep, value = token.partition("=")
                 if sep:
-                    rule.setdefault(key, value)
-            if (
-                "=" in pending.split(";", 1)[0]
-                and ("namespace" in rule or "ns" in rule)
-                and all(k in rule for k in ("set", "type", "function"))
+                    pending_rule.setdefault(key, value)
+            if "=" in pending.split(";", 1)[0] and util.is_complete_masking_rule(
+                pending_rule
             ):
-                result.append(rule)
+                result.append(pending_rule)
                 pending = None
         if pending:
-            result.append(rule)
+            result.append(pending_rule)
         result.reverse()
         logger.debug(
             "info_masking_list_rules node=%s namespace=%s set=%s response=%s",

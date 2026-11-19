@@ -638,7 +638,10 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             ("JC4i/yIueA==", None, '$."\\xff".x', "\\xff"),
             ("JC5zc24=", None, "$.ssn", "ssn"),
             ("JC5wcm9maWxlLnNzbg==", "srv_bin", "$.profile.ssn", "srv_bin"),
-            ("!!not-base64", None, "!!not-base64", ""),
+            ("!!not-base64", None, "'!!not-base64' (base64)", ""),
+            ("JC5wLnNz!bg==", None, "'JC5wLnNz!bg==' (base64)", ""),
+            (123, None, "'123' (base64)", ""),
+            ("", None, "", ""),
         ]
     )
     def test_normalize_masking_rule_data_path_rule(
@@ -724,6 +727,117 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
                 "enforced": "true",
             },
         )
+
+    def test_normalize_masking_rule_data_ctx_rule(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "default": "x",
+            "ctx_b64": "khAA",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        self.assertEqual(
+            result,
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "",
+                "type": "string",
+                "function": "redact ctx_b64 khAA",
+                "default": "x",
+                "enforced": "true",
+            },
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "a",
+                },
+                True,
+            ),
+            (
+                "path_rule",
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "ael_b64": "JC5wLng=",
+                },
+                True,
+            ),
+            (
+                "ns_keyed",
+                {
+                    "ns": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+                True,
+            ),
+            (
+                "typed_before_namespace",
+                {
+                    "set": "demo",
+                    "value": "1",
+                    "namespace": "test",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                },
+                True,
+            ),
+            ("tail_of_value_holding_colon", {"b": "c"}, False),
+            ("tail_without_keys", {}, False),
+            ("tail_of_value_holding_namespace", {"namespace": "b"}, False),
+            (
+                "tail_with_path",
+                {"namespace": "b", "ael_b64": "JC5wLng=", "enforced": "false"},
+                False,
+            ),
+            (
+                "head_typed_before_namespace",
+                {"set": "demo", "value": "1"},
+                False,
+            ),
+            (
+                "no_function",
+                {"namespace": "test", "set": "demo", "type": "string"},
+                False,
+            ),
+            (
+                "no_type",
+                {"namespace": "test", "set": "demo", "function": "redact"},
+                False,
+            ),
+            (
+                "no_set",
+                {"namespace": "test", "type": "string", "function": "redact"},
+                False,
+            ),
+            (
+                "no_namespace",
+                {"set": "demo", "type": "string", "function": "redact"},
+                False,
+            ),
+        ]
+    )
+    def test_is_complete_masking_rule(self, _, rule, expected):
+        self.assertIs(util.is_complete_masking_rule(rule), expected)
 
     def test_is_valid_aerospike_name_valid_names(self):
         """Test is_valid_aerospike_name with valid names"""
