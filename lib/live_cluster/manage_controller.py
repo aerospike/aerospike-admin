@@ -1123,7 +1123,7 @@ class ManageSIndexController(LiveClusterManageCommandController):
         ),
         ModifierHelp(
             "ctx",
-            "A list of context items describing how to index into a CDT. Possible values include: list_index(<int>) list_rank(<int>) list_value(<value>), map_index(<int>), map_rank(<int>) map_key(<value>), and map_value(<value>). Where <value> i <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64 encoded byte array (no quotes).",
+            "A list of context items describing how to index into a CDT. Possible values include: list_index(<int>) list_rank(<int>) list_value(<value>), map_index(<int>), map_rank(<int>) map_key(<value>), and map_value(<value>). Where <value> is <string>, int(<int>), bool(<bool>), or bytes(<base64>) a base64 encoded byte array (no quotes).",
         ),
         ModifierHelp(
             "ctx_base64",
@@ -1138,9 +1138,9 @@ class ManageSIndexController(LiveClusterManageCommandController):
             "AEL (Aerospike Expression Language) source for the server to compile, e.g."
             " ael '$.a:INT + $.b:INT'. Surround it with single quotes: without them the"
             " expression is split on spaces, a '#' truncates it and a ';' ends the"
-            " command. Even inside quotes a backslash escapes the character after it,"
-            " so use 'ael_b64' for source containing backslashes. bin, ctx,"
-            " ctx_base64, exp_base64 and ael_b64 will not be allowed when ael is specified."
+            " command. Inside the quotes only \\\\ and \\' are escapes; double a"
+            " backslash or use 'ael_b64'. bin, ctx, ctx_base64, exp_base64 and"
+            " ael_b64 will not be allowed when ael is specified."
             f" Requires server >= {constants.SERVER_SINDEX_ON_AEL_FIRST_VERSION}.",
         ),
         ModifierHelp(
@@ -2758,7 +2758,7 @@ class ManageConfigXDRDCNamespaceController(ManageConfigLeafController):
 
 
 @CommandHelp(
-    "Truncate or detruncate a namespace or set in the Aerospike cluster",
+    "Truncate or detruncate a namespace or set in the Aerospike cluster.",
     'Since the changes performed by this command are critical "--warn" is on by default.',
     modifiers=(
         ModifierHelp(
@@ -4355,7 +4355,7 @@ class ManageJobsKillAllQueriesController(ManageJobsKillAllLeafCommandController)
 
 
 @CommandHelp(
-    "Manage masking rules",
+    "Manage masking rules.",
     "Data masking allows you to obscure sensitive data in bins. Use 'add' to create",
     "masking rules and 'drop' to remove them. View existing rules with 'show masking'.",
     short_msg="Manage masking rules",
@@ -4369,14 +4369,12 @@ class ManageMaskingController(LiveClusterManageCommandController):
 
 
 class ManageMaskingLeafCommandController(ManageLeafCommandController):
-    def _refuse_semicolons(self, fields):
-        """Refuse a ';' in any (name, word) sent in the info command, since the server
-        reads it as the start of another field."""
-        for name, word in fields:
-            if word and ";" in word:
-                raise ShellException(
-                    f"The {name} '{word}' cannot contain ';', which separates the fields of a masking command."
-                )
+    def _refuse_unsafe_words(self, fields):
+        """Refuse a (name, word) sent in the info command that the server would split."""
+        error = util.masking_word_error(fields)
+
+        if error:
+            raise ShellException(error)
 
     def _parse_target(self, line):
         """Return (bin, ael_b64, path modifier or None, prompt text) for the one target.
@@ -4459,12 +4457,8 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
                 "utf-8"
             )
         elif ael_b64 is not None:
-            try:
-                util.is_valid_base64(ael_b64)
-                path = binascii.a2b_base64(ael_b64).decode("utf-8", "backslashreplace")
-                target = f"path '{path}'"
-            except ValueError:
-                target = f"path '{ael_b64}' (base64)"
+            path, decoded = util.masking_path_text(ael_b64)
+            target = f"path '{path}'" if decoded else f"path {path}"
         else:
             target = f"bin '{bin_name}'"
 
@@ -4474,7 +4468,7 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
 @CommandHelp(
     "Add masking rules to redact or replace sensitive data in bins, or in an element",
     "of a list or map bin addressed by an AEL path.",
-    usage="<function> [function-args] namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <path>) [type <type>]",
+    usage="<function> [function-args] namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <base64>) [type <type>]",
     modifiers=(
         ModifierHelp(
             "function",
@@ -4494,15 +4488,15 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
             "ael",
             "AEL (Aerospike Expression Language) path to the element to mask, starting at"
             " the bin, e.g. ael '$.profile.ssn' or ael '$.cards.[0]'. Surround it"
-            " with single quotes. Even inside quotes a backslash escapes the character"
-            " after it, so use 'ael_b64' for a path containing backslashes."
-            f" Requires server >= {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION}.",
+            " with single quotes. Inside the quotes only \\\\ and \\' are escapes;"
+            " double a backslash or use 'ael_b64'."
+            f" Requires every node at server v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later.",
         ),
         ModifierHelp(
             "ael_b64",
             "The base64 encoding of an AEL path. Same as 'ael' but pre-encoded, so the"
             " command parser cannot alter it."
-            f" Requires server >= {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION}.",
+            f" Requires every node at server v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later.",
         ),
         ModifierHelp(
             "type",
@@ -4566,7 +4560,7 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
 
         bin_name, ael_b64, path_mod, target = self._parse_target(line)
 
-        self._refuse_semicolons(
+        self._refuse_unsafe_words(
             [
                 ("function", function_name),
                 ("namespace", namespace),
@@ -4605,7 +4599,7 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
 
         if path_mod is not None and not feature_support["masking_ael"]:
             raise ShellException(
-                "The '{}' modifier requires server v. {} or later.".format(
+                "The '{}' modifier requires every node at server v. {} or later.".format(
                     path_mod, constants.SERVER_MASKING_ON_AEL_FIRST_VERSION
                 )
             )
@@ -4644,14 +4638,7 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
     def _parse_function_params(self, line):
         """Parse function parameters dynamically."""
         function_params = {}
-        reserved_keywords = {
-            "namespace",
-            "set",
-            "bin",
-            "ael",
-            "ael_b64",
-            "type",
-        }  # Use set for O(1) lookup
+        reserved_keywords = self.required_modifiers | self.modifiers
 
         # Count parameters first for validation (single pass)
         param_count = 0
@@ -4669,14 +4656,9 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
 
         # Parse parameters in pairs (single pass, no copying)
         while line and line[0] not in reserved_keywords:
-            if len(line) >= 2:
-                param_name = line.pop(0)
-                param_value = line.pop(0)
-                function_params[param_name] = param_value
-            else:
-                raise ShellException(
-                    "Unexpected parameter parsing state - insufficient arguments remaining"
-                )
+            param_name = line.pop(0)
+            param_value = line.pop(0)
+            function_params[param_name] = param_value
 
         return function_params
 
@@ -4692,7 +4674,7 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
     "Drop masking rules. Removes the masking rule on the specified bin, or on the",
     "element the specified AEL path names. Dropping a bin rule does not drop the",
     "path rules on that bin.",
-    usage="namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <path>) [type <type>]",
+    usage="namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <base64>) [type <type>]",
     modifiers=(
         ModifierHelp("namespace", "The namespace to remove the rule from"),
         ModifierHelp("set", "The set to remove the rule from"),
@@ -4708,7 +4690,11 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
             "The base64 encoding of an AEL path. Same as 'ael' but pre-encoded."
             f" Requires server >= {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION}.",
         ),
-        ModifierHelp("type", "The bin type for the masking rule", default="string"),
+        ModifierHelp(
+            "type",
+            "The type of the bin, or of the element the AEL path names",
+            default="string",
+        ),
     ),
     short_msg="Drop masking rules",
 )
@@ -4753,7 +4739,7 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
 
         bin_name, ael_b64, _, target = self._parse_target(line)
 
-        self._refuse_semicolons(
+        self._refuse_unsafe_words(
             [
                 ("namespace", namespace),
                 ("set", set_name),

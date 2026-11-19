@@ -644,6 +644,41 @@ class CleanLineTest(unittest.TestCase):
             self.clean("grep -s ';' statistics"), [["grep", "-s"], ["statistics"]]
         )
 
+    def test_quoted_ael_path_with_semicolon_is_one_word(self):
+        self.assertEqual(
+            self.clean(
+                """manage masking drop namespace test set demo ael '$."a;b".x'"""
+            ),
+            [
+                [
+                    "manage",
+                    "masking",
+                    "drop",
+                    "namespace",
+                    "test",
+                    "set",
+                    "demo",
+                    "ael",
+                    '$."a;b".x',
+                ]
+            ],
+        )
+
+    def test_unquoted_ael_path_with_space_is_two_words(self):
+        self.assertEqual(self.clean("ael $.p ssn"), [["ael", "$.p", "ssn"]])
+
+    def test_backslash_in_single_quotes_escapes_only_backslash_and_quote(self):
+        self.assertEqual(self.clean(r"ael '$.a\nb'"), [["ael", r"$.a\nb"]])
+        self.assertEqual(self.clean(r"ael '$.a\xb'"), [["ael", r"$.a\xb"]])
+        self.assertEqual(self.clean(r"ael '$.a\\b'"), [["ael", r"$.a\b"]])
+        self.assertEqual(self.clean(r"ael '$.a\'b'"), [["ael", "$.a'b"]])
+
+    def test_quoted_hash_is_a_word(self):
+        self.assertEqual(self.clean("value '#'"), [["value", "#"]])
+
+    def test_unquoted_hash_starts_a_comment(self):
+        self.assertEqual(self.clean("value # default N/A"), [["value"]])
+
     def test_unterminated_quote_raises_shell_exception(self):
         with self.assertRaises(ShellException) as cm:
             self.clean("show 'unterminated")

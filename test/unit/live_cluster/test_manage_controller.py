@@ -21,6 +21,7 @@ import warnings
 from parameterized import parameterized
 from pytest import PytestUnraisableExceptionWarning
 
+from asadm import AerospikeShell
 from lib.base_controller import (
     BaseController,
     CommandController,
@@ -236,6 +237,34 @@ Usage:  fakeb2 <arg2> foo <foo usage>
             self.assertEqual(expected_result, "ShellException")
         else:
             self.assertListEqual(expected_result.split("\n"), actual_result.split("\n"))
+
+
+class ManageHelpTextTest(unittest.TestCase):
+    def help_text(self, *line):
+        return " ".join(ManageController().execute_help(list(line)).split())
+
+    def test_masking_first_line_ends_with_period(self):
+        self.assertIn(
+            "Manage masking rules. Data masking allows", self.help_text("masking")
+        )
+
+    def test_truncate_first_line_ends_with_period(self):
+        self.assertIn(
+            "in the Aerospike cluster. Since the changes",
+            self.help_text("truncate"),
+        )
+
+    def test_sindex_create_ael_names_only_the_escapes_in_quotes(self):
+        help_text = self.help_text("sindex", "create")
+
+        self.assertNotIn("a backslash escapes the character after it", help_text)
+        self.assertIn(r"Inside the quotes only \\ and \' are escapes", help_text)
+
+    def test_sindex_create_ctx_says_value_is(self):
+        self.assertIn(
+            "Where <value> is <string>, int(<int>)",
+            self.help_text("sindex", "create"),
+        )
 
 
 class ManageACLCreateUserControllerTest(unittest.IsolatedAsyncioTestCase):
@@ -4715,6 +4744,82 @@ class ManageRosterStageObservedControllerTest(unittest.IsolatedAsyncioTestCase):
 BARE_AEL_ERROR = "The 'ael' modifier requires an AEL path, e.g. ael '$.profile.ssn'."
 BARE_AEL_B64_ERROR = "The 'ael_b64' modifier requires a base64 encoded AEL path, e.g. ael_b64 JC5wcm9maWxlLnNzbg==."
 BARE_BIN_ERROR = "The 'bin' modifier requires a bin name, e.g. bin ssn."
+SEMICOLON_ERROR = (
+    "The {} '{}' cannot contain ';', which separates the fields of a masking command."
+)
+CONTROL_CHARACTERS = ("\n", "\t", "\x00", "\x7f")
+ADD_RULE_WORD_SLOTS = {
+    "function": ["<word>", "namespace", "test", "set", "demo", "bin", "ssn"],
+    "parameter name": [
+        "constant",
+        "<word>",
+        "X",
+        "namespace",
+        "test",
+        "set",
+        "demo",
+        "bin",
+        "ssn",
+    ],
+    "value": [
+        "constant",
+        "value",
+        "<word>",
+        "namespace",
+        "test",
+        "set",
+        "demo",
+        "bin",
+        "ssn",
+    ],
+    "default": [
+        "redact",
+        "default",
+        "<word>",
+        "namespace",
+        "test",
+        "set",
+        "demo",
+        "ael",
+        "$.p.ssn",
+    ],
+    "namespace": ["constant", "namespace", "<word>", "set", "demo", "bin", "ssn"],
+    "set": ["constant", "namespace", "test", "set", "<word>", "bin", "ssn"],
+    "bin": ["constant", "namespace", "test", "set", "demo", "bin", "<word>"],
+    "ael_b64": ["constant", "namespace", "test", "set", "demo", "ael_b64", "<word>"],
+    "type": [
+        "constant",
+        "namespace",
+        "test",
+        "set",
+        "demo",
+        "bin",
+        "ssn",
+        "type",
+        "<word>",
+    ],
+}
+DROP_RULE_WORD_SLOTS = {
+    "namespace": ["namespace", "<word>", "set", "demo", "bin", "ssn"],
+    "set": ["namespace", "test", "set", "<word>", "bin", "ssn"],
+    "bin": ["namespace", "test", "set", "demo", "bin", "<word>"],
+    "ael_b64": ["namespace", "test", "set", "demo", "ael_b64", "<word>"],
+    "type": ["namespace", "test", "set", "demo", "bin", "ssn", "type", "<word>"],
+}
+
+
+def fill_word_slot(slots, word):
+    return [word if w == "<word>" else w for w in slots]
+
+
+def control_character_error(field, word, char):
+    return f"The {field} {word!r} cannot contain the control character {char!r}."
+
+
+def shell_words(typed):
+    shell = object.__new__(AerospikeShell)
+    [words] = AerospikeShell.clean_line(shell, typed)
+    return words
 
 
 class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
@@ -4825,12 +4930,27 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_add_rule_missing_required_params(self):
         """Test error when required parameters are missing"""
-        line = "redact namespace test".split()  # Missing set and bin
+        line = "redact namespace test".split()  # Missing set
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
         self.assertEqual(str(context.exception), "set is required")
+
+    async def test_add_rule_empty_set_is_refused(self):
+        line = ["redact", "namespace", "test", "set", "", "bin", "ssn"]
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception), "All parameters are required: namespace, set"
+        )
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
 
     async def test_add_rule_odd_number_of_params(self):
         """Test error when function parameters are not in pairs"""
@@ -4896,6 +5016,21 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
                 "",
                 "not-base64",
             ),
+            (
+                ["ael", '$."café".x'],
+                "",
+                "JC4iY2Fmw6kiLng=",
+            ),
+            (
+                ["ael", "$.a>>?"],
+                "",
+                "JC5hPj4/",
+            ),
+            (
+                ["ael", "$.cards.[0]"],
+                "",
+                "JC5jYXJkcy5bMF0=",
+            ),
         ]
     )
     async def test_add_rule_sends_target_for_server_to_judge(
@@ -4920,8 +5055,14 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             nodes="principal",
         )
 
-    async def test_add_rule_ael_ends_function_args(self):
-        line = "constant value X ael $.b.accounts.*.card type integer namespace test set demo".split()
+    @parameterized.expand(
+        [
+            ("ael", "$.b.accounts.*.card"),
+            ("ael_b64", "JC5iLmFjY291bnRzLiouY2FyZA=="),
+        ]
+    )
+    async def test_add_rule_ael_ends_function_args(self, path_mod, path):
+        line = f"constant value X {path_mod} {path} type integer namespace test set demo".split()
         self.cluster_mock.info_masking_add_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
@@ -5120,6 +5261,103 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.cluster_mock.info_masking_add_rule.assert_not_called()
 
+    @parameterized.expand(
+        [(field, char) for field in ADD_RULE_WORD_SLOTS for char in CONTROL_CHARACTERS]
+    )
+    async def test_add_rule_refuses_control_character(self, field, char):
+        word = f"x{char}y"
+        line = fill_word_slot(ADD_RULE_WORD_SLOTS[field], word)
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception), control_character_error(field, word, char)
+        )
+        self.meta_mock.get_builds.assert_not_called()
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
+
+    async def test_add_rule_refuses_newline_typed_in_quotes(self):
+        line = shell_words(
+            "constant value 'x\nlog-set:id=0' namespace test set demo bin ssn"
+        )
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception),
+            control_character_error("value", "x\nlog-set:id=0", "\n"),
+        )
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
+
+    async def test_add_rule_sends_ael_path_with_newline_encoded(self):
+        line = [
+            "constant",
+            "value",
+            "X",
+            "namespace",
+            "test",
+            "set",
+            "demo",
+            "ael",
+            '$."a\nb".x',
+        ]
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "",
+            "string",
+            "constant",
+            {"value": "X"},
+            "JC4iYQpiIi54",
+            nodes="principal",
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "constant value 'x;bin=other' namespace test set demo bin ssn",
+                SEMICOLON_ERROR.format("value", "x;bin=other"),
+            ),
+            (
+                "constant namespace test set demo bin 'ssn;type=integer'",
+                SEMICOLON_ERROR.format("bin", "ssn;type=integer"),
+            ),
+            (
+                "constant namespace test set demo ael_b64 'JC5wLnNzbg==;bin=other'",
+                SEMICOLON_ERROR.format("ael_b64", "JC5wLnNzbg==;bin=other"),
+            ),
+        ]
+    )
+    async def test_add_rule_refuses_semicolon_typed_in_quotes(self, typed, exp_error):
+        line = shell_words(typed)
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(str(context.exception), exp_error)
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
+
     async def test_add_rule_refuses_equals_in_parameter_name(self):
         line = "constant value=x y namespace test set demo bin ssn".split()
         self.cluster_mock.info_masking_add_rule.return_value = {
@@ -5222,9 +5460,10 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
+        self.meta_mock.get_builds.assert_called_once_with(nodes="all")
         self.assertEqual(
             str(context.exception),
-            f"The '{ael_mod}' modifier requires server v. 8.2.1 or later.",
+            f"The '{ael_mod}' modifier requires every node at server v. 8.2.1 or later.",
         )
         self.cluster_mock.info_masking_add_rule.assert_not_called()
 
@@ -5239,11 +5478,96 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.cluster_mock.info_masking_add_rule.assert_called_once()
 
+    async def test_add_bin_rule_on_released_servers_is_sent(self):
+        line = (
+            "redact position 0 length 4 value * namespace test set demo bin ssn".split()
+        )
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"A": "8.1.2.2", "B": "8.2.0.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "ssn",
+            "string",
+            "redact",
+            {"position": "0", "length": "4", "value": "*"},
+            None,
+            nodes="principal",
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "constant value 'a b c' namespace test set demo bin ssn",
+                ("test", "demo", "ssn"),
+                {"value": "a b c"},
+            ),
+            (
+                "constant value café namespace test set demo bin ssn",
+                ("test", "demo", "ssn"),
+                {"value": "café"},
+            ),
+            (
+                "constant value '日本' namespace test set demo bin ssn",
+                ("test", "demo", "ssn"),
+                {"value": "日本"},
+            ),
+            (
+                "constant value 12:30 namespace test set demo bin ssn",
+                ("test", "demo", "ssn"),
+                {"value": "12:30"},
+            ),
+            (
+                "constant value a=b namespace test set demo bin ssn",
+                ("test", "demo", "ssn"),
+                {"value": "a=b"},
+            ),
+            (
+                "constant value '#' namespace test set demo bin ssn",
+                ("test", "demo", "ssn"),
+                {"value": "#"},
+            ),
+            (
+                'constant value "it\'s" namespace test set demo bin ssn',
+                ("test", "demo", "ssn"),
+                {"value": "it's"},
+            ),
+            (
+                "constant value N/A namespace test-ns set 'my set' bin bin-1",
+                ("test-ns", "my set", "bin-1"),
+                {"value": "N/A"},
+            ),
+        ]
+    )
+    async def test_add_rule_sends_words_master_sends(self, typed, target, exp_params):
+        line = shell_words(typed)
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.0.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            *target,
+            "string",
+            "constant",
+            exp_params,
+            None,
+            nodes="principal",
+        )
+
     @parameterized.expand(
         [
             (["ael", "$.profile.ssn"], "path '$.profile.ssn'"),
             (["ael_b64", "JC5wcm9maWxlLnNzbg=="], "path '$.profile.ssn'"),
             (["ael_b64", "not-base64"], "path 'not-base64' (base64)"),
+            (["ael_b64", "JC5w!cm9m"], "path 'JC5w!cm9m' (base64)"),
         ]
     )
     async def test_add_rule_prompt_names_path(self, target, exp_target):
@@ -5263,7 +5587,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
         line = "redact namespace test set demo ael $.p.[-1]".split()
         server_error = ASInfoResponseError(
             "Failed to add masking rule",
-            "ERROR:4:bad path '$.p.[-1]', a negative list index counts from the end",
+            "ERROR:4:bad path, negative list index - spell the index from the front",
         )
         self.cluster_mock.info_masking_add_rule.return_value = {
             "principal": server_error
@@ -5274,49 +5598,6 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             await self.controller.execute(line)
 
         self.assertIs(context.exception, server_error)
-
-    def test_parse_function_params_internal_error(self):
-        """Test internal error handling in _parse_function_params when unexpected state occurs"""
-        # Test the edge case by directly manipulating the parsing loop
-        # We'll create a custom line that bypasses validation but triggers the error
-
-        # Create a line that will pass initial validation but fail during parsing
-        line = ["key1", "value1"]  # Even number, should pass validation
-
-        # Mock the reserved keywords check to simulate a race condition
-        with patch.object(self.controller, "_parse_function_params") as mock_parse:
-
-            def side_effect_parse(test_line):
-                # Simulate the parsing logic but with a corrupted state
-                function_params = {}
-                reserved_keywords = {"namespace", "set", "bin", "type"}
-
-                # Simulate validation passing (even number check)
-                param_count = 2  # Even number
-
-                # But then simulate line corruption during parsing
-                test_line.clear()
-                test_line.append("param1")  # Now odd, triggers our error
-
-                # Execute the parsing loop that should trigger our exception
-                while test_line and test_line[0] not in reserved_keywords:
-                    if len(test_line) >= 2:
-                        param_name = test_line.pop(0)
-                        param_value = test_line.pop(0)
-                        function_params[param_name] = param_value
-                    else:
-                        raise ShellException(
-                            "Unexpected parameter parsing state - insufficient arguments remaining"
-                        )
-
-                return function_params
-
-            mock_parse.side_effect = side_effect_parse
-
-            with self.assertRaises(ShellException) as context:
-                self.controller._parse_function_params(line)
-
-            self.assertIn("Unexpected parameter parsing state", str(context.exception))
 
 
 class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
@@ -5373,12 +5654,26 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_drop_rule_missing_required_params(self):
         """Test error when required parameters are missing"""
-        line = "namespace test".split()  # Missing set and bin
+        line = "namespace test".split()  # Missing set
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
         self.assertEqual(str(context.exception), "set is required")
+
+    async def test_drop_rule_empty_set_is_refused(self):
+        line = ["namespace", "test", "set", "", "bin", "ssn"]
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception), "All parameters are required: namespace, set"
+        )
+        self.cluster_mock.info_masking_remove_rule.assert_not_called()
 
     async def test_cluster_remove_rule_exception_handling(self):
         """Test exception handling for cluster.info_masking_remove_rule"""
@@ -5399,6 +5694,10 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         [
             (["ael", "$.profile.ssn"], "JC5wcm9maWxlLnNzbg=="),
             (["ael_b64", "JC5wcm9maWxlLnNzbg=="], "JC5wcm9maWxlLnNzbg=="),
+            (["ael_b64", "not-base64"], "not-base64"),
+            (["ael", '$."café".x'], "JC4iY2Fmw6kiLng="),
+            (["ael", "$.a>>?"], "JC5hPj4/"),
+            (["ael", "$.cards.[0]"], "JC5jYXJkcy5bMF0="),
         ]
     )
     async def test_drop_rule_by_path(self, target, exp_ael_b64):
@@ -5510,27 +5809,35 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
-        self.assertIn("'extra'", str(context.exception))
+        self.assertEqual(str(context.exception), "Unexpected words 'extra'.")
         self.cluster_mock.info_masking_remove_rule.assert_not_called()
 
     @parameterized.expand(
         [
-            ("ael $.a b", "ael"),
-            ("ael $.p.ssn ael $.p.x", "ael"),
-            ("ael_b64 JC5h Yg==", "ael_b64"),
+            (
+                "ael $.a b",
+                "The 'ael' modifier takes one quoted path, but 'b' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'.",
+            ),
+            (
+                "ael $.p.ssn ael $.p.x",
+                "The 'ael' modifier takes one quoted path, but '$.p.x' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'.",
+            ),
+            (
+                "ael_b64 JC5h Yg==",
+                "The 'ael_b64' modifier takes one base64 encoded path, but 'Yg==' follows it.",
+            ),
         ]
     )
-    async def test_drop_rule_ael_takes_one_value(self, target, ael_mod):
+    async def test_drop_rule_ael_takes_one_value(self, target, exp_error):
         line = f"namespace test set demo {target}".split()
         self.cluster_mock.info_masking_remove_rule.return_value = {
             "principal": ASINFO_RESPONSE_OK
         }
 
-        with self.assertRaisesRegex(
-            ShellException, f"The '{ael_mod}' modifier takes one"
-        ):
+        with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
+        self.assertEqual(str(context.exception), exp_error)
         self.cluster_mock.info_masking_remove_rule.assert_not_called()
 
     @parameterized.expand(
@@ -5538,6 +5845,7 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
             (["ael", "$.p.ssn"], "path '$.p.ssn'"),
             (["ael_b64", "JC5wLnNzbg=="], "path '$.p.ssn'"),
             (["ael_b64", "not-base64"], "path 'not-base64' (base64)"),
+            (["ael_b64", "JC5w!cm9m"], "path 'JC5w!cm9m' (base64)"),
         ]
     )
     async def test_drop_rule_prompt_names_path(self, target, exp_target):
@@ -5588,6 +5896,48 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.cluster_mock.info_masking_remove_rule.assert_not_called()
 
+    @parameterized.expand(
+        [(field, char) for field in DROP_RULE_WORD_SLOTS for char in CONTROL_CHARACTERS]
+    )
+    async def test_drop_rule_refuses_control_character(self, field, char):
+        word = f"x{char}y"
+        line = fill_word_slot(DROP_RULE_WORD_SLOTS[field], word)
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception), control_character_error(field, word, char)
+        )
+        self.cluster_mock.info_masking_remove_rule.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (
+                "namespace test set demo bin 'ssn;type=integer'",
+                SEMICOLON_ERROR.format("bin", "ssn;type=integer"),
+            ),
+            (
+                "namespace test set demo ael_b64 'JC5wLnNzbg==;bin=other'",
+                SEMICOLON_ERROR.format("ael_b64", "JC5wLnNzbg==;bin=other"),
+            ),
+        ]
+    )
+    async def test_drop_rule_refuses_semicolon_typed_in_quotes(self, typed, exp_error):
+        line = shell_words(typed)
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(str(context.exception), exp_error)
+        self.cluster_mock.info_masking_remove_rule.assert_not_called()
+
     async def test_drop_rule_sends_ael_path_with_semicolon(self):
         line = ["namespace", "test", "set", "demo", "ael", '$."a;b".x']
         self.cluster_mock.info_masking_remove_rule.return_value = {
@@ -5598,6 +5948,30 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
             "test", "demo", "", "string", "JC4iYTtiIi54", nodes="principal"
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "namespace test-ns set my_set bin bin-1 type integer",
+                ("test-ns", "my_set", "bin-1", "integer"),
+            ),
+            (
+                "namespace test set 'my set' bin café",
+                ("test", "my set", "café", "string"),
+            ),
+        ]
+    )
+    async def test_drop_rule_sends_words_master_sends(self, typed, exp_args):
+        line = shell_words(typed)
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            *exp_args, None, nodes="principal"
         )
 
 
