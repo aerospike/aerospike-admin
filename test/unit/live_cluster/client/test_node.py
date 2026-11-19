@@ -315,6 +315,95 @@ class NodeInitTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class NodeLoginSocketTest(unittest.IsolatedAsyncioTestCase):
+    """The socket a node logs in on carries its later requests."""
+
+    async def asyncSetUp(self):
+        patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name",
+            return_value="host.domain.local",
+        ).start()
+        patch(
+            "socket.getaddrinfo",
+            side_effect=lambda host, port, *args, **kwargs: [
+                (2, 1, 6, "", (host, port))
+            ],
+        ).start()
+        patch("lib.live_cluster.client.node.util.async_shell_command").start()
+        self.sockets = []
+        self.requests = []
+        patch(
+            "lib.live_cluster.client.node.ASSocket", side_effect=self.new_socket
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def answer(self, command):
+        responses = {
+            "node": "A0",
+            "build": "8.1.0.0",
+            "peers-generation": "1",
+            "connection": "admin=false",
+            "service-clear-std": "10.0.0.1:3000",
+            "peers-clear-std": "1,3000,[]",
+            "statistics": "uptime=1",
+        }
+
+        if isinstance(command, str):
+            return responses[command]
+
+        return {name: responses[name] for name in command}
+
+    def new_socket(self, *args, **kwargs):
+        sock = AsyncMock(spec=ASSocket)
+        sock.connect.return_value = True
+        sock.login.return_value = True
+        sock.authenticate.return_value = True
+        sock.is_connected.return_value = True
+        sock.get_session_info = Mock(return_value=("token", time.time() + 3600))
+        address = args[0]
+
+        def info(command):
+            self.requests.append((address, command))
+            return self.answer(command)
+
+        sock.info.side_effect = info
+        self.sockets.append(sock)
+        return sock
+
+    async def test_requests_after_connect_reuse_the_login_socket(self):
+        node = await Node("10.0.0.1", user="admin", password="admin")
+        await node.info("statistics")
+
+        self.assertTrue(node.alive)
+        self.assertEqual(len(self.sockets), 1)
+        self.sockets[0].login.assert_awaited_once()
+        self.sockets[0].authenticate.assert_not_awaited()
+
+    async def test_a_node_reached_through_another_address_does_not_keep_the_seed_socket(
+        self,
+    ):
+        """A load balancer seed: the node lists a different service address, so later
+        requests must go there, not through the socket opened to the seed."""
+        seed_answer = self.answer
+
+        def answer(command):
+            if command == ["service-clear-std", "peers-clear-std"]:
+                return {
+                    "service-clear-std": "10.0.0.7:3000",
+                    "peers-clear-std": "1,3000,[]",
+                }
+
+            return seed_answer(command)
+
+        self.answer = answer
+        node = await Node("10.0.0.1", user="admin", password="admin")
+        await node.info("statistics")
+
+        self.assertEqual(node.ip, "10.0.0.7")
+        self.assertIn(("10.0.0.7", "statistics"), self.requests)
+        self.assertNotIn(("10.0.0.1", "statistics"), self.requests)
+
+
 class NodeTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.maxDiff = None
@@ -2666,9 +2755,14 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_called_with("latencies:", self.ip)
 
     async def test_info_latencies_verbose(self):
+        self.node.build = "8.2.1.0"
         raw = ""
         self.info_mock.side_effect = [
             "test",
+            raw,
+            raw,
+            raw,
+            raw,
             raw,
             raw,
             raw,
@@ -2682,7 +2776,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         _ = await self.node.info_latencies(verbose=True)
 
-        self.assertEqual(self.info_mock.call_count, 10)
+        self.assertEqual(self.info_mock.call_count, 14)
         self.info_mock.assert_any_call("latencies:", self.ip)
         self.info_mock.assert_any_call("latencies:hist={test}-proxy", self.ip)
         self.info_mock.assert_any_call("latencies:hist=benchmarks-fabric", self.ip)
@@ -2700,6 +2794,136 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.assert_any_call(
             "latencies:hist={test}-benchmarks-batch-sub", self.ip
         )
+
+        for op in ("put", "get", "list", "delete"):
+            self.info_mock.assert_any_call(
+                "latencies:hist={test}-object-store-%s" % op, self.ip
+            )
+
+    def _latencies_responses(self, responses):
+        self.info_mock.side_effect = lambda cmd, ip: responses.get(cmd, "")
+
+    def _sent_commands(self):
+        return [c.args[0] for c in self.info_mock.call_args_list]
+
+    async def test_info_latencies_verbose_skips_object_store_before_8_2_1(self):
+        """TOOLS-4583: older servers do not have the object-store histograms."""
+        self.node.build = "8.2.0.2"
+        self._latencies_responses({"namespaces": "test"})
+
+        result = await self.node.info_latencies(verbose=True)
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(self.info_mock.call_count, 10)
+        self.assertFalse([c for c in self._sent_commands() if "object-store" in c])
+
+    async def test_info_latencies_verbose_skips_object_store_when_build_unknown(self):
+        self._latencies_responses({"namespaces": "test"})
+
+        for build in (
+            None,
+            "",
+            Exception("build failed"),
+            "ERROR::not authenticated",
+        ):
+            with self.subTest(build=build):
+                self.node.build = build
+                self.info_mock.reset_mock()
+
+                result = await self.node.info_latencies(verbose=True)
+
+                self.assertIsInstance(result, dict)
+                self.assertEqual(self.info_mock.call_count, 10)
+                self.assertFalse(
+                    [c for c in self._sent_commands() if "object-store" in c]
+                )
+
+    async def test_info_latencies_verbose_labels_each_table_with_its_own_unit(self):
+        """TOOLS-4583: object-store histograms are always msec, even on a node with
+        microsecond-histograms true."""
+        self.node.build = "8.2.1.0"
+        self._latencies_responses(
+            {
+                "namespaces": "test",
+                "latencies:": "{test}-write:usec,10.0," + ",".join(["5.00"] * 17),
+                "latencies:hist={test}-object-store-put": "{test}-object-store-put:msec,1.0,"
+                + ",".join(["50.00"] * 17),
+            }
+        )
+        usec = ["ops/sec", ">1us", ">8us", ">64us"]
+        msec = ["ops/sec", ">1ms", ">8ms", ">64ms"]
+
+        result = await self.node.info_latencies(verbose=True)
+
+        self.assertEqual(result["write"]["namespace"]["test"]["columns"], usec)
+        self.assertEqual(result["write"]["total"]["columns"], usec)
+        self.assertEqual(
+            result["object-store-put"]["namespace"]["test"]["columns"], msec
+        )
+        self.assertEqual(result["object-store-put"]["total"]["columns"], msec)
+        self.assertEqual(
+            result["object-store-put"]["namespace"]["test"]["values"],
+            [[1.0, 50.0, 50.0, 50.0]],
+        )
+
+    async def test_info_latencies_verbose_skips_object_store_bad_hist_name(self):
+        """8.2.1+ CE and EE without --preview backup-restore answer
+        ERROR:4:bad hist name."""
+        self.node.build = "8.2.1.0"
+        write = "{test}-write:msec,10.0," + ",".join(["5.00"] * 17)
+        responses = {"namespaces": "test", "latencies:": write}
+        responses.update(
+            {
+                "latencies:hist={test}-object-store-%s" % op: "ERROR:4:bad hist name"
+                for op in ("put", "get", "list", "delete")
+            }
+        )
+        self._latencies_responses(responses)
+
+        result = await self.node.info_latencies(verbose=True)
+
+        self.info_mock.assert_any_call(
+            "latencies:hist={test}-object-store-put", self.ip
+        )
+        self.assertListEqual(list(result.keys()), ["write"])
+
+    async def test_info_latencies_verbose_skips_unused_object_store_histograms(self):
+        """A histogram no backup or restore has used yet answers with no data."""
+        self.node.build = "8.2.1.0"
+        self._latencies_responses(
+            {
+                "namespaces": "test",
+                "latencies:": "{test}-write:msec,10.0," + ",".join(["5.00"] * 17),
+                "latencies:hist={test}-object-store-put": "{test}-object-store-put:",
+            }
+        )
+
+        result = await self.node.info_latencies(verbose=True)
+
+        self.info_mock.assert_any_call(
+            "latencies:hist={test}-object-store-put", self.ip
+        )
+        self.assertListEqual(list(result.keys()), ["write"])
+
+    async def test_info_latencies_verbose_object_store_only_for_ns_set(self):
+        self.node.build = "8.2.1.0"
+        self._latencies_responses({"namespaces": "test;bar", "latencies:": ""})
+
+        await self.node.info_latencies(verbose=True, ns_set={"bar"})
+
+        sent = self._sent_commands()
+        for op in ("put", "get", "list", "delete"):
+            self.assertIn("latencies:hist={bar}-object-store-%s" % op, sent)
+        self.assertFalse(any("{test}" in cmd for cmd in sent))
+        self.assertNotIn("namespaces", sent)
+
+    async def test_info_latencies_default_skips_object_store(self):
+        self.node.build = "8.2.1.0"
+        self._latencies_responses({"latencies:": ""})
+
+        await self.node.info_latencies()
+
+        self.info_mock.assert_called_once_with("latencies:", self.ip)
 
     async def test_info_dcs(self):
         self.info_mock.return_value = "a=b;c=d;e=f;dcs=DC1,DC2,DC3"
@@ -6314,6 +6538,46 @@ class SocketPoolTest(unittest.IsolatedAsyncioTestCase):
         # Create node
         self.node = await Node(self.ip, self.port)
         self.node._initialize_socket_pool()
+
+    def connected_socket(self):
+        near, far = socket.socketpair()
+        self.addCleanup(near.close)
+        self.addCleanup(far.close)
+
+        sock = ASSocket(
+            self.ip, self.port, None, None, None, constants.AuthMode.INTERNAL, None
+        )
+        sock.sock = near
+        sock.reader = asyncio.StreamReader()
+        sock.writer = MagicMock(spec=asyncio.StreamWriter)
+        sock.writer.is_closing.return_value = False
+        return sock
+
+    async def test_reusing_a_returned_socket_sends_no_request(self):
+        sock = self.connected_socket()
+        await self.node._return_to_pool(self.node.port, sock)
+
+        with patch(
+            "lib.live_cluster.client.assocket.info", AsyncMock(return_value="A0")
+        ) as info:
+            reused = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIs(reused, sock)
+        info.assert_not_called()
+
+    async def test_a_socket_idle_while_the_machine_slept_is_probed(self):
+        sock = self.connected_socket()
+        await self.node._return_to_pool(self.node.port, sock)
+        an_hour_later = time.time() + 3600
+
+        with patch("time.time", return_value=an_hour_later), patch(
+            "lib.live_cluster.client.assocket.info", AsyncMock(return_value="A0")
+        ) as info:
+            reused = await self.node._get_connection(self.node.ip, self.node.port)
+
+        self.assertIs(reused, sock)
+        info.assert_awaited_once()
+        self.assertEqual(info.await_args.args[2], "node")
 
     async def test_socket_pool_maxlen_behavior(self):
         """Test that socket pool respects maxlen and FIFO behavior"""
