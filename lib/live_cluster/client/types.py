@@ -243,6 +243,17 @@ class ASInfoError(Exception):
         return False
 
 
+def _error_text(server_resp: str) -> str:
+    """Return what follows 'PREFIX:', minus a '<code>:' field that is empty or digits."""
+    text = server_resp.split(":", 1)[1]
+    code, sep, rest = text.partition(":")
+
+    if sep and (not code or (code.isascii() and code.isdigit())):
+        return rest
+
+    return text
+
+
 class ASInfoResponseError(ASInfoError):
     def __init__(self, message: str, server_resp: str):
         self.raw_response = server_resp
@@ -255,15 +266,12 @@ class ASInfoResponseError(ASInfoError):
             # sometimes there is a message with 'error' and sometimes not. i.e. set-config, udf-put
             if server_resp.startswith("error") or server_resp.startswith("ERROR"):
                 if server_resp[5:6] == ":":
-                    server_resp = server_resp.split(":", 2)[-1]
+                    server_resp = _error_text(server_resp)
                 else:
-                    try:
-                        server_resp = server_resp.split("=", 1)[1]
-                    except IndexError:
-                        server_resp = server_resp.split(":", 2)[2]
+                    server_resp = server_resp.split("=", 1)[1]
 
             elif server_resp.startswith("fail") or server_resp.startswith("FAIL"):
-                server_resp = server_resp.split(":", 2)[2]
+                server_resp = _error_text(server_resp)
 
             clean_resp = server_resp.strip(" .")
 
@@ -342,28 +350,10 @@ class ASInfoNotAuthenticatedError(ASInfoResponseError):
 
 class ASInfoCheckpointError(ASInfoResponseError):
     def __init__(self, message: str, server_resp: str):
-        self.raw_response = server_resp
+        super().__init__(message, server_resp)
 
-        if server_resp.lower() in {ASINFO_RESPONSE_OK, ""}:
-            raise ValueError('info() returned value "ok" which is not an error.')
-
-        # Strip only the "ERROR:<code>:" prefix. ASInfoResponseError splits on "=" first,
-        # which mangles the checkpoint-save parameter error - its text echoes the rejected
-        # parameter, so it contains an "=" of its own.
-        clean_resp = server_resp
-
-        if server_resp.startswith("error") or server_resp.startswith("ERROR"):
-            parts = server_resp.split(":", 2)
-
-            if len(parts) == 3:
-                clean_resp = parts[2]
-
-        clean_resp = clean_resp.strip(" .")
-
-        if not clean_resp:
-            clean_resp = GENERIC_ERROR_MSG
-
-        ASInfoError.__init__(self, message, clean_resp)
+        if not self.response:
+            self.response = GENERIC_ERROR_MSG
 
 
 class ASInfoCheckpointParkedError(ASInfoCheckpointError):
