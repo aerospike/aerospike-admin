@@ -658,6 +658,9 @@ class OfflineCollectinfoFallbackTest(unittest.TestCase):
         [
             ("collect logs",),
             ("collect l",),
+            ("collect usage",),
+            ("collect usage --output-prefix pre",),
+            ("collect u",),
             ("collectlogs",),
             ("info",),
             ("summary",),

@@ -66,6 +66,13 @@ from lib.live_cluster.get_controller import (
 )
 
 from .live_cluster_command_controller import LiveClusterCommandController
+from .collectusage_controller import (
+    UsageUnavailable,
+    fetch_usage,
+    older_servers_message,
+    unavailable_message,
+    usage_supported,
+)
 from .features_controller import FeaturesController
 from .info_controller import InfoController
 from .show_controller import ShowController
@@ -649,6 +656,7 @@ class CollectinfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with"])
         self.collectinfo_root_controller = None
+        self.failed_cmds = []
 
     def _collect_local_file(self, src, dest_dir):
         logger.info("Copying file %s to %s" % (src, dest_dir))
@@ -1883,6 +1891,7 @@ class CollectinfoController(LiveClusterCommandController):
         snapshot_metas: dict[str, Any] = {}
         start_ts = time.strftime(constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime())
         aborted = True
+        usage = None
 
         try:
             for i in range(context.snp_count):
@@ -1910,6 +1919,7 @@ class CollectinfoController(LiveClusterCommandController):
 
                 logger.info("Data collection for Snapshot " + str(i + 1) + " finished.")
 
+            usage = await self._dump_collectinfo_usage(as_logfile_prefix)
             aborted = False
         finally:
             if snpshots:
@@ -1923,7 +1933,51 @@ class CollectinfoController(LiveClusterCommandController):
                 start_ts=start_ts,
                 context=context,
                 aborted=aborted,
+                usage=usage,
             )
+
+    async def _dump_collectinfo_usage(self, as_logfile_prefix) -> dict[str, str]:
+        """Write the usage export into the bundle, and say what happened for the
+        metadata. A cluster without usage reporting bundles as it always did."""
+        filename = as_logfile_prefix + constants.COLLECTINFO_USAGE_FILENAME
+
+        try:
+            if not await usage_supported(self.cluster):
+                logger.debug(
+                    "Usage file not written: %s",
+                    older_servers_message("collect info"),
+                )
+
+                return {
+                    "status": "unsupported",
+                    "min_version": constants.SERVER_USAGE_REPORTING_FIRST_VERSION,
+                }
+
+            export = await fetch_usage(self.cluster)
+
+            with open(filename, "wb") as f:
+                f.write(export.document)
+        except UsageUnavailable as e:
+            status = "failed" if e.supported else "unsupported"
+            logger.debug(
+                "Usage file not written: %s", unavailable_message("collect info", e)
+            )
+
+            if e.supported:
+                self.failed_cmds.append("usage-export")
+
+            return {"status": status, "node": e.node, "reply": e.reply}
+        except Exception as e:
+            logger.debug("Usage file not written: %s", e, exc_info=True)
+            self.failed_cmds.append("usage-export")
+
+            return {"status": "failed", "node": "", "reply": str(e)}
+
+        return {
+            "status": "written",
+            "node": export.node,
+            "file": path.basename(filename),
+        }
 
     async def _next_snapshot_timestamp(
         self, snpshots: dict[str, Any]
@@ -1981,6 +2035,7 @@ class CollectinfoController(LiveClusterCommandController):
         start_ts,
         context: CollectionContext,
         aborted=False,
+        usage=None,
     ) -> None:
         """Write the provenance/diagnostics sidecar.
 
@@ -1994,6 +2049,7 @@ class CollectinfoController(LiveClusterCommandController):
                 start_ts=start_ts,
                 context=context,
                 aborted=aborted,
+                usage=usage,
             )
             self._dump_in_json_file(
                 as_logfile_prefix + constants.COLLECTINFO_META_FILENAME, meta
@@ -2023,6 +2079,7 @@ class CollectinfoController(LiveClusterCommandController):
         start_ts,
         context: CollectionContext,
         aborted=False,
+        usage=None,
     ) -> dict[str, Any]:
         """Assemble collectinfo_meta.json, the bundle's provenance sidecar.
 
@@ -2045,7 +2102,7 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception:
             host = ""
 
-        return {
+        meta = {
             "meta_format_version": constants.COLLECTINFO_META_FORMAT_VERSION,
             "bundle": {
                 "asadm_version": str(self.asadm_version),
@@ -2077,6 +2134,11 @@ class CollectinfoController(LiveClusterCommandController):
             },
             "snapshots": snapshot_metas,
         }
+
+        if usage is not None:
+            meta["collection"]["usage"] = usage
+
+        return meta
 
     def _dump_collectinfo_file(self, filename: str, dump: str):
         logger.info("Dumping collectinfo %s.", filename)

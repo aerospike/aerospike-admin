@@ -39,6 +39,13 @@ from lib.live_cluster.get_controller import (
 )
 
 from .client import ASProtocolError
+from .collectusage_controller import (
+    UsageUnavailable,
+    fetch_usage,
+    log_unavailable,
+    older_servers_message,
+    usage_supported,
+)
 from .live_cluster_command_controller import LiveClusterCommandController
 
 logger = logging.getLogger(__name__)
@@ -96,6 +103,7 @@ class ShowController(LiveClusterCommandController):
             "statistics": ShowStatisticsController,
             "user-agents": ShowUserAgentsController,
             "masking": ShowMaskingController,
+            "usage": ShowUsageController,
         }
         self.aliases = {"stats": "statistics"}
 
@@ -1974,6 +1982,39 @@ class ShowStopWritesController(LiveClusterCommandController):
             ),
             self.cluster,
             **self.mods,
+        )
+
+
+@CommandHelp(
+    "Displays the cluster's usage records: one row per sample, then each namespace in the latest sample.",
+    "License Usage is data used / replication factor / compression ratio, as in 'info summary'.",
+    "Needs server v. {} or later.".format(
+        constants.SERVER_USAGE_REPORTING_FIRST_VERSION
+    ),
+    short_msg="Displays the cluster's usage records",
+)
+class ShowUsageController(LiveClusterCommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    async def _do_default(self, line):
+        if not await usage_supported(self.cluster):
+            logger.warning(older_servers_message("show usage"))
+            return
+
+        try:
+            export = await fetch_usage(self.cluster)
+        except UsageUnavailable as e:
+            log_unavailable("show usage", e)
+            return
+
+        namespaces = util.filter_exceptions(
+            await self.cluster.info_namespaces(nodes="all")
+        )
+
+        self.view.show_usage(
+            export.data,
+            namespaces=sorted(set().union(*namespaces.values())),
         )
 
 

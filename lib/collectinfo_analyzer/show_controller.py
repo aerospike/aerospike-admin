@@ -29,7 +29,7 @@ from lib.live_cluster.get_controller import (
     parse_jobs_mods,
     where_jobs_modifier_help,
 )
-from lib.utils import common, constants, util, version
+from lib.utils import common, constants, usage_export, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
 from .collectinfo_command_controller import (
     CollectinfoCommandController,
@@ -100,9 +100,64 @@ class ShowController(CollectinfoCommandController):
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
             "masking": ShowMaskingController,
+            "usage": ShowUsageController,
         }
         self.aliases = {"stats": "statistics"}
         self.modifiers = set()
+
+
+@CommandHelp(
+    "Displays the bundle's usage records: one row per sample, then each namespace in the latest sample.",
+    "License Usage is data used / replication factor / compression ratio, as in 'info summary'.",
+    short_msg="Displays the bundle's usage records",
+)
+class ShowUsageController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _servers_predate_usage_reporting(self) -> bool:
+        first = version.LooseVersion(constants.SERVER_USAGE_REPORTING_FIRST_VERSION)
+
+        return any(
+            version.LooseVersion(build) < first
+            for builds in self.log_handler.info_meta_data(stanza="asd_build").values()
+            for build in util.filter_exceptions(builds).values()
+        )
+
+    def _namespaces(self) -> list[str]:
+        return sorted(
+            {
+                namespace
+                for nodes in self.log_handler.info_namespaces().values()
+                for namespaces in util.filter_exceptions(nodes).values()
+                for namespace in namespaces
+            }
+        )
+
+    def _do_default(self, line):
+        files = sorted(
+            self.log_handler.bundle_files(("_" + constants.COLLECTINFO_USAGE_FILENAME,))
+        )
+
+        if not files:
+            if self._servers_predate_usage_reporting():
+                logger.warning(
+                    "'show usage' is not supported on aerospike versions < %s",
+                    constants.SERVER_USAGE_REPORTING_FIRST_VERSION,
+                )
+            else:
+                warn_no_data("show usage", "usage file")
+
+            return
+
+        try:
+            with open(files[0], "rb") as f:
+                data = usage_export.parse(f.read())
+        except (OSError, ValueError) as e:
+            logger.error("show usage: cannot read %s: %s", files[0], e)
+            return
+
+        self.view.show_usage(data, namespaces=self._namespaces())
 
 
 repeat_modifier_help = ModifierHelp(
