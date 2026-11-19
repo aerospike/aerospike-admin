@@ -108,7 +108,7 @@ _confspec = """{
             "type" : "object",
             "properties" : {
                 "services-alumni" : { "type" : "boolean" },
-                "timeout" : { "type" : "integer" },
+                "timeout" : { "type" : "integer", "minimum" : 0, "exclusiveMinimum" : true },
 
                 "line-separator": { "type" : "boolean" },
                 "no-color": { "type" : "boolean" },
@@ -205,6 +205,12 @@ def _schema_error(e):
     if e.validator == "type" and str(e.validator_value) in _EXPECTED_TYPE:
         expected = _EXPECTED_TYPE[str(e.validator_value)]
         return "invalid value for {}, expected {}".format(where, expected)
+
+    if e.validator == "minimum" and e.schema.get("exclusiveMinimum"):
+        expected = _EXPECTED_TYPE[e.schema["type"]]
+        return "invalid value for {}, expected {} greater than {}".format(
+            where, expected, e.validator_value
+        )
 
     return "invalid value for " + where
 
@@ -570,8 +576,7 @@ def loadconfig(cli_args):
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
-    # asinfo documents its own default and reads no [asadm] section.
-    if cli_args.asinfo_mode and cli_args.timeout is None:
+    if asadm_dict["asinfo_mode"] and cli_args.timeout is None:
         asadm_dict["timeout"] = ASINFO_DEFAULT_TIMEOUT
 
     asadm_dict["config_file_options"] = [

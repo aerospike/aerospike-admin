@@ -2158,8 +2158,8 @@ class PasswordHelpTest(unittest.TestCase):
 
 
 class TimeoutOptionTest(PasswordSourcesTestCase):
-    """asinfo documents a 5 s default and reads no [asadm] section, so asinfo
-    mode takes only --timeout. asadm defaults to 1 s and reads [asadm]."""
+    """asinfo mode defaults to 5 s and ignores the [asadm] timeout; asadm
+    defaults to 1 s and reads it."""
 
     ASADM_SECTION = "[asadm]\ntimeout = 3\n"
 
@@ -2179,6 +2179,12 @@ class TimeoutOptionTest(PasswordSourcesTestCase):
         self.assertEqual(
             self.load("--asinfo-mode", config=self.ASADM_SECTION).timeout, 5
         )
+
+    def test_asinfo_mode_from_the_config_file_defaults_to_5s(self):
+        args = self.load(config="[asadm]\nasinfo-mode = true\ntimeout = 3\n")
+
+        self.assertTrue(args.asinfo_mode)
+        self.assertEqual(args.timeout, 5)
 
     def test_asadm_default_section_and_command_line(self):
         self.assertEqual(self.load().timeout, 1)
@@ -2214,6 +2220,29 @@ class TimeoutValueTest(unittest.TestCase):
         for value, expected in (("0.5", 0.5), ("2", 2), ("inf", float("inf"))):
             with self.subTest(value=value):
                 self.assertEqual(self.parse(value), expected)
+
+
+class ConfigTimeoutValueTest(PasswordSourcesTestCase):
+    """The [asadm] timeout is refused like --timeout when it is not above zero."""
+
+    def test_refuses_values_not_above_zero(self):
+        for value in ("0", "-1"):
+            with self.subTest(value=value):
+                config = "[asadm]\ntimeout = {}\n".format(value)
+
+                with patch("lib.utils.conf.logger") as logger:
+                    args = self.load(config=config)
+
+                path = os.path.join(self.tmpdir.name, "astools.conf")
+                self.assertEqual(
+                    [c.args[0] for c in logger.critical.call_args_list],
+                    [
+                        "Config file parse error: {} invalid value for timeout in"
+                        " the [asadm] config section, expected an integer greater"
+                        " than 0".format(path)
+                    ],
+                )
+                self.assertEqual(args.timeout, 1)
 
 
 class SeedTest(unittest.TestCase):
