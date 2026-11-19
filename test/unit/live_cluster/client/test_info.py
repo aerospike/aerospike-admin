@@ -20,6 +20,11 @@ from unittest.mock import AsyncMock, Mock, patch
 from pytest import PytestUnraisableExceptionWarning
 
 from lib.utils.constants import AuthMode
+from lib.live_cluster.client.constants import ErrorsMsgs
+from lib.live_cluster.client.types import (
+    ASInfoNotAuthenticatedError,
+    ASInfoResponseError,
+)
 from lib.live_cluster.client.info import (
     ASPrivilege,
     ASResponse,
@@ -43,6 +48,7 @@ from lib.live_cluster.client.info import (
     set_quotas,
     set_whitelist,
     _receive_data,
+    _STRUCT_PROTOCOL_HEADER,
 )
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.types import (
@@ -989,6 +995,42 @@ class ReceiveDataTest(unittest.IsolatedAsyncioTestCase):
         reader = DummyReader([b""])
         with self.assertRaises(ConnectionResetError):
             await _receive_data(reader, 5)
+
+
+class InfoTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.writer = Mock()
+        self.writer.drain = AsyncMock()
+
+    def reply(self, payload: bytes) -> DummyReader:
+        header = _STRUCT_PROTOCOL_HEADER.pack(2, 1, 0, 0, len(payload))
+        return DummyReader([header, payload])
+
+    async def test_single_request_nameless_error_line_raises_with_server_line(self):
+        for line in ("ERROR:9:timeout", "error:9:timeout"):
+            with self.subTest(line=line):
+                reader = self.reply(line.encode() + b"\n")
+
+                with self.assertRaises(ASInfoResponseError) as cm:
+                    await info(reader, self.writer, "statistics")
+
+                self.assertEqual(
+                    cm.exception,
+                    ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, line),
+                )
+
+    async def test_single_request_nameless_not_authenticated_line_keeps_its_type(self):
+        reader = self.reply(b"ERROR:80:not authenticated\n")
+
+        with self.assertRaises(ASInfoNotAuthenticatedError):
+            await info(reader, self.writer, "statistics")
+
+    async def test_single_request_named_error_value_is_returned_to_caller(self):
+        reader = self.reply(b"get-config:context=foo\tERROR:4:unknown context\n")
+
+        value = await info(reader, self.writer, "get-config:context=foo")
+
+        self.assertEqual(value, "ERROR:4:unknown context")
 
 
 class InfoBatchedReplyTest(unittest.IsolatedAsyncioTestCase):

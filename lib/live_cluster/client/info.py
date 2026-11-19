@@ -1303,6 +1303,8 @@ async def info(reader, writer, names=None):
         if name != names:
             if "not authenticated" in name.lower():
                 raise ASInfoNotAuthenticatedError("Connection failed", name)
+            elif not sep and name.startswith(("ERROR", "error")):
+                raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, name)
             else:
                 logger.debug(
                     "Unexpected key %s in info response %s. Expected key: %s",
