@@ -3343,10 +3343,6 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
     def _parse_int_arg(self, line, arg, default, minimum, maximum=None):
-        """
-        get_arg_and_delete_from_mods with return_type=int silently falls back to the
-        default on a bad cast. These bounds are worth reporting, so parse as str.
-        """
         # "line" so the flag and its value are cleared from self.mods too - the leftover
         # check below relies on mods["line"] holding only genuinely unrecognized input.
         value = util.get_arg_and_delete_from_mods(
@@ -3361,10 +3357,10 @@ class ManageCheckpointSaveController(ManageCheckpointLeafController):
         if value is None:
             return default
 
-        try:
-            value = int(value)
-        except ValueError:
+        if not re.fullmatch(r"[+-]?[0-9]+", value):
             raise ShellException("{} must be an integer.".format(arg))
+
+        value = int(value)
 
         if value < minimum or (maximum is not None and value > maximum):
             if maximum is None:
