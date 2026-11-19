@@ -820,6 +820,7 @@ class GetArgAndDeleteFromModsTest(unittest.TestCase):
             ("leading_space", " 7"),
             ("trailing_newline", "7\n"),
             ("non_ascii_digit", "٣"),
+            ("dash_alone", "-"),
         ]
     )
     def test_int_value_that_is_not_a_whole_number_is_an_error(self, _, raw):
@@ -834,6 +835,22 @@ class GetArgAndDeleteFromModsTest(unittest.TestCase):
 
         self.assertEqual(self._get(line, "-t", default=9), 9)
         self.assertEqual(line, [flag, "7"])
+
+    @parameterized.expand(
+        [
+            ("double_dash_number", "--5"),
+            ("dash_dot_number", "-.5"),
+            ("double_dash", "--"),
+            ("dash_nan", "-NaN"),
+        ]
+    )
+    def test_int_flag_followed_by_a_dash_and_a_non_digit_gives_the_default(
+        self, _, token
+    ):
+        line = ["-t", token, "7"]
+
+        self.assertEqual(self._get(line, "-t", default=9), 9)
+        self.assertEqual(line, [token, "7"])
 
     @parameterized.expand([("diff", "diff"), ("like", "like"), ("with", "with")])
     def test_int_flag_followed_by_a_modifier_word_gives_the_default(self, _, word):

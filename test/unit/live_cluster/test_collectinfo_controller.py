@@ -1018,9 +1018,23 @@ class CollectinfoNumericFlagTest(unittest.IsolatedAsyncioTestCase):
     async def test_int_flag_followed_by_another_flag_takes_its_default(self):
         self.assertEqual(await self._parse("-n", "-t", "2"), (1, 2))
 
+    async def test_flag_without_value_leaves_a_later_value_equal_to_its_default(self):
+        self.assertEqual(await self._parse("-n", "-t", "1"), (1, 1))
+
     async def test_flag_without_value_leaves_the_previous_flags_value_alone(self):
         self.assertEqual(await self._parse("--output-prefix", "5", "-t"), (1, 5))
         self.assertEqual(self._run_args()["output_prefix"], "5")
+
+    async def test_ssh_password_equal_to_the_user_keeps_the_password_and_port(self):
+        await self.controller._do_default(
+            ["--ssh-pwd", "admin", "--ssh-port", "2299", "--ssh-user", "admin"]
+        )
+
+        args = self._run_args()
+        self.assertEqual(
+            (args["ssh_user"], args["ssh_pwd"], args["ssh_port"]),
+            ("admin", "admin", 2299),
+        )
 
 
 class RunCollectinfoTestCase(unittest.IsolatedAsyncioTestCase):

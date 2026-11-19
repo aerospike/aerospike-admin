@@ -194,6 +194,23 @@ class ShowConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
+    async def test_do_namespace_repeat_flag_followed_by_for_takes_the_default(self):
+        self.getter_mock.get_namespace.return_value = {"test": "test-configs"}
+
+        await self.controller.execute(["namespace", "-r", "for", "test"])
+
+        self.getter_mock.get_namespace.assert_called_with(
+            flip=True, nodes="all", for_mods=["test"]
+        )
+        self.view_mock.show_config.assert_called_once_with(
+            "test Namespace Configuration",
+            "test-configs",
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **{"diff": [], "for": ["test"], "like": [], "with": [], "line": ["-r"]},
+        )
+
     @parameterized.expand(
         [
             (
