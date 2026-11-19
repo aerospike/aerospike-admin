@@ -1346,6 +1346,7 @@ class async_cached(Generic[AwaitableType]):
     """
     Doesn't support lists, dicts and other unhashables
     Also doesn't support kwargs for reasons above.
+    A tuple after the instance is a batch: each command is cached under its own key.
     """
 
     class _CacheableCoroutine(Generic[AwaitableReturnType]):
@@ -1392,14 +1393,19 @@ class async_cached(Generic[AwaitableType]):
     def __setitem__(self, key, value: _CacheableCoroutine):
         self.cache[key] = (value, time() + self.ttl)
 
+    def _held(self, key) -> bool:
+        if key not in self.cache:
+            return False
+
+        # This effectively clear the key if the coroutine raises an exception.
+        value, eol = self.cache[key]
+        return not value.raised() and eol > time()
+
     def __getitem__(self, key) -> Awaitable[AwaitableType]:
-        if key in self.cache:
-            # This effectively clear the key if the coroutine raises an exception.
-            if not self.cache[key][0].raised():
-                value, eol = self.cache[key]
-                if eol > time():
-                    logger.debug("return cached %s: %s", key[1:], value)
-                    return value
+        if self._held(key):
+            value = self.cache[key][0]
+            logger.debug("return cached %s: %s", key[1:], value)
+            return value
 
         self[key] = self._CacheableCoroutine(self.func(*key))
         return self.cache[key][0]
@@ -1407,7 +1413,32 @@ class async_cached(Generic[AwaitableType]):
     def __call__(self, *args, **kwargs):
         if "disable_cache" in kwargs and kwargs["disable_cache"]:
             return self.func(*args)
+        if len(args) > 1 and isinstance(args[1], tuple):
+            return self._batch(*args)
         return self[args]
+
+    async def _batch(self, obj, commands, *rest):
+        """Answers each held command from the cache and asks only for the rest."""
+        answers = {}
+
+        for command in commands:
+            if self._held((obj, command, *rest)):
+                with contextlib.suppress(Exception):
+                    answers[command] = await self.cache[(obj, command, *rest)][0]
+
+        missing = tuple(command for command in commands if command not in answers)
+
+        if missing:
+            sent = await self.func(obj, missing, *rest)
+
+            for command in missing:
+                if command in sent:
+                    answer = asyncio.get_running_loop().create_future()
+                    answer.set_result(sent[command])
+                    self[(obj, command, *rest)] = self._CacheableCoroutine(answer)
+                    answers[command] = sent[command]
+
+        return {command: answers[command] for command in commands if command in answers}
 
     def __repr__(self):
         """Return the function's docstring."""

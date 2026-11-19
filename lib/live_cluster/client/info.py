@@ -22,9 +22,11 @@ from ctypes import create_string_buffer  # gives us pre-allocated bufs
 from time import time
 from socket import error as SocketError
 
+from .constants import ErrorsMsgs
 from .types import (
     ASField,
     ASInfoNotAuthenticatedError,
+    ASInfoResponseError,
     ASResponse,
     ASCommand,
     ASPrivilege,
@@ -1265,22 +1267,24 @@ async def info(reader, writer, names=None):
         _pack_protocol_header(buf, 0, _INFO_MSG_VERSION, _INFO_MSG_TYPE, 0)
 
     elif isinstance(names, str):
-        buf_size = _PROTOCOL_HEADER_SIZE + len(names) + 1  # for \n
+        sz = len(util.str_to_bytes(names)) + 1  # for \n
+        buf_size = _PROTOCOL_HEADER_SIZE + sz
         buf = create_string_buffer(buf_size)
         offset = 0
 
         offset = _pack_protocol_header(
-            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, len(names) + 1
+            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, sz
         )
         offset = _pack_info_field(buf, offset, names)
     else:
         namestr = "\n".join(names)
-        buf_size = _PROTOCOL_HEADER_SIZE + len(namestr) + 1  # for \n
+        sz = len(util.str_to_bytes(namestr)) + 1  # for \n
+        buf_size = _PROTOCOL_HEADER_SIZE + sz
         buf = create_string_buffer(buf_size)
         offset = 0
 
         offset = _pack_protocol_header(
-            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, len(namestr) + 1
+            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, sz
         )
         offset = _pack_info_field(buf, offset, namestr)
 
@@ -1311,12 +1315,15 @@ async def info(reader, writer, names=None):
     else:
         rdict = dict()
         for line in rsp_data.split("\n"):
-            if "not authenticated" in line.lower():
+            name, sep, value = line.partition("\t")
+
+            if not sep and "not authenticated" in name.lower():
                 raise ASInfoNotAuthenticatedError("Connection failed", line)
+            if not sep and line.startswith(("ERROR", "error")):
+                raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, line)
             if len(line) < 1:
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue
-            name, sep, value = line.partition("\t")
 
             rdict[name] = value
         return rdict
