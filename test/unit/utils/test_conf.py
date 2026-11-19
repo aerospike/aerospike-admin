@@ -2156,6 +2156,19 @@ class PasswordHelpTest(unittest.TestCase):
         )
         self.assertNotIn("TLS connection does not support timeout", out.getvalue())
 
+    def test_help_host_names_the_ipv6_forms(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        self.assertIn(
+            "                      server. Default: localhost:3000\n"
+            '                      An IPv6 address goes in brackets: "[<ipv6>]",\n'
+            '                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".\n'
+            "                      Examples:\n",
+            out.getvalue(),
+        )
+
 
 class TimeoutOptionTest(PasswordSourcesTestCase):
     """asinfo mode defaults to 5 s and ignores the [asadm] timeout; asadm
@@ -2246,29 +2259,41 @@ class ConfigTimeoutValueTest(PasswordSourcesTestCase):
 
 
 class SeedTest(unittest.TestCase):
-    def test_unbracketed_ipv6_takes_the_port_option(self):
-        for host in ("::1", "2001:db8::1", "fe80::1", "::ffff:127.0.0.1"):
+    def test_bracketed_ipv6_takes_the_port_option(self):
+        for host in ("::1", "2001:db8::1", "fe80::1", "cafe::3102", "::ffff:127.0.0.1"):
             with self.subTest(host=host):
                 self.assertEqual(
-                    conf._getseeds({"host": host, "port": 3100}), [(host, 3100, None)]
+                    conf._getseeds({"host": "[" + host + "]", "port": 3100}),
+                    [(host, 3100, None)],
                 )
 
-    def test_unbracketed_ipv6_takes_the_tls_name_option(self):
+    def test_bracketed_ipv6_takes_the_tls_name_option(self):
         self.assertEqual(
             conf._getseeds(
-                {"host": "::1", "port": 4333, "tls_enable": True, "tls_name": "t1"}
+                {"host": "[::1]", "port": 4333, "tls_enable": True, "tls_name": "t1"}
             ),
             [("::1", 4333, "t1")],
         )
+
+    def test_unbracketed_double_colon_is_a_host_and_a_port(self):
+        """As on master and in the C tools, an IPv6 address goes in brackets."""
+        for host, seeds in (
+            ("cafe::3102", [("cafe", 3102, "")]),
+            ("db1::3000", [("db1", 3000, "")]),
+        ):
+            with self.subTest(host=host):
+                self.assertEqual(conf._getseeds({"host": host, "port": 3100}), seeds)
 
     def test_other_host_forms(self):
         for host, seeds in (
             ("[::1]", [("::1", 3100, None)]),
             ("[::1]:3200", [("::1", 3200, None)]),
+            ("[cafe::3102]:3200", [("cafe::3102", 3200, None)]),
             ("[::1]:t1:3200", [("::1", 3200, "t1")]),
             ("127.0.0.1", [("127.0.0.1", 3100, None)]),
             ("127.0.0.1:3200", [("127.0.0.1", 3200, None)]),
             ("127.0.0.1:t1:3200", [("127.0.0.1", 3200, "t1")]),
+            ("node1:tls1:4333", [("node1", 4333, "tls1")]),
             ("host1,host2:3200", [("host1", 3100, None), ("host2", 3200, None)]),
         ):
             with self.subTest(host=host):
@@ -2288,6 +2313,43 @@ class SeedTest(unittest.TestCase):
             "Not able to parse host 127.0.0.1:abc: invalid literal for int() with"
             " base 10: 'abc'",
         )
+
+
+class HostParseErrorModeTest(PasswordSourcesTestCase):
+    """Only runs that connect use the seeds, so only they report a bad host."""
+
+    HOST = '[cluster]\nhost = "node1:tls1"\n'
+    ERROR = (
+        "Not able to parse host node1:tls1: invalid literal for int() with base 10:"
+        " 'tls1'"
+    )
+
+    def critical_messages(self, *argv, config):
+        with patch("sys.stdout", io.StringIO()), patch(
+            "lib.utils.conf.logger"
+        ) as logger:
+            self.load(*argv, config=config)
+
+        return [c.args[0] % c.args[1:] for c in logger.critical.call_args_list]
+
+    def test_collectinfo_and_log_analyzer_runs_do_not_report_it(self):
+        for flag in ("-c", "-l"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.critical_messages(flag, config=self.HOST), [])
+
+    def test_runs_that_connect_report_it(self):
+        for argv, asadm_section in (
+            ((), ""),
+            (("--asinfo-mode",), ""),
+            ((), "[asadm]\nasinfo-mode = true\n"),
+            ((), "[asadm]\ncollectinfo = true\n"),
+            ((), "[asadm]\nlog-analyzer = true\n"),
+        ):
+            with self.subTest(argv=argv, asadm_section=asadm_section):
+                self.assertEqual(
+                    self.critical_messages(*argv, config=self.HOST + asadm_section),
+                    [self.ERROR],
+                )
 
 
 if __name__ == "__main__":

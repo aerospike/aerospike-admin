@@ -1602,6 +1602,106 @@ class CommandFileTest(unittest.TestCase):
         self.assertEqual(cp.returncode, 1, cp.stderr)
         self.assertIn(self.error, cp.stderr.splitlines())
 
+    def make_unreadable(self):
+        os.chmod(self.path, 0o000)
+        self.addCleanup(os.chmod, self.path, 0o600)
+
+        return (
+            "ERROR: Not able to read the command file {0}: [Errno 13] Permission"
+            " denied: '{0}'".format(self.path)
+        )
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_unreadable_file_in_asinfo_mode(self):
+        error = self.make_unreadable()
+
+        cp = self.run_asadm("--asinfo-mode")
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, error + "\n")
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_unreadable_file_in_execute_mode(self):
+        error = self.make_unreadable()
+
+        cp = self.run_asadm()
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn(error, cp.stderr.splitlines())
+        self.assertNotIn("Traceback", cp.stderr)
+
+
+class OfflineModeBadHostTest(unittest.TestCase):
+    """Collectinfo and log-analyzer runs use no seeds, so a [cluster] host that
+    does not parse leaves their exit code at 0, as on master."""
+
+    BUNDLE = (
+        '{"2026-07-20 10:00:00 UTC": {"prod": {"1.1.1.1:3000": {"as_stat": {'
+        '"statistics": {"service": {"cluster_size": "1"}, "namespace": {}},'
+        ' "config": {"service": {"proto-fd-max": "15000"}, "namespace": {}},'
+        ' "meta_data": {"node_id": "BB1", "asd_build": "8.0.0.0", "edition":'
+        ' "Aerospike Enterprise Edition", "ip": "1.1.1.1:3000",'
+        ' "node_names": "host1"}}, "sys_stat": {"uname": {"nodename": "host1"}}}}}}'
+    )
+    LOG = (
+        "Nov 19 2026 10:00:00 GMT: INFO (as): (as.c:100) service ready: soon there"
+        " will be cake!\n"
+    )
+
+    def setUp(self):
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        self.tmpdir = tmpdir.name
+        self.config = self.write("astools.conf", '[cluster]\nhost = "node1:tls1"\n')
+
+        for name in ("home", "bundle", "logs"):
+            os.mkdir(os.path.join(self.tmpdir, name))
+
+        self.write("bundle/20261120_000000_ascinfo.json", self.BUNDLE)
+        self.write("logs/aerospike.log", self.LOG)
+
+    def write(self, name, content):
+        path = os.path.join(self.tmpdir, name)
+        with open(path, "w") as f:
+            f.write(content)
+        return path
+
+    def run_asadm(self, *argv):
+        root = os.path.dirname(os.path.abspath(asadm.__file__))
+
+        return subprocess.run(
+            [sys.executable, os.path.join(root, "asadm.py")]
+            + ["--only-config-file", self.config, *argv],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, HOME=os.path.join(self.tmpdir, "home")),
+            timeout=60,
+        )
+
+    def test_collectinfo_run_exits_0(self):
+        """The bundle diagnostics that follow on stderr depend on today's date."""
+        bundle = os.path.join(self.tmpdir, "bundle")
+
+        cp = self.run_asadm("-c", "-f", bundle, "-e", "summary")
+        lines = cp.stderr.splitlines()
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(lines[0], "Config_file: {}".format(self.config))
+        self.assertEqual([line for line in lines if "ERROR" in line], [])
+        self.assertIn("~Cluster Summary~", cp.stdout)
+
+    def test_log_analyzer_run_exits_0(self):
+        logs = os.path.join(self.tmpdir, "logs")
+
+        cp = self.run_asadm("-l", "-f", logs, "-e", "list")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(
+            cp.stderr, "Seed:        []\nConfig_file: {}\n".format(self.config)
+        )
+        self.assertIn(os.path.join(logs, "aerospike.log"), cp.stdout)
+
 
 class PromptedKeyfilePasswordTest(unittest.TestCase):
     """A prompted --tls-keyfile-password is trimmed and resolved."""

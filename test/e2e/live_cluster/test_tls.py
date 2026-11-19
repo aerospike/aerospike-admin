@@ -363,22 +363,27 @@ class TestTLS(unittest.TestCase):
         )
         self.assertNotIn("unpack_from", lines[0])
 
-    def test_asinfo_mode_unbracketed_ipv6_takes_port_and_tls_name(self):
-        """TOOLS-4655: -p and -t apply to a bare IPv6 address."""
+    def test_asinfo_mode_bracketed_ipv6_with_and_without_a_port(self):
+        """TOOLS-4655: an IPv6 address goes in brackets, as in the C tools."""
         try:
             socket.create_connection(("::1", lib.TLS_PORT), 1).close()
         except OSError as e:
             self.skipTest(f"::1 is not reachable: {e}")
 
-        cp = test_util.run_asadm(
-            f"-h ::1 -p {lib.TLS_PORT} -t localhost --tls-enable"
-            f" --tls-cafile {self.ca} -Uadmin -Padmin --asinfo-mode -e build",
-            strip_header=False,
-        )
+        for host in (
+            f"[::1] -p {lib.TLS_PORT} -t localhost",
+            f"[::1]:localhost:{lib.TLS_PORT}",
+        ):
+            with self.subTest(host=host):
+                cp = test_util.run_asadm(
+                    f"-h {host} --tls-enable --tls-cafile {self.ca}"
+                    " -Uadmin -Padmin --asinfo-mode -e build",
+                    strip_header=False,
+                )
 
-        self.assertEqual(cp.returncode, 0, cp.stderr)
-        self.assertIn(lib.server_build(), cp.stdout)
-        self.assertEqual(cp.stderr, "")
+                self.assertEqual(cp.returncode, 0, cp.stderr)
+                self.assertIn(lib.server_build(), cp.stdout)
+                self.assertEqual(cp.stderr, "")
 
 
 class TestPKI(unittest.TestCase):

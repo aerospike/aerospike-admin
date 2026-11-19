@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import errno
-import ipaddress
 import json
 import logging
 import os
@@ -399,7 +398,7 @@ def _merge(dct, merge_dct, ignore_false=False):
                 dct[k] = merge_dct[k]
 
 
-def _getseeds(conf):
+def _getseeds(conf, report=True):
     re_ipv6host = re.compile(r"^(\[.*\])$")
     re_ipv6hostport = re.compile(r"^(\[.*\]):(.*)$")
     re_ipv6hostnameport = re.compile(r"^(\[.*\]):(.*):(.*)$")
@@ -451,10 +450,6 @@ def _getseeds(conf):
                     seeds.append((str(g[0]).strip("[]"), port, tls_name))
                     continue
 
-                if _is_ipv6_address(host):
-                    seeds.append((host, port, tls_name))
-                    continue
-
                 m = re_ipv4hostnameport.match(host)
                 if m and len(m.groups()) == 3:
                     g = m.groups()
@@ -477,20 +472,12 @@ def _getseeds(conf):
                 seeds.append((str(host), port, tls_name))
 
             except Exception as e:
-                logger.critical("Not able to parse host %s: %s", host, e)
+                if report:
+                    logger.critical("Not able to parse host %s: %s", host, e)
 
         return seeds
     else:
         return []
-
-
-def _is_ipv6_address(host):
-    try:
-        ipaddress.IPv6Address(host)
-    except ValueError:
-        return False
-
-    return True
 
 
 def _positive_seconds(value):
@@ -596,8 +583,12 @@ def loadconfig(cli_args):
     asadm_dict["sagent_config_errors"] = agent.errors
     asadm_dict["secret_agent_unparsed_files"] = agent.unparsed
 
+    connects = asadm_dict["asinfo_mode"] or not (
+        cli_args.collectinfo or cli_args.log_analyzer
+    )
+
     # Find seed nods
-    seeds = _getseeds(asadm_dict)
+    seeds = _getseeds(asadm_dict, report=connects)
     args = _Namespace(asadm_dict)
 
     # debug
@@ -739,6 +730,8 @@ def print_config_file_option():
         "                      Server seed hostnames or IP addresses. The tlsname is \n"
         "                      only used when connecting with a secure TLS enabled \n"
         "                      server. Default: localhost:3000\n"
+        '                      An IPv6 address goes in brackets: "[<ipv6>]",\n'
+        '                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".\n'
         "                      Examples:\n"
         "                        host1\n"
         "                        host1:3000,host2:3000\n"

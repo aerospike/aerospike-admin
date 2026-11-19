@@ -23,6 +23,8 @@ Configuration File Allowed Options
                       Server seed hostnames or IP addresses. The tlsname is 
                       only used when connecting with a secure TLS enabled 
                       server. Default: localhost:3000
+                      An IPv6 address goes in brackets: "[<ipv6>]",
+                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".
                       Examples:
                         host1
                         host1:3000,host2:3000

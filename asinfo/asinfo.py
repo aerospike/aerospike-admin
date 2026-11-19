@@ -108,6 +108,8 @@ def print_config_file_option():
         "                      Server seed hostnames or IP addresses. The tlsname is \n"
         "                      only used when connecting with a secure TLS enabled \n"
         "                      server. Default: localhost:3000\n"
+        '                      An IPv6 address goes in brackets: "[<ipv6>]",\n'
+        '                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".\n'
         "                      Examples:\n"
         "                        host1\n"
         "                        host1:3000,host2:3000\n"

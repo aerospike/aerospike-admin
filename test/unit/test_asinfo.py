@@ -509,6 +509,15 @@ class AsinfoHelpTest(unittest.TestCase):
         )
         self.assertNotIn("TLS connection does not support timeout", self.help)
 
+    def test_help_host_names_the_ipv6_forms(self):
+        self.assertIn(
+            "                      server. Default: localhost:3000\n"
+            '                      An IPv6 address goes in brackets: "[<ipv6>]",\n'
+            '                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".\n'
+            "                      Examples:\n",
+            self.help,
+        )
+
 
 class AsinfoModeSilentNodeTest(unittest.TestCase):
     """A node that takes the connection and never answers, like a paused server."""
@@ -908,6 +917,69 @@ class AsinfoAnsweringNodeTest(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
         self.assertEqual(cp.stdout, "8.2.0.0\n")
         self.assertEqual(cp.stderr, "")
+
+
+def _answer_with(reply):
+    def handler(sock):
+        while True:
+            header = _recv_exact(sock, 8)
+            if header is None:
+                return
+
+            _recv_exact(sock, int.from_bytes(header[2:], "big"))
+            header = ((2 << 56) | (1 << 48) | len(reply)).to_bytes(8, "big")
+            sock.sendall(header + reply)
+
+    return handler
+
+
+class AsinfoAllValuesErrorLineTest(unittest.TestCase):
+    """An ERROR line in the all-values reply fails the run in asadm itself."""
+
+    ERROR = "ERROR: Server returned an error response for info command : timeout.\n"
+
+    def setUp(self):
+        self.node = FakeSecretAgent(
+            handler=_answer_with(b"build\t8.2.0.0\nERROR:9:timeout\n")
+        ).start()
+        self.addCleanup(self.node.stop)
+
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+
+        bindir = install_asadm(self, REAL_ASADM)
+        self.env = dict(
+            os.environ,
+            HOME=home.name,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=ASADM,
+        )
+
+    def run_command(self, argv):
+        return subprocess.run(
+            argv, capture_output=True, text=True, env=self.env, timeout=60
+        )
+
+    def test_asinfo_mode_exits_1(self):
+        cp = self.run_command(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", self.node.address]
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, self.ERROR)
+
+    def test_asinfo_exits_1(self):
+        cp = self.run_command(
+            [sys.executable, ASINFO, "--no-config-file", "-h", self.node.host]
+            + ["-p", str(self.node.port)]
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, self.ERROR)
 
 
 if __name__ == "__main__":
