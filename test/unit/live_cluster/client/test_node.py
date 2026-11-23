@@ -6295,7 +6295,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             "ssn",
             "string",
             "redact",
-            {"position": "0", "length": "4", "value": "*"},
+            [("position", "0"), ("length", "4"), ("value", "*")],
         )
 
         expected_req = "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*"
@@ -6307,7 +6307,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.return_value = "error::invalid parameters"
 
         result = await self.node.info_masking_add_rule(
-            "test", "demo", "ssn", "string", "redact", {"position": "0"}
+            "test", "demo", "ssn", "string", "redact", [("position", "0")]
         )
 
         self.assertIsInstance(result, ASInfoResponseError)
@@ -6382,7 +6382,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.return_value = "ok"
 
         result = await self.node.info_masking_add_rule(
-            "test", "demo", bin_, "string", "redact", {"position": "0"}, ael_b64
+            "test", "demo", bin_, "string", "redact", [("position", "0")], ael_b64
         )
 
         self.info_mock.assert_called_with(expected_req, self.ip)
@@ -6405,7 +6405,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.return_value = "ERROR:4:bad path, at offset 0: unresolved bin type, use $.bin:LIST or $.bin:MAP"
 
         result = await self.node.info_masking_add_rule(
-            "test", "demo", "", "string", "redact", {}, "JC5wLnggKw=="
+            "test", "demo", "", "string", "redact", [], "JC5wLnggKw=="
         )
 
         self.assertIsInstance(result, ASInfoResponseError)
@@ -6845,14 +6845,14 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
                     "ssn",
                     "string",
                     "redact",
-                    {"position": "0", "length": "4", "value": "*"},
+                    [("position", "0"), ("length", "4"), ("value", "*")],
                 ),
                 "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*",
             ),
             (
                 "add_constant_integer",
                 "info_masking_add_rule",
-                ("test", "demo", "n", "integer", "constant", {"value": "0"}),
+                ("test", "demo", "n", "integer", "constant", [("value", "0")]),
                 "masking:namespace=test;set=demo;bin=n;type=integer;function=constant;value=0",
             ),
             (
@@ -6870,6 +6870,57 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         ]
     )
     async def test_info_masking_bin_rule_request_as_on_master(
+        self, _, method, args, exp_req
+    ):
+        self.info_mock.return_value = "ok"
+
+        result = await getattr(self.node, method)(*args)
+
+        self.info_mock.assert_called_with(exp_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    @parameterized.expand(
+        [
+            (
+                "add_duplicate_params",
+                "info_masking_add_rule",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "redact",
+                    [
+                        ("position", "0"),
+                        ("position", "1"),
+                        ("length", "2"),
+                        ("value", "*"),
+                    ],
+                ),
+                "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;position=1;length=2;value=*",
+            ),
+            (
+                "remove_bin_with_params",
+                "info_masking_remove_rule",
+                ("test", "demo", "dd", "string", None, [("position", "0")]),
+                "masking:namespace=test;set=demo;bin=dd;type=string;function=remove;position=0",
+            ),
+            (
+                "remove_path_with_params",
+                "info_masking_remove_rule",
+                (
+                    "test",
+                    "demo",
+                    "",
+                    "string",
+                    "JC5wLnNzbg==",
+                    [("default", "N/A"), ("position", "0")],
+                ),
+                "masking:namespace=test;set=demo;ael_b64=JC5wLnNzbg==;type=string;function=remove;default=N/A;position=0",
+            ),
+        ]
+    )
+    async def test_info_masking_rule_request_sends_params_in_order(
         self, _, method, args, exp_req
     ):
         self.info_mock.return_value = "ok"

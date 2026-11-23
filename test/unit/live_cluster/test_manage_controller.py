@@ -4877,7 +4877,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             "ssn",
             "string",
             "redact",
-            {"position": "0", "length": "4", "value": "*"},
+            [("position", "0"), ("length", "4"), ("value", "*")],
             None,
             nodes="principal",
         )
@@ -4903,7 +4903,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             "ssn",
             "number",
             "redact",
-            {},
+            [],
             None,
             nodes="principal",
         )
@@ -4929,7 +4929,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             "email",
             "string",
             "constant",
-            {"value": "REDACTED"},
+            [("value", "REDACTED")],
             None,
             nodes="principal",
         )
@@ -5071,7 +5071,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             exp_bin,
             "string",
             "redact",
-            {"position": "0"},
+            [("position", "0")],
             exp_ael_b64,
             nodes="principal",
         )
@@ -5097,7 +5097,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             "",
             "integer",
             "constant",
-            {"value": "X"},
+            [("value", "X")],
             "JC5iLmFjY291bnRzLiouY2FyZA==",
             nodes="principal",
         )
@@ -5141,7 +5141,10 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             (["bin", "ssn", "ael"], BARE_AEL_ERROR),
-            (["ael", "type", "integer"], BARE_AEL_ERROR),
+            (
+                ["ael", "type", "integer"],
+                "The 'ael' modifier takes one quoted path, but 'integer' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'.",
+            ),
             (["bin", "ssn", "ael_b64"], BARE_AEL_B64_ERROR),
             (["ael", ""], BARE_AEL_ERROR),
             (["ael_b64", ""], BARE_AEL_B64_ERROR),
@@ -5151,7 +5154,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             (["bin", ""], BARE_BIN_ERROR),
             (["bin"], BARE_BIN_ERROR),
             (["bin", "ssn", "type"], BARE_TYPE_ERROR),
-            (["type", "bin", "ssn"], BARE_TYPE_ERROR),
+            (["type", "bin", "ssn"], "Unexpected words 'ssn'."),
         ]
     )
     async def test_add_rule_bare_target_keyword(self, target, exp_error):
@@ -5170,29 +5173,19 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             (
-                "bin_then_default",
-                "namespace test set demo bin ssn type string default N/A",
-                "Unexpected words 'default N/A'.",
-            ),
-            (
-                "ael_then_type_then_default",
-                "namespace test set demo ael $.p.ssn type string default N/A",
-                "Unexpected words 'default N/A'.",
-            ),
-            (
                 "ael_then_default",
                 "namespace test set demo ael $.p.ssn default N/A",
                 "The 'ael' modifier takes one quoted path, but 'default N/A' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'.",
             ),
             (
-                "bin_then_default_before_namespace",
-                "bin ssn default N/A namespace test set demo",
-                "Unexpected words 'default N/A'.",
-            ),
-            (
                 "ael_then_default_before_namespace",
                 "ael $.p.ssn default N/A namespace test set demo",
                 "The 'ael' modifier takes one quoted path, but 'default N/A' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'.",
+            ),
+            (
+                "bin_then_odd_words",
+                "namespace test set demo bin ssn default N/A position",
+                "Unexpected words 'default N/A position'.",
             ),
         ]
     )
@@ -5208,6 +5201,134 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(str(context.exception), exp_error)
         self.cluster_mock.info_masking_add_rule.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (
+                "bin_then_default",
+                "namespace test set demo bin ssn type string default N/A",
+                ("test", "demo", "ssn", "string", "redact", [("default", "N/A")], None),
+            ),
+            (
+                "bin_then_position",
+                "namespace test set demo bin p0 position 0",
+                ("test", "demo", "p0", "string", "redact", [("position", "0")], None),
+            ),
+            (
+                "ael_then_type_then_default",
+                "namespace test set demo ael $.p.ssn type string default N/A",
+                (
+                    "test",
+                    "demo",
+                    "",
+                    "string",
+                    "redact",
+                    [("default", "N/A")],
+                    "JC5wLnNzbg==",
+                ),
+            ),
+            (
+                "ael_b64_then_default",
+                "namespace test set demo ael_b64 JC5wLnNzbg== default N/A",
+                (
+                    "test",
+                    "demo",
+                    "",
+                    "string",
+                    "redact",
+                    [("default", "N/A")],
+                    "JC5wLnNzbg==",
+                ),
+            ),
+            (
+                "bin_then_default_before_namespace",
+                "bin ssn default N/A namespace test set demo",
+                ("test", "demo", "ssn", "string", "redact", [("default", "N/A")], None),
+            ),
+            (
+                "after_namespace",
+                "position 0 namespace test default N/A set demo bin ssn",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "redact",
+                    [("position", "0"), ("default", "N/A")],
+                    None,
+                ),
+            ),
+            (
+                "two_runs",
+                "namespace test set demo bin ssn default N/A type string position 0",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "redact",
+                    [("default", "N/A"), ("position", "0")],
+                    None,
+                ),
+            ),
+        ]
+    )
+    async def test_add_rule_sends_words_after_target(self, _, rest, exp_args):
+        line = f"redact {rest}".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            *exp_args, nodes="principal"
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "duplicate_position",
+                "redact position 0 position 1 length 2 value * namespace test set demo bin ssn",
+                "redact",
+                [("position", "0"), ("position", "1"), ("length", "2"), ("value", "*")],
+            ),
+            (
+                "duplicate_value",
+                "constant value a value b namespace test set demo bin ssn",
+                "constant",
+                [("value", "a"), ("value", "b")],
+            ),
+            (
+                "duplicate_after_target",
+                "redact position 0 namespace test set demo bin ssn position 1",
+                "redact",
+                [("position", "0"), ("position", "1")],
+            ),
+        ]
+    )
+    async def test_add_rule_keeps_every_function_param_in_order(
+        self, _, typed, exp_function, exp_params
+    ):
+        line = typed.split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "ssn",
+            "string",
+            exp_function,
+            exp_params,
+            None,
+            nodes="principal",
+        )
 
     @parameterized.expand(
         [
@@ -5347,7 +5468,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             "",
             "string",
             "constant",
-            {"value": "X"},
+            [("value", "X")],
             "JC4iYQpiIi54",
             nodes="principal",
         )
@@ -5399,12 +5520,12 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand(
         [
-            ("equals", ["value", "a=b", "bin", "ssn"], "ssn", {"value": "a=b"}, None),
+            ("equals", ["value", "a=b", "bin", "ssn"], "ssn", [("value", "a=b")], None),
             (
                 "colon",
                 ["value", "12:30", "bin", "ssn"],
                 "ssn",
-                {"value": "12:30"},
+                [("value", "12:30")],
                 None,
             ),
         ]
@@ -5511,7 +5632,7 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             "ssn",
             "string",
             "redact",
-            {"position": "0", "length": "4", "value": "*"},
+            [("position", "0"), ("length", "4"), ("value", "*")],
             None,
             nodes="principal",
         )
@@ -5521,42 +5642,42 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             (
                 "constant value 'a b c' namespace test set demo bin ssn",
                 ("test", "demo", "ssn"),
-                {"value": "a b c"},
+                [("value", "a b c")],
             ),
             (
                 "constant value café namespace test set demo bin ssn",
                 ("test", "demo", "ssn"),
-                {"value": "café"},
+                [("value", "café")],
             ),
             (
                 "constant value '日本' namespace test set demo bin ssn",
                 ("test", "demo", "ssn"),
-                {"value": "日本"},
+                [("value", "日本")],
             ),
             (
                 "constant value 12:30 namespace test set demo bin ssn",
                 ("test", "demo", "ssn"),
-                {"value": "12:30"},
+                [("value", "12:30")],
             ),
             (
                 "constant value a=b namespace test set demo bin ssn",
                 ("test", "demo", "ssn"),
-                {"value": "a=b"},
+                [("value", "a=b")],
             ),
             (
                 "constant value '#' namespace test set demo bin ssn",
                 ("test", "demo", "ssn"),
-                {"value": "#"},
+                [("value", "#")],
             ),
             (
                 'constant value "it\'s" namespace test set demo bin ssn',
                 ("test", "demo", "ssn"),
-                {"value": "it's"},
+                [("value", "it's")],
             ),
             (
                 "constant value N/A namespace test-ns set 'my set' bin bin-1",
                 ("test-ns", "my set", "bin-1"),
-                {"value": "N/A"},
+                [("value", "N/A")],
             ),
         ]
     )
@@ -5576,6 +5697,127 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             exp_params,
             None,
             nodes="principal",
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "redact namespace test set demo bin type",
+                ("test", "demo", "type", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set demo bin type type integer",
+                ("test", "demo", "type", "integer", "redact", [], None),
+            ),
+            (
+                "redact namespace test set type bin ssn",
+                ("test", "type", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace type set demo bin ssn",
+                ("type", "demo", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set demo bin ael",
+                ("test", "demo", "ael", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set ael bin ssn",
+                ("test", "ael", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace ael set demo bin ssn",
+                ("ael", "demo", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set demo bin ael_b64",
+                ("test", "demo", "ael_b64", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set ael_b64 bin ssn",
+                ("test", "ael_b64", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace ael_b64 set demo bin ssn",
+                ("ael_b64", "demo", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set demo bin ssn type bin",
+                ("test", "demo", "ssn", "bin", "redact", [], None),
+            ),
+            (
+                "redact namespace test set demo bin bin",
+                ("test", "demo", "bin", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set bin bin ssn",
+                ("test", "bin", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace set set demo bin ssn",
+                ("set", "demo", "ssn", "string", "redact", [], None),
+            ),
+            (
+                "redact namespace test set demo ael type",
+                ("test", "demo", "", "string", "redact", [], "dHlwZQ=="),
+            ),
+            (
+                "redact namespace test set demo ael_b64 bin",
+                ("test", "demo", "", "string", "redact", [], "bin"),
+            ),
+            (
+                "constant value ael namespace test set demo bin ssn",
+                ("test", "demo", "ssn", "string", "constant", [("value", "ael")], None),
+            ),
+            (
+                "constant value ael_b64 namespace test set demo bin ssn",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "constant",
+                    [("value", "ael_b64")],
+                    None,
+                ),
+            ),
+            (
+                "constant value type namespace test set demo bin ssn",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "constant",
+                    [("value", "type")],
+                    None,
+                ),
+            ),
+            (
+                "constant value namespace namespace test set demo bin ssn",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "constant",
+                    [("value", "namespace")],
+                    None,
+                ),
+            ),
+        ]
+    )
+    async def test_add_rule_takes_keyword_as_value(self, typed, exp_args):
+        line = typed.split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.2.1.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            *exp_args, nodes="principal"
         )
 
     @parameterized.expand(
@@ -5644,7 +5886,7 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         # Should return None (from view.print_result)
         self.assertIsNone(result)
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
-            "test", "demo", "ssn", "string", None, nodes="principal"
+            "test", "demo", "ssn", "string", None, [], nodes="principal"
         )
         self.view_mock.print_result.assert_called_once_with(
             "Successfully dropped masking rule."
@@ -5662,7 +5904,7 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         # Should return None (from view.print_result)
         self.assertIsNone(result)
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
-            "test", "demo", "ssn", "int", None, nodes="principal"
+            "test", "demo", "ssn", "int", None, [], nodes="principal"
         )
         self.view_mock.print_result.assert_called_once_with(
             "Successfully dropped masking rule."
@@ -5740,7 +5982,7 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         await self.controller.execute(line)
 
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
-            "test", "demo", "", "string", exp_ael_b64, nodes="principal"
+            "test", "demo", "", "string", exp_ael_b64, [], nodes="principal"
         )
         self.view_mock.print_result.assert_called_once_with(
             "Successfully dropped masking rule."
@@ -5763,7 +6005,7 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         await self.controller.execute(line)
 
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
-            "test", "demo", exp_bin, "string", exp_ael_b64, nodes="principal"
+            "test", "demo", exp_bin, "string", exp_ael_b64, [], nodes="principal"
         )
 
     async def test_drop_rule_ael_and_ael_b64_conflict(self):
@@ -5812,7 +6054,7 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
             (["bin", ""], BARE_BIN_ERROR),
             (["bin"], BARE_BIN_ERROR),
             (["bin", "ssn", "type"], BARE_TYPE_ERROR),
-            (["type", "bin", "ssn"], BARE_TYPE_ERROR),
+            (["type", "bin", "ssn"], "Unexpected words 'ssn'."),
         ]
     )
     async def test_drop_rule_bare_target_keyword(self, target, exp_error):
@@ -5844,6 +6086,47 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(str(context.exception), "Unexpected words 'extra'.")
         self.cluster_mock.info_masking_remove_rule.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (
+                "bin_then_position",
+                "namespace test set demo bin dd position 0",
+                ("test", "demo", "dd", "string", None, [("position", "0")]),
+            ),
+            (
+                "ael_then_type_then_position",
+                "namespace test set demo ael $.p.ssn type string position 0",
+                ("test", "demo", "", "string", "JC5wLnNzbg==", [("position", "0")]),
+            ),
+            (
+                "ael_b64_then_position",
+                "namespace test set demo ael_b64 JC5wLnNzbg== position 0",
+                ("test", "demo", "", "string", "JC5wLnNzbg==", [("position", "0")]),
+            ),
+            (
+                "bin_then_position_before_namespace",
+                "bin dd position 0 namespace test set demo",
+                ("test", "demo", "dd", "string", None, [("position", "0")]),
+            ),
+            (
+                "after_namespace",
+                "namespace test position 0 set demo bin dd",
+                ("test", "demo", "dd", "string", None, [("position", "0")]),
+            ),
+        ]
+    )
+    async def test_drop_rule_sends_words_after_target(self, _, typed, exp_args):
+        line = typed.split()
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            *exp_args, nodes="principal"
+        )
 
     @parameterized.expand(
         [
@@ -5980,7 +6263,7 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         await self.controller.execute(line)
 
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
-            "test", "demo", "", "string", "JC4iYTtiIi54", nodes="principal"
+            "test", "demo", "", "string", "JC4iYTtiIi54", [], nodes="principal"
         )
 
     @parameterized.expand(
@@ -6004,7 +6287,87 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         await self.controller.execute(line)
 
         self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
-            *exp_args, None, nodes="principal"
+            *exp_args, None, [], nodes="principal"
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "namespace test set demo bin type",
+                ("test", "demo", "type", "string", None),
+            ),
+            (
+                "namespace test set demo bin type type integer",
+                ("test", "demo", "type", "integer", None),
+            ),
+            (
+                "namespace test set type bin ssn",
+                ("test", "type", "ssn", "string", None),
+            ),
+            (
+                "namespace type set demo bin ssn",
+                ("type", "demo", "ssn", "string", None),
+            ),
+            (
+                "namespace test set demo bin ael",
+                ("test", "demo", "ael", "string", None),
+            ),
+            (
+                "namespace test set ael bin ssn",
+                ("test", "ael", "ssn", "string", None),
+            ),
+            (
+                "namespace ael set demo bin ssn",
+                ("ael", "demo", "ssn", "string", None),
+            ),
+            (
+                "namespace test set demo bin ael_b64",
+                ("test", "demo", "ael_b64", "string", None),
+            ),
+            (
+                "namespace test set ael_b64 bin ssn",
+                ("test", "ael_b64", "ssn", "string", None),
+            ),
+            (
+                "namespace ael_b64 set demo bin ssn",
+                ("ael_b64", "demo", "ssn", "string", None),
+            ),
+            (
+                "namespace test set demo bin ssn type bin",
+                ("test", "demo", "ssn", "bin", None),
+            ),
+            (
+                "namespace test set demo bin bin",
+                ("test", "demo", "bin", "string", None),
+            ),
+            (
+                "namespace test set bin bin ssn",
+                ("test", "bin", "ssn", "string", None),
+            ),
+            (
+                "namespace set set demo bin ssn",
+                ("set", "demo", "ssn", "string", None),
+            ),
+            (
+                "namespace test set demo ael type",
+                ("test", "demo", "", "string", "dHlwZQ=="),
+            ),
+            (
+                "namespace test set demo ael_b64 bin",
+                ("test", "demo", "", "string", "bin"),
+            ),
+        ]
+    )
+    async def test_drop_rule_takes_keyword_as_value(self, typed, exp_args):
+        line = typed.split()
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            *exp_args, [], nodes="principal"
         )
 
 

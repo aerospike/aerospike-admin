@@ -4376,7 +4376,7 @@ class Node(AsyncObject):
         )
 
         # Add function parameters to the request
-        for param_name, param_value in func_params.items():
+        for param_name, param_value in func_params:
             req += ";{}={}".format(param_name, param_value)
 
         resp = await self._info(req)
@@ -4388,7 +4388,7 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_masking_remove_rule(
-        self, namespace, set_, bin_, bin_type, ael_b64=None
+        self, namespace, set_, bin_, bin_type, ael_b64=None, func_params=()
     ):
         """
         Remove the masking rule on a bin, or on the element an AEL path names.
@@ -4396,6 +4396,10 @@ class Node(AsyncObject):
         req = "masking:namespace={};set={};{}type={};function=remove".format(
             namespace, set_, self._masking_target(bin_, ael_b64), bin_type
         )
+
+        for param_name, param_value in func_params:
+            req += ";{}={}".format(param_name, param_value)
+
         resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:

@@ -4369,27 +4369,77 @@ class ManageMaskingController(LiveClusterManageCommandController):
 
 
 class ManageMaskingLeafCommandController(ManageLeafCommandController):
-    def _refuse_unsafe_words(self, fields):
+    def parse_modifiers(self, line, duplicates_in_line_allowed=False):
+        """Pair each keyword with the next word, even a keyword. Other words pair up as
+        'params'; an odd run goes to 'line', or to the path it follows."""
+        groups = {mod: [] for mod in self.modifiers | self.required_modifiers}
+        groups.update(line=[], params=[])
+        mod = "line"
+
+        while True:
+            run = self._take_pairs(line)
+
+            if mod == "ael" or (mod == "ael_b64" and len(run) % 2):
+                groups[mod] += run
+            elif len(run) % 2:
+                groups["line"] += run
+            else:
+                groups["params"] += zip(run[::2], run[1::2])
+
+            if not line:
+                return groups
+
+            mod = line.pop(0)
+
+            if not line and mod in self.required_modifiers:
+                return groups
+
+            value = line.pop(0) if line else ""
+
+            if groups[mod] and mod not in ("ael", "ael_b64"):
+                groups["line"] += [mod, value]
+            else:
+                groups[mod].append(value)
+
+    def _take_pairs(self, line):
+        """Pop and return the words before the next keyword in a name position."""
+        keywords = self.modifiers | self.required_modifiers
+        end = 0
+
+        while end < len(line) and line[end] not in keywords:
+            end += 2
+
+        run = line[:end]
+        del line[:end]
+        return run
+
+    def _refuse_unsafe_words(self, fields, params):
         """Refuse a (name, word) sent in the info command that the server would split."""
-        error = util.masking_word_error(fields)
+        error = util.masking_word_error(
+            fields + [("parameter name", name) for name, _ in params] + params
+        )
 
         if error:
             raise ShellException(error)
 
-    def _parse_target(self, line):
+        for name, _ in params:
+            if "=" in name:
+                raise ShellException(f"The parameter name '{name}' cannot contain '='.")
+
+    def _parse_target(self):
         """Return (bin, ael_b64, path modifier or None, prompt text) for the one target.
         A bare keyword parses as empty and an unquoted path as several words."""
-        if "ael" in line and not any(self.mods["ael"]):
+        if self.mods["ael"] and not any(self.mods["ael"]):
             raise ShellException(
                 "The 'ael' modifier requires an AEL path, e.g. ael '$.profile.ssn'."
             )
 
-        if "ael_b64" in line and not any(self.mods["ael_b64"]):
+        if self.mods["ael_b64"] and not any(self.mods["ael_b64"]):
             raise ShellException(
                 "The 'ael_b64' modifier requires a base64 encoded AEL path, e.g. ael_b64 JC5wcm9maWxlLnNzbg==."
             )
 
-        if "bin" in line and not any(self.mods["bin"]):
+        if self.mods["bin"] and not any(self.mods["bin"]):
             raise ShellException(
                 "The 'bin' modifier requires a bin name, e.g. bin ssn."
             )
@@ -4404,30 +4454,9 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
                 f"The 'ael_b64' modifier takes one base64 encoded path, but '{' '.join(self.mods['ael_b64'][1:])}' follows it."
             )
 
-        bin_name = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="bin",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
-        ael = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="ael",
-            return_type=str,
-            default=None,
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
-        ael_b64 = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="ael_b64",
-            return_type=str,
-            default=None,
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
+        bin_name = self.mods["bin"][0] if self.mods["bin"] else ""
+        ael = self.mods["ael"][0] if self.mods["ael"] else None
+        ael_b64 = self.mods["ael_b64"][0] if self.mods["ael_b64"] else None
 
         if ael is not None and ael_b64 is not None:
             raise ShellException(
@@ -4443,13 +4472,13 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
                 f"Cannot use both 'bin' and '{path_mod}' modifiers together. Use either 'bin' to mask a whole bin, or '{path_mod}' to mask the element an AEL path names."
             )
 
+        if self.mods["line"]:
+            raise ShellException(f"Unexpected words '{' '.join(self.mods['line'])}'.")
+
         if not bin_name and not path_mod:
             raise ShellException(
                 "Either 'bin', 'ael' or 'ael_b64' modifier is required. Use 'bin' to mask a whole bin, or 'ael'/'ael_b64' to mask the element an AEL path names."
             )
-
-        if line:
-            raise ShellException(f"Unexpected words '{' '.join(line)}'.")
 
         if ael is not None:
             target = f"path '{ael}'"
@@ -4513,58 +4542,43 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
         self.modifiers = set(["bin", "ael", "ael_b64", "type"])
         self.meta_getter = GetClusterMetadataController(self.cluster)
 
-    async def _do_default(self, line):
-        if not line:
-            raise ShellException("Function is required")
+    def parse_modifiers(self, line, duplicates_in_line_allowed=False):
+        """Skip the function name and take its parameters before the keywords."""
+        words = line[1:]
 
-        function_name = line.pop(0)
-
-        # Parse function parameters dynamically
         try:
-            function_params = self._parse_function_params(line)
+            function_params = self._parse_function_params(words)
         except Exception as e:
             raise ShellException(
                 f"Unexpected error parsing function parameters: {str(e)}"
             ) from e
 
-        # Parse required parameters
-        namespace = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="namespace",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
-        set_name = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="set",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
+        groups = super().parse_modifiers(words)
+        groups["params"] = function_params + groups["params"]
+        return groups
+
+    async def _do_default(self, line):
+        if not line:
+            raise ShellException("Function is required")
+
+        function_name = line[0]
+        function_params = self.mods["params"]
+        namespace = self.mods["namespace"][0]
+        set_name = self.mods["set"][0]
 
         # Parse optional type parameter
-        if "type" in line and not any(self.mods["type"]):
+        if self.mods["type"] and not any(self.mods["type"]):
             raise ShellException(
                 "The 'type' modifier requires a type, e.g. type string."
             )
 
-        bin_type = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="type",
-            return_type=str,
-            default="string",
-            modifiers=set(),
-            mods=self.mods,
-        )
+        bin_type = self.mods["type"][0] if self.mods["type"] else "string"
 
         # Validate required parameters
         if not all([namespace, set_name]):
             raise ShellException("All parameters are required: namespace, set")
 
-        bin_name, ael_b64, path_mod, target = self._parse_target(line)
+        bin_name, ael_b64, path_mod, target = self._parse_target()
 
         self._refuse_unsafe_words(
             [
@@ -4574,16 +4588,9 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
                 ("bin", bin_name),
                 ("ael_b64", ael_b64),
                 ("type", bin_type),
-            ]
-            + [("parameter name", name) for name in function_params]
-            + list(function_params.items())
+            ],
+            function_params,
         )
-
-        for param_name in function_params:
-            if "=" in param_name:
-                raise ShellException(
-                    f"The parameter name '{param_name}' cannot contain '='."
-                )
 
         # check if the cluster supports data masking
         builds = await self.meta_getter.get_builds(nodes=self.nodes)
@@ -4642,36 +4649,21 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
         )
 
     def _parse_function_params(self, line):
-        """Parse function parameters dynamically."""
-        function_params = {}
-        reserved_keywords = self.required_modifiers | self.modifiers
-
-        # Count parameters first for validation (single pass)
-        param_count = 0
-        for i, arg in enumerate(line):
-            if arg in reserved_keywords:
-                break
-            param_count += 1
+        """Pop the (name, value) pairs before the first keyword in a name position."""
+        param_args = self._take_pairs(line)
 
         # Ensure even number of arguments for proper key-value pairing
-        if param_count % 2 != 0:
-            param_args = line[:param_count]
+        if len(param_args) % 2 != 0:
             raise ShellException(
-                f"Function parameters must be in key-value pairs. Found {param_count} arguments: {' '.join(param_args)}"
+                f"Function parameters must be in key-value pairs. Found {len(param_args)} arguments: {' '.join(param_args)}"
             )
 
-        # Parse parameters in pairs (single pass, no copying)
-        while line and line[0] not in reserved_keywords:
-            param_name = line.pop(0)
-            param_value = line.pop(0)
-            function_params[param_name] = param_value
-
-        return function_params
+        return list(zip(param_args[::2], param_args[1::2]))
 
     def _build_function_string(self, function_name, params):
         """Build the function string for the masking rule dynamically."""
         parts = [function_name]
-        for key, value in params.items():
+        for key, value in params:
             parts.extend([key, value])
         return " ".join(parts)
 
@@ -4712,45 +4704,22 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
         self.modifiers = set(["bin", "ael", "ael_b64", "type"])
 
     async def _do_default(self, line):
-
-        # Parse required parameters
-        namespace = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="namespace",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
-        set_name = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="set",
-            return_type=str,
-            default="",
-            modifiers=self.required_modifiers,
-            mods=self.mods,
-        )
+        namespace = self.mods["namespace"][0]
+        set_name = self.mods["set"][0]
 
         # Parse optional type parameter
-        if "type" in line and not any(self.mods["type"]):
+        if self.mods["type"] and not any(self.mods["type"]):
             raise ShellException(
                 "The 'type' modifier requires a type, e.g. type string."
             )
 
-        bin_type = util.get_arg_and_delete_from_mods(
-            line=line,
-            arg="type",
-            return_type=str,
-            default="string",
-            modifiers=set(),
-            mods=self.mods,
-        )
+        bin_type = self.mods["type"][0] if self.mods["type"] else "string"
 
         # Validate required parameters
         if not all([namespace, set_name]):
             raise ShellException("All parameters are required: namespace, set")
 
-        bin_name, ael_b64, _, target = self._parse_target(line)
+        bin_name, ael_b64, _, target = self._parse_target()
 
         self._refuse_unsafe_words(
             [
@@ -4759,7 +4728,8 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
                 ("bin", bin_name),
                 ("ael_b64", ael_b64),
                 ("type", bin_type),
-            ]
+            ],
+            self.mods["params"],
         )
 
         if self.warn and not self.prompt_challenge(
@@ -4769,7 +4739,13 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
 
         try:
             remove_resp = await self.cluster.info_masking_remove_rule(
-                namespace, set_name, bin_name, bin_type, ael_b64, nodes="principal"
+                namespace,
+                set_name,
+                bin_name,
+                bin_type,
+                ael_b64,
+                self.mods["params"],
+                nodes="principal",
             )
         except Exception as e:
             raise ShellException(f"Failed to remove masking rule: {str(e)}") from e
