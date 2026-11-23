@@ -150,7 +150,7 @@ class CollectinfoLogHandler(object):
                 continue
 
             try:
-                files = log_util.get_all_files(root)
+                files = [root] if os.path.isfile(root) else log_util.get_all_files(root)
             except Exception:
                 continue
 

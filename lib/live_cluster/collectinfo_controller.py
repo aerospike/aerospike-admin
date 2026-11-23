@@ -2446,7 +2446,7 @@ class CollectinfoController(LiveClusterCommandController):
         )
 
         try:
-            self.failed_cmds = await asyncio.shield(worker)
+            self.failed_cmds += await asyncio.shield(worker)
         except asyncio.CancelledError:
             # The thread cannot be cancelled. Stop it before anything is archived,
             # however many more Ctrl-Cs arrive meanwhile.

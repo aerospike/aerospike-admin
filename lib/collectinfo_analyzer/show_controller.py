@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import os
 from base64 import b64decode
 from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
@@ -136,7 +137,11 @@ class ShowUsageController(CollectinfoCommandController):
 
     def _do_default(self, line):
         files = sorted(
-            self.log_handler.bundle_files(("_" + constants.COLLECTINFO_USAGE_FILENAME,))
+            self.log_handler.bundle_files(
+                ("_" + constants.COLLECTINFO_USAGE_FILENAME,)
+            ),
+            key=os.path.basename,
+            reverse=True,
         )
 
         if not files:

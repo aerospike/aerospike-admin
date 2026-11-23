@@ -909,7 +909,7 @@ ASSERT(r, False, "Different Cluster Key.", "OPERATIONS", CRITICAL,
 r = select "cluster_uuid" from SERVICE.STATISTICS;
 r = do NO_MATCH(r, ==, MAJORITY) save;
 ASSERT(r, False, "Different Cluster UUID.", "OPERATIONS", WARNING,
-				"Listed node[s] report a different cluster_uuid from the rest of the cluster. Please check server logs for more information.",
+				"Listed cluster[s] have different cluster_uuid values for nodes. Please check server logs for more information.",
 				"Cluster UUID difference check.");
 
 u = select "uptime" from SERVICE.STATISTICS;
