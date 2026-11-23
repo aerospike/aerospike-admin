@@ -4944,6 +4944,81 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Data masking is not supported", str(context.exception))
 
+    @parameterized.expand(
+        [
+            (
+                "older_node_beside_principal",
+                {"A": "8.1.1.0"},
+                {"A": "8.1.1.0", "B": "8.1.0.0"},
+            ),
+            (
+                "pre_masking_node_beside_principal",
+                {"A": "8.2.1.0"},
+                {"A": "8.2.1.0", "B": "8.0.0.0"},
+            ),
+            ("principal_build_unreadable", {}, {"B": "8.1.0.0"}),
+        ]
+    )
+    async def test_add_bin_rule_refused_when_a_readable_node_is_below_masking_version(
+        self, _, principal_builds, all_builds
+    ):
+        line = "redact namespace test set demo bin ssn".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.side_effect = lambda nodes="all": {
+            "principal": principal_builds,
+            "all": all_builds,
+        }[nodes]
+
+        with self.assertRaises(ShellException) as context:
+            await self.controller.execute(line)
+
+        self.assertEqual(
+            str(context.exception),
+            "Data masking is not supported on one or more servers.  Requires v. 8.1.1 and later.",
+        )
+        self.cluster_mock.info_masking_add_rule.assert_not_called()
+
+    async def test_add_bin_rule_sent_when_no_build_is_readable(self):
+        line = "redact namespace test set demo bin ssn".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test", "demo", "ssn", "string", "redact", [], None, nodes="principal"
+        )
+
+    @parameterized.expand(
+        [
+            ("ael", ["ael", "$.p.ssn"]),
+            ("ael_b64", ["ael_b64", "JC5wLnNzbg=="]),
+        ]
+    )
+    async def test_add_path_rule_sent_when_no_build_is_readable(self, _, target):
+        line = "redact namespace test set demo".split() + target
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test",
+            "demo",
+            "",
+            "string",
+            "redact",
+            [],
+            "JC5wLnNzbg==",
+            nodes="principal",
+        )
+
     async def test_add_rule_missing_required_params(self):
         """Test error when required parameters are missing"""
         line = "redact namespace test".split()  # Missing set

@@ -4603,14 +4603,14 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
             builds=builds,
         )
 
-        if not feature_support["data_masking"]:
+        if builds and not feature_support["data_masking"]:
             raise ShellException(
                 "Data masking is not supported on one or more servers.  Requires v. {} and later.".format(
                     str(constants.SERVER_DATA_MASKING_FIRST_VERSION)
                 )
             )
 
-        if path_mod is not None and not feature_support["masking_ael"]:
+        if path_mod is not None and builds and not feature_support["masking_ael"]:
             raise ShellException(
                 "The '{}' modifier requires every node at server v. {} or later.".format(
                     path_mod, constants.SERVER_MASKING_ON_AEL_FIRST_VERSION
