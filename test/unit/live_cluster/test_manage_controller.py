@@ -266,6 +266,21 @@ class ManageHelpTextTest(unittest.TestCase):
             self.help_text("sindex", "create"),
         )
 
+    def test_masking_drop_ael_matches_add(self):
+        help_text = self.help_text("masking", "drop")
+
+        self.assertNotIn("for a path containing backslashes", help_text)
+        self.assertNotIn("Requires server >=", help_text)
+        self.assertIn(r"Inside the quotes only \\ and \' are escapes", help_text)
+        self.assertIn("server v. 8.2.1 or later", help_text)
+
+    @parameterized.expand([("add",), ("drop",)])
+    def test_masking_ael_warns_about_hash_and_semicolon(self, command):
+        self.assertIn(
+            "a '#' truncates it and a ';' ends the command",
+            self.help_text("masking", command),
+        )
+
 
 class ManageACLCreateUserControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
@@ -4744,6 +4759,7 @@ class ManageRosterStageObservedControllerTest(unittest.IsolatedAsyncioTestCase):
 BARE_AEL_ERROR = "The 'ael' modifier requires an AEL path, e.g. ael '$.profile.ssn'."
 BARE_AEL_B64_ERROR = "The 'ael_b64' modifier requires a base64 encoded AEL path, e.g. ael_b64 JC5wcm9maWxlLnNzbg==."
 BARE_BIN_ERROR = "The 'bin' modifier requires a bin name, e.g. bin ssn."
+BARE_TYPE_ERROR = "The 'type' modifier requires a type, e.g. type string."
 SEMICOLON_ERROR = (
     "The {} '{}' cannot contain ';', which separates the fields of a masking command."
 )
@@ -5134,6 +5150,8 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             (["ael", "$.x", "bin"], BARE_BIN_ERROR),
             (["bin", ""], BARE_BIN_ERROR),
             (["bin"], BARE_BIN_ERROR),
+            (["bin", "ssn", "type"], BARE_TYPE_ERROR),
+            (["type", "bin", "ssn"], BARE_TYPE_ERROR),
         ]
     )
     async def test_add_rule_bare_target_keyword(self, target, exp_error):
@@ -5688,6 +5706,21 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Failed to remove masking rule", str(context.exception))
         self.assertIn("Network timeout", str(context.exception))
 
+    async def test_drop_rule_raises_server_error_as_is(self):
+        line = "namespace test set demo ael $.p.ssn".split()
+        server_error = ASInfoResponseError(
+            "Failed to remove masking rule", "ERROR:4:missing 'bin'"
+        )
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": server_error
+        }
+
+        with self.assertRaises(ASInfoResponseError) as context:
+            await self.controller.execute(line)
+
+        self.assertIs(context.exception, server_error)
+        self.view_mock.print_result.assert_not_called()
+
     @parameterized.expand(
         [
             (["ael", "$.profile.ssn"], "JC5wcm9maWxlLnNzbg=="),
@@ -5778,6 +5811,8 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
             (["ael", "$.x", "bin"], BARE_BIN_ERROR),
             (["bin", ""], BARE_BIN_ERROR),
             (["bin"], BARE_BIN_ERROR),
+            (["bin", "ssn", "type"], BARE_TYPE_ERROR),
+            (["type", "bin", "ssn"], BARE_TYPE_ERROR),
         ]
     )
     async def test_drop_rule_bare_target_keyword(self, target, exp_error):

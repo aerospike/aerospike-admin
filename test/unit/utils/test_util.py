@@ -636,6 +636,8 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             ("JC4iYS5iIi54", None, '$."a.b".x', "a.b"),
             ("JC5jYXJkcy5bMF0=", None, "$.cards.[0]", "cards"),
             ("JC4i/yIueA==", None, '$."\\xff".x', "\\xff"),
+            ("JC4iY2Fmw6kiLng=", None, '$."café".x', "café"),
+            ("JC5tLjU=", None, "$.m.5", "m"),
             ("JC5zc24=", None, "$.ssn", "ssn"),
             ("JC5wcm9maWxlLnNzbg==", "srv_bin", "$.profile.ssn", "srv_bin"),
             ("!!not-base64", None, "'!!not-base64' (base64)", ""),

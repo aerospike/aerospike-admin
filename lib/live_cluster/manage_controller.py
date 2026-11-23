@@ -4489,7 +4489,8 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
             "AEL (Aerospike Expression Language) path to the element to mask, starting at"
             " the bin, e.g. ael '$.profile.ssn' or ael '$.cards.[0]'. Surround it"
             " with single quotes. Inside the quotes only \\\\ and \\' are escapes;"
-            " double a backslash or use 'ael_b64'."
+            " double a backslash or use 'ael_b64'. Unquoted, the path is split on"
+            " spaces, a '#' truncates it and a ';' ends the command."
             f" Requires every node at server v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later.",
         ),
         ModifierHelp(
@@ -4545,6 +4546,11 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
         )
 
         # Parse optional type parameter
+        if "type" in line and not any(self.mods["type"]):
+            raise ShellException(
+                "The 'type' modifier requires a type, e.g. type string."
+            )
+
         bin_type = util.get_arg_and_delete_from_mods(
             line=line,
             arg="type",
@@ -4682,13 +4688,15 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
         ModifierHelp(
             "ael",
             "AEL path of the rule to remove, e.g. ael '$.profile.ssn'. Surround it with"
-            " single quotes, and use 'ael_b64' for a path containing backslashes."
-            f" Requires server >= {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION}.",
+            " single quotes. Inside the quotes only \\\\ and \\' are escapes; double a"
+            " backslash or use 'ael_b64'. Unquoted, the path is split on spaces, a '#'"
+            " truncates it and a ';' ends the command."
+            f" Requires server v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later.",
         ),
         ModifierHelp(
             "ael_b64",
             "The base64 encoding of an AEL path. Same as 'ael' but pre-encoded."
-            f" Requires server >= {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION}.",
+            f" Requires server v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later.",
         ),
         ModifierHelp(
             "type",
@@ -4724,6 +4732,11 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
         )
 
         # Parse optional type parameter
+        if "type" in line and not any(self.mods["type"]):
+            raise ShellException(
+                "The 'type' modifier requires a type, e.g. type string."
+            )
+
         bin_type = util.get_arg_and_delete_from_mods(
             line=line,
             arg="type",

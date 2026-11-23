@@ -35,9 +35,10 @@ RULES = (
     "constant value 0 namespace {ns} set demo ael '$.profile.age' type integer",
     "redact position 0 length 4 value * namespace {ns} set demo bin ssn",
     "constant value 12:30 namespace {ns} set demo bin time",
+    "constant value X namespace {ns} set other bin name",
 )
 
-SHOWN = {
+SHOWN_IN_DEMO = [
     ("cards", "string", "$.cards.[0]", "constant value XXXX", "--", "True"),
     ("profile", "integer", "$.profile.age", "constant value 0", "--", "True"),
     (
@@ -50,7 +51,10 @@ SHOWN = {
     ),
     ("ssn", "string", "--", "redact position 0 length 4 value *", "--", "True"),
     ("time", "string", "--", "constant value 12:30", "--", "True"),
-}
+]
+SHOWN = sorted(
+    SHOWN_IN_DEMO + [("name", "string", "--", "constant value X", "--", "True")]
+)
 
 REFUSED = (
     (
@@ -93,12 +97,12 @@ def masking_rows(args, command="show masking"):
     sheets = util.get_separate_output(cp.stdout)
 
     if not sheets:
-        return cp, set()
+        return cp, []
 
     _, _, names, values, _ = util.parse_output(sheets[0])
     rows = [dict(zip(names, row)) for row in values]
 
-    return cp, {tuple(str(row.get(c, "--")) for c in COLUMNS) for row in rows}
+    return cp, sorted(tuple(str(row.get(c, "--")) for c in COLUMNS) for row in rows)
 
 
 def wait_for_builds(args, count, timeout=90):
@@ -161,18 +165,24 @@ class MaskingRulesTest(unittest.TestCase):
                 NS
             ),
         )
-        _, before = masking_rows(self.args, f"show masking namespace {NS} set drop")
+        show_before, before = masking_rows(
+            self.args, f"show masking namespace {NS} set drop"
+        )
         shown = [row[2] for row in before]
         drop = asadm(
             self.args,
             "manage masking drop namespace {} set drop ael '{}'".format(NS, shown[0]),
         )
-        _, after = masking_rows(self.args, f"show masking namespace {NS} set drop")
+        show_after, after = masking_rows(
+            self.args, f"show masking namespace {NS} set drop"
+        )
 
         self.assertIn("Successfully added masking rule", add.stdout, add.stderr)
+        self.assertEqual(show_before.returncode, 0, show_before.stderr)
         self.assertEqual(shown, ["$.p.x"])
         self.assertIn("Successfully dropped masking rule", drop.stdout, drop.stderr)
-        self.assertEqual(after, set())
+        self.assertEqual(show_after.returncode, 0, show_after.stderr)
+        self.assertEqual(after, [])
         self.assertEqual(masking_rows(self.args)[1], SHOWN)
 
     def test_namespace_filter_does_not_count_as_a_deprecated_request(self):
@@ -181,7 +191,7 @@ class MaskingRulesTest(unittest.TestCase):
         after = statistic("deprecated_requests")
 
         self.assertEqual(cp.returncode, 0, cp.stderr)
-        self.assertEqual(rows, SHOWN)
+        self.assertEqual(rows, SHOWN_IN_DEMO)
         self.assertEqual(after, before)
 
     def test_collectinfo_bundle_shows_the_same_rules(self):
@@ -222,12 +232,14 @@ class MaskingMixedClusterTest(unittest.TestCase):
                 NS
             ),
         )
+        show, rows = masking_rows(self.args)
 
         self.assertIn(
             "ERROR: The 'ael' modifier requires every node at server v. 8.2.1 or later.",
             cp.stderr,
         )
-        self.assertEqual(masking_rows(self.args)[1], set())
+        self.assertEqual(show.returncode, 0, show.stderr)
+        self.assertEqual(rows, [])
 
     def test_whole_bin_add_is_not_gated(self):
         add = asadm(
