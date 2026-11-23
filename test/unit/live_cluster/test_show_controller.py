@@ -1698,6 +1698,14 @@ class ShowUsageControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.view_mock.show_usage.assert_not_called()
 
+    async def test_a_reply_that_is_not_an_export_is_shown_verbatim(self):
+        self.fetch.return_value = UsageExport("10.0.0.3:3000", b'{"schema":2}', None)
+
+        await self.controller._do_default([])
+
+        self.view_mock.print_result.assert_called_once_with('{"schema":2}')
+        self.view_mock.show_usage.assert_not_called()
+
 
 class ShowUserAgentsControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:

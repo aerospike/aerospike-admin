@@ -26485,3 +26485,14 @@ class ClusterUuidHealthCheckTests(unittest.TestCase):
         )
 
         self.assertNotIn(self.DIFFERENT_UUID, failed)
+
+    def test_differing_uuids_are_not_flagged_while_a_node_lacks_the_statistic(self):
+        failed = self.failed_asserts(
+            {
+                "1.1.1.1:3000": {"cluster_uuid": self.U1},
+                "2.2.2.2:3000": {"cluster_uuid": self.U2},
+                "3.3.3.3:3000": {"cluster_size": 3},
+            }
+        )
+
+        self.assertNotIn(self.DIFFERENT_UUID, failed)

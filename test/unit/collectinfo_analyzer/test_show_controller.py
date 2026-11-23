@@ -172,14 +172,20 @@ class ShowUsageControllerTest(unittest.TestCase):
             newer["data"], namespaces=["bar", "test"]
         )
 
-    def test_a_file_that_is_not_an_export(self):
-        self.bundle_file("20261116_191136_usage.json", b"not json")
+    @parameterized.expand(
+        [
+            ("no_data_object", b'{"schema":2}', '{"schema":2}'),
+            ("not_json", b"\x1f\x8b\x08\x00", "\x1f�\x08\x00"),
+        ]
+    )
+    def test_a_file_that_is_not_an_export_is_shown_verbatim(self, _, saved, shown):
+        self.bundle_file("20261116_191136_usage.json", saved)
 
-        with self.assertLogs("lib", level="ERROR") as cm:
+        with self.assertNoLogs("lib", level="ERROR"):
             self.controller._do_default([])
 
+        self.view_mock.print_result.assert_called_once_with(shown)
         self.view_mock.show_usage.assert_not_called()
-        self.assertIn("20261116_191136_usage.json", cm.records[0].getMessage())
 
 
 class ShowUsageFromUsageArchiveTest(unittest.IsolatedAsyncioTestCase):
@@ -239,6 +245,24 @@ class ShowUsageFromUsageArchiveTest(unittest.IsolatedAsyncioTestCase):
         self.view_mock.show_usage.assert_called_once_with(
             json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
         )
+
+    async def test_an_archive_holding_a_reply_that_is_not_an_export_is_shown_verbatim(
+        self,
+    ):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir, b'{"schema":2}')
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="ERROR"):
+            await root.execute(["show", "usage"])
+
+        self.view_mock.print_result.assert_called_once_with('{"schema":2}')
+        self.view_mock.show_usage.assert_not_called()
 
     @parameterized.expand(
         [("sh_usage", ["sh", "usage"]), ("show_usa", ["show", "usa"])]

@@ -22,7 +22,7 @@ import tarfile
 import tempfile
 import time
 import unittest
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 from parameterized import parameterized
 
@@ -129,6 +129,17 @@ class UsageSupportedTest(unittest.IsolatedAsyncioTestCase):
             True,
         )
 
+    async def test_no_build_that_can_be_read_leaves_it_to_the_server(self):
+        self.assertIs(
+            await self.supported(
+                {
+                    PRINCIPAL: TimeoutError("info timed out after 1s"),
+                    OTHER: TimeoutError("info timed out after 1s"),
+                }
+            ),
+            True,
+        )
+
 
 class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -205,11 +216,9 @@ class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_reply_that_is_not_an_export(self):
         self.replies(b"[]")
 
-        error = await self.unavailable()
+        result = await fetch_usage(self.cluster)
 
-        self.assertTrue(
-            error.reply.startswith("could not decode the reply: "), error.reply
-        )
+        self.assertEqual((result.node, result.document), (PRINCIPAL, b"[]"))
 
     async def test_a_connection_failure_gives_its_error(self):
         self.replies(TimeoutError("info timed out after 1s"))
@@ -229,6 +238,82 @@ class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             (error.node, error.reply), ("", "Unable to find any Aerospike nodes")
+        )
+
+    async def test_another_node_answers_when_the_principal_cannot(self):
+        replies = {
+            PRINCIPAL: TimeoutError("info timed out after 3s"),
+            OTHER: document(export(["2026-10-03"])),
+        }
+        self.cluster.get_nodes.return_value = [
+            MagicMock(key=PRINCIPAL, node_id="C3"),
+            MagicMock(key=OTHER, node_id="A1"),
+        ]
+        self.cluster.info_usage.side_effect = lambda nodes: {
+            node: replies[node]
+            for node in ([PRINCIPAL] if nodes == "principal" else nodes)
+        }
+
+        result = await fetch_usage(self.cluster)
+
+        self.assertEqual(
+            (result.node, result.document), (OTHER, document(export(["2026-10-03"])))
+        )
+        self.assertEqual(
+            self.cluster.info_usage.await_args_list,
+            [call(nodes="principal"), call(nodes=[OTHER])],
+        )
+
+    async def test_stops_at_the_first_node_with_an_export(self):
+        replies = {
+            PRINCIPAL: info_error(NOT_FORMED),
+            OTHER: document(export(["2026-10-03"])),
+            SILENT: document(export(["2026-10-03"])),
+        }
+        self.cluster.get_nodes.return_value = [
+            MagicMock(key=PRINCIPAL, node_id="C3"),
+            MagicMock(key=OTHER, node_id="A1"),
+            MagicMock(key=SILENT, node_id="B2"),
+        ]
+        self.cluster.info_usage.side_effect = lambda nodes: {
+            node: replies[node]
+            for node in ([PRINCIPAL] if nodes == "principal" else nodes)
+        }
+
+        result = await fetch_usage(self.cluster)
+
+        self.assertEqual(self.cluster.info_usage.await_count, 2)
+        self.assertEqual(
+            self.cluster.info_usage.await_args_list[1], call(nodes=[result.node])
+        )
+
+    async def test_no_node_answers_gives_the_principals_reply(self):
+        replies = {
+            PRINCIPAL: info_error(NOT_FORMED),
+            OTHER: TimeoutError("info timed out after 3s"),
+            SILENT: info_error("ERROR:11:cluster identifier not yet known"),
+        }
+        self.cluster.get_nodes.return_value = [
+            MagicMock(key=PRINCIPAL, node_id="C3"),
+            MagicMock(key=OTHER, node_id="A1"),
+            MagicMock(key=SILENT, node_id="B2"),
+        ]
+        self.cluster.info_usage.side_effect = lambda nodes: {
+            node: replies[node]
+            for node in ([PRINCIPAL] if nodes == "principal" else nodes)
+        }
+
+        error = await self.unavailable()
+
+        self.assertEqual(
+            (error.node, error.reply, error.supported), (PRINCIPAL, NOT_FORMED, True)
+        )
+        self.assertEqual(
+            self.cluster.info_usage.await_args_list[0], call(nodes="principal")
+        )
+        self.assertCountEqual(
+            self.cluster.info_usage.await_args_list[1:],
+            [call(nodes=[OTHER]), call(nodes=[SILENT])],
         )
 
 
@@ -336,6 +421,16 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
         await self.run_command("--output-prefix", "acme")
 
         self.path_mock.assert_called_once_with(ANY, "acme")
+
+    async def test_output_prefix_with_a_directory_creates_it(self):
+        self.exports(export())
+        self.path = os.path.join(self.work_dir, "acme", ARCHIVE)
+        self.path_mock.return_value = self.path
+
+        with self.assertNoLogs("lib", level="ERROR"):
+            await self.run_command("--output-prefix", "acme/")
+
+        self.assert_archive()
 
     async def test_an_older_server_is_a_warning_pointing_to_collect_info(self):
         self.supported.return_value = False
@@ -489,6 +584,33 @@ class CollectUsageMetaFileTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (meta["cluster_name"], meta["cluster_uuid"]), (None, None), meta
         )
+
+    async def test_no_build_that_can_be_read_still_asks_the_server(self):
+        self.cluster.info_build.side_effect = lambda **_: {
+            PRINCIPAL: TimeoutError("info timed out after 1s"),
+            OTHER: TimeoutError("info timed out after 1s"),
+        }
+
+        with self.assertNoLogs("lib", level="WARNING"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                await CollectusageController().execute([])
+
+        self.assertEqual(archived_export(self.path), document(export(["2026-10-03"])))
+
+    @parameterized.expand(
+        [
+            ("no_data_object", b'{"schema":2}'),
+            ("not_json", b"\x1f\x8b\x08\x00"),
+        ]
+    )
+    async def test_a_reply_that_is_not_an_export_is_saved_unchanged(self, _, reply):
+        self.cluster.info_usage.return_value = {PRINCIPAL: reply}
+
+        with self.assertNoLogs("lib", level="ERROR"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                await CollectusageController().execute([])
+
+        self.assertEqual(archived_export(self.path), reply)
 
 
 class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):

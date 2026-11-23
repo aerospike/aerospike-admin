@@ -14,8 +14,8 @@
 """collect usage and the usage file in collectinfo bundles (TOOLS-4579).
 
 The harness server predates usage reporting, so it covers the "no usage
-reporting" path. The export itself (AER-7009, AER-7010) is in no release image
-yet, so those classes pin a server master nightly."""
+reporting" path. The export itself (AER-7009, AER-7010) is in no release yet,
+so those classes pin the 8.2.1.0 RC1 image."""
 
 import base64
 import glob
@@ -32,7 +32,7 @@ import unittest
 from lib.utils import version
 from test.e2e import lib, util
 
-USAGE_SERVER_TAG = "8.2.1.0-63_20261123T052208Z"
+USAGE_SERVER_TAG = "8.2.1.0-64_20261123T174538Z"
 PREFIX = "asadm_collect_usage_test_"
 NO_ROLES_USER = f"{PREFIX}no_roles"
 BASE64_VALUE = re.compile(r"^(eyJ[A-Za-z0-9+/=]+|ERROR\S*.*)$", re.M)
@@ -113,7 +113,7 @@ def service_template(line):
 
 
 def start_usage_server(num_nodes, template_content=None, timeout=90):
-    """Starts the nightly and waits until asadm reads every node and each has a UUID."""
+    """Starts RC1 and waits until asadm reads every node and each has a UUID."""
     lib.stop()
     lib.start(
         num_nodes=num_nodes,
@@ -122,6 +122,12 @@ def start_usage_server(num_nodes, template_content=None, timeout=90):
         mesh_over_bridge=True,
     )
     connect = harness_connect()
+    wait_for_one_uuid(connect, num_nodes, timeout)
+
+    return connect
+
+
+def wait_for_one_uuid(connect, num_nodes, timeout=90):
     deadline = time.time() + timeout
     cp = None
 
@@ -134,13 +140,63 @@ def start_usage_server(num_nodes, template_content=None, timeout=90):
             and len(set(uuids)) == 1
             and "Offline" not in cp.stderr
         ):
-            return connect
+            return
 
         time.sleep(2)
 
     raise AssertionError(
         f"no cluster_uuid on {num_nodes} nodes:\n{cp.stdout}\n{cp.stderr}"
     )
+
+
+def node_address(index):
+    conf = lib.NODE_CONFS[index - 1]
+
+    return f"{conf['access_address']}:{conf['port_base']}"
+
+
+def principal_index():
+    """The harness node with the highest node-id, the one asadm asks first."""
+    indexes = {}
+
+    for index, (container, conf) in enumerate(zip(lib.NODES, lib.NODE_CONFS), 1):
+        if container is not None and conf is not None:
+            reply = container.exec_run(
+                f"asinfo -p {conf['port_base']} -U admin -P admin -v node"
+            )
+            indexes[reply.output.decode().strip().zfill(16)] = index
+
+    return indexes[max(indexes)]
+
+
+def collect_usage_with_the_principal_frozen(connect, num_nodes):
+    """Runs 'collect usage' in a session that found every node, with the principal
+    paused right after. Returns the output and the address of a node left running."""
+    principal = principal_index()
+    container = lib.NODES[principal - 1]
+    other = next(
+        index
+        for index, conf in enumerate(lib.NODE_CONFS, 1)
+        if conf is not None and index != principal
+    )
+    session = util.AsadmSession(connect)
+
+    try:
+        container.pause()
+
+        try:
+            output = session.run(
+                f"collect usage --output-prefix {PREFIX}frozen_", timeout=120
+            )
+        finally:
+            container.unpause()
+    finally:
+        session.close()
+
+    lib.wait_for_cluster(num_nodes)
+    wait_for_one_uuid(connect, num_nodes)
+
+    return output, node_address(other)
 
 
 def without_taken(document):
@@ -288,10 +344,43 @@ class CollectUsageTest(unittest.TestCase):
             cls.file = archived(cls.archive, "_usage.json")
             cls.meta = json.loads(archived(cls.archive, "_usage_meta.json"))
 
+        cls.new_dir = f"/tmp/{PREFIX}new_dir"
+        shutil.rmtree(cls.new_dir, ignore_errors=True)
+        cls.collect_into_new_dir = util.run_asadm(
+            f"{cls.connect} -e 'collect usage --output-prefix {PREFIX}new_dir/'"
+        )
+        cls.frozen_output, cls.running_node = collect_usage_with_the_principal_frozen(
+            cls.connect, cls.NODES
+        )
+
     @classmethod
     def tearDownClass(cls):
         remove_outputs()
         lib.stop()
+
+    def test_output_prefix_with_a_new_directory_creates_it(self):
+        cp = self.collect_into_new_dir
+        archive = saved_path(cp.stdout)
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertNotIn("ERROR", cp.stderr)
+        self.assertEqual(os.path.dirname(archive), self.new_dir, cp.stdout)
+        self.assertEqual(
+            json.loads(archived(archive, "_usage.json"))["data"]["cluster"], self.uuid
+        )
+
+    def test_another_node_answers_while_the_principal_is_frozen(self):
+        archive = saved_path(self.frozen_output)
+
+        self.assertNotIn("ERROR", self.frozen_output)
+        self.assertIsNotNone(archive, self.frozen_output)
+        self.assertEqual(
+            json.loads(archived(archive, "_usage_meta.json"))["usage_node"],
+            self.running_node,
+        )
+        self.assertEqual(
+            json.loads(archived(archive, "_usage.json"))["data"]["cluster"], self.uuid
+        )
 
     def test_the_file_is_the_servers_export(self):
         self.assertEqual(self.collect_usage.returncode, 0, self.collect_usage.stderr)
@@ -370,6 +459,16 @@ class CollectUsageTest(unittest.TestCase):
 
         self.assertNotIn("Different Cluster UUID", cp.stdout)
 
+    def test_health_compares_uuids_when_every_node_reports_one(self):
+        cp = util.run_asadm(f"{self.connect} -e 'health'")
+        lines = [
+            util.remove_escape_sequence(line).strip()
+            for line in cp.stdout.splitlines()
+            if "Cluster UUID" in line
+        ]
+
+        self.assertEqual(lines, ["OPERATIONS:  Cluster UUID difference check."])
+
 
 class CollectUsageWithoutPrivilegesTest(unittest.TestCase):
     @classmethod
@@ -425,8 +524,8 @@ class CollectUsageWithoutPrivilegesTest(unittest.TestCase):
 
 
 class CollectUsageMixedClusterTest(unittest.TestCase):
-    """Node 1 runs the harness release without usage reporting. Node 2 runs the
-    nightly and has the higher node-id, so it is the principal usage-export goes to."""
+    """Node 1 runs the harness release without usage reporting. Node 2 runs RC1
+    and has the higher node-id, so it is the principal usage-export goes to."""
 
     @classmethod
     def setUpClass(cls):
@@ -443,13 +542,12 @@ class CollectUsageMixedClusterTest(unittest.TestCase):
         lib.wait_for_cluster(2)
         cls.connect = harness_connect()
         cls.builds = wait_for_builds(cls.connect, 2)
-        cls.principal = re.findall(
-            r"^cluster_principal=(\S+)$",
-            util.run_asadm(
-                f"{cls.connect} --enable -e 'asinfo -v statistics -l'"
-            ).stdout,
-            re.M,
-        )
+        statistics = util.run_asadm(
+            f"{cls.connect} --enable -e 'asinfo -v statistics -l'"
+        ).stdout
+        cls.principal = re.findall(r"^cluster_principal=(\S+)$", statistics, re.M)
+        cls.uuids = re.findall(r"^cluster_uuid=(\S+)$", statistics, re.M)
+        cls.health = util.run_asadm(f"{cls.connect} -e 'health'")
         cls.collect_usage = util.run_asadm(
             f"{cls.connect} -e 'collect usage --output-prefix {PREFIX}'"
         )
@@ -474,6 +572,16 @@ class CollectUsageMixedClusterTest(unittest.TestCase):
             self.builds,
         )
         self.assertEqual([p.upper() for p in self.principal], ["A2", "A2"])
+
+    def test_health_does_not_compare_uuids_while_a_node_has_none(self):
+        lines = [
+            util.remove_escape_sequence(line).strip()
+            for line in self.health.stdout.splitlines()
+            if "Cluster UUID" in line
+        ]
+
+        self.assertEqual(len(self.uuids), 1, self.uuids)
+        self.assertEqual(lines, [])
 
     def test_collect_usage_warns_and_writes_nothing(self):
         self.assertEqual(self.collect_usage.returncode, 0, self.collect_usage.stderr)

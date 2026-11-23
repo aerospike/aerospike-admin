@@ -14,7 +14,6 @@
 
 import asyncio
 import base64
-import binascii
 import gc
 import socket
 import threading
@@ -6391,11 +6390,13 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.raw_response, reply)
 
     async def test_info_usage_reply_that_is_not_base64(self):
-        self.info_mock.return_value = "eyJkYXRhIjp7!"
+        reply = "eyJkYXRhIjp7!"
+        self.info_mock.return_value = reply
 
         result = await self.node.info_usage()
 
-        self.assertIsInstance(result, binascii.Error)
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.raw_response, reply)
 
 
 class SyscmdTest(unittest.TestCase):
