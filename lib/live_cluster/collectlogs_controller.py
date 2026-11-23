@@ -23,7 +23,7 @@ from lib.live_cluster import ssh
 
 from lib.utils import common, util
 from lib.utils.logger import LogFormatter, stderr_log_handler, logger as g_logger
-from lib.base_controller import CommandHelp, ModifierHelp
+from lib.base_controller import CommandHelp, ModifierHelp, ShellException
 
 from .live_cluster_command_controller import LiveClusterCommandController
 
@@ -155,6 +155,12 @@ class CollectlogsController(LiveClusterCommandController):
     # Collectinfo caller functions
 
     async def _do_default(self, line):
+        if line and line[0] in ("-h", "--help"):
+            command = " ".join(self._context)
+            raise ShellException(
+                f"{command}: '{line[0]}' is not a valid option. See 'help {command}' for available options."
+            )
+
         enable_ssh = util.check_arg_and_delete_from_mods(
             line=line,
             arg="--enable-ssh",

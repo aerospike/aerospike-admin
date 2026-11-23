@@ -26,12 +26,14 @@ from lib.base_controller import (
     CommandHelp,
     ModifierHelp,
     ShellException,
+    create_deprecated_controller,
     create_disabled_controller,
 )
 from lib.utils.async_object import AsyncObject
 from .live_cluster_command_controller import LiveClusterCommandController
 from .client import Cluster, Addr_Port_TLSName
 from .asinfo_controller import ASInfoController
+from .collect_controller import CollectController
 from .collectinfo_controller import CollectinfoController
 from .features_controller import FeaturesController
 from .health_check_controller import HealthCheckController
@@ -95,11 +97,18 @@ class LiveClusterRootController(BaseController, AsyncObject):
 
         self.controller_map = {
             "health": HealthCheckController,
-            "summary": SummaryController,
+            "summary": create_deprecated_controller(
+                SummaryController, "summary", "info summary"
+            ),
             "features": FeaturesController,
             "pager": PagerController,
-            "collectinfo": CollectinfoController,
-            "collectlogs": CollectlogsController,
+            "collect": CollectController,
+            "collectinfo": create_deprecated_controller(
+                CollectinfoController, "collectinfo", "collect info"
+            ),
+            "collectlogs": create_deprecated_controller(
+                CollectlogsController, "collectlogs", "collect logs"
+            ),
             "asinfo": create_disabled_controller(ASInfoController, "asinfo"),
             "manage": create_disabled_controller(ManageController, "manage"),
             "show": ShowController,

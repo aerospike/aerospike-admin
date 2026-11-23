@@ -126,6 +126,12 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "get_value_from_dict did not return the expected result",
         )
 
+    def test_get_value_from_dict_on_a_value_that_is_not_a_dict(self):
+        self.assertEqual(
+            util.get_value_from_dict(5, "cluster_size", default_value="default"),
+            "default",
+        )
+
     async def test_async_cached(self):
         tester_count = 0
 
