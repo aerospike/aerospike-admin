@@ -157,9 +157,15 @@ class ShowUsageController(CollectinfoCommandController):
 
         try:
             with open(files[0], "rb") as f:
-                data = usage_export.parse(f.read())
-        except (OSError, ValueError) as e:
+                document = f.read()
+        except OSError as e:
             logger.error("show usage: cannot read %s: %s", files[0], e)
+            return
+
+        try:
+            data = usage_export.parse(document)
+        except ValueError:
+            self.view.print_result(document.decode("utf-8", "replace"))
             return
 
         self.view.show_usage(data, namespaces=self._namespaces())

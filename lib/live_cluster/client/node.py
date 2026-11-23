@@ -1640,7 +1640,10 @@ class Node(AsyncObject):
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get usage", resp)
 
-        return base64.b64decode(resp, validate=True)
+        try:
+            return base64.b64decode(resp, validate=True)
+        except ValueError:
+            raise ASInfoResponseError("Failed to get usage", resp)
 
     @async_return_exceptions
     async def info_statistics(self):

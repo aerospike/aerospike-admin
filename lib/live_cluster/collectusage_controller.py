@@ -49,14 +49,17 @@ class UsageUnavailable(Exception):
 class UsageExport:
     node: str
     document: bytes
-    data: dict[str, Any]
+    data: dict[str, Any] | None
 
 
 async def usage_supported(cluster, builds=None) -> bool:
-    """Whether every node runs a release with usage reporting. Older servers are
-    never sent the command: they log every info command they do not know."""
+    """False only when a known build predates usage reporting, since older servers
+    log every info command they do not know."""
     if builds is None:
         builds = await GetClusterMetadataController(cluster).get_builds(nodes="all")
+
+    if not builds:
+        return True
 
     support = await util.check_version_support(
         feature_versions={"usage": constants.SERVER_USAGE_REPORTING_FIRST_VERSION},
@@ -66,8 +69,18 @@ async def usage_supported(cluster, builds=None) -> bool:
     return support["usage"]
 
 
+def _usage_export(node: str, document: bytes) -> UsageExport:
+    try:
+        data = usage_export.parse(document)
+    except ValueError:
+        data = None
+
+    return UsageExport(node, document, data)
+
+
 async def fetch_usage(cluster) -> UsageExport:
-    """Any node answers for the whole cluster, so the principal is asked."""
+    """Any node answers for the whole cluster. The principal is asked first, then
+    each other live node until one returns an export."""
     try:
         replies = await cluster.info_usage(nodes="principal")
     except Exception as e:
@@ -76,10 +89,21 @@ async def fetch_usage(cluster) -> UsageExport:
     node, reply = next(iter(replies.items()))
 
     if isinstance(reply, bytes):
+        return _usage_export(node, reply)
+
+    others = sorted(
+        (other for other in cluster.get_nodes() if other.key != node),
+        key=lambda other: other.node_id.zfill(16),
+    )
+
+    for other in others:
         try:
-            return UsageExport(node, reply, usage_export.parse(reply))
-        except ValueError as e:
-            raise UsageUnavailable(node, f"could not decode the reply: {e}")
+            answer = (await cluster.info_usage(nodes=[other.key])).get(other.key)
+        except Exception:
+            continue
+
+        if isinstance(answer, bytes):
+            return _usage_export(other.key, answer)
 
     if isinstance(reply, ValueError):
         raise UsageUnavailable(node, f"could not decode the reply: {reply}")
@@ -187,7 +211,7 @@ class CollectusageController(LiveClusterCommandController):
                 constants.COLLECTINFO_TIMESTAMP_FORMAT, timestamp
             ),
             "cluster_name": cluster_name if isinstance(cluster_name, str) else None,
-            "cluster_uuid": export.data.get("cluster"),
+            "cluster_uuid": (export.data or {}).get("cluster"),
             "expected_nodes": expected_nodes,
             "responded_nodes": sorted(builds),
             "usage_node": export.node,
@@ -200,6 +224,8 @@ class CollectusageController(LiveClusterCommandController):
         }
 
         try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
             with tarfile.open(path, "x:gz") as tar:
                 for name, data in members.items():
                     member = tarfile.TarInfo(f"{top_dir}/{name}")

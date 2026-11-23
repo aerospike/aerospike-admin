@@ -906,11 +906,16 @@ ASSERT(r, False, "Different Cluster Key.", "OPERATIONS", CRITICAL,
 				"Listed cluster[s] have different cluster keys for nodes. This indicates cluster is not completely wellformed. Please check server logs for more information. Probable cause - issue with network.",
 				"Cluster Key difference check.");
 
-r = select "cluster_uuid" from SERVICE.STATISTICS;
-r = do NO_MATCH(r, ==, MAJORITY) save;
+uuid = select "cluster_uuid" from SERVICE.STATISTICS;
+uuid_nodes = group by CLUSTER do COUNT(uuid);
+e = select "edition" from METADATA;
+total_nodes = group by CLUSTER do COUNT(e);
+all_report = do uuid_nodes == total_nodes;
+r = do NO_MATCH(uuid, ==, MAJORITY) save;
 ASSERT(r, False, "Different Cluster UUID.", "OPERATIONS", WARNING,
 				"Listed cluster[s] have different cluster_uuid values for nodes. Please check server logs for more information.",
-				"Cluster UUID difference check.");
+				"Cluster UUID difference check.",
+				all_report);
 
 u = select "uptime" from SERVICE.STATISTICS;
 total_nodes = group by CLUSTER do COUNT(u) save as "total nodes";

@@ -1386,9 +1386,10 @@ class CliView(object):
         return lines
 
     @staticmethod
-    def print_usage_saved(data: dict[str, Any], file_path: str, size: int):
-        for line in CliView._usage_header(data):
-            print(line)
+    def print_usage_saved(data: dict[str, Any] | None, file_path: str, size: int):
+        if data is not None:
+            for line in CliView._usage_header(data):
+                print(line)
 
         print(f"Saved   {file_path} ({file_size.size(size).strip()})")
         print("Send this file to your Aerospike contact.")

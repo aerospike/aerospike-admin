@@ -2008,6 +2008,10 @@ class ShowUsageController(LiveClusterCommandController):
             log_unavailable("show usage", e)
             return
 
+        if export.data is None:
+            self.view.print_result(export.document.decode("utf-8", "replace"))
+            return
+
         namespaces = util.filter_exceptions(
             await self.cluster.info_namespaces(nodes="all")
         )
