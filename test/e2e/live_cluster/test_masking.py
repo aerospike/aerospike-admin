@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Masking rules by AEL path (TOOLS-3973) against a server master build with
-AER-6982. No release image has it yet, so the classes pin a nightly."""
+"""Masking rules by AEL path (TOOLS-3973) against the 8.2.1 RC1 build, which has
+AER-6982. 8.2.1 is not released yet, so the classes pin the RC1 image."""
 
+import base64
 import os
 import re
 import shlex
@@ -23,38 +24,53 @@ import unittest
 
 from test.e2e import lib, util
 
-SERVER_TAG = "8.2.1.0-63_20261123T052208Z"
+SERVER_TAG = "8.2.1.0-64_20261123T174538Z"
 OLDER_SERVER_TAG = "8.2.0.0_20260918T215052Z"
 PREFIX = "asadm_test_masking_"
 NS = lib.NAMESPACE
 COLUMNS = ("Bin", "Type", "AEL", "Function", "Default", "Enforced")
+CDT_PATHS = ("$.cards.[0]", "$.profile.address.zip", "$.m.5", '$."café".x')
 
 RULES = (
     "redact position 0 length 4 value * default N/A namespace {ns} set demo ael '$.profile.ssn'",
     "constant value XXXX namespace {ns} set demo ael '$.cards.[0]'",
     "constant value 0 namespace {ns} set demo ael '$.profile.age' type integer",
+    "constant value X namespace {ns} set demo ael '$.profile.address.zip'",
+    "constant value X namespace {ns} set demo ael '$.m.5'",
+    """constant value X namespace {ns} set demo ael '$."café".x'""",
     "redact position 0 length 4 value * namespace {ns} set demo bin ssn",
     "constant value 12:30 namespace {ns} set demo bin time",
     "constant value X namespace {ns} set other bin name",
 )
 
-SHOWN_IN_DEMO = [
-    ("cards", "string", "$.cards.[0]", "constant value XXXX", "--", "True"),
-    ("profile", "integer", "$.profile.age", "constant value 0", "--", "True"),
-    (
-        "profile",
-        "string",
-        "$.profile.ssn",
-        "redact position 0 length 4 value *",
-        "N/A",
-        "True",
-    ),
-    ("ssn", "string", "--", "redact position 0 length 4 value *", "--", "True"),
-    ("time", "string", "--", "constant value 12:30", "--", "True"),
-]
-SHOWN = sorted(
-    SHOWN_IN_DEMO + [("name", "string", "--", "constant value X", "--", "True")]
+SHOWN_IN_DEMO = sorted(
+    [
+        ("cards", "string", "$.cards.[0]", "constant value XXXX", "--", "True"),
+        ("profile", "integer", "$.profile.age", "constant value 0", "--", "True"),
+        (
+            "profile",
+            "string",
+            "$.profile.ssn",
+            "redact position 0 length 4 value *",
+            "N/A",
+            "True",
+        ),
+        (
+            "profile",
+            "string",
+            "$.profile.address.zip",
+            "constant value X",
+            "--",
+            "True",
+        ),
+        ("m", "string", "$.m.5", "constant value X", "--", "True"),
+        ("café", "string", '$."café".x', "constant value X", "--", "True"),
+        ("ssn", "string", "--", "redact position 0 length 4 value *", "--", "True"),
+        ("time", "string", "--", "constant value 12:30", "--", "True"),
+    ]
 )
+SHOWN_IN_OTHER = [("name", "string", "--", "constant value X", "--", "True")]
+SHOWN = sorted(SHOWN_IN_DEMO + SHOWN_IN_OTHER)
 
 REFUSED = (
     (
@@ -90,6 +106,15 @@ def info(cmd):
 
 def statistic(name):
     return int(re.search(rf"(?:^|;){name}=(\d+)", info("statistics")).group(1))
+
+
+def remove_rule(set_, bin_=None, ael=None):
+    target = (
+        f"bin={bin_}"
+        if ael is None
+        else "ael_b64=" + base64.b64encode(ael.encode()).decode()
+    )
+    info(f"masking:namespace={NS};set={set_};{target};type=string;function=remove")
 
 
 def masking_rows(args, command="show masking"):
@@ -205,9 +230,173 @@ class MaskingRulesTest(unittest.TestCase):
         self.assertEqual(show.returncode, 0, show.stderr)
         self.assertEqual(rows, SHOWN)
 
+    def test_drop_by_the_shown_path_round_trips_each_cdt_path(self):
+        for index, path in enumerate(CDT_PATHS):
+            set_ = f"trip{index}"
+
+            with self.subTest(path=path):
+                self.addCleanup(remove_rule, set_, ael=path)
+                add = asadm(
+                    self.args,
+                    f"manage masking add constant value X namespace {NS} set {set_} ael '{path}'",
+                )
+                show_before, before = masking_rows(
+                    self.args, f"show masking namespace {NS} set {set_}"
+                )
+                shown = [row[2] for row in before]
+
+                self.assertIn("Successfully added masking rule", add.stdout, add.stderr)
+                self.assertEqual(show_before.returncode, 0, show_before.stderr)
+                self.assertEqual(shown, [path])
+
+                drop = asadm(
+                    self.args,
+                    f"manage masking drop namespace {NS} set {set_} ael '{shown[0]}'",
+                )
+                show_after, after = masking_rows(
+                    self.args, f"show masking namespace {NS} set {set_}"
+                )
+
+                self.assertIn(
+                    "Successfully dropped masking rule", drop.stdout, drop.stderr
+                )
+                self.assertEqual(show_after.returncode, 0, show_after.stderr)
+                self.assertEqual(after, [])
+
+    def test_a_name_equal_to_a_keyword_is_taken_as_the_name(self):
+        for set_, bin_ in (("kw_type", "type"), ("ael", "b"), ("ael_b64", "b")):
+            with self.subTest(set=set_, bin=bin_):
+                self.addCleanup(remove_rule, set_, bin_)
+                add = asadm(
+                    self.args,
+                    f"manage masking add constant value X namespace {NS} set {set_} bin {bin_}",
+                )
+                show, rows = masking_rows(
+                    self.args, f"show masking namespace {NS} set {set_}"
+                )
+                drop = asadm(
+                    self.args,
+                    f"manage masking drop namespace {NS} set {set_} bin {bin_}",
+                )
+                show_after, after = masking_rows(
+                    self.args, f"show masking namespace {NS} set {set_}"
+                )
+
+                self.assertIn("Successfully added masking rule", add.stdout, add.stderr)
+                self.assertEqual(show.returncode, 0, show.stderr)
+                self.assertEqual(
+                    rows, [(bin_, "string", "--", "constant value X", "--", "True")]
+                )
+                self.assertIn(
+                    "Successfully dropped masking rule", drop.stdout, drop.stderr
+                )
+                self.assertEqual(show_after.returncode, 0, show_after.stderr)
+                self.assertEqual(after, [])
+
+    def test_a_function_value_equal_to_a_keyword_is_the_value(self):
+        for set_, value in (
+            ("value_ael", "ael"),
+            ("value_b64", "ael_b64"),
+            ("value_type", "type"),
+        ):
+            with self.subTest(value=value):
+                self.addCleanup(remove_rule, set_, "b")
+                add = asadm(
+                    self.args,
+                    f"manage masking add constant value {value} namespace {NS} set {set_} bin b",
+                )
+                show, rows = masking_rows(
+                    self.args, f"show masking namespace {NS} set {set_}"
+                )
+
+                self.assertIn("Successfully added masking rule", add.stdout, add.stderr)
+                self.assertEqual(show.returncode, 0, show.stderr)
+                self.assertEqual(
+                    rows,
+                    [("b", "string", "--", f"constant value {value}", "--", "True")],
+                )
+
+    def test_function_parameters_after_the_target_are_sent(self):
+        for set_, rule, shown in (
+            (
+                "after_default",
+                "redact namespace {ns} set {set_} bin d type string default N/A",
+                ("d", "string", "--", "redact", "N/A", "True"),
+            ),
+            (
+                "after_position",
+                "redact namespace {ns} set {set_} bin p position 0",
+                ("p", "string", "--", "redact position 0", "--", "True"),
+            ),
+        ):
+            with self.subTest(rule=rule):
+                self.addCleanup(remove_rule, set_, shown[0])
+                add = asadm(
+                    self.args,
+                    "manage masking add " + rule.format(ns=NS, set_=set_),
+                )
+                show, rows = masking_rows(
+                    self.args, f"show masking namespace {NS} set {set_}"
+                )
+
+                self.assertIn("Successfully added masking rule", add.stdout, add.stderr)
+                self.assertEqual(show.returncode, 0, show.stderr)
+                self.assertEqual(rows, [shown])
+
+    def test_drop_with_words_after_the_target_removes_the_rule(self):
+        self.addCleanup(remove_rule, "drop_extra", "d")
+        add = asadm(
+            self.args,
+            f"manage masking add constant value X namespace {NS} set drop_extra bin d",
+        )
+        drop = asadm(
+            self.args,
+            f"manage masking drop namespace {NS} set drop_extra bin d position 0",
+        )
+        show, rows = masking_rows(
+            self.args, f"show masking namespace {NS} set drop_extra"
+        )
+
+        self.assertIn("Successfully added masking rule", add.stdout, add.stderr)
+        self.assertIn("Successfully dropped masking rule", drop.stdout, drop.stderr)
+        self.assertEqual(show.returncode, 0, show.stderr)
+        self.assertEqual(rows, [])
+
+    def test_set_filter_without_namespace_lists_only_that_set(self):
+        cp, rows = masking_rows(self.args, "show masking set other")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(rows, SHOWN_IN_OTHER)
+
+    def test_collectinfo_set_filter_without_namespace_lists_only_that_set(self):
+        cp = util.run_asadm(f"{self.args} -e 'collectinfo --output-prefix {PREFIX}'")
+        bundle = util.get_collectinfo_path(cp, f"/tmp/{PREFIX}")
+        self.addCleanup(shutil.rmtree, bundle[: -len(".tgz")], ignore_errors=True)
+        self.addCleanup(os.remove, bundle)
+
+        show, rows = masking_rows(f"-cf {bundle}", "show masking set other")
+
+        self.assertEqual(show.returncode, 0, show.stderr)
+        self.assertEqual(rows, SHOWN_IN_OTHER)
+
+    def test_a_repeated_function_parameter_shows_the_first_value(self):
+        self.addCleanup(remove_rule, "repeat", "p")
+        add = asadm(
+            self.args,
+            f"manage masking add redact position 0 position 1 length 2 value * namespace {NS} set repeat bin p",
+        )
+        show, rows = masking_rows(self.args, f"show masking namespace {NS} set repeat")
+
+        self.assertIn("Successfully added masking rule", add.stdout, add.stderr)
+        self.assertEqual(show.returncode, 0, show.stderr)
+        self.assertEqual(
+            rows,
+            [("p", "string", "--", "redact position 0 length 2 value *", "--", "True")],
+        )
+
 
 class MaskingMixedClusterTest(unittest.TestCase):
-    """Node 1 runs the nightly, node 2 a release without path rules."""
+    """Node 1 runs RC1, node 2 a release without path rules."""
 
     @classmethod
     def setUpClass(cls):
