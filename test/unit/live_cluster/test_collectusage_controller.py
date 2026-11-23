@@ -588,6 +588,21 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
         self.assertEqual(logger_util.get_exit_code(), 0)
         self.archive_mock.assert_called_once_with(self.work_dir)
 
+    async def test_a_failed_fetch_stays_listed_when_localhost_is_a_node(self):
+        self.controller.cluster.is_localhost_a_node.return_value = True
+        patch(
+            "lib.live_cluster.collectinfo_controller.common.collect_sys_info",
+            return_value=["iostat"],
+        ).start()
+        patch.object(
+            CollectinfoController, "_dump_collectinfo_aerospike_conf", AsyncMock()
+        ).start()
+        self.fetch.side_effect = UsageUnavailable(PRINCIPAL, NOT_FORMED)
+
+        await self._run()
+
+        self.assertEqual(sorted(self.reported_failures()), ["iostat", "usage-export"])
+
     async def test_an_unexpected_error_does_not_stop_the_collection(self):
         self.fetch.side_effect = RuntimeError("boom")
 

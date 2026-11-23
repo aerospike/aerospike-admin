@@ -14,6 +14,7 @@
 
 import asyncio
 import base64
+import copy
 import json
 import os
 import shutil
@@ -153,6 +154,24 @@ class ShowUsageControllerTest(unittest.TestCase):
 
         self.view_mock.show_usage.assert_not_called()
 
+    def test_a_path_holding_several_bundles_shows_the_newest_usage_file(self):
+        older = copy.deepcopy(self.EXPORT)
+        newer = copy.deepcopy(self.EXPORT)
+        newer["data"]["taken"] = "2026-11-23T16:02:38Z"
+
+        for name, value in (
+            ("collect_info_20261123_155835/20261123_155835_usage.json", older),
+            ("collect_info_20261123_160238/20261123_160238_usage.json", newer),
+        ):
+            os.makedirs(os.path.join(self.work_dir, os.path.dirname(name)))
+            self.bundle_file(name, json.dumps(value).encode())
+
+        self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            newer["data"], namespaces=["bar", "test"]
+        )
+
     def test_a_file_that_is_not_an_export(self):
         self.bundle_file("20261116_191136_usage.json", b"not json")
 
@@ -196,6 +215,26 @@ class ShowUsageFromUsageArchiveTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(root.close)
 
         await root.execute(["show", "usage"])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
+
+    async def test_show_usage_reads_a_usage_file_given_as_the_path(self):
+        path = os.path.join(self.work_dir, "20261116_191136_usage.json")
+
+        with open(path, "wb") as f:
+            f.write(USAGE_DOCUMENT)
+
+        try:
+            root = CollectinfoRootController(clinfo_path=path)
+        except ShellException as e:
+            self.fail(f"-cf refused the usage file: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="WARNING"):
+            await root.execute(["show", "usage"])
 
         self.view_mock.show_usage.assert_called_once_with(
             json.loads(USAGE_DOCUMENT)["data"], namespaces=[]

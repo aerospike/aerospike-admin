@@ -14,10 +14,8 @@
 """collect usage and the usage file in collectinfo bundles (TOOLS-4579).
 
 The harness server predates usage reporting, so it covers the "no usage
-reporting" path. Point ASADM_E2E_USAGE_SEED (host:port) at a server that has it,
-with ASADM_E2E_USAGE_USER and ASADM_E2E_USAGE_PASSWORD (default admin/admin), to
-cover the export itself. That server is only read, apart from one user with no
-roles that is created and dropped when security is enabled."""
+reporting" path. The export itself (AER-7009, AER-7010) is in no release image
+yet, so those classes pin a server master nightly."""
 
 import base64
 import glob
@@ -28,16 +26,15 @@ import re
 import shutil
 import tarfile
 import tempfile
+import time
 import unittest
 
 from lib.utils import version
 from test.e2e import lib, util
 
+USAGE_SERVER_TAG = "8.2.1.0-63_20261123T052208Z"
 PREFIX = "asadm_collect_usage_test_"
 NO_ROLES_USER = f"{PREFIX}no_roles"
-USAGE_SEED = os.environ.get("ASADM_E2E_USAGE_SEED", "")
-USAGE_USER = os.environ.get("ASADM_E2E_USAGE_USER", "admin")
-USAGE_PASSWORD = os.environ.get("ASADM_E2E_USAGE_PASSWORD", "admin")
 BASE64_VALUE = re.compile(r"^(eyJ[A-Za-z0-9+/=]+|ERROR\S*.*)$", re.M)
 FIRST_VERSION = "8.2.1"
 OLDER_SERVERS = "is not supported on aerospike versions < 8.2.1"
@@ -83,6 +80,69 @@ def cluster_uuid(connect):
     return match.group(1) if match else None
 
 
+def harness_connect():
+    return f"-h {lib.SERVER_IP}:{lib.PORT} -Uadmin -Padmin"
+
+
+def wait_for_builds(connect, count, timeout=90):
+    deadline = time.time() + timeout
+    builds = []
+
+    while time.time() < deadline:
+        builds = server_builds(connect)
+
+        if len(builds) == count:
+            return builds
+
+        time.sleep(2)
+
+    raise AssertionError(f"asadm read {builds}, not {count} builds")
+
+
+def service_template(line):
+    """The harness template with one more line in the service stanza."""
+    with open(lib.absolute_path("aerospike_latest.conf")) as f:
+        content = f.read()
+
+    marker = "\tproto-fd-max 1024\n"
+
+    if marker not in content:
+        raise AssertionError("service stanza anchor missing from the template")
+
+    return content.replace(marker, marker + line + "\n")
+
+
+def start_usage_server(num_nodes, template_content=None, timeout=90):
+    """Starts the nightly and waits until asadm reads every node and each has a UUID."""
+    lib.stop()
+    lib.start(
+        num_nodes=num_nodes,
+        docker_tag=USAGE_SERVER_TAG,
+        template_content=template_content,
+        mesh_over_bridge=True,
+    )
+    connect = harness_connect()
+    deadline = time.time() + timeout
+    cp = None
+
+    while time.time() < deadline:
+        cp = util.run_asadm(f"{connect} --enable -e 'asinfo -v statistics -l'")
+        uuids = re.findall(r"^cluster_uuid=(\S+)$", cp.stdout, re.M)
+
+        if (
+            len(uuids) == num_nodes
+            and len(set(uuids)) == 1
+            and "Offline" not in cp.stderr
+        ):
+            return connect
+
+        time.sleep(2)
+
+    raise AssertionError(
+        f"no cluster_uuid on {num_nodes} nodes:\n{cp.stdout}\n{cp.stderr}"
+    )
+
+
 def without_taken(document):
     value = json.loads(document)
     value["data"].pop("taken")
@@ -118,6 +178,7 @@ def archived(archive, suffix):
 class CollectUsageWithoutUsageReportingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        lib.stop()
         lib.start()
         cls.connect = f"-h {lib.SERVER_IP}:{lib.PORT} -Uadmin -Padmin"
 
@@ -204,13 +265,12 @@ class CollectUsageWithoutUsageReportingTest(unittest.TestCase):
         self.assertTrue(any(line.split()[:1] == ["usage"] for line in lines), cp.stdout)
 
 
-@unittest.skipUnless(
-    USAGE_SEED, "set ASADM_E2E_USAGE_SEED to a server with usage reporting"
-)
 class CollectUsageTest(unittest.TestCase):
+    NODES = 2
+
     @classmethod
     def setUpClass(cls):
-        cls.connect = f"-h {USAGE_SEED} -U{USAGE_USER} -P{USAGE_PASSWORD}"
+        cls.connect = start_usage_server(cls.NODES)
         cls.uuid = cluster_uuid(cls.connect)
         cls.collect_usage = util.run_asadm(
             f"{cls.connect} -e 'collect usage --output-prefix {PREFIX}'"
@@ -231,6 +291,7 @@ class CollectUsageTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         remove_outputs()
+        lib.stop()
 
     def test_the_file_is_the_servers_export(self):
         self.assertEqual(self.collect_usage.returncode, 0, self.collect_usage.stderr)
@@ -255,8 +316,9 @@ class CollectUsageTest(unittest.TestCase):
     def test_the_meta_file_names_the_cluster_and_the_nodes(self):
         self.assertEqual(self.meta.get("cluster_uuid"), self.uuid, self.meta)
         self.assertIn(self.meta.get("usage_node"), self.meta.get("responded_nodes"))
-        self.assertTrue(
-            set(self.meta["responded_nodes"]) <= set(self.meta["expected_nodes"])
+        self.assertEqual(len(self.meta["expected_nodes"]), self.NODES, self.meta)
+        self.assertEqual(
+            sorted(self.meta["responded_nodes"]), sorted(self.meta["expected_nodes"])
         )
 
     def test_show_usage_reads_the_archive(self):
@@ -309,29 +371,24 @@ class CollectUsageTest(unittest.TestCase):
         self.assertNotIn("Different Cluster UUID", cp.stdout)
 
 
-@unittest.skipUnless(
-    USAGE_SEED, "set ASADM_E2E_USAGE_SEED to a server with usage reporting"
-)
 class CollectUsageWithoutPrivilegesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        admin = f"-h {USAGE_SEED} -U{USAGE_USER} -P{USAGE_PASSWORD} --enable"
+        admin_connect = start_usage_server(1)
+        cls.addClassCleanup(lib.stop)
+        cls.addClassCleanup(remove_outputs)
         created = util.run_asadm(
-            f"{admin} -e 'manage acl create user {NO_ROLES_USER} password {PREFIX}'"
+            f"{admin_connect} --enable -e "
+            f"'manage acl create user {NO_ROLES_USER} password {PREFIX}'"
         )
 
         if f"Successfully created user {NO_ROLES_USER}" not in created.stdout:
-            raise unittest.SkipTest(
-                f"could not create a user on the usage server:\n{created.stdout}"
-                f"\n{created.stderr}"
+            raise AssertionError(
+                f"could not create a user:\n{created.stdout}\n{created.stderr}"
             )
 
-        cls.addClassCleanup(
-            util.run_asadm, f"{admin} -e 'manage acl delete user {NO_ROLES_USER}'"
-        )
-        cls.addClassCleanup(remove_outputs)
-        cls.connect = f"-h {USAGE_SEED} -U{NO_ROLES_USER} -P{PREFIX}"
-        cls.uuid = cluster_uuid(f"-h {USAGE_SEED} -U{USAGE_USER} -P{USAGE_PASSWORD}")
+        cls.connect = f"-h {lib.SERVER_IP}:{lib.PORT} -U{NO_ROLES_USER} -P{PREFIX}"
+        cls.uuid = cluster_uuid(admin_connect)
         cls.collect_usage = util.run_asadm(
             f"{cls.connect} -e 'collect usage --output-prefix {PREFIX}'"
         )
@@ -365,6 +422,161 @@ class CollectUsageWithoutPrivilegesTest(unittest.TestCase):
             json.loads(members[meta_name])["collection"]["usage"]["status"], "written"
         )
         self.assertNotIn("'usage-export'", self.collect_info.stderr)
+
+
+class CollectUsageMixedClusterTest(unittest.TestCase):
+    """Node 1 runs the harness release without usage reporting. Node 2 runs the
+    nightly and has the higher node-id, so it is the principal usage-export goes to."""
+
+    @classmethod
+    def setUpClass(cls):
+        template = service_template("\tnode-id ${node_id}")
+        lib.stop()
+        lib.start(num_nodes=1, template_content=template, mesh_over_bridge=True)
+        lib.start_server(
+            lib.PORT,
+            2,
+            docker_tag=USAGE_SERVER_TAG,
+            template_content=template,
+            mesh_over_bridge=True,
+        )
+        lib.wait_for_cluster(2)
+        cls.connect = harness_connect()
+        cls.builds = wait_for_builds(cls.connect, 2)
+        cls.principal = re.findall(
+            r"^cluster_principal=(\S+)$",
+            util.run_asadm(
+                f"{cls.connect} --enable -e 'asinfo -v statistics -l'"
+            ).stdout,
+            re.M,
+        )
+        cls.collect_usage = util.run_asadm(
+            f"{cls.connect} -e 'collect usage --output-prefix {PREFIX}'"
+        )
+        cls.collect_info = util.run_asadm(
+            f"{cls.connect} -e 'collect info --output-prefix {PREFIX}info_'"
+        )
+        cls.bundle = util.get_collectinfo_path(cls.collect_info, f"/tmp/{PREFIX}info_")
+        cls.server_logs = harness_server_logs()
+
+    @classmethod
+    def tearDownClass(cls):
+        remove_outputs()
+        lib.stop()
+
+    def test_the_cluster_mixes_versions_under_the_newer_principal(self):
+        self.assertEqual(
+            sorted(
+                version.LooseVersion(b) >= version.LooseVersion(FIRST_VERSION)
+                for b in self.builds
+            ),
+            [False, True],
+            self.builds,
+        )
+        self.assertEqual([p.upper() for p in self.principal], ["A2", "A2"])
+
+    def test_collect_usage_warns_and_writes_nothing(self):
+        self.assertEqual(self.collect_usage.returncode, 0, self.collect_usage.stderr)
+        self.assertIn(
+            f"WARNING: 'collect usage' {OLDER_SERVERS}. Use 'collect info' instead.",
+            self.collect_usage.stderr,
+        )
+        self.assertEqual(glob.glob(f"/tmp/{PREFIX}collect_usage_*"), [])
+
+    def test_no_node_is_sent_the_usage_command(self):
+        self.assertEqual(len(self.server_logs), 2)
+
+        for log in self.server_logs:
+            self.assertNotIn(UNKNOWN_USAGE_COMMAND, log)
+            self.assertIsNone(re.search(r"exported \d+ days", log))
+
+    def test_collect_info_bundle_says_why_it_has_no_usage_file(self):
+        members = bundle_members(self.bundle)
+        meta_name = next(
+            name for name in members if name.endswith("collectinfo_meta.json")
+        )
+
+        self.assertEqual([name for name in members if name.endswith("_usage.json")], [])
+        self.assertEqual(
+            json.loads(members[meta_name])["collection"]["usage"],
+            {"status": "unsupported", "min_version": FIRST_VERSION},
+        )
+
+
+class CollectUsageClusterNotFormedTest(unittest.TestCase):
+    """Two nodes with min-cluster-size 2 form a cluster, then node 2 stops, so node 1
+    is no longer clustered and the server refuses the export with ERROR:11."""
+
+    NOT_FORMED = "ERROR:11:cluster not yet formed"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.connect = start_usage_server(2, service_template("\tmin-cluster-size 2"))
+        lib.NODES[1].stop()
+        cls.node = f"{lib.SERVER_IP}:{lib.PORT}"
+        deadline = time.time() + 90
+
+        reply = None
+
+        while reply != cls.NOT_FORMED:
+            if time.time() > deadline:
+                raise AssertionError(f"node 1 never refused the export: {reply}")
+
+            time.sleep(2)
+
+            try:
+                reply = usage_reply(cls.connect)
+            except AssertionError as e:
+                reply = str(e)
+
+        cls.collect_usage = util.run_asadm(
+            f"{cls.connect} -e 'collect usage --output-prefix {PREFIX}'"
+        )
+        cls.collect_info = util.run_asadm(
+            f"{cls.connect} -e 'collect info --output-prefix {PREFIX}info_'"
+        )
+        cls.bundle = util.get_collectinfo_path(cls.collect_info, f"/tmp/{PREFIX}info_")
+
+    @classmethod
+    def tearDownClass(cls):
+        remove_outputs()
+        lib.stop()
+
+    def test_collect_usage_prints_the_refusal_and_writes_nothing(self):
+        self.assertEqual(self.collect_usage.returncode, 2, self.collect_usage.stderr)
+        self.assertIn(
+            f"ERROR: Failed to get usage from {self.node}: {self.NOT_FORMED}",
+            self.collect_usage.stderr,
+        )
+        self.assertEqual(glob.glob(f"/tmp/{PREFIX}collect_usage_*"), [])
+
+    def test_collect_info_records_the_refusal(self):
+        members = bundle_members(self.bundle)
+        meta_name = next(
+            name for name in members if name.endswith("collectinfo_meta.json")
+        )
+
+        self.assertEqual(
+            json.loads(members[meta_name])["collection"]["usage"],
+            {"status": "failed", "node": self.node, "reply": self.NOT_FORMED},
+        )
+
+    def test_collect_info_lists_usage_export_as_a_failed_command(self):
+        lines = self.collect_info.stderr.splitlines()
+        heading = next(
+            i
+            for i, line in enumerate(lines)
+            if "Following commands are either unavailable" in line
+        )
+
+        self.assertIn("'usage-export'", lines[heading + 1])
+
+    def test_bundle_diagnostics_name_the_refusal(self):
+        cp = util.run_asadm(f"-cf {self.bundle}", stdin_input="exit\n")
+        output = cp.stdout + cp.stderr
+
+        self.assertIn("The usage file was not collected", output)
+        self.assertIn(f"{self.node} replied {self.NOT_FORMED}", output)
 
 
 class ShowUsageFromArchiveTest(unittest.TestCase):

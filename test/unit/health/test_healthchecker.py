@@ -26433,6 +26433,31 @@ class ClusterUuidHealthCheckTests(unittest.TestCase):
 
         self.assertEqual(failed.get(self.DIFFERENT_UUID), AssertLevel.WARNING)
 
+    def test_the_description_names_the_clusters_it_lists(self):
+        hc = HealthChecker()
+        hc.set_health_input_data(
+            create_cluster_input(
+                "8.2.1.0",
+                {
+                    "1.1.1.1:3000": {"cluster_uuid": self.U1},
+                    "2.2.2.2:3000": {"cluster_uuid": self.U1},
+                    "3.3.3.3:3000": {"cluster_uuid": self.U2},
+                },
+            )
+        )
+        failed = [
+            a
+            for asserts in hc.execute()[HealthResultType.ASSERT].values()
+            for a in asserts
+            if a[AssertResultKey.FAIL_MSG] == self.DIFFERENT_UUID
+        ]
+
+        self.assertEqual(len(failed), 1)
+        self.assertTrue(
+            failed[0][AssertResultKey.DESCRIPTION].startswith("Listed cluster[s] "),
+            failed[0][AssertResultKey.DESCRIPTION],
+        )
+
     def test_matching_uuids_pass(self):
         failed = self.failed_asserts(
             {
