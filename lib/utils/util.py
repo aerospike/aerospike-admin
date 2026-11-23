@@ -404,6 +404,9 @@ def get_value_from_dict(
     Returns value of first matching key from keys which is available in d else returns default_value
     """
 
+    if not isinstance(d, dict):
+        return default_value
+
     if not isinstance(keys, tuple) and not isinstance(keys, list):
         keys = (keys,)
 

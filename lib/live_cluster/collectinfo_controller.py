@@ -53,6 +53,7 @@ from lib.base_controller import (
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
+from lib.collectinfo_analyzer import health_check_controller as analyzer_health
 from lib.live_cluster.get_controller import (
     GetStatisticsController,
     GetConfigController,
@@ -71,7 +72,11 @@ from .show_controller import ShowController
 
 logger = logging.getLogger(__name__)
 
-_COMMAND_LOGGER_NAMES = (InfoController.__module__, ShowController.__module__)
+_COMMAND_LOGGER_NAMES = (
+    InfoController.__module__,
+    ShowController.__module__,
+    analyzer_health.__name__,
+)
 
 
 def _not_a_command_warning(record: logging.LogRecord) -> bool:
@@ -80,9 +85,9 @@ def _not_a_command_warning(record: logging.LogRecord) -> bool:
 
 @contextlib.contextmanager
 def _command_warnings_silenced():
-    """Only stdout is captured from the info and show commands collectinfo runs
-    for its logs, so their warnings would land on the operator's terminal. Only
-    the stderr handler is filtered: collectinfo_debug.log still records them."""
+    """Only stdout is captured from the info, show and health commands collectinfo
+    runs for its logs, so their warnings would land on the operator's terminal.
+    Only the stderr handler is filtered: collectinfo_debug.log still records them."""
     stderr_log_handler.addFilter(_not_a_command_warning)
 
     try:
@@ -2282,7 +2287,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             util.write_to_file(complete_filename, fileHeader)
 
-            summary_params = ["summary"]
+            summary_params = ["info summary"]
             summary_info_params = [
                 "network",
                 "memory",
@@ -2625,6 +2630,10 @@ class CollectinfoController(LiveClusterCommandController):
                         BaseController.asadm_version = live_version
                         BaseController.asadm_build = live_build
 
+                    if self.collectinfo_root_controller is not None:
+                        self.collectinfo_root_controller.close()
+                        self.collectinfo_root_controller = None
+
             common.print_collectinfo_failed_cmds(self.failed_cmds)
 
             # Archive collectinfo directory
@@ -2670,6 +2679,12 @@ class CollectinfoController(LiveClusterCommandController):
                 terminal.enable_color(True)
 
     async def _do_default(self, line):
+        if line and line[0] in ("-h", "--help"):
+            command = " ".join(self._context)
+            raise ShellException(
+                f"{command}: '{line[0]}' is not a valid option. See 'help {command}' for available options."
+            )
+
         snp_count = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-n",

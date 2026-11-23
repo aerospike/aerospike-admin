@@ -66,6 +66,11 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
+_REJECTED_TOKEN_RESPONSES = (
+    ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,
+    ASResponse.EXPIRED_SESSION,
+)
+
 
 def get_fully_qualified_domain_name(address, timeout=0.5):
     # TODO: make async
@@ -279,6 +284,8 @@ class Node(AsyncObject):
         self.session_token: bytes | None = None
         self.session_expiration = 0
         self.perform_login = True
+        self._login_lock = asyncio.Lock()
+        self._login_error: Exception | None = None
         self.user_agent = user_agent
         self.build = None
 
@@ -1076,6 +1083,57 @@ class Node(AsyncObject):
                 e,
             )
 
+    async def _log_in_again(self, sock: ASSocket, rejected_token: bytes) -> bool:
+        """Logs in on sock once per rejected token. Connections rejected meanwhile
+        wait, then use the new token or fail as that login did."""
+        async with self._login_lock:
+            token = self.session_token
+
+            if token == rejected_token:
+                return await self._log_in_on(sock)
+
+            if token is None and self._login_error:
+                raise self._login_error
+
+        if token is not None:
+            try:
+                return await sock.authenticate(token)
+            except ASProtocolError as e:
+                if e.as_response not in _REJECTED_TOKEN_RESPONSES:
+                    raise
+
+            # Behind a non-sticky load balancer the token can be another backend's.
+            logger.debug("sock %s rejected the new token too", id(sock))
+
+        async with self._login_lock:
+            return await self._log_in_on(sock)
+
+    async def _log_in_on(self, sock: ASSocket) -> bool:
+        """Logs in on sock and keeps its token, or forgets the token if that fails."""
+        self._login_error = None
+        logged_in = False
+
+        try:
+            logged_in = await sock.login()
+        except Exception as e:
+            self._login_error = e
+            raise
+        finally:
+            if logged_in:
+                self.session_token, self.session_expiration = sock.get_session_info()
+            else:
+                self.session_token = None
+                self.session_expiration = 0
+
+        if logged_in:
+            logger.debug(
+                "sock login refreshed token %s exp=%s",
+                id(sock),
+                self.session_expiration,
+            )
+
+        return logged_in
+
     async def _get_connection(self, ip, port) -> ASSocket | None:
         sock = None
 
@@ -1155,11 +1213,7 @@ class Node(AsyncObject):
 
                     return sock
                 elif (
-                    e.as_response
-                    in (
-                        ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,
-                        ASResponse.EXPIRED_SESSION,
-                    )
+                    e.as_response in _REJECTED_TOKEN_RESPONSES
                     and token is not None
                     and (self.user or self.auth_mode == constants.AuthMode.PKI)
                 ):
@@ -1172,27 +1226,14 @@ class Node(AsyncObject):
                         port,
                         self.auth_mode,
                     )
-                    # Re-login on the same socket so the token matches this backend,
-                    # invalidate cached token before retry.
-                    self.session_token = None
-                    self.session_expiration = 0
 
                     try:
-                        logged_in = await sock.login()
+                        logged_in = await self._log_in_again(sock, token)
                     except Exception:
                         await sock.close()
                         raise
 
                     if logged_in:
-                        (
-                            self.session_token,
-                            self.session_expiration,
-                        ) = sock.get_session_info()
-                        logger.debug(
-                            "sock login refreshed token %s exp=%s",
-                            id(sock),
-                            self.session_expiration,
-                        )
                         return sock
                     else:
                         logger.debug(

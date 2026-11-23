@@ -20,6 +20,7 @@ from lib.live_cluster.get_controller import (
 from lib.utils import util, version, constants
 from lib.base_controller import CommandHelp, ModifierHelp
 from .live_cluster_command_controller import LiveClusterCommandController
+from .summary_controller import SummaryController
 from lib.base_controller import ShellException
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,9 @@ class InfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with", "for"])
         self.controller_map = dict(
-            namespace=InfoNamespaceController, transactions=InfoTransactionsController
+            namespace=InfoNamespaceController,
+            transactions=InfoTransactionsController,
+            summary=SummaryController,
         )
         self.config_getter = GetConfigController(self.cluster)
         self.stat_getter = GetStatisticsController(self.cluster)

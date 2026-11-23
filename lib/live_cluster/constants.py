@@ -1,6 +1,6 @@
 from lib.base_controller import ModifierHelp
 
-SSH_MODIFIER_USAGE = "--enable-ssh [--ssh-user <user>] [--ssh-pwd <pwd>] [--ssh-port <port>] [--ssh-key <key>] [--ssh-key-pwd]"
+SSH_MODIFIER_USAGE = "--enable-ssh [--ssh-user <user>] [--ssh-pwd <pwd>] [--ssh-port <port>] [--ssh-key <key>] [--ssh-key-pwd <key-pwd>]"
 SSH_MODIFIER_HELP = (
     ModifierHelp(
         "--enable-ssh",
@@ -18,6 +18,10 @@ SSH_MODIFIER_HELP = (
     ModifierHelp(
         "--ssh-key",
         "SSH key file path to send to the remote servers for authentication. If not provided and no config file entry is found then the keys in the .ssh directory are used.",
+    ),
+    ModifierHelp(
+        "--ssh-key-pwd",
+        "Password for the SSH key file.",
     ),
     ModifierHelp(
         "--ssh-port",
