@@ -5031,6 +5031,11 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
                 "",
                 "JC5jYXJkcy5bMF0=",
             ),
+            (
+                ["ael", '$."a;b".x'],
+                "",
+                "JC4iYTtiIi54",
+            ),
         ]
     )
     async def test_add_rule_sends_target_for_server_to_judge(
@@ -5383,13 +5388,6 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
                 "ssn",
                 {"value": "12:30"},
                 None,
-            ),
-            (
-                "semicolon_in_ael_path",
-                ["value", "x", "ael", '$."a;b".x'],
-                "",
-                {"value": "x"},
-                "JC4iYTtiIi54",
             ),
         ]
     )
