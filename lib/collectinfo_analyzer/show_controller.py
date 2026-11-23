@@ -2159,7 +2159,7 @@ class ShowUserAgentsController(CollectinfoCommandController):
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace> [set <set>]]",
+    usage=f"[namespace <namespace>] [set <set>]",
     short_msg="Display masking rules",
 )
 class ShowMaskingController(CollectinfoCommandController):
@@ -2185,10 +2185,6 @@ class ShowMaskingController(CollectinfoCommandController):
             else:
                 # Unknown argument, skip it
                 line.pop(0)
-
-        # Validate that set is only used with namespace
-        if set_name and not namespace:
-            raise ShellException("Set filter can only be used with namespace filter")
 
         getter = GetMaskingRulesController(self.log_handler)
         masking_data = getter.get_masking_rules()
@@ -2245,9 +2241,11 @@ class ShowMaskingController(CollectinfoCommandController):
             masking_rules = filtered_rules
 
             if not masking_rules:
-                filter_desc = f"namespace {namespace}"
-                if set_name:
-                    filter_desc += f" set {set_name}"
+                filter_desc = " ".join(
+                    f"{mod} {value}"
+                    for mod, value in (("namespace", namespace), ("set", set_name))
+                    if value
+                )
                 warn_no_data("show masking", "masking rules", filter_desc)
 
         return self.view.show_masking_rules(

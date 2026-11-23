@@ -656,15 +656,38 @@ class ShowMaskingControllerTest(unittest.TestCase):
             rules, timestamp="2023-01-01"
         )
 
-    def test_do_default_set_without_namespace_raises_error(self):
-        """Test error when set is specified without namespace"""
-        line = ["set", "demo"]
+    def test_do_default_with_set_filter(self):
+        rules = [
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact",
+            },
+            {
+                "ns": "prod",
+                "set": "demo",
+                "bin": "email",
+                "type": "string",
+                "function": "redact",
+            },
+            {
+                "ns": "test",
+                "set": "other",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact",
+            },
+        ]
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy(rules)}
+        }
 
-        with self.assertRaises(ShellException) as context:
-            self.controller._do_default(line)
+        self.controller._do_default(["set", "demo"])
 
-        self.assertIn(
-            "Set filter can only be used with namespace filter", str(context.exception)
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            rules[:2], timestamp="2023-01-01"
         )
 
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
@@ -710,6 +733,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         [
             (["namespace", "prod"], "namespace prod"),
             (["namespace", "test", "set", "other"], "namespace test set other"),
+            (["set", "other"], "set other"),
         ]
     )
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")

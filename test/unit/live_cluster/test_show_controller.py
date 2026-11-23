@@ -2120,15 +2120,28 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
             nodes="principal", namespace="test", set_="demo"
         )
 
-    async def test_do_default_set_without_namespace_raises_error(self):
-        """Test that using set filter without namespace raises error"""
+    async def test_do_default_with_set_filter(self):
         line = ["set", "demo"]
+        masking_data = {
+            "node1": [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                }
+            ]
+        }
+        self.getter_mock.get_masking_rules.return_value = masking_data
 
-        with self.assertRaises(ShellException) as context:
-            await self.controller.execute(line)
+        await self.controller.execute(line)
 
-        self.assertEqual(
-            str(context.exception), "Set filter can only be used with namespace filter"
+        self.getter_mock.get_masking_rules.assert_called_once_with(
+            nodes="principal", namespace=None, set_="demo"
+        )
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            masking_data["node1"], **self.controller.mods
         )
 
     @parameterized.expand(
@@ -2225,6 +2238,7 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         [
             (["namespace", "test"], "namespace test"),
             (["namespace", "test", "set", "demo"], "namespace test set demo"),
+            (["set", "demo"], "set demo"),
         ]
     )
     async def test_do_default_filter_matches_nothing(self, line, filter_desc):

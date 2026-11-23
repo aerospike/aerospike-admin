@@ -6969,6 +6969,13 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.info_mock.assert_called_with("masking-show:namespace=test;", self.ip)
 
+    async def test_info_masking_list_rules_set_filter_alone(self):
+        self.info_mock.return_value = ""
+
+        await self.node.info_masking_list_rules(set_="demo")
+
+        self.info_mock.assert_called_with("masking-show:set=demo;", self.ip)
+
     async def test_info_masking_list_rules_no_filters(self):
         """Test masking rules listing without filters"""
         self.info_mock.return_value = (
