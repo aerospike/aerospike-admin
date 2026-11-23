@@ -62,6 +62,8 @@ class _AsyncioSSLConnectionAdapter(SSL.Connection):
             return super().recv(bufsiz, flags)
         except SSL.WantReadError:
             raise BlockingIOError("Wrapped SSL.WantReadError")
+        except SSL.ZeroReturnError:
+            return b""
 
 
 logger = logging.getLogger(__name__)
