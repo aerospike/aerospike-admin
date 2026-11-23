@@ -254,7 +254,7 @@ class CollectUsageWithoutUsageReportingTest(unittest.TestCase):
 
         if uuid:
             self.assertEqual(len(lines), 1, cp.stdout)
-            self.assertTrue(lines[0].endswith(uuid), lines)
+            self.assertEqual(lines[0].split("|", 1)[1].strip(), uuid, lines)
         else:
             self.assertEqual(lines, [])
 
@@ -363,7 +363,7 @@ class CollectUsageTest(unittest.TestCase):
         ]
 
         self.assertEqual(len(lines), 1, cp.stdout)
-        self.assertTrue(lines[0].endswith(self.uuid), lines)
+        self.assertEqual(lines[0].split("|", 1)[1].strip(), self.uuid, lines)
 
     def test_health_finds_no_uuid_mismatch(self):
         cp = util.run_asadm(f"{self.connect} -e 'health'")
