@@ -55,6 +55,68 @@ _REAL_INFO_BUILD = Node.info_build
 _REAL_INFO_CINFO = Node.__dict__["_info_cinfo"]
 
 
+class FakeAuthServer:
+    """Issues a token per login and accepts only tokens issued by the same backend.
+    Sockets are spread over the backends in turn, like a non-sticky load balancer."""
+
+    def __init__(self, rejection, backends=1):
+        self.rejection = rejection
+        self.tokens = [set() for _ in range(backends)]
+        self.logins = 0
+        self.login_error = None
+        self.login_started = asyncio.Event()
+        self.release_login = asyncio.Event()
+        self.release_login.set()
+        self.sockets = []
+
+    def socket(self, *args, **kwargs):
+        sock = FakeAuthSocket(self, len(self.sockets) % len(self.tokens))
+        self.sockets.append(sock)
+
+        return sock
+
+
+class FakeAuthSocket:
+    def __init__(self, server: FakeAuthServer, backend):
+        self.server = server
+        self.backend = backend
+        self.session_token = None
+        self.closed = False
+
+    async def connect(self):
+        return True
+
+    async def authenticate(self, token):
+        await asyncio.sleep(0)
+
+        if token not in self.server.tokens[self.backend]:
+            raise ASProtocolExcFactory.create_exc(
+                self.server.rejection, "Unable to authenticate"
+            )
+
+        return True
+
+    async def login(self):
+        self.server.logins += 1
+        self.server.login_started.set()
+        await asyncio.sleep(0)
+        await self.server.release_login.wait()
+
+        if self.server.login_error:
+            raise self.server.login_error
+
+        self.session_token = "token-%d" % self.server.logins
+        self.server.tokens[self.backend].add(self.session_token)
+
+        return True
+
+    def get_session_info(self):
+        return self.session_token, 123
+
+    async def close(self):
+        self.closed = True
+
+
 def info_server(responses: dict[str, str]):
     """An _info_cinfo stand-in that answers one command, or several in one request.
     A batched reply leaves out a command it does not know, as servers before 7.1 do."""
@@ -1005,35 +1067,99 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         as_socket.authenticate.assert_awaited_once()
         as_socket.login.assert_not_awaited()
 
-    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
-    async def test_get_connection_relogin_clears_token_before_login(
-        self, as_socket_mock
-    ):
+    def _fake_auth_server(self, rejection, backends=1):
+        server = FakeAuthServer(rejection, backends)
+        patch("lib.live_cluster.client.node.ASSocket", server.socket).start()
         self.node.user = "admin"
         self.node.session_token = "old-token"
-        self.node.session_expiration = 42
-        as_socket = as_socket_mock.return_value
-        as_socket.connect.return_value = True
-        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
-            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        self.node.session_expiration = 1
+
+        return server
+
+    @parameterized.expand(
+        [
+            (ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,),
+            (ASResponse.EXPIRED_SESSION,),
+        ]
+    )
+    async def test_connections_rejected_together_log_in_once(self, rejection):
+        server = self._fake_auth_server(rejection)
+
+        socks = await asyncio.gather(
+            *(self.node._get_connection(self.node.ip, self.node.port) for _ in range(5))
         )
 
-        async def login_side_effect():
-            # token should be cleared before relogin
-            self.assertIsNone(self.node.session_token)
-            self.assertEqual(self.node.session_expiration, 0)
-            return True
+        self.assertEqual(server.logins, 1)
+        self.assertEqual(socks, server.sockets)
+        self.assertEqual(self.node.session_token, "token-1")
+        self.assertEqual(self.node.session_expiration, 123)
 
-        as_socket.login.side_effect = login_side_effect
-        as_socket.get_session_info.return_value = ("new-token", 99)
+    async def test_connection_opened_during_the_relogin_does_not_log_in(self):
+        server = self._fake_auth_server(ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL)
+        server.release_login.clear()
+        first = asyncio.create_task(
+            self.node._get_connection(self.node.ip, self.node.port)
+        )
+        await server.login_started.wait()
+        second = asyncio.create_task(
+            self.node._get_connection(self.node.ip, self.node.port)
+        )
 
-        sock = await self.node._get_connection(self.node.ip, self.node.port)
+        for _ in range(5):
+            await asyncio.sleep(0)
 
-        self.assertEqual(sock, as_socket)
-        self.assertEqual(self.node.session_token, "new-token")
-        self.assertEqual(self.node.session_expiration, 99)
-        as_socket.authenticate.assert_awaited_once()
-        as_socket.login.assert_awaited_once()
+        server.release_login.set()
+        socks = await asyncio.gather(first, second)
+
+        self.assertEqual(server.logins, 1)
+        self.assertEqual(socks, server.sockets)
+        self.assertEqual(self.node.session_token, "token-1")
+
+    @parameterized.expand(
+        [
+            (asyncio.TimeoutError(),),
+            (
+                ASProtocolExcFactory.create_exc(
+                    ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "Login failed"
+                ),
+            ),
+        ]
+    )
+    async def test_connections_waiting_on_a_failed_relogin_fail_as_it_did(
+        self, login_error
+    ):
+        server = self._fake_auth_server(ASResponse.EXPIRED_SESSION)
+        server.login_error = login_error
+
+        results = await asyncio.gather(
+            *(
+                self.node._get_connection(self.node.ip, self.node.port)
+                for _ in range(3)
+            ),
+            return_exceptions=True,
+        )
+
+        self.assertEqual(server.logins, 1)
+        self.assertEqual(results, [login_error] * 3)
+        self.assertTrue(all(sock.closed for sock in server.sockets))
+        self.assertIsNone(self.node.session_token)
+        self.assertEqual(self.node.session_expiration, 0)
+
+    async def test_connection_behind_a_load_balancer_logs_in_when_the_fresh_token_is_rejected(
+        self,
+    ):
+        """The fresh token came from another backend, so this socket logs in itself."""
+        server = self._fake_auth_server(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, backends=2
+        )
+
+        socks = await asyncio.gather(
+            *(self.node._get_connection(self.node.ip, self.node.port) for _ in range(2))
+        )
+
+        self.assertEqual(server.logins, 2)
+        self.assertEqual(socks, server.sockets)
+        self.assertFalse(any(sock.closed for sock in server.sockets))
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_get_connection_relogin_fails_raises_and_clears_token(
