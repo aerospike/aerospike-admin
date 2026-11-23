@@ -68,6 +68,8 @@ class ASPrivilege(IntEnum):
     DATA_ADMIN = 2
     UDF_ADMIN = 3
     SINDEX_ADMIN = 4
+    BACKUP_ADMIN = 5
+    RESTORE_ADMIN = 6
     READ = 10
     READ_WRITE = 11
     READ_WRITE_UDF = 12
@@ -89,6 +91,8 @@ class ASPrivilege(IntEnum):
             "data-admin": cls.DATA_ADMIN,
             "udf-admin": cls.UDF_ADMIN,
             "sindex-admin": cls.SINDEX_ADMIN,
+            "backup-admin": cls.BACKUP_ADMIN,
+            "restore-admin": cls.RESTORE_ADMIN,
             "read": cls.READ,
             "read-write": cls.READ_WRITE,
             "read-write-udf": cls.READ_WRITE_UDF,
@@ -105,13 +109,7 @@ class ASPrivilege(IntEnum):
             return cls.ERROR
 
     def is_global_only_scope(self):
-        return (
-            self == ASPrivilege.DATA_ADMIN
-            or self == ASPrivilege.SYS_ADMIN
-            or self == ASPrivilege.USER_ADMIN
-            or self == ASPrivilege.UDF_ADMIN
-            or self == ASPrivilege.SINDEX_ADMIN
-        )
+        return self < ASPrivilege.READ
 
     def __str__(self):
         name = self.name.lower()
