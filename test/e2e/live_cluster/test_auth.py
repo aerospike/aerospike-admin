@@ -517,6 +517,40 @@ class SecuredClusterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(failures_left, 0)
 
+    async def test_node_restart_logs_in_once_for_many_new_connections(self):
+        """Every new socket to the restarted node is rejected at once, and only one of
+        them logs in."""
+        login = AsyncCallRecorder(ASSocket.login)
+        commands = ["node", "build", "service", "statistics", "status"]
+
+        with patch.object(ASSocket, "login", lambda sock: login(sock)):
+            cl = await connect()
+
+            try:
+                await wait_for_every_node_to_answer(cl)
+
+                lib.restart_node(2)
+                lib.wait_for_cluster(NODE_COUNT)
+
+                for n in cl.nodes.values():
+                    await n.close()
+                    n._initialize_socket_pool()
+
+                logins_before = len(login.calls)
+
+                with patch.object(
+                    Cluster, "need_to_refresh_cluster", return_value=False
+                ):
+                    answers = await asyncio.gather(*(cl.info(c) for c in commands))
+            finally:
+                await cl.close()
+
+        self.assertEqual(len(login.calls) - logins_before, 1)
+
+        for answer in answers:
+            self.assertEqual(len(answer), NODE_COUNT)
+            self.assertTrue(all(isinstance(a, str) for a in answer.values()), answer)
+
     async def test_a_command_after_the_session_expires_reaches_every_node(self):
         """Open connections outlive the session, but a new socket authenticates with
         the expired token, so the node has to log in again."""

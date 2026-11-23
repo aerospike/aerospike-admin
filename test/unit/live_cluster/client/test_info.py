@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import struct
 import unittest
 import warnings
 from contextlib import redirect_stderr
@@ -23,6 +24,11 @@ from OpenSSL import SSL
 from pytest import PytestUnraisableExceptionWarning
 
 from lib.utils.constants import AuthMode
+from lib.live_cluster.client.constants import ErrorsMsgs
+from lib.live_cluster.client.types import (
+    ASInfoNotAuthenticatedError,
+    ASInfoResponseError,
+)
 from lib.live_cluster.client.info import (
     ASPrivilege,
     ASResponse,
@@ -46,6 +52,7 @@ from lib.live_cluster.client.info import (
     set_quotas,
     set_whitelist,
     _receive_data,
+    _STRUCT_PROTOCOL_HEADER,
 )
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.types import (
@@ -1000,6 +1007,110 @@ class SecurityTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(IOError):
             await query_roles(self.reader_mock, self.writer_mock)
 
+    async def test_create_role_with_backup_admin_priv(self):
+        expected_send_buf = (
+            b"\x00\x02\x00\x00\x00\x00\x00\x1e\x00\x00\n\x02"
+            + bytes(12)
+            + b"\x00\x00\x00\x03\x0bbr\x00\x00\x00\x03\x0c\x01\x05"
+        )
+        self.reader_mock.read.return_value = _OK_ADMIN_REPLY
+
+        actual_return_code = await create_role(
+            self.reader_mock, self.writer_mock, "br", ["backup-admin"]
+        )
+
+        self.writer_mock.write.assert_called_with(expected_send_buf)
+        self.assertEqual(actual_return_code, ASResponse.OK)
+
+    async def test_add_privileges_restore_admin(self):
+        expected_send_buf = (
+            b"\x00\x02\x00\x00\x00\x00\x00\x1e\x00\x00\x0c\x02"
+            + bytes(12)
+            + b"\x00\x00\x00\x03\x0bbr\x00\x00\x00\x03\x0c\x01\x06"
+        )
+        self.reader_mock.read.return_value = _OK_ADMIN_REPLY
+
+        actual_return_code = await add_privileges(
+            self.reader_mock, self.writer_mock, "br", ["restore-admin"]
+        )
+
+        self.writer_mock.write.assert_called_with(expected_send_buf)
+        self.assertEqual(actual_return_code, ASResponse.OK)
+
+    async def test_query_roles_decodes_backup_and_restore_admin(self):
+        self.reader_mock.read.side_effect = _query_roles_reply(
+            ("backup-admin", b"\x01\x05"),
+            ("restore-admin", b"\x01\x06"),
+            ("br", b"\x03\x05\x06\x0a\x04test\x04demo"),
+        )
+
+        actual_return_code, actual_roles = await query_roles(
+            self.reader_mock, self.writer_mock
+        )
+
+        self.assertEqual(actual_return_code, ASResponse.OK)
+        self.assertDictEqual(
+            actual_roles,
+            {
+                "backup-admin": {"privileges": ["backup-admin"], "whitelist": []},
+                "restore-admin": {"privileges": ["restore-admin"], "whitelist": []},
+                "br": {
+                    "privileges": ["backup-admin", "restore-admin", "read.test.demo"],
+                    "whitelist": [],
+                },
+            },
+        )
+
+    async def test_query_roles_unknown_codes_keep_framing(self):
+        """Codes below 10 carry no scope on the wire, as in the server and C client."""
+        self.reader_mock.read.side_effect = _query_roles_reply(
+            ("future", b"\x03\x07\x12\x04test\x04demo\x0a\x04test\x00"),
+            ("read", b"\x01\x0a\x00\x00"),
+        )
+
+        actual_return_code, actual_roles = await query_roles(
+            self.reader_mock, self.writer_mock
+        )
+
+        self.assertEqual(actual_return_code, ASResponse.OK)
+        self.assertDictEqual(
+            actual_roles,
+            {
+                "future": {
+                    "privileges": ["unknown(7)", "unknown(18).test.demo", "read.test"],
+                    "whitelist": [],
+                },
+                "read": {"privileges": ["read"], "whitelist": []},
+            },
+        )
+
+
+_OK_ADMIN_REPLY = b"\x02\x02\x00\x00\x00\x00\x00\x10" + bytes(16)
+
+
+def _query_roles_reply(*roles):
+    data = b""
+
+    for name, privileges in roles:
+        role = name.encode()
+        data += (
+            b"\x00\x00\x00\x02"
+            + bytes(12)
+            + struct.pack(">IB", len(role) + 1, 11)
+            + role
+            + struct.pack(">IB", len(privileges) + 1, 12)
+            + privileges
+        )
+
+    query_end = b"\x002\x00\x00" + bytes(12)
+
+    return [
+        b"\x02\x02" + len(data).to_bytes(6, "big"),
+        data,
+        b"\x02\x02" + len(query_end).to_bytes(6, "big"),
+        query_end,
+    ]
+
 
 class DummyReader:
     def __init__(self, chunks):
@@ -1065,6 +1176,42 @@ class InfoReplyHeaderTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     str(cm.exception), "Error: Connection closed by server."
                 )
+
+
+class InfoTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.writer = Mock()
+        self.writer.drain = AsyncMock()
+
+    def reply(self, payload: bytes) -> DummyReader:
+        header = _STRUCT_PROTOCOL_HEADER.pack(2, 1, 0, 0, len(payload))
+        return DummyReader([header, payload])
+
+    async def test_single_request_nameless_error_line_raises_with_server_line(self):
+        for line in ("ERROR:9:timeout", "error:9:timeout"):
+            with self.subTest(line=line):
+                reader = self.reply(line.encode() + b"\n")
+
+                with self.assertRaises(ASInfoResponseError) as cm:
+                    await info(reader, self.writer, "statistics")
+
+                self.assertEqual(
+                    cm.exception,
+                    ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, line),
+                )
+
+    async def test_single_request_nameless_not_authenticated_line_keeps_its_type(self):
+        reader = self.reply(b"ERROR:80:not authenticated\n")
+
+        with self.assertRaises(ASInfoNotAuthenticatedError):
+            await info(reader, self.writer, "statistics")
+
+    async def test_single_request_named_error_value_is_returned_to_caller(self):
+        reader = self.reply(b"get-config:context=foo\tERROR:4:unknown context\n")
+
+        value = await info(reader, self.writer, "get-config:context=foo")
+
+        self.assertEqual(value, "ERROR:4:unknown context")
 
 
 class InfoBatchedReplyTest(unittest.IsolatedAsyncioTestCase):

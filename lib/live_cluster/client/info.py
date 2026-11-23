@@ -369,10 +369,13 @@ def _unpack_admin_privileges(buf, offset):
 
     for _ in range(num_privileges):
         permission_code, offset = _unpack_uint8(buf, offset)
-        privilege = ASPrivilege(permission_code)
-        privilege_str = [str(privilege)]
 
-        if not privilege.is_global_only_scope():
+        try:
+            privilege_str = [str(ASPrivilege(permission_code))]
+        except ValueError:
+            privilege_str = ["unknown({})".format(permission_code)]
+
+        if permission_code >= ASPrivilege.READ:
             namespace_len, offset = _unpack_uint8(buf, offset)
             namespace, offset = _unpack_string(buf, offset, namespace_len)
             set_len, offset = _unpack_uint8(buf, offset)
@@ -1302,6 +1305,8 @@ async def info(reader, writer, names=None):
         if name != names:
             if "not authenticated" in name.lower():
                 raise ASInfoNotAuthenticatedError("Connection failed", name)
+            elif not sep and name.startswith(("ERROR", "error")):
+                raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, name)
             else:
                 logger.debug(
                     "Unexpected key %s in info response %s. Expected key: %s",
