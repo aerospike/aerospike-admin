@@ -111,7 +111,7 @@
 #------------------------------------------------------------------------------
 # Aerospike Secret Agent
 #
-# Used by asadm and aql to fetch values given as
+# Used by asadm, aql and asconfig to fetch values given as
 # "secrets:<resource>:<key>". With --instance, a [secret-agent_<instance>]
 # section in the same file replaces this one if it exists.
 #
