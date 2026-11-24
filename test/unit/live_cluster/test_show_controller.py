@@ -29,6 +29,7 @@ from lib.live_cluster.get_controller import (
     GetClusterMetadataController,
     GetConfigController,
     GetJobsController,
+    GetLatenciesController,
     GetMaskingRulesController,
     GetStatisticsController,
     GetUserAgentsController,
@@ -42,6 +43,7 @@ from lib.live_cluster.show_controller import (
     ShowController,
     ShowConfigXDRController,
     ShowJobsController,
+    ShowLatenciesController,
     ShowMaskingController,
     ShowRacksController,
     ShowRolesController,
@@ -54,6 +56,7 @@ from lib.live_cluster.show_controller import (
     ShowUsersController,
     ShowUsersStatsController,
 )
+from lib.live_cluster.collectusage_controller import UsageExport, UsageUnavailable
 from lib.view.view import CliView
 from test.unit import util as test_util
 
@@ -192,6 +195,112 @@ class ShowConfigControllerTest(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
+    async def test_do_namespace_repeat_flag_followed_by_for_takes_the_default(self):
+        self.getter_mock.get_namespace.return_value = {"test": "test-configs"}
+
+        await self.controller.execute(["namespace", "-r", "for", "test"])
+
+        self.getter_mock.get_namespace.assert_called_with(
+            flip=True, nodes="all", for_mods=["test"]
+        )
+        self.view_mock.show_config.assert_called_once_with(
+            "test Namespace Configuration",
+            "test-configs",
+            self.cluster_mock,
+            title_every_nth=0,
+            flip_output=False,
+            **{"diff": [], "for": ["test"], "like": [], "with": [], "line": ["-r"]},
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "flip",
+                ["-r", "--flip"],
+                "all",
+                0,
+                True,
+                {
+                    "diff": [],
+                    "for": [],
+                    "like": [],
+                    "with": [],
+                    "line": ["-r", "--flip"],
+                },
+            ),
+            (
+                "diff",
+                ["-r", "diff"],
+                "all",
+                0,
+                False,
+                {"diff": [True], "for": [], "like": [], "with": [], "line": ["-r"]},
+            ),
+            (
+                "like",
+                ["-r", "like", "x"],
+                "all",
+                0,
+                False,
+                {"diff": [], "for": [], "like": ["x"], "with": [], "line": ["-r"]},
+            ),
+            (
+                "with",
+                ["-r", "with", "1.2.3.4"],
+                ["1.2.3.4"],
+                0,
+                False,
+                {
+                    "diff": [],
+                    "for": [],
+                    "like": [],
+                    "with": ["1.2.3.4"],
+                    "line": ["-r"],
+                },
+            ),
+            (
+                "value_then_flip",
+                ["-r", "17", "--flip"],
+                "all",
+                17,
+                True,
+                {
+                    "diff": [],
+                    "for": [],
+                    "like": [],
+                    "with": [],
+                    "line": ["-r", "17", "--flip"],
+                },
+            ),
+        ]
+    )
+    async def test_do_service_repeat_flag(
+        self, _, args, nodes, title_every_nth, flip_output, mods
+    ):
+        configs = {"service": "configs"}
+        self.getter_mock.get_service.return_value = configs
+
+        await self.controller.execute(["service", *args])
+
+        self.getter_mock.get_service.assert_called_with(nodes=nodes)
+        self.view_mock.show_config.assert_called_with(
+            "Service Configuration",
+            configs,
+            self.cluster_mock,
+            title_every_nth=title_every_nth,
+            flip_output=flip_output,
+            **mods,
+        )
+
+    async def test_do_service_repeat_value_that_is_not_a_whole_number_is_an_error(
+        self,
+    ):
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute(["service", "-r", "abc", "--flip"])
+
+        self.assertEqual(str(cm.exception), "-r must be an integer.")
+        self.getter_mock.get_service.assert_not_called()
+
 
 class ShowConfigXDRControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
@@ -321,6 +430,29 @@ class ShowConfigXDRControllerTest(unittest.IsolatedAsyncioTestCase):
         self.logger_mock.warning.assert_called_once_with(
             "Server version 5.3 or newer is required to run 'show config xdr filter'"
         )
+
+
+class ShowLatenciesControllerTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.controller = ShowLatenciesController()
+        self.controller.cluster = create_autospec(Cluster)
+        self.getter_mock = self.controller.latency_getter = create_autospec(
+            GetLatenciesController
+        )
+        self.getter_mock.get_latencies_and_latency_nodes.return_value = (
+            ["1.1.1.1"],
+            [],
+        )
+        self.controller.view = create_autospec(CliView)
+        self.controller.mods = {}
+
+    @parameterized.expand([("buckets", "-b"), ("increment", "-e")])
+    async def test_value_that_is_not_a_whole_number_is_an_error(self, _, flag):
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute([flag, "abc"])
+
+        self.assertEqual(str(cm.exception), f"{flag} must be an integer.")
+        self.getter_mock.get_all.assert_not_called()
 
 
 class ShowStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
@@ -1607,6 +1739,105 @@ class ShowStopWritesControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class ShowUsageControllerTest(unittest.IsolatedAsyncioTestCase):
+    DATA = {
+        "cluster": "963fa489-71bd-46a9-af70-765ce26c5a62",
+        "feature_key": {"account-name": "Acme Corp"},
+        "records": [],
+        "schema": 1,
+        "taken": "2026-11-16T19:11:36Z",
+    }
+
+    async def asyncSetUp(self):
+        self.controller = ShowController().controller_map["usage"]()
+        self.cluster_mock = self.controller.cluster = MagicMock()
+        self.cluster_mock.info_namespaces = AsyncMock(return_value={})
+        self.view_mock = self.controller.view = create_autospec(CliView)
+        self.controller.mods = {}
+        self.fetch = patch(
+            "lib.live_cluster.show_controller.fetch_usage", AsyncMock()
+        ).start()
+        self.supported = patch(
+            "lib.live_cluster.show_controller.usage_supported",
+            AsyncMock(return_value=True),
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_shows_the_export_with_the_clusters_namespace_names(self):
+        self.fetch.return_value = UsageExport("10.0.0.3:3000", b"{}", self.DATA)
+        self.cluster_mock.info_namespaces.return_value = {
+            "10.0.0.1:3000": ["test", "bar"],
+            "10.0.0.2:3000": ["test", "baz"],
+            "10.0.0.3:3000": TimeoutError("info timed out after 1s"),
+        }
+
+        await self.controller._do_default([])
+
+        self.fetch.assert_awaited_once_with(self.cluster_mock)
+        self.view_mock.show_usage.assert_called_once_with(
+            self.DATA, namespaces=["bar", "baz", "test"]
+        )
+
+    async def test_an_older_server_is_a_warning(self):
+        self.supported.return_value = False
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            await self.controller._do_default([])
+
+        self.assertEqual(
+            [(r.levelname, r.getMessage()) for r in cm.records],
+            [
+                (
+                    "WARNING",
+                    "'show usage' is not supported on aerospike versions < 8.2.1",
+                )
+            ],
+        )
+        self.fetch.assert_not_awaited()
+        self.view_mock.show_usage.assert_not_called()
+
+    async def test_a_server_without_usage_reporting_is_a_warning(self):
+        self.fetch.side_effect = UsageUnavailable(
+            "10.0.0.3:3000", "ERROR:25:enterprise only", supported=False
+        )
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            await self.controller._do_default([])
+
+        self.assertEqual(
+            [(r.levelname, r.getMessage()) for r in cm.records],
+            [
+                (
+                    "WARNING",
+                    "'show usage' is not supported on this cluster "
+                    "(10.0.0.3:3000 replied ERROR:25:enterprise only).",
+                )
+            ],
+        )
+        self.view_mock.show_usage.assert_not_called()
+
+    async def test_a_server_error_is_shown_verbatim(self):
+        reply = "ERROR:11:cluster not yet formed"
+        self.fetch.side_effect = UsageUnavailable("10.0.0.3:3000", reply)
+
+        with self.assertLogs("lib", level="ERROR") as cm:
+            await self.controller._do_default([])
+
+        self.assertEqual(
+            cm.records[0].getMessage(),
+            f"Failed to get usage from 10.0.0.3:3000: {reply}",
+        )
+        self.view_mock.show_usage.assert_not_called()
+
+    async def test_a_reply_that_is_not_an_export_is_shown_verbatim(self):
+        self.fetch.return_value = UsageExport("10.0.0.3:3000", b'{"schema":2}', None)
+
+        await self.controller._do_default([])
+
+        self.view_mock.print_result.assert_called_once_with('{"schema":2}')
+        self.view_mock.show_usage.assert_not_called()
+
+
 class ShowUserAgentsControllerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         warnings.filterwarnings("error", category=RuntimeWarning)
@@ -2032,6 +2263,11 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         self.controller.nodes = "principal"
         self.addCleanup(patch.stopall)
 
+    def test_help_first_line_ends_with_period(self):
+        help_text = " ".join(self.controller.execute_help([]).split())
+
+        self.assertIn("Display masking rules. Shows all configured", help_text)
+
     async def test_do_default_success(self):
         """Test successful masking rules display"""
         line = []
@@ -2115,15 +2351,77 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
             nodes="principal", namespace="test", set_="demo"
         )
 
-    async def test_do_default_set_without_namespace_raises_error(self):
-        """Test that using set filter without namespace raises error"""
+    async def test_do_default_with_set_filter(self):
         line = ["set", "demo"]
+        masking_data = {
+            "node1": [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                }
+            ]
+        }
+        self.getter_mock.get_masking_rules.return_value = masking_data
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_masking_rules.assert_called_once_with(
+            nodes="principal", namespace=None, set_="demo"
+        )
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            masking_data["node1"], **self.controller.mods
+        )
+
+    @parameterized.expand(
+        [
+            (
+                ["namespace", "test;set=other"],
+                "The namespace 'test;set=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                ["namespace", "test", "set", "demo;set=other"],
+                "The set 'demo;set=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                ["namespace", "test\nlog-set:id=0"],
+                "The namespace 'test\\nlog-set:id=0' cannot contain the control character '\\n'.",
+            ),
+            (
+                ["namespace", "test", "set", "demo\tx"],
+                "The set 'demo\\tx' cannot contain the control character '\\t'.",
+            ),
+        ]
+    )
+    async def test_do_default_refuses_filter_word_the_server_would_split(
+        self, line, exp_error
+    ):
+        self.getter_mock.get_masking_rules.return_value = {"node1": []}
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
-        self.assertEqual(
-            str(context.exception), "Set filter can only be used with namespace filter"
+        self.assertEqual(str(context.exception), exp_error)
+        self.getter_mock.get_masking_rules.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (["namespace", "test-ns", "set", "my_set"], "test-ns", "my_set"),
+            (["namespace", "test", "set", "my set"], "test", "my set"),
+            (["namespace", "test", "set", "café"], "test", "café"),
+        ]
+    )
+    async def test_do_default_sends_filter_words_master_sends(
+        self, line, exp_namespace, exp_set
+    ):
+        self.getter_mock.get_masking_rules.return_value = {"node1": []}
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_masking_rules.assert_called_once_with(
+            nodes="principal", namespace=exp_namespace, set_=exp_set
         )
 
     async def test_do_default_protocol_error(self):
@@ -2171,6 +2469,7 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         [
             (["namespace", "test"], "namespace test"),
             (["namespace", "test", "set", "demo"], "namespace test set demo"),
+            (["set", "demo"], "set demo"),
         ]
     )
     async def test_do_default_filter_matches_nothing(self, line, filter_desc):

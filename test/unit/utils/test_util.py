@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 from parameterized import parameterized
 
+from lib.base_controller import ShellException
 from lib.utils import constants, util
 
 
@@ -124,6 +125,12 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             ),
             "8.9",
             "get_value_from_dict did not return the expected result",
+        )
+
+    def test_get_value_from_dict_on_a_value_that_is_not_a_dict(self):
+        self.assertEqual(
+            util.get_value_from_dict(5, "cluster_size", default_value="default"),
+            "default",
         )
 
     async def test_async_cached(self):
@@ -511,6 +518,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "redact position 0 length 4 value *",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -534,6 +542,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "email",
             "type": "string",
             "function": "constant value REDACTED",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -556,6 +565,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "redact",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -566,7 +576,14 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
 
         result = util.normalize_masking_rule_data(rule)
 
-        expected = {"ns": "test", "set": "", "bin": "ssn", "type": "", "function": ""}
+        expected = {
+            "ns": "test",
+            "set": "",
+            "bin": "ssn",
+            "type": "",
+            "function": "",
+            "enforced": "true",
+        }
 
         self.assertEqual(result, expected)
 
@@ -588,6 +605,7 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "unknown_func",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
@@ -613,9 +631,222 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
             "bin": "ssn",
             "type": "string",
             "function": "custom_func param1 value1 param2 value2 custom_arg custom_value",
+            "enforced": "true",
         }
 
         self.assertEqual(result, expected)
+
+    @parameterized.expand(
+        [
+            ("JC5wcm9maWxlLnNzbg==", None, "$.profile.ssn", "profile"),
+            ("JC4ibXktYmluIi5zc24=", None, '$."my-bin".ssn', "my-bin"),
+            ("JC4iYS5iIi54", None, '$."a.b".x', "a.b"),
+            ("JC5jYXJkcy5bMF0=", None, "$.cards.[0]", "cards"),
+            ("JC4i/yIueA==", None, '$."\\xff".x', "\\xff"),
+            ("JC4iY2Fmw6kiLng=", None, '$."café".x', "café"),
+            ("JC5tLjU=", None, "$.m.5", "m"),
+            ("JC5zc24=", None, "$.ssn", "ssn"),
+            ("JC5wcm9maWxlLnNzbg==", "srv_bin", "$.profile.ssn", "srv_bin"),
+            ("!!not-base64", None, "'!!not-base64' (base64)", ""),
+            ("JC5wLnNz!bg==", None, "'JC5wLnNz!bg==' (base64)", ""),
+            (123, None, "'123' (base64)", ""),
+            ("", None, "", ""),
+        ]
+    )
+    def test_normalize_masking_rule_data_path_rule(
+        self, ael_b64, server_bin, exp_ael, exp_bin
+    ):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "position": "0",
+            "ael_b64": ael_b64,
+        }
+
+        if server_bin is not None:
+            rule["bin"] = server_bin
+
+        result = util.normalize_masking_rule_data(rule)
+
+        self.assertEqual(
+            result,
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": exp_bin,
+                "type": "string",
+                "ael": exp_ael,
+                "function": "redact position 0",
+                "enforced": "true",
+            },
+        )
+
+    def test_normalize_masking_rule_data_dormant_rule(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "value": "#",
+            "default": "unknown",
+            "ael_b64": "JC5wcm9maWxlLnNzbg==",
+            "enforced": "false",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        self.assertEqual(
+            result,
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "profile",
+                "type": "string",
+                "ael": "$.profile.ssn",
+                "function": "redact value #",
+                "default": "unknown",
+                "enforced": "false",
+            },
+        )
+
+    def test_normalize_masking_rule_data_default_leaves_function(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "ssn",
+            "type": "string",
+            "function": "redact",
+            "position": "0",
+            "default": "N/A",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        self.assertEqual(
+            result,
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact position 0",
+                "default": "N/A",
+                "enforced": "true",
+            },
+        )
+
+    def test_normalize_masking_rule_data_ctx_rule(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "default": "x",
+            "ctx_b64": "khAA",
+        }
+
+        result = util.normalize_masking_rule_data(rule)
+
+        self.assertEqual(
+            result,
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "",
+                "type": "string",
+                "function": "redact ctx_b64 khAA",
+                "default": "x",
+                "enforced": "true",
+            },
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "a",
+                },
+                True,
+            ),
+            (
+                "path_rule",
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "ael_b64": "JC5wLng=",
+                },
+                True,
+            ),
+            (
+                "ns_keyed",
+                {
+                    "ns": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+                True,
+            ),
+            (
+                "typed_before_namespace",
+                {
+                    "set": "demo",
+                    "value": "1",
+                    "namespace": "test",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                },
+                True,
+            ),
+            ("tail_of_value_holding_colon", {"b": "c"}, False),
+            ("tail_without_keys", {}, False),
+            ("tail_of_value_holding_namespace", {"namespace": "b"}, False),
+            (
+                "tail_with_path",
+                {"namespace": "b", "ael_b64": "JC5wLng=", "enforced": "false"},
+                False,
+            ),
+            (
+                "head_typed_before_namespace",
+                {"set": "demo", "value": "1"},
+                False,
+            ),
+            (
+                "no_function",
+                {"namespace": "test", "set": "demo", "type": "string"},
+                False,
+            ),
+            (
+                "no_type",
+                {"namespace": "test", "set": "demo", "function": "redact"},
+                False,
+            ),
+            (
+                "no_set",
+                {"namespace": "test", "type": "string", "function": "redact"},
+                False,
+            ),
+            (
+                "no_namespace",
+                {"set": "demo", "type": "string", "function": "redact"},
+                False,
+            ),
+        ]
+    )
+    def test_is_complete_masking_rule(self, _, rule, expected):
+        self.assertIs(util.is_complete_masking_rule(rule), expected)
 
     def test_is_valid_aerospike_name_valid_names(self):
         """Test is_valid_aerospike_name with valid names"""
@@ -776,6 +1007,163 @@ class UtilTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(val, "")
         self.assertEqual(line, [])
+
+
+class GetArgAndDeleteFromModsTest(unittest.TestCase):
+    """The value taken and removed is the token right after the flag, as written."""
+
+    def _get(self, line, arg, default, return_type=int, modifiers=(), mods=None):
+        return util.get_arg_and_delete_from_mods(
+            line=line,
+            arg=arg,
+            return_type=return_type,
+            default=default,
+            modifiers=list(modifiers),
+            mods={} if mods is None else mods,
+        )
+
+    @parameterized.expand(
+        [
+            ("plain", "7", 7),
+            ("negative", "-5", -5),
+            ("leading_zero", "03", 3),
+            ("leading_zeros", "007", 7),
+            ("plus_sign", "+7", 7),
+            ("zero", "0", 0),
+            ("double_zero", "00", 0),
+            ("negative_zero", "-0", 0),
+        ]
+    )
+    def test_takes_the_value_as_written(self, _, raw, expected):
+        line = ["-t", raw]
+
+        self.assertEqual(self._get(line, "-t", default=5), expected)
+        self.assertEqual(line, [])
+
+    @parameterized.expand(
+        [
+            ("letters", "x"),
+            ("empty", ""),
+            ("decimal", "7.0"),
+            ("digit_separator", "1_0"),
+            ("negative_digit_separator", "-1_0"),
+            ("leading_space", " 7"),
+            ("trailing_newline", "7\n"),
+            ("non_ascii_digit", "٣"),
+            ("dash_alone", "-"),
+        ]
+    )
+    def test_int_value_that_is_not_a_whole_number_is_an_error(self, _, raw):
+        with self.assertRaises(ShellException) as cm:
+            self._get(["-t", raw], "-t", default=5)
+
+        self.assertEqual(str(cm.exception), "-t must be an integer.")
+
+    @parameterized.expand([("short_flag", "-s"), ("long_flag", "--flip")])
+    def test_int_flag_followed_by_another_flag_gives_the_default(self, _, flag):
+        line = ["-t", flag, "7"]
+
+        self.assertEqual(self._get(line, "-t", default=9), 9)
+        self.assertEqual(line, [flag, "7"])
+
+    @parameterized.expand(
+        [
+            ("double_dash_number", "--5"),
+            ("dash_dot_number", "-.5"),
+            ("double_dash", "--"),
+            ("dash_nan", "-NaN"),
+        ]
+    )
+    def test_int_flag_followed_by_a_dash_and_a_non_digit_gives_the_default(
+        self, _, token
+    ):
+        line = ["-t", token, "7"]
+
+        self.assertEqual(self._get(line, "-t", default=9), 9)
+        self.assertEqual(line, [token, "7"])
+
+    @parameterized.expand([("diff", "diff"), ("like", "like"), ("with", "with")])
+    def test_int_flag_followed_by_a_modifier_word_gives_the_default(self, _, word):
+        line = ["-r", word, "7"]
+        modifiers = ["diff", "like", "with", "for"]
+        mods = {"diff": [], "like": [], "with": [], "for": [], "line": ["-r"]}
+
+        self.assertEqual(
+            self._get(line, "-r", default=0, modifiers=modifiers, mods=mods), 0
+        )
+        self.assertEqual(line, [word, "7"])
+
+    def test_int_flag_followed_by_a_word_that_is_not_a_modifier_is_an_error(self):
+        mods = {"with": [], "line": ["-r", "like", "7"]}
+
+        with self.assertRaises(ShellException) as cm:
+            self._get(
+                ["-r", "like", "7"], "-r", default=0, modifiers=["with"], mods=mods
+            )
+
+        self.assertEqual(str(cm.exception), "-r must be an integer.")
+
+    def test_takes_an_empty_string_value(self):
+        line = ["--output-prefix", ""]
+
+        self.assertEqual(
+            self._get(line, "--output-prefix", default="x", return_type=str), ""
+        )
+        self.assertEqual(line, [])
+
+    def test_leaves_an_equal_value_of_another_flag_alone(self):
+        line = ["-n", "05", "-t", "5"]
+
+        self.assertEqual(self._get(line, "-n", default=1), 5)
+        self.assertEqual(self._get(line, "-t", default=9), 5)
+        self.assertEqual(line, [])
+
+    def test_removes_the_token_after_the_flag_not_an_equal_earlier_one(self):
+        line = ["-n", "5", "-x", "-t", "5"]
+
+        self.assertEqual(self._get(line, "-t", default=9), 5)
+        self.assertEqual(line, ["-n", "5", "-x"])
+
+    def test_missing_value_leaves_a_token_equal_to_the_default_alone(self):
+        line = ["-n", "1", "-t"]
+
+        self.assertEqual(self._get(line, "-t", default=1), 1)
+        self.assertEqual(line, ["-n", "1"])
+
+    def test_absent_flag_gives_the_default(self):
+        line = ["-n", "3"]
+
+        self.assertEqual(self._get(line, "-t", default=5), 5)
+        self.assertEqual(line, ["-n", "3"])
+
+    def test_repeated_flag_is_taken_in_order(self):
+        line = ["-where", "a=1", "-where", "b=2"]
+
+        self.assertEqual(
+            self._get(line, "-where", default=None, return_type=str), "a=1"
+        )
+        self.assertEqual(
+            self._get(line, "-where", default=None, return_type=str), "b=2"
+        )
+        self.assertEqual(line, [])
+
+    def test_clears_the_flag_and_its_value_from_mods(self):
+        line = ["-n", "03"]
+        mods = {"like": ["-n", "03", "x"]}
+
+        self.assertEqual(
+            self._get(line, "-n", default=1, modifiers=["like"], mods=mods), 3
+        )
+        self.assertEqual(line, [])
+        self.assertEqual(mods, {"like": ["x"]})
+
+    def test_unconvertible_value_is_an_error_when_mods_are_given(self):
+        mods = {"like": ["-n", "x"]}
+
+        with self.assertRaises(ShellException) as cm:
+            self._get(["-n", "x"], "-n", default=1, modifiers=["like"], mods=mods)
+
+        self.assertEqual(str(cm.exception), "-n must be an integer.")
 
 
 class AggregateNsMemoryStatsTest(unittest.TestCase):

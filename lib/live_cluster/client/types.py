@@ -68,6 +68,8 @@ class ASPrivilege(IntEnum):
     DATA_ADMIN = 2
     UDF_ADMIN = 3
     SINDEX_ADMIN = 4
+    BACKUP_ADMIN = 5
+    RESTORE_ADMIN = 6
     READ = 10
     READ_WRITE = 11
     READ_WRITE_UDF = 12
@@ -89,6 +91,8 @@ class ASPrivilege(IntEnum):
             "data-admin": cls.DATA_ADMIN,
             "udf-admin": cls.UDF_ADMIN,
             "sindex-admin": cls.SINDEX_ADMIN,
+            "backup-admin": cls.BACKUP_ADMIN,
+            "restore-admin": cls.RESTORE_ADMIN,
             "read": cls.READ,
             "read-write": cls.READ_WRITE,
             "read-write-udf": cls.READ_WRITE_UDF,
@@ -105,13 +109,7 @@ class ASPrivilege(IntEnum):
             return cls.ERROR
 
     def is_global_only_scope(self):
-        return (
-            self == ASPrivilege.DATA_ADMIN
-            or self == ASPrivilege.SYS_ADMIN
-            or self == ASPrivilege.USER_ADMIN
-            or self == ASPrivilege.UDF_ADMIN
-            or self == ASPrivilege.SINDEX_ADMIN
-        )
+        return self < ASPrivilege.READ
 
     def __str__(self):
         name = self.name.lower()
@@ -243,6 +241,19 @@ class ASInfoError(Exception):
         return False
 
 
+def _error_text(server_resp: str) -> str:
+    """Return what follows 'PREFIX:', minus a '<code>:' field that is empty or digits.
+    Raise IndexError when only that field is there."""
+    text = server_resp.split(":", 1)[1]
+    code, sep, rest = text.partition(":")
+    is_code = not code or (code.isascii() and code.isdigit())
+
+    if is_code and not sep:
+        raise IndexError(server_resp)
+
+    return rest if is_code else text
+
+
 class ASInfoResponseError(ASInfoError):
     def __init__(self, message: str, server_resp: str):
         self.raw_response = server_resp
@@ -254,13 +265,13 @@ class ASInfoResponseError(ASInfoError):
         try:
             # sometimes there is a message with 'error' and sometimes not. i.e. set-config, udf-put
             if server_resp.startswith("error") or server_resp.startswith("ERROR"):
-                try:
-                    server_resp = server_resp.split("=")[1]
-                except IndexError:
-                    server_resp = server_resp.split(":")[2]
+                if server_resp[5:6] == ":":
+                    server_resp = _error_text(server_resp)
+                else:
+                    server_resp = server_resp.split("=", 1)[1]
 
             elif server_resp.startswith("fail") or server_resp.startswith("FAIL"):
-                server_resp = server_resp.split(":")[2]
+                server_resp = _error_text(server_resp)
 
             clean_resp = server_resp.strip(" .")
 
@@ -339,28 +350,10 @@ class ASInfoNotAuthenticatedError(ASInfoResponseError):
 
 class ASInfoCheckpointError(ASInfoResponseError):
     def __init__(self, message: str, server_resp: str):
-        self.raw_response = server_resp
+        super().__init__(message, server_resp)
 
-        if server_resp.lower() in {ASINFO_RESPONSE_OK, ""}:
-            raise ValueError('info() returned value "ok" which is not an error.')
-
-        # Strip only the "ERROR:<code>:" prefix. ASInfoResponseError splits on "=" first,
-        # which mangles the checkpoint-save parameter error - its text echoes the rejected
-        # parameter, so it contains an "=" of its own.
-        clean_resp = server_resp
-
-        if server_resp.startswith("error") or server_resp.startswith("ERROR"):
-            parts = server_resp.split(":", 2)
-
-            if len(parts) == 3:
-                clean_resp = parts[2]
-
-        clean_resp = clean_resp.strip(" .")
-
-        if not clean_resp:
-            clean_resp = GENERIC_ERROR_MSG
-
-        ASInfoError.__init__(self, message, clean_resp)
+        if not self.response:
+            self.response = GENERIC_ERROR_MSG
 
 
 class ASInfoCheckpointParkedError(ASInfoCheckpointError):

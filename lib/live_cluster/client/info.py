@@ -22,9 +22,11 @@ from ctypes import create_string_buffer  # gives us pre-allocated bufs
 from time import time
 from socket import error as SocketError
 
+from .constants import ErrorsMsgs
 from .types import (
     ASField,
     ASInfoNotAuthenticatedError,
+    ASInfoResponseError,
     ASResponse,
     ASCommand,
     ASPrivilege,
@@ -367,10 +369,13 @@ def _unpack_admin_privileges(buf, offset):
 
     for _ in range(num_privileges):
         permission_code, offset = _unpack_uint8(buf, offset)
-        privilege = ASPrivilege(permission_code)
-        privilege_str = [str(privilege)]
 
-        if not privilege.is_global_only_scope():
+        try:
+            privilege_str = [str(ASPrivilege(permission_code))]
+        except ValueError:
+            privilege_str = ["unknown({})".format(permission_code)]
+
+        if permission_code >= ASPrivilege.READ:
             namespace_len, offset = _unpack_uint8(buf, offset)
             namespace, offset = _unpack_string(buf, offset, namespace_len)
             set_len, offset = _unpack_uint8(buf, offset)
@@ -454,10 +459,9 @@ async def _authenticate(
             reader, writer, send_buf
         )
         return return_code
+    except OSError:
+        raise
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
         raise IOError("Error: %s" % str(e))
 
 
@@ -1210,7 +1214,7 @@ async def login(
 
         return 0, session_token, session_expiration
 
-    except SocketError as e:
+    except Exception as e:
         raise IOError("Error: %s" % str(e))
 
 
@@ -1239,7 +1243,7 @@ async def _info_request(
         writer.write(buf)
         await writer.drain()
         # get response
-        rsp_hdr = await reader.read(8)
+        rsp_hdr = await _receive_data(reader, _PROTOCOL_HEADER_SIZE)
         _, _, data_size, _ = _unpack_protocol_header(rsp_hdr)
 
         if data_size > 0:
@@ -1265,22 +1269,24 @@ async def info(reader, writer, names=None):
         _pack_protocol_header(buf, 0, _INFO_MSG_VERSION, _INFO_MSG_TYPE, 0)
 
     elif isinstance(names, str):
-        buf_size = _PROTOCOL_HEADER_SIZE + len(names) + 1  # for \n
+        sz = len(util.str_to_bytes(names)) + 1  # for \n
+        buf_size = _PROTOCOL_HEADER_SIZE + sz
         buf = create_string_buffer(buf_size)
         offset = 0
 
         offset = _pack_protocol_header(
-            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, len(names) + 1
+            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, sz
         )
         offset = _pack_info_field(buf, offset, names)
     else:
         namestr = "\n".join(names)
-        buf_size = _PROTOCOL_HEADER_SIZE + len(namestr) + 1  # for \n
+        sz = len(util.str_to_bytes(namestr)) + 1  # for \n
+        buf_size = _PROTOCOL_HEADER_SIZE + sz
         buf = create_string_buffer(buf_size)
         offset = 0
 
         offset = _pack_protocol_header(
-            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, len(namestr) + 1
+            buf, offset, _INFO_MSG_VERSION, _INFO_MSG_TYPE, sz
         )
         offset = _pack_info_field(buf, offset, namestr)
 
@@ -1299,6 +1305,8 @@ async def info(reader, writer, names=None):
         if name != names:
             if "not authenticated" in name.lower():
                 raise ASInfoNotAuthenticatedError("Connection failed", name)
+            elif not sep and name.startswith(("ERROR", "error")):
+                raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, name)
             else:
                 logger.debug(
                     "Unexpected key %s in info response %s. Expected key: %s",
@@ -1311,12 +1319,15 @@ async def info(reader, writer, names=None):
     else:
         rdict = dict()
         for line in rsp_data.split("\n"):
-            if "not authenticated" in line.lower():
+            name, sep, value = line.partition("\t")
+
+            if not sep and "not authenticated" in name.lower():
                 raise ASInfoNotAuthenticatedError("Connection failed", line)
+            if not sep and line.startswith(("ERROR", "error")):
+                raise ASInfoResponseError(ErrorsMsgs.INFO_SERVER_ERROR_RESPONSE, line)
             if len(line) < 1:
                 # this accounts for the trailing '\n' - cheaper than chomp
                 continue
-            name, sep, value = line.partition("\t")
 
             rdict[name] = value
         return rdict

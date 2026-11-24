@@ -23,7 +23,11 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from lib.live_cluster.client import ASProtocolError, ASResponse
-from lib.live_cluster.client.assocket import SSL, ASSocket
+from lib.live_cluster.client.assocket import (
+    SSL,
+    ASSocket,
+    _AsyncioSSLConnectionAdapter,
+)
 from lib.live_cluster.client.ssl_context import SSLContext
 from lib.utils.constants import AuthMode
 from test.unit import util
@@ -32,6 +36,15 @@ from test.unit.secret_agent import pki
 
 async def _hang(*args, **kwargs):
     await asyncio.Event().wait()
+
+
+class AsyncioSSLConnectionAdapterTest(unittest.TestCase):
+    def test_close_notify_reads_as_end_of_data(self):
+        """TOOLS-4655: asyncio reads b"" as the server closing, as on a clear socket."""
+        conn = _AsyncioSSLConnectionAdapter(SSL.Context(SSL.TLS_METHOD), None)
+
+        with patch.object(SSL.Connection, "recv", side_effect=SSL.ZeroReturnError()):
+            self.assertEqual(conn.recv(8), b"")
 
 
 class ASSocketFailureTest(unittest.IsolatedAsyncioTestCase):
@@ -54,10 +67,14 @@ class ASSocketFailureTest(unittest.IsolatedAsyncioTestCase):
 
     def _patched(self, tls=False):
         stack = contextlib.ExitStack()
+        near, far = socket.socketpair()
+        stack.callback(near.close)
+        stack.callback(far.close)
         sock = stack.enter_context(patch("socket.socket")).return_value
         tls_sock = stack.enter_context(
             patch("lib.live_cluster.client.assocket._AsyncioSSLConnectionAdapter")
         ).return_value
+        tls_sock.fileno.return_value = near.fileno()
         loop = stack.enter_context(patch("asyncio.get_event_loop")).return_value
         stack.enter_context(
             patch(
@@ -620,6 +637,69 @@ class ASSocketTestConnect(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class ASSocketTLSHandshakeTest(unittest.IsolatedAsyncioTestCase):
+    """The TLS handshake waits for the socket, rather than retrying on a timer."""
+
+    async def asyncSetUp(self):
+        self.near, self.far = socket.socketpair()
+        self.near.setblocking(False)
+        self.addCleanup(self.near.close)
+        self.addCleanup(self.far.close)
+
+        self.tls = MagicMock()
+        self.tls.fileno.side_effect = self.near.fileno
+        self.as_socket = ASSocket(
+            "1.2.3.4", 999, "tls-name", None, None, AuthMode.INTERNAL, True, timeout=2
+        )
+
+        patch("socket.socket").start()
+        patch.object(self.as_socket, "_wrap_socket", return_value=self.tls).start()
+        patch.object(asyncio.get_running_loop(), "sock_connect", AsyncMock()).start()
+        self.addCleanup(patch.stopall)
+
+    async def connect(self):
+        return await self.as_socket._create_socket_for_addrinfo(
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.2.3.4", 999))
+        )
+
+    def peer_has_spoken(self):
+        try:
+            return self.near.recv(1, socket.MSG_PEEK) != b""
+        except BlockingIOError:
+            return False
+
+    async def test_waits_for_the_peer_instead_of_polling(self):
+        def do_handshake():
+            if not self.peer_has_spoken():
+                raise SSL.WantReadError()
+
+        self.tls.do_handshake.side_effect = do_handshake
+        asyncio.get_running_loop().call_later(0.2, self.far.send, b"x")
+
+        self.assertIs(await self.connect(), self.tls)
+        self.assertEqual(
+            self.tls.do_handshake.call_count,
+            2,
+            "the handshake was retried while the peer had sent nothing",
+        )
+
+    async def test_waits_for_room_to_write(self):
+        self.tls.do_handshake.side_effect = [SSL.WantWriteError(), None]
+
+        self.assertIs(await self.connect(), self.tls)
+        self.assertEqual(self.tls.do_handshake.call_count, 2)
+
+    async def test_gives_up_when_the_peer_never_answers(self):
+        self.as_socket.settimeout(0.2)
+        self.tls.do_handshake.side_effect = SSL.WantReadError()
+
+        with self.assertRaises(ConnectionError) as cm:
+            await self.connect()
+
+        self.assertEqual(str(cm.exception), "TLS handshake timed out after 0.2s")
+        self.tls.close.assert_called_once()
+
+
 class ASSocketReuseTest(unittest.IsolatedAsyncioTestCase):
     """Whether a pooled socket can be reused. Checked without a request, unless it
     sat idle long enough for a drop to go unseen."""
@@ -801,9 +881,8 @@ class ASSocketTLSReuseTest(unittest.IsolatedAsyncioTestCase):
     async def test_socket_the_server_closed_is_not_reused(self):
         self.close_from_server()
 
-        with self.assertRaises(SSL.ZeroReturnError):
-            await asyncio.wait_for(self.as_socket.reader.read(1), 5)
+        self.assertEqual(await asyncio.wait_for(self.as_socket.reader.read(1), 5), b"")
 
-        self.assertTrue(self.as_socket.writer.is_closing())
+        self.assertTrue(self.as_socket.reader.at_eof())
         self.assertFalse(await self.as_socket.is_connected())
         self.info_mock.assert_not_called()

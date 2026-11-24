@@ -386,6 +386,7 @@ class CollectinfoDiagnostics:
             self._check_dropped_or_missing_nodes,
             self._check_peer_visibility,
             self._check_missing_sysinfo,
+            self._check_usage_file,
             self._check_node_collection_errors,
             self._check_empty_and_partial_nodes,
             self._check_multiple_snapshots,
@@ -879,7 +880,7 @@ class CollectinfoDiagnostics:
         return BundleWarning(
             category="partial-node-selection",
             severity=(DiagSeverity.WARNING if requested_missing else DiagSeverity.INFO),
-            title="Collection was limited to %d %s by `collectinfo with`"
+            title="Collection was limited to %d %s by `collect info with`"
             % (count, _plural(count, "node")),
             lines=lines,
         )
@@ -1016,6 +1017,25 @@ class CollectinfoDiagnostics:
 
         return known
 
+    def _check_usage_file(self) -> BundleWarning | None:
+        """Report a usage export the cluster has but the bundle lacks. A cluster
+        without usage reporting, or a bundle from before the usage file, says
+        nothing."""
+        usage = (self.meta.get("collection") or {}).get("usage")
+
+        if not isinstance(usage, dict) or usage.get("status") != "failed":
+            return None
+
+        node = usage.get("node")
+        reply = usage.get("reply", "")
+
+        return BundleWarning(
+            category="usage-not-collected",
+            severity=DiagSeverity.WARNING,
+            title="The usage file was not collected",
+            lines=[f"{node} replied {reply}" if node else str(reply)],
+        )
+
     def _check_missing_sysinfo(self) -> BundleWarning | None:
         """Report sysinfo coverage only when it differs from what was requested.
 
@@ -1123,7 +1143,7 @@ class CollectinfoDiagnostics:
                 "No host-level data for %s. SSH to those hosts failed during "
                 "collection." % (_summarize(ssh_failed),),
                 "Nothing in the bundle describes their OS, CPU, memory, disks or "
-                "network settings, and `summary` reports no OS version for them.",
+                "network settings, and `info summary` reports no OS version for them.",
             ],
         )
 
@@ -1140,7 +1160,7 @@ class CollectinfoDiagnostics:
         lines = [
             "No host-level data was captured for any of the %d nodes, so nothing "
             "in the bundle describes their OS, CPU, memory, disks or network "
-            "settings and `summary` reports no OS version." % (len(responded),),
+            "settings and `info summary` reports no OS version." % (len(responded),),
         ]
         preamble = (
             "collectinfo gathers system statistics locally for the node it runs "
@@ -1223,7 +1243,7 @@ class CollectinfoDiagnostics:
                 _summarize(without_sysinfo),
             ),
             "Nothing describes the uncovered nodes' OS, CPU, memory, disks or "
-            "network settings, and `summary` reports no OS version for them.",
+            "network settings, and `info summary` reports no OS version for them.",
         ]
 
         if has_files is False:
@@ -1819,10 +1839,10 @@ class CollectinfoDiagnostics:
         if len(builds) > 1 and len(editions) <= 1:
             lines.append(
                 "Expected mid rolling upgrade; otherwise the cluster is running "
-                "unintended versions. Run `summary` for the per-node breakdown."
+                "unintended versions. Run `info summary` for the per-node breakdown."
             )
         else:
-            lines.append("Run `summary` for the per-node breakdown.")
+            lines.append("Run `info summary` for the per-node breakdown.")
 
         return BundleWarning(
             category="mixed-server-versions",

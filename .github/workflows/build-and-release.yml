@@ -45,8 +45,8 @@
 # === Test (dry-run) ===
 #   Dispatch with `release=false` from any branch: builds run end-to-end,
 #   artifacts available on the GHA run page, no tag, no JFrog publish,
-#   no release bundle. The docker image is built and smoke-tested on both
-#   platforms (docker-verify) but never pushed.
+#   no release bundle. The docker image is built, smoke-tested and scanned on
+#   both platforms (docker-verify) but never pushed.
 #
 # === Tagging rules (summary) ===
 #   Tagging is master-only. A git tag is created ONLY when:
@@ -1025,7 +1025,7 @@ jobs:
   # Pre-publish gate. reusable_docker-build-deploy pushes from inside its build
   # leg and offers no test hook, so once it runs there is no point at which a
   # broken image has not already reached dev-local under a moving tag. This
-  # builds the same image the same way, exercises it, and publishes nothing --
+  # builds the same image the same way, exercises and scans it, and publishes nothing --
   # docker-build needs it, so nothing is pushed until it passes.
   #
   # Unconditional, unlike docker-build's push and docker-test: a dry run has to
@@ -1083,7 +1083,6 @@ jobs:
         env:
           IMAGE: asadm-verify:${{ matrix.arch }}
           BUILD_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           set -euo pipefail
           # Reuse the linux-install bats smoke test against the image by
@@ -1187,11 +1186,26 @@ jobs:
           docker run --rm --entrypoint bash "${IMAGE}" -c true \
             || { echo "ERROR: --entrypoint bash no longer gives a shell" >&2; exit 1; }
 
-          if [[ -n "${SNYK_TOKEN:-}" ]]; then
-            snyk container test "${IMAGE}" \
-              --platform=linux/${{ matrix.arch }} \
-              --file=docker/Dockerfile || true
-          fi
+      # Blocks the publish: docker-build needs this job. Base-image packages
+      # are scanned as part of the image, not excluded.
+      - name: Scan the image for High and Critical vulnerabilities
+        env:
+          IMAGE: asadm-verify:${{ matrix.arch }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SNYK_TOKEN:-}" ]] \
+            || { echo "::error::SNYK_TOKEN is not set, so ${IMAGE} cannot be scanned and will not be published" >&2; exit 1; }
+          rc=0
+          snyk container test "${IMAGE}" \
+            --platform=linux/${{ matrix.arch }} \
+            --file=docker/Dockerfile \
+            --severity-threshold=high || rc=$?
+          case "${rc}" in
+            0) ;;
+            1) echo "::error::${IMAGE} has High or Critical vulnerabilities (listed above), so it will not be published" >&2; exit 1 ;;
+            *) echo "::error::snyk container test exited ${rc} without a result, so ${IMAGE} will not be published" >&2; exit 1 ;;
+          esac
 
   # Image build/publish/attest is delegated to shared-workflows: it builds each
   # platform on a native runner, pushes by digest, stitches one manifest list,

@@ -13,16 +13,20 @@
 # limitations under the License.
 
 import asyncio
+import base64
+import gc
 import socket
 import threading
 import time
 import unittest
 import warnings
+import weakref
 from collections import deque
 from ctypes import ArgumentError
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
+from OpenSSL import SSL
 from parameterized import parameterized
 
 import lib
@@ -37,8 +41,9 @@ from lib.live_cluster.client import (
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.constants import ErrorsMsgs
 from lib.live_cluster.client.ctx import CDTContext, CTXItems
+from lib.live_cluster.client.info import info
 from lib.live_cluster.client.msgpack import pack_ael_expression
-from lib.live_cluster.client.node import _SysCmd, Node
+from lib.live_cluster.client.node import _SysCmd, Node, _get_host_ips
 from lib.live_cluster.client.types import (
     ASProtocolError,
     ASProtocolExcFactory,
@@ -50,6 +55,133 @@ from test.unit import util
 # Captured before any test patches it out, so a test can exercise the real method.
 _REAL_INFO_BUILD = Node.info_build
 _REAL_INFO_CINFO = Node.__dict__["_info_cinfo"]
+
+RELEASED_SERVER_MASKING_SHOW = (
+    "namespace=test;set=other;bin=e;type=string;function=redact"
+    ":namespace=test;set=demo;bin=n;type=integer;function=constant;value=0"
+    ":namespace=test;set=demo;bin=email;type=string;function=constant;value=REDACTED"
+    ":namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*"
+)
+RELEASED_SERVER_MASKING_RULES = [
+    {
+        "namespace": "test",
+        "set": "other",
+        "bin": "e",
+        "type": "string",
+        "function": "redact",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "n",
+        "type": "integer",
+        "function": "constant",
+        "value": "0",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "email",
+        "type": "string",
+        "function": "constant",
+        "value": "REDACTED",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "ssn",
+        "type": "string",
+        "function": "redact",
+        "position": "0",
+        "length": "4",
+        "value": "*",
+    },
+]
+
+
+class FakeAuthServer:
+    """Issues a token per login and accepts only tokens issued by the same backend.
+    Sockets are spread over the backends in turn, like a non-sticky load balancer."""
+
+    def __init__(self, rejection, backends=1):
+        self.rejection = rejection
+        self.tokens = [set() for _ in range(backends)]
+        self.logins = 0
+        self.login_error = None
+        self.login_started = asyncio.Event()
+        self.release_login = asyncio.Event()
+        self.release_login.set()
+        self.sockets = []
+
+    def socket(self, *args, **kwargs):
+        sock = FakeAuthSocket(self, len(self.sockets) % len(self.tokens))
+        self.sockets.append(sock)
+
+        return sock
+
+
+class FakeAuthSocket:
+    def __init__(self, server: FakeAuthServer, backend):
+        self.server = server
+        self.backend = backend
+        self.session_token = None
+        self.closed = False
+
+    async def connect(self):
+        return True
+
+    async def authenticate(self, token):
+        await asyncio.sleep(0)
+
+        if token not in self.server.tokens[self.backend]:
+            raise ASProtocolExcFactory.create_exc(
+                self.server.rejection, "Unable to authenticate"
+            )
+
+        return True
+
+    async def login(self):
+        self.server.logins += 1
+        self.server.login_started.set()
+        await asyncio.sleep(0)
+        await self.server.release_login.wait()
+
+        if self.server.login_error:
+            raise self.server.login_error
+
+        self.session_token = "token-%d" % self.server.logins
+        self.server.tokens[self.backend].add(self.session_token)
+
+        return True
+
+    def get_session_info(self):
+        return self.session_token, 123
+
+    async def close(self):
+        self.closed = True
+
+
+def info_server(responses: dict[str, str]):
+    """An _info_cinfo stand-in that answers one command, or several in one request.
+    A batched reply leaves out a command it does not know, as servers before 7.1 do."""
+
+    def answer(command, *args, **kwargs):
+        if isinstance(command, str):
+            return responses[command]
+
+        return {name: responses[name] for name in command if name in responses}
+
+    return answer
+
+
+def commands_sent(info_mock) -> list[str]:
+    sent = []
+
+    for request in info_mock.call_args_list:
+        command = request.args[0]
+        sent += [command] if isinstance(command, str) else list(command)
+
+    return sent
 
 
 class NodeInitTest(unittest.IsolatedAsyncioTestCase):
@@ -315,6 +447,142 @@ class NodeInitTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class NodeConnectRequestsTest(unittest.IsolatedAsyncioTestCase):
+    """What connecting a node costs in requests and subprocesses."""
+
+    async def asyncSetUp(self):
+        patch(
+            "lib.live_cluster.client.node.get_fully_qualified_domain_name",
+            return_value="host.domain.local",
+        ).start()
+        patch(
+            "socket.getaddrinfo",
+            side_effect=lambda host, port, *args, **kwargs: [
+                (2, 1, 6, "", (host, port))
+            ],
+        ).start()
+        self.info_mock = patch.object(
+            Node, "_info_cinfo", new_callable=AsyncMock
+        ).start()
+        self.info_mock.side_effect = self.answer
+        self.shell_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command"
+        ).start()
+        self.shell_mock.side_effect = self.hostname
+        self.addCleanup(patch.stopall)
+
+    def answer(self, command, ip=None, *args, **kwargs):
+        responses = {
+            "node": "A0",
+            "build": "8.1.0.0",
+            "peers-generation": "1",
+            "connection": "admin=false",
+            "service-clear-std": "%s:3000" % ip,
+            "peers-clear-std": "1,3000,[]",
+        }
+        return info_server(responses)(command)
+
+    async def hostname(self, cmd):
+        await asyncio.sleep(0)
+        process = AsyncMock(spec=asyncio.subprocess.Process)
+        process.returncode = 0
+        process.stdout = MagicMock(spec=asyncio.StreamReader)
+        process.stdout.read.return_value = b"10.0.0.1 10.0.0.2"
+        return process
+
+    async def test_connect_asks_for_the_build_once(self):
+        node = await Node("10.0.0.1")
+
+        self.assertTrue(node.alive)
+        self.assertEqual(commands_sent(self.info_mock).count("build"), 1)
+        self.assertTrue(node.new_histogram_version)
+
+    async def test_hostname_runs_once_for_every_node(self):
+        await asyncio.gather(Node("10.0.0.1"), Node("10.0.0.2"), Node("10.0.0.3"))
+        await Node("10.0.0.4")
+
+        hostname_calls = [
+            c for c in self.shell_mock.await_args_list if c.args == ("hostname -I",)
+        ]
+        self.assertEqual(len(hostname_calls), 1)
+
+    async def test_each_node_is_matched_against_the_host_addresses(self):
+        on_host, elsewhere = await asyncio.gather(Node("10.0.0.2"), Node("10.0.0.9"))
+
+        self.assertTrue(on_host.is_localhost())
+        self.assertFalse(elsewhere.is_localhost())
+
+
+class HostIpsTest(unittest.TestCase):
+    def setUp(self):
+        self.process = AsyncMock(spec=asyncio.subprocess.Process)
+        self.process.returncode = 0
+        self.process.stdout = MagicMock(spec=asyncio.StreamReader)
+        self.process.stdout.read.return_value = b"10.0.0.1"
+        self.shell_mock = patch(
+            "lib.live_cluster.client.node.util.async_shell_command",
+            AsyncMock(return_value=self.process),
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def test_a_finished_loop_is_released(self):
+        async def ask():
+            await _get_host_ips()
+            return weakref.ref(asyncio.get_running_loop())
+
+        loop_ref = asyncio.run(ask())
+        gc.collect()
+
+        self.assertIsNone(loop_ref())
+
+    def test_a_failed_hostname_is_asked_again(self):
+        failed = AsyncMock(spec=asyncio.subprocess.Process)
+        failed.returncode = 1
+        self.shell_mock.side_effect = [failed, self.process]
+
+        async def ask_twice():
+            return await _get_host_ips(), await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask_twice()), ([], ["10.0.0.1"]))
+        self.assertEqual(self.shell_mock.await_count, 2)
+
+    def test_a_hostname_that_raised_is_asked_again(self):
+        self.process.stdout.read.side_effect = [OSError("read failed"), b"10.0.0.1"]
+
+        async def ask_twice():
+            with self.assertRaises(OSError):
+                await _get_host_ips()
+
+            return await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask_twice()), ["10.0.0.1"])
+
+    def test_waiters_on_a_failed_hostname_all_get_the_empty_answer(self):
+        failed = AsyncMock(spec=asyncio.subprocess.Process)
+        failed.returncode = 1
+        self.shell_mock.side_effect = [failed, self.process]
+
+        async def ask():
+            waiters = await asyncio.gather(_get_host_ips(), _get_host_ips())
+            self.assertEqual(self.shell_mock.await_count, 1)
+            return waiters, await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask()), ([[], []], ["10.0.0.1"]))
+        self.assertEqual(self.shell_mock.await_count, 2)
+
+    def test_waiters_on_a_hostname_that_raised_all_get_its_error(self):
+        self.process.stdout.read.side_effect = [OSError("read failed"), b"10.0.0.1"]
+
+        async def ask():
+            waiters = await asyncio.gather(
+                _get_host_ips(), _get_host_ips(), return_exceptions=True
+            )
+            self.assertEqual(self.shell_mock.await_count, 1)
+            return [type(e) for e in waiters], await _get_host_ips()
+
+        self.assertEqual(asyncio.run(ask()), ([OSError, OSError], ["10.0.0.1"]))
+
+
 class NodeLoginSocketTest(unittest.IsolatedAsyncioTestCase):
     """The socket a node logs in on carries its later requests."""
 
@@ -452,16 +720,6 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.node.session_expiration = time.time() + 60
 
         self.assertTrue(await self.node.login())
-
-    async def test_is_new_histogram_version_uses_disable_cache(self):
-        lib.live_cluster.client.node.Node.info_build.reset_mock()
-        lib.live_cluster.client.node.Node.info_build.return_value = "8.1.0.0"
-
-        await self.node._is_new_histogram_version()
-
-        lib.live_cluster.client.node.Node.info_build.assert_awaited_once_with(
-            disable_cache=True
-        )
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_login_returns_true_if_login_was_successful(self, as_socket_mock):
@@ -775,6 +1033,93 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.node.info("statistics"), "uptime=1")
         self.assertTrue(self.node.alive)
 
+    async def test_tls_drop_at_login_marks_node_not_alive(self):
+        """TOOLS-4655: a pyOpenSSL error at login is an OSError, as on a clear
+        socket."""
+        patch.object(Node, "_info_cinfo", _REAL_INFO_CINFO).start()
+        self.node.user = "admin"
+        self.node.credential = b"hash"
+        self.node.alive = True
+        self.node._timeout = 1
+        self.node._initialize_socket_pool()
+
+        async def connect(sock):
+            sock.sock = Mock()
+            sock.reader = AsyncMock()
+            sock.reader.read.side_effect = SSL.SysCallError(-1, "Unexpected EOF")
+            sock.writer = Mock()
+            sock.writer.drain = AsyncMock()
+            sock.writer.wait_closed = AsyncMock()
+            return True
+
+        with patch.object(ASSocket, "connect", connect):
+            result = await self.node.info("statistics")
+
+        self.assertFalse(self.node.alive)
+        self.assertIsInstance(result, OSError)
+        self.assertEqual(str(result), "Error: (-1, 'Unexpected EOF')")
+
+    def _answer_over_a_socket(self, responses):
+        patch.object(Node, "_info_cinfo", _REAL_INFO_CINFO).start()
+        sock = AsyncMock()
+        sock.info.side_effect = info_server(responses)
+        patch.object(self.node, "_get_connection", AsyncMock(return_value=sock)).start()
+        patch.object(self.node, "_return_to_pool", AsyncMock()).start()
+        return sock
+
+    async def test_a_batch_sends_only_the_commands_not_already_held(self):
+        sock = self._answer_over_a_socket(
+            {"build": "8.1.0.0", "peers-generation": "7", "roster:": "roster=null"}
+        )
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info("build")
+            await self.node.info("peers-generation")
+            answers = await self.node.info(("build", "peers-generation", "roster:"))
+
+        self.assertEqual(
+            answers,
+            {"build": "8.1.0.0", "peers-generation": "7", "roster:": "roster=null"},
+        )
+        self.assertEqual(
+            commands_sent(sock.info), ["build", "peers-generation", "roster:"]
+        )
+
+    async def test_a_batch_of_held_commands_sends_nothing(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0", "peers-generation": "7"})
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info("build")
+            await self.node.info("peers-generation")
+            answers = await self.node.info(("build", "peers-generation"))
+
+        self.assertEqual(answers, {"build": "8.1.0.0", "peers-generation": "7"})
+        self.assertEqual(
+            [request.args[0] for request in sock.info.call_args_list],
+            ["build", "peers-generation"],
+        )
+
+    async def test_a_single_command_is_answered_from_a_held_batch(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0", "peers-generation": "7"})
+
+        with _REAL_INFO_CINFO.held():
+            await self.node.info(("build", "peers-generation"))
+            answer = await self.node.info("peers-generation")
+
+        self.assertEqual(answer, "7")
+        self.assertEqual(commands_sent(sock.info), ["build", "peers-generation"])
+
+    async def test_a_command_missing_from_a_batch_reply_is_asked_again(self):
+        sock = self._answer_over_a_socket({"build": "8.1.0.0"})
+
+        with _REAL_INFO_CINFO.held():
+            first = await self.node.info(("build", "roster:"))
+            second = await self.node.info(("build", "roster:"))
+
+        self.assertEqual(first, {"build": "8.1.0.0"})
+        self.assertEqual(second, {"build": "8.1.0.0"})
+        self.assertEqual(commands_sent(sock.info), ["build", "roster:", "roster:"])
+
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_get_connection_auth_success_does_not_relogin(self, as_socket_mock):
         self.node.user = "admin"
@@ -792,35 +1137,99 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         as_socket.authenticate.assert_awaited_once()
         as_socket.login.assert_not_awaited()
 
-    @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
-    async def test_get_connection_relogin_clears_token_before_login(
-        self, as_socket_mock
-    ):
+    def _fake_auth_server(self, rejection, backends=1):
+        server = FakeAuthServer(rejection, backends)
+        patch("lib.live_cluster.client.node.ASSocket", server.socket).start()
         self.node.user = "admin"
         self.node.session_token = "old-token"
-        self.node.session_expiration = 42
-        as_socket = as_socket_mock.return_value
-        as_socket.connect.return_value = True
-        as_socket.authenticate.side_effect = ASProtocolExcFactory.create_exc(
-            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "foo"
+        self.node.session_expiration = 1
+
+        return server
+
+    @parameterized.expand(
+        [
+            (ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL,),
+            (ASResponse.EXPIRED_SESSION,),
+        ]
+    )
+    async def test_connections_rejected_together_log_in_once(self, rejection):
+        server = self._fake_auth_server(rejection)
+
+        socks = await asyncio.gather(
+            *(self.node._get_connection(self.node.ip, self.node.port) for _ in range(5))
         )
 
-        async def login_side_effect():
-            # token should be cleared before relogin
-            self.assertIsNone(self.node.session_token)
-            self.assertEqual(self.node.session_expiration, 0)
-            return True
+        self.assertEqual(server.logins, 1)
+        self.assertEqual(socks, server.sockets)
+        self.assertEqual(self.node.session_token, "token-1")
+        self.assertEqual(self.node.session_expiration, 123)
 
-        as_socket.login.side_effect = login_side_effect
-        as_socket.get_session_info.return_value = ("new-token", 99)
+    async def test_connection_opened_during_the_relogin_does_not_log_in(self):
+        server = self._fake_auth_server(ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL)
+        server.release_login.clear()
+        first = asyncio.create_task(
+            self.node._get_connection(self.node.ip, self.node.port)
+        )
+        await server.login_started.wait()
+        second = asyncio.create_task(
+            self.node._get_connection(self.node.ip, self.node.port)
+        )
 
-        sock = await self.node._get_connection(self.node.ip, self.node.port)
+        for _ in range(5):
+            await asyncio.sleep(0)
 
-        self.assertEqual(sock, as_socket)
-        self.assertEqual(self.node.session_token, "new-token")
-        self.assertEqual(self.node.session_expiration, 99)
-        as_socket.authenticate.assert_awaited_once()
-        as_socket.login.assert_awaited_once()
+        server.release_login.set()
+        socks = await asyncio.gather(first, second)
+
+        self.assertEqual(server.logins, 1)
+        self.assertEqual(socks, server.sockets)
+        self.assertEqual(self.node.session_token, "token-1")
+
+    @parameterized.expand(
+        [
+            (asyncio.TimeoutError(),),
+            (
+                ASProtocolExcFactory.create_exc(
+                    ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "Login failed"
+                ),
+            ),
+        ]
+    )
+    async def test_connections_waiting_on_a_failed_relogin_fail_as_it_did(
+        self, login_error
+    ):
+        server = self._fake_auth_server(ASResponse.EXPIRED_SESSION)
+        server.login_error = login_error
+
+        results = await asyncio.gather(
+            *(
+                self.node._get_connection(self.node.ip, self.node.port)
+                for _ in range(3)
+            ),
+            return_exceptions=True,
+        )
+
+        self.assertEqual(server.logins, 1)
+        self.assertEqual(results, [login_error] * 3)
+        self.assertTrue(all(sock.closed for sock in server.sockets))
+        self.assertIsNone(self.node.session_token)
+        self.assertEqual(self.node.session_expiration, 0)
+
+    async def test_connection_behind_a_load_balancer_logs_in_when_the_fresh_token_is_rejected(
+        self,
+    ):
+        """The fresh token came from another backend, so this socket logs in itself."""
+        server = self._fake_auth_server(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, backends=2
+        )
+
+        socks = await asyncio.gather(
+            *(self.node._get_connection(self.node.ip, self.node.port) for _ in range(2))
+        )
+
+        self.assertEqual(server.logins, 2)
+        self.assertEqual(socks, server.sockets)
+        self.assertFalse(any(sock.closed for sock in server.sockets))
 
     @patch("lib.live_cluster.client.node.ASSocket", autospec=True)
     async def test_get_connection_relogin_fails_raises_and_clears_token(
@@ -1513,11 +1922,13 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_info_all_namespace_statistics(self):
-        self.info_mock.side_effect = [
-            "foo;bar",
-            "asdf=1;b=b;c=!@#$%^&*()",
-            "cdef=2;c=c;d=)(*&^%$#@!",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "namespaces": "foo;bar",
+                "namespace/foo": "asdf=1;b=b;c=!@#$%^&*()",
+                "namespace/bar": "cdef=2;c=c;d=)(*&^%$#@!",
+            }
+        )
         expected = {
             "foo": {"asdf": "1", "b": "b", "c": "!@#$%^&*()"},
             "bar": {"cdef": "2", "c": "c", "d": ")(*&^%$#@!"},
@@ -1525,11 +1936,46 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         actual = await self.node.info_all_namespace_statistics()
 
-        self.assertEqual(self.info_mock.call_count, 3)
-        self.info_mock.assert_any_call("namespaces", self.ip)
-        self.info_mock.assert_any_call("namespace/foo", self.ip)
-        self.info_mock.assert_any_call("namespace/bar", self.ip)
         self.assertEqual(actual, expected)
+        self.assertEqual(
+            self.info_mock.call_count,
+            2,
+            "one request for the namespaces and one for all their statistics",
+        )
+        self.assertCountEqual(
+            commands_sent(self.info_mock),
+            ["namespaces", "namespace/foo", "namespace/bar"],
+        )
+
+    async def test_info_all_namespace_statistics_keeps_each_namespace_result(self):
+        self.info_mock.side_effect = info_server(
+            {
+                "namespaces": "foo;bar;gone",
+                "namespace/foo": "a=1",
+                "namespace/bar": "ERROR::not found",
+                "namespace/gone": "type=unknown",
+            }
+        )
+
+        actual = await self.node.info_all_namespace_statistics()
+
+        self.assertEqual(actual["foo"], {"a": "1"})
+        self.assertIsInstance(actual["bar"], ASInfoResponseError)
+        self.assertEqual(actual["gone"], {})
+
+    async def test_info_all_namespace_statistics_marks_a_namespace_missing_from_the_reply_invalid(
+        self,
+    ):
+        self.info_mock.side_effect = info_server(
+            {"namespaces": "foo;bar", "namespace/foo": "a=1"}
+        )
+
+        actual = await self.node.info_all_namespace_statistics()
+
+        self.assertEqual(
+            actual,
+            {"foo": {"a": "1"}, "bar": ASInfoError("Invalid command 'namespace/bar'")},
+        )
 
     async def info_all_namespace_statistics(self):
         self.info_mock.return_value = (
@@ -2754,57 +3200,105 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertDictEqual(result, expected)
         self.info_mock.assert_called_with("latencies:", self.ip)
 
+    VERBOSE_LATENCIES = [
+        "latencies:",
+        "latencies:hist={test}-proxy",
+        "latencies:hist={test}-benchmarks-ops-sub",
+        "latencies:hist={test}-benchmarks-read",
+        "latencies:hist={test}-benchmarks-write",
+        "latencies:hist={test}-benchmarks-udf",
+        "latencies:hist={test}-benchmarks-udf-sub",
+        "latencies:hist={test}-benchmarks-batch-sub",
+        "latencies:hist=benchmarks-fabric",
+    ]
+
     async def test_info_latencies_verbose(self):
         self.node.build = "8.2.1.0"
-        raw = ""
-        self.info_mock.side_effect = [
-            "test",
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
-            raw,
+        object_store = [
+            "latencies:hist={test}-object-store-%s" % op
+            for op in ("put", "get", "list", "delete")
         ]
+        self.info_mock.side_effect = info_server(
+            {
+                "namespaces": "test",
+                **{cmd: "" for cmd in self.VERBOSE_LATENCIES + object_store},
+            }
+        )
 
         _ = await self.node.info_latencies(verbose=True)
 
-        self.assertEqual(self.info_mock.call_count, 14)
-        self.info_mock.assert_any_call("latencies:", self.ip)
-        self.info_mock.assert_any_call("latencies:hist={test}-proxy", self.ip)
-        self.info_mock.assert_any_call("latencies:hist=benchmarks-fabric", self.ip)
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-ops-sub", self.ip
+        self.assertCountEqual(
+            commands_sent(self.info_mock),
+            ["namespaces"] + self.VERBOSE_LATENCIES + object_store,
         )
-        self.info_mock.assert_any_call("latencies:hist={test}-benchmarks-read", self.ip)
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-write", self.ip
-        )
-        self.info_mock.assert_any_call("latencies:hist={test}-benchmarks-udf", self.ip)
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-udf-sub", self.ip
-        )
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-benchmarks-batch-sub", self.ip
+        self.assertEqual(
+            self.info_mock.call_count,
+            2,
+            "one request for the namespaces and one for every histogram",
         )
 
-        for op in ("put", "get", "list", "delete"):
-            self.info_mock.assert_any_call(
-                "latencies:hist={test}-object-store-%s" % op, self.ip
-            )
+    async def test_info_latencies_verbose_with_namespaces_given_sends_one_request(
+        self,
+    ):
+        self.info_mock.side_effect = info_server(
+            {cmd: "" for cmd in self.VERBOSE_LATENCIES}
+        )
+
+        await self.node.info_latencies(verbose=True, ns_set=["test"])
+
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertCountEqual(commands_sent(self.info_mock), self.VERBOSE_LATENCIES)
+
+    async def test_info_latencies_verbose_skips_a_histogram_the_server_rejects(self):
+        raw = (
+            "{test}-read:msec,1.0,2.00,3.00,4.00,5.00,6.00,7.00,8.00,9.00,10.00,"
+            "11.00,12.00,13.00,14.00,15.00,16.00,17.00,18.00"
+        )
+        responses = {cmd: "" for cmd in self.VERBOSE_LATENCIES}
+        responses["latencies:"] = raw
+        responses["latencies:hist={test}-proxy"] = "ERROR::not found"
+        self.info_mock.side_effect = info_server(responses)
+
+        actual = await self.node.info_latencies(verbose=True, ns_set=["test"])
+
+        self.assertEqual(
+            actual,
+            {
+                "read": {
+                    "namespace": {
+                        "test": {
+                            "columns": ["ops/sec", ">1ms", ">8ms", ">64ms"],
+                            "values": [[1.0, 2.0, 5.0, 8.0]],
+                        }
+                    },
+                    "total": {
+                        "columns": ["ops/sec", ">1ms", ">8ms", ">64ms"],
+                        "values": [[1.0, 2.0, 5.0, 8.0]],
+                    },
+                }
+            },
+        )
+
+    async def test_info_latencies_verbose_returns_nothing_when_the_request_fails(
+        self,
+    ):
+        self.info_mock.side_effect = IOError("connection reset")
+
+        actual = await self.node.info_latencies(verbose=True, ns_set=["test"])
+
+        self.assertEqual(actual, {})
 
     def _latencies_responses(self, responses):
-        self.info_mock.side_effect = lambda cmd, ip: responses.get(cmd, "")
+        def answer(command, *args, **kwargs):
+            if isinstance(command, str):
+                return responses.get(command, "")
+
+            return {name: responses.get(name, "") for name in command}
+
+        self.info_mock.side_effect = answer
 
     def _sent_commands(self):
-        return [c.args[0] for c in self.info_mock.call_args_list]
+        return commands_sent(self.info_mock)
 
     async def test_info_latencies_verbose_skips_object_store_before_8_2_1(self):
         """TOOLS-4583: older servers do not have the object-store histograms."""
@@ -2814,7 +3308,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         result = await self.node.info_latencies(verbose=True)
 
         self.assertIsInstance(result, dict)
-        self.assertEqual(self.info_mock.call_count, 10)
+        self.assertEqual(len(self._sent_commands()), 10)
         self.assertFalse([c for c in self._sent_commands() if "object-store" in c])
 
     async def test_info_latencies_verbose_skips_object_store_when_build_unknown(self):
@@ -2833,7 +3327,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
                 result = await self.node.info_latencies(verbose=True)
 
                 self.assertIsInstance(result, dict)
-                self.assertEqual(self.info_mock.call_count, 10)
+                self.assertEqual(len(self._sent_commands()), 10)
                 self.assertFalse(
                     [c for c in self._sent_commands() if "object-store" in c]
                 )
@@ -2882,9 +3376,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         result = await self.node.info_latencies(verbose=True)
 
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-object-store-put", self.ip
-        )
+        self.assertIn("latencies:hist={test}-object-store-put", self._sent_commands())
         self.assertListEqual(list(result.keys()), ["write"])
 
     async def test_info_latencies_verbose_skips_unused_object_store_histograms(self):
@@ -2900,9 +3392,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         result = await self.node.info_latencies(verbose=True)
 
-        self.info_mock.assert_any_call(
-            "latencies:hist={test}-object-store-put", self.ip
-        )
+        self.assertIn("latencies:hist={test}-object-store-put", self._sent_commands())
         self.assertListEqual(list(result.keys()), ["write"])
 
     async def test_info_latencies_verbose_object_store_only_for_ns_set(self):
@@ -3103,6 +3593,17 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(actual.message, "Failed to add UDF")
         self.assertEqual(actual.response, "invalid_base64_content")
+
+    async def test_info_udf_put_compile_error_shows_whole_reply(self):
+        self.info_mock.return_value = "error=compile_error;file=x.lua;line=2;message=PG5hbWU+IG9yICcuLi4nIGV4cGVjdGVkIG5lYXIgJ3JldHVybic="
+
+        actual = await self.node.info_udf_put("x.lua", "udf_str", "LUA")
+
+        self.assertEqual(actual.message, "Failed to add UDF")
+        self.assertEqual(
+            actual.response,
+            "compile_error;file=x.lua;line=2;message=PG5hbWU+IG9yICcuLi4nIGV4cGVjdGVkIG5lYXIgJ3JldHVybic=",
+        )
 
     @patch("lib.live_cluster.client.node.Node.info_udf_list")
     async def test_info_udf_remove_success(self, info_udf_list_mock):
@@ -3448,12 +3949,14 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
     @patch("lib.live_cluster.client.node.Node.info_dcs")
     async def test_info_get_xdr_filter(self, info_dcs_mock: AsyncMock):
         info_dcs_mock.return_value = ["dc1", "dc2"]
-        self.info_mock.side_effect = [
-            "namespace=test:exp=1;namespace=bar:exp=2",
-            "namespace=test:exp=3;namespace=bar:exp=4",
-            "namespace=test:exp=5;namespace=bar:exp=6",
-            "namespace=test:exp=7;namespace=bar:exp=8",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "xdr-get-filter:dc=dc1": "namespace=test:exp=1;namespace=bar:exp=2",
+                "xdr-get-filter:dc=dc1;b64=true": "namespace=test:exp=3;namespace=bar:exp=4",
+                "xdr-get-filter:dc=dc2": "namespace=test:exp=5;namespace=bar:exp=6",
+                "xdr-get-filter:dc=dc2;b64=true": "namespace=test:exp=7;namespace=bar:exp=8",
+            }
+        )
         expected = {
             "dc1": {
                 "test": {"namespace": "test", "exp": "1", "b64-exp": "3"},
@@ -3468,6 +3971,28 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         actual = await self.node.info_get_xdr_filter()
 
         self.assertDictEqual(actual, expected)
+        self.assertEqual(
+            self.info_mock.call_count, 2, "one request per dc for both filter forms"
+        )
+
+    @parameterized.expand(
+        [("xdr-get-filter:dc=dc1",), ("xdr-get-filter:dc=dc1;b64=true",)]
+    )
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_get_xdr_filter_marks_a_filter_missing_from_the_reply_invalid(
+        self, missing, info_dcs_mock: AsyncMock
+    ):
+        info_dcs_mock.return_value = ["dc1"]
+        responses = {
+            "xdr-get-filter:dc=dc1": "namespace=test:exp=1",
+            "xdr-get-filter:dc=dc1;b64=true": "namespace=test:exp=2",
+        }
+        del responses[missing]
+        self.info_mock.side_effect = info_server(responses)
+
+        actual = await self.node.info_get_xdr_filter()
+
+        self.assertEqual(actual, ASInfoError("Invalid command '%s'" % missing))
 
     async def test_info_histogram(self):
         raw = """
@@ -4588,13 +5113,32 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         """Server >= 8.2: the v2 sindex-list format is requested so the renamed
         'integer' type is reported."""
         self.node.build = "8.2.0.0"
-        self.info_mock.side_effect = ["a=1:b=2;", "a=1:b=2;"]
+        self.info_mock.side_effect = info_server(
+            {"sindex-list:v=v2": "a=1:b=2;", "sindex-list:v=v2;b64=true": "a=1:b=2;"}
+        )
         expected = [{"a": "1", "b": "2"}]
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_any_call("sindex-list:v=v2", self.ip)
+        self.assertIn("sindex-list:v=v2", commands_sent(self.info_mock))
         self.assertListEqual(actual, expected)
+
+    async def test_info_sindex_asks_for_both_lists_in_one_request(self):
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=a:exp=null",
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=a:exp=null",
+            }
+        )
+
+        await self.node.info_sindex()
+
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertCountEqual(
+            commands_sent(self.info_mock),
+            ["sindex-list:v=v2", "sindex-list:v=v2;b64=true"],
+        )
 
     async def test_info_sindex_v2_when_build_unavailable(self):
         """If the build version is unknown, fall back to the default (v1) format."""
@@ -4612,25 +5156,21 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.node.build = "8.2.0.0"
         ael_src = "$.campaign1:INT + $.campaign2:INT"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            'ns=test:indexname=ael-idx:exp=add(bin_int("campaign1"), bin_int("campaign2")):state=RW;'
-            "ns=test:indexname=exp-idx:exp={}:state=RW;".format(compiled_exp)
-            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
-            "ns=test:indexname=ael-idx:exp={}:state=RW;".format(
-                pack_ael_expression(ael_src)
-            )
-            + "ns=test:indexname=exp-idx:exp=lBSTUQKpY2FtcGFpZ24x:state=RW;"
-            + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": 'ns=test:indexname=ael-idx:exp=add(bin_int("campaign1"), bin_int("campaign2")):state=RW;'
+                "ns=test:indexname=exp-idx:exp={}:state=RW;".format(compiled_exp)
+                + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=ael-idx:exp={}:state=RW;".format(
+                    pack_ael_expression(ael_src)
+                )
+                + "ns=test:indexname=exp-idx:exp=lBSTUQKpY2FtcGFpZ24x:state=RW;"
+                + "ns=test:indexname=bin-idx:bin=a:exp=null:state=RW",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
-        self.info_mock.assert_has_calls(
-            [
-                call("sindex-list:v=v2", self.ip),
-                call("sindex-list:v=v2;b64=true", self.ip),
-            ]
-        )
         self.assertEqual(actual[0]["ael"], ael_src)
         self.assertEqual(actual[0]["exp"], "null")
         self.assertEqual(actual[1]["exp"], compiled_exp)
@@ -4642,37 +5182,57 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         """A failed b64 call leaves the default response untouched."""
         self.node.build = "8.2.0.0"
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
-            "ERROR::bad b64",
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=exp-idx:exp={}:state=RW".format(
+                    compiled_exp
+                ),
+                "sindex-list:v=v2;b64=true": "ERROR::bad b64",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
         self.assertEqual(actual[0]["exp"], compiled_exp)
 
-    @parameterized.expand(
-        [
-            ("as_info_error", ASInfoError("Invalid command")),
-            ("os_error", OSError("connection reset")),
-            ("timeout", asyncio.TimeoutError()),
-        ]
-    )
-    async def test_info_sindex_ael_ignores_raised_base64_list(self, _, exc):
-        """A raised b64 call must not cost the caller the sindex list already
-        fetched, nor mark the node dead."""
+    async def test_info_sindex_ael_ignores_a_base64_list_that_does_not_parse(self):
+        """A b64 answer that cannot be read leaves the default response untouched."""
         self.node.build = "8.2.0.0"
         self.node.alive = True
         compiled_exp = 'add(bin_int("a"), bin_int("b"))'
-        self.info_mock.side_effect = [
-            "ns=test:indexname=exp-idx:exp={}:state=RW".format(compiled_exp),
-            exc,
-        ]
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-list:v=v2": "ns=test:indexname=exp-idx:exp={}:state=RW".format(
+                    compiled_exp
+                ),
+                "sindex-list:v=v2;b64=true": "ns=test:indexname=exp-idx:exp=!!!:state=RW",
+            }
+        )
 
         actual = await self.node.info_sindex()
 
         self.assertEqual(actual[0]["exp"], compiled_exp)
         self.assertTrue(self.node.alive)
+
+    async def test_info_sindex_ael_ignores_a_base64_list_missing_from_the_reply(self):
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = info_server(
+            {"sindex-list:v=v2": "ns=test:indexname=a:exp=null"}
+        )
+
+        actual = await self.node.info_sindex()
+
+        self.assertEqual(actual, [{"ns": "test", "indexname": "a", "exp": "null"}])
+
+    async def test_info_sindex_marks_a_list_missing_from_the_reply_invalid(self):
+        self.node.build = "8.2.0.0"
+        self.info_mock.side_effect = info_server(
+            {"sindex-list:v=v2;b64=true": "ns=test:indexname=a:exp=null"}
+        )
+
+        actual = await self.node.info_sindex()
+
+        self.assertEqual(actual, ASInfoError("Invalid command 'sindex-list:v=v2'"))
 
     async def test_info_sindex_statistics(self):
         self.info_mock.return_value = "a=b;c=d;e=f"
@@ -4684,6 +5244,67 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             "sindex-stat:namespace={};indexname={}".format("foo", "bar"), self.ip
         )
         self.assertDictEqual(actual, expected)
+
+    async def test_info_all_sindex_statistics_sends_one_request(self):
+        self.info_mock.side_effect = info_server(
+            {
+                "sindex-stat:namespace=foo;indexname=a": "x=1;y=2",
+                "sindex-stat:namespace=bar;indexname=b": "ERROR::no index",
+            }
+        )
+
+        actual = await self.node.info_all_sindex_statistics(
+            [("foo", "a"), ("bar", "b")]
+        )
+
+        self.assertEqual(self.info_mock.call_count, 1)
+        self.assertEqual(actual[("foo", "a")], {"x": "1", "y": "2"})
+        self.assertIsInstance(actual[("bar", "b")], ASInfoResponseError)
+
+    async def test_info_all_sindex_statistics_marks_an_index_missing_from_the_reply_invalid(
+        self,
+    ):
+        self.info_mock.side_effect = info_server(
+            {"sindex-stat:namespace=foo;indexname=a": "x=1"}
+        )
+
+        actual = await self.node.info_all_sindex_statistics(
+            [("foo", "a"), ("foo", "b")]
+        )
+
+        self.assertEqual(
+            actual,
+            {
+                ("foo", "a"): {"x": "1"},
+                ("foo", "b"): ASInfoError(
+                    "Invalid command 'sindex-stat:namespace=foo;indexname=b'"
+                ),
+            },
+        )
+
+    async def test_info_all_sindex_statistics_answers_a_non_ascii_index_name(self):
+        reply = (
+            "sindex-stat:namespace=test;indexname=idx_a\tentries=1\n"
+            "sindex-stat:namespace=test;indexname=idx_é\tentries=2\n"
+        ).encode()
+        reader = AsyncMock()
+        reader.read.side_effect = [b"\x02\x01" + len(reply).to_bytes(6, "big"), reply]
+        writer = Mock()
+        writer.drain = AsyncMock()
+
+        async def over_the_wire(command, *args, **kwargs):
+            return await info(reader, writer, command)
+
+        self.info_mock.side_effect = over_the_wire
+
+        actual = await self.node.info_all_sindex_statistics(
+            [("test", "idx_a"), ("test", "idx_é")]
+        )
+
+        self.assertEqual(
+            actual,
+            {("test", "idx_a"): {"entries": "1"}, ("test", "idx_é"): {"entries": "2"}},
+        )
 
     async def test_info_sindex_create_success(self):
         self.info_mock.return_value = "OK"
@@ -5392,6 +6013,81 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(actual, {"is_parked": True, "park_ms": 987, "namespaces": {}})
 
+    async def test_info_checkpoint_status_8_2_1_node_record_is_not_a_namespace(self):
+        self.info_mock.return_value = (
+            "node:is_parked=false:park_ms=0;"
+            "test:state=none:files_completed=0:files_total=0;"
+            "bar:state=none:files_completed=0:files_total=0"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            self._checkpoint_status(
+                test={"state": "none", "files_completed": 0, "files_total": 0},
+                bar={"state": "none", "files_completed": 0, "files_total": 0},
+            ),
+        )
+
+    async def test_info_checkpoint_status_8_2_1_park_state_from_node_record(self):
+        self.info_mock.return_value = (
+            "node:is_parked=true:park_ms=10001;"
+            "test:state=done:files_completed=11:files_total=11;"
+            "bar:state=done:files_completed=11:files_total=11"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            {
+                "is_parked": True,
+                "park_ms": 10001,
+                "namespaces": {
+                    "test": {"state": "done", "files_completed": 11, "files_total": 11},
+                    "bar": {"state": "done", "files_completed": 11, "files_total": 11},
+                },
+            },
+        )
+
+    async def test_info_checkpoint_status_8_2_1_no_namespace_checkpointing(self):
+        self.info_mock.return_value = "node:is_parked=true:park_ms=987"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(actual, {"is_parked": True, "park_ms": 987, "namespaces": {}})
+
+    @parameterized.expand(
+        [
+            (
+                "8_2_0",
+                "node:state=done:files_completed=2:files_total=2:is_parked=true:"
+                "park_ms=40",
+            ),
+            (
+                "8_2_1",
+                "node:is_parked=true:park_ms=40;"
+                "node:state=done:files_completed=2:files_total=2",
+            ),
+        ]
+    )
+    async def test_info_checkpoint_status_namespace_named_node(self, _, resp):
+        self.info_mock.return_value = resp
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            {
+                "is_parked": True,
+                "park_ms": 40,
+                "namespaces": {
+                    "node": {"state": "done", "files_completed": 2, "files_total": 2}
+                },
+            },
+        )
+
     async def test_info_checkpoint_status_malformed_files(self):
         self.info_mock.return_value = "test:state=copying:files_completed=bogus:files_total=:is_parked=false:park_ms=x"
 
@@ -5828,7 +6524,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             "ssn",
             "string",
             "redact",
-            {"position": "0", "length": "4", "value": "*"},
+            [("position", "0"), ("length", "4"), ("value", "*")],
         )
 
         expected_req = "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*"
@@ -5840,7 +6536,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.info_mock.return_value = "error::invalid parameters"
 
         result = await self.node.info_masking_add_rule(
-            "test", "demo", "ssn", "string", "redact", {"position": "0"}
+            "test", "demo", "ssn", "string", "redact", [("position", "0")]
         )
 
         self.assertIsInstance(result, ASInfoResponseError)
@@ -5885,13 +6581,591 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to remove masking rule")
 
+    @parameterized.expand(
+        [
+            (
+                "",
+                "JC5wcm9maWxlLnNzbg==",
+                "masking:namespace=test;set=demo;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=redact;position=0",
+            ),
+            (
+                "ssn",
+                "JC5wcm9maWxlLnNzbg==",
+                "masking:namespace=test;set=demo;bin=ssn;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=redact;position=0",
+            ),
+            (
+                "",
+                "",
+                "masking:namespace=test;set=demo;ael_b64=;type=string;function=redact;position=0",
+            ),
+            (
+                "",
+                None,
+                "masking:namespace=test;set=demo;type=string;function=redact;position=0",
+            ),
+        ]
+    )
+    async def test_info_masking_add_rule_sends_target_as_given(
+        self, bin_, ael_b64, expected_req
+    ):
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_add_rule(
+            "test", "demo", bin_, "string", "redact", [("position", "0")], ael_b64
+        )
+
+        self.info_mock.assert_called_with(expected_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_remove_rule_with_ael_b64(self):
+        self.info_mock.return_value = "ok"
+
+        result = await self.node.info_masking_remove_rule(
+            "test", "demo", "", "string", "JC5wcm9maWxlLnNzbg=="
+        )
+
+        self.info_mock.assert_called_with(
+            "masking:namespace=test;set=demo;ael_b64=JC5wcm9maWxlLnNzbg==;type=string;function=remove",
+            self.ip,
+        )
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    async def test_info_masking_add_rule_keeps_whole_server_error(self):
+        self.info_mock.return_value = "ERROR:4:bad path, at offset 0: unresolved bin type, use $.bin:LIST or $.bin:MAP"
+
+        result = await self.node.info_masking_add_rule(
+            "test", "demo", "", "string", "redact", [], "JC5wLnggKw=="
+        )
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(
+            result.response,
+            "bad path, at offset 0: unresolved bin type, use $.bin:LIST or $.bin:MAP",
+        )
+
+    async def test_info_masking_list_rules_with_path_rule(self):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=ssn;type=string;function=redact"
+            ":namespace=test;set=demo;type=string;function=redact;ael_b64=JC5wcm9maWxlLnNzbg=="
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "ael_b64": "JC5wcm9maWxlLnNzbg==",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "dormant_path_rule",
+                "namespace=test;set=demo;type=string;function=constant;value=12:30;ael_b64=JC5yMC54Lnk=;enforced=false",
+                {
+                    "type": "string",
+                    "function": "constant",
+                    "value": "12:30",
+                    "ael_b64": "JC5yMC54Lnk=",
+                    "enforced": "false",
+                },
+            ),
+            (
+                "path_rule_default",
+                "namespace=test;set=demo;type=string;function=redact;default=00:00;ael_b64=JC52Lnc=",
+                {
+                    "type": "string",
+                    "function": "redact",
+                    "default": "00:00",
+                    "ael_b64": "JC52Lnc=",
+                },
+            ),
+            (
+                "bin_rule_value_with_equals",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=a:b=c",
+                {
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "a:b=c",
+                },
+            ),
+            (
+                "bin_rule_value_with_two_colons",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=aa:bb:cc",
+                {
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "aa:bb:cc",
+                },
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_rejoins_split_value(self, _, rule, exp_rule):
+        self.info_mock.return_value = (
+            rule + ":namespace=test;set=demo;bin=u;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                dict(namespace="test", set="demo", **exp_rule),
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            ("value_ends_with_colon_first", "abc:", 0, 1),
+            ("value_ends_with_colon_middle", "abc:", 1, 1),
+            ("value_ends_with_colon_last", "abc:", 1, 0),
+            ("value_two_colons_first", "::", 0, 1),
+            ("value_two_colons_middle", "::", 1, 1),
+            ("value_two_colons_last", "::", 1, 0),
+            ("value_double_colon_inside_first", "a::b", 0, 1),
+            ("value_double_colon_inside_middle", "a::b", 1, 1),
+            ("value_double_colon_inside_last", "a::b", 1, 0),
+            ("value_colon_alone_first", ":", 0, 1),
+            ("value_colon_alone_middle", ":", 1, 1),
+            ("value_colon_alone_last", ":", 1, 0),
+        ]
+    )
+    async def test_info_masking_list_rules_keeps_empty_pieces_of_a_value(
+        self, _, value, before, after
+    ):
+        other = "namespace=test;set=demo;bin=u;type=string;function=redact"
+        exp_other = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "u",
+            "type": "string",
+            "function": "redact",
+        }
+        self.info_mock.return_value = ":".join(
+            [other] * before
+            + [
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value="
+                + value
+            ]
+            + [other] * after
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [exp_other] * before
+            + [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": value,
+                }
+            ]
+            + [exp_other] * after,
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=a:namespace=b",
+                {"bin": "t", "value": "a:namespace=b"},
+            ),
+            (
+                "path_rule",
+                "namespace=test;set=demo;type=string;function=constant;value=a:namespace=b;ael_b64=JC5wLng=",
+                {"value": "a:namespace=b", "ael_b64": "JC5wLng="},
+            ),
+            (
+                "dormant_path_rule",
+                "namespace=test;set=demo;type=string;function=constant;value=a:namespace=b;ael_b64=JC5wLng=;enforced=false",
+                {"value": "a:namespace=b", "ael_b64": "JC5wLng=", "enforced": "false"},
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_value_holding_namespace_stays_in_its_rule(
+        self, _, rule, exp_rule
+    ):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=u;type=string;function=redact:"
+            + rule
+            + ":namespace=test;set=demo;bin=w;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="constant",
+                    **exp_rule,
+                ),
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "w",
+                    "type": "string",
+                    "function": "redact",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "adjacent",
+                "namespace=test;set=demo;bin=t;type=string;function=constant;value=first;value=second",
+            ),
+            (
+                "split_by_another_key",
+                "namespace=test;set=demo;bin=t;type=string;value=first;function=constant;value=second",
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_duplicate_key_keeps_first_value(
+        self, _, rule
+    ):
+        self.info_mock.return_value = rule
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "first",
+                }
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                "set=demo;value=1:2;namespace=test;bin=t;type=string;function=constant",
+                {"bin": "t", "value": "1:2"},
+            ),
+            (
+                "bin_rule_equals_after_colon",
+                "set=demo;value=1:k=2;namespace=test;bin=t;type=string;function=constant",
+                {"bin": "t", "value": "1:k=2"},
+            ),
+            (
+                "path_rule",
+                "set=demo;value=1:2;namespace=test;type=string;function=constant;ael_b64=JC5wLng=",
+                {"value": "1:2", "ael_b64": "JC5wLng="},
+            ),
+            (
+                "value_typed_first",
+                "value=1:2;namespace=test;set=demo;bin=t;type=string;function=constant",
+                {"bin": "t", "value": "1:2"},
+            ),
+        ]
+    )
+    async def test_info_masking_list_rules_value_typed_before_namespace(
+        self, _, rule, exp_rule
+    ):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=u;type=string;function=redact:"
+            + rule
+            + ":namespace=test;set=demo;bin=w;type=string;function=redact"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "u",
+                    "type": "string",
+                    "function": "redact",
+                },
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="constant",
+                    **exp_rule,
+                ),
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "w",
+                    "type": "string",
+                    "function": "redact",
+                },
+            ],
+        )
+
+    async def test_info_masking_list_rules_live_reply(self):
+        self.info_mock.return_value = (
+            "set=tpa576_p;value=1:2;namespace=test;bin=d1;type=string;function=constant"
+            ":namespace=test;set=tpa576_p;type=string;function=constant;value=a:namespace=b;ael_b64=JC5wLng="
+            ":namespace=test;set=tpa576_p;bin=a2;type=string;function=constant;value=a::b"
+            ":namespace=test;set=tpa576_p;bin=b1;type=string;function=constant;value=a:namespace=b"
+            ":namespace=test;set=tpa576_p;bin=d2;type=string;function=constant;value=first;value=second"
+            ":namespace=test;set=tpa576_p;bin=a1;type=string;function=constant;value=abc:"
+            ":namespace=test;set=tpa576_p;bin=ok1;type=string;function=constant;value=12:30"
+            ":namespace=test;set=tpa576_p;bin=a4;type=string;function=constant;value=:"
+            ":namespace=test;set=tpa576_p;bin=a3;type=string;function=constant;value=::"
+        )
+        rule = {
+            "namespace": "test",
+            "set": "tpa576_p",
+            "type": "string",
+            "function": "constant",
+        }
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                dict(rule, bin="d1", value="1:2"),
+                dict(rule, value="a:namespace=b", ael_b64="JC5wLng="),
+                dict(rule, bin="a2", value="a::b"),
+                dict(rule, bin="b1", value="a:namespace=b"),
+                dict(rule, bin="d2", value="first"),
+                dict(rule, bin="a1", value="abc:"),
+                dict(rule, bin="ok1", value="12:30"),
+                dict(rule, bin="a4", value=":"),
+                dict(rule, bin="a3", value="::"),
+            ],
+        )
+
+    async def test_info_masking_list_rules_incomplete_first_piece_is_its_own_row(
+        self,
+    ):
+        self.info_mock.return_value = (
+            "value=x:k=1;namespace=test;set=demo;bin=t;type=string;function=constant"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {"value": "x"},
+                {
+                    "k": "1",
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                },
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            ("no_function", "namespace=x;set=y;type=z"),
+            ("no_type", "namespace=x;set=y;function=z"),
+        ]
+    )
+    async def test_info_masking_list_rules_piece_missing_a_key_joins_the_rule_before(
+        self, _, piece
+    ):
+        self.info_mock.return_value = (
+            "namespace=test;set=demo;bin=t;type=string;function=constant;value=a:"
+            + piece
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "a:namespace=x",
+                }
+            ],
+        )
+
+    async def test_info_masking_list_rules_released_server_reply(self):
+        self.info_mock.return_value = RELEASED_SERVER_MASKING_SHOW + (
+            ":namespace=test;set=demo;bin=t;type=string;function=constant;value=12:30"
+        )
+
+        result = await self.node.info_masking_list_rules()
+
+        self.assertEqual(
+            result,
+            RELEASED_SERVER_MASKING_RULES
+            + [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                    "value": "12:30",
+                }
+            ],
+        )
+
+    async def test_info_masking_list_rules_released_server_reply_as_on_master(self):
+        self.info_mock.return_value = RELEASED_SERVER_MASKING_SHOW
+
+        result = await self.node.info_masking_list_rules()
+
+        self.info_mock.assert_called_with("masking-show:", self.ip)
+        self.assertEqual(result, RELEASED_SERVER_MASKING_RULES)
+
+    @parameterized.expand(
+        [
+            (
+                "add_redact",
+                "info_masking_add_rule",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "redact",
+                    [("position", "0"), ("length", "4"), ("value", "*")],
+                ),
+                "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*",
+            ),
+            (
+                "add_constant_integer",
+                "info_masking_add_rule",
+                ("test", "demo", "n", "integer", "constant", [("value", "0")]),
+                "masking:namespace=test;set=demo;bin=n;type=integer;function=constant;value=0",
+            ),
+            (
+                "remove_string",
+                "info_masking_remove_rule",
+                ("test", "demo", "ssn", "string"),
+                "masking:namespace=test;set=demo;bin=ssn;type=string;function=remove",
+            ),
+            (
+                "remove_integer",
+                "info_masking_remove_rule",
+                ("test", "demo", "n", "integer"),
+                "masking:namespace=test;set=demo;bin=n;type=integer;function=remove",
+            ),
+        ]
+    )
+    async def test_info_masking_bin_rule_request_as_on_master(
+        self, _, method, args, exp_req
+    ):
+        self.info_mock.return_value = "ok"
+
+        result = await getattr(self.node, method)(*args)
+
+        self.info_mock.assert_called_with(exp_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
+    @parameterized.expand(
+        [
+            (
+                "add_duplicate_params",
+                "info_masking_add_rule",
+                (
+                    "test",
+                    "demo",
+                    "ssn",
+                    "string",
+                    "redact",
+                    [
+                        ("position", "0"),
+                        ("position", "1"),
+                        ("length", "2"),
+                        ("value", "*"),
+                    ],
+                ),
+                "masking:namespace=test;set=demo;bin=ssn;type=string;function=redact;position=0;position=1;length=2;value=*",
+            ),
+            (
+                "remove_bin_with_params",
+                "info_masking_remove_rule",
+                ("test", "demo", "dd", "string", None, [("position", "0")]),
+                "masking:namespace=test;set=demo;bin=dd;type=string;function=remove;position=0",
+            ),
+            (
+                "remove_path_with_params",
+                "info_masking_remove_rule",
+                (
+                    "test",
+                    "demo",
+                    "",
+                    "string",
+                    "JC5wLnNzbg==",
+                    [("default", "N/A"), ("position", "0")],
+                ),
+                "masking:namespace=test;set=demo;ael_b64=JC5wLnNzbg==;type=string;function=remove;default=N/A;position=0",
+            ),
+        ]
+    )
+    async def test_info_masking_rule_request_sends_params_in_order(
+        self, _, method, args, exp_req
+    ):
+        self.info_mock.return_value = "ok"
+
+        result = await getattr(self.node, method)(*args)
+
+        self.info_mock.assert_called_with(exp_req, self.ip)
+        self.assertEqual(result, ASINFO_RESPONSE_OK)
+
     async def test_info_masking_list_rules_success(self):
         """Test successful masking rules listing"""
         self.info_mock.return_value = "ns=test;set=demo;bin=ssn;type=string;function=redact;position=0;length=4;value=*:ns=test;set=demo;bin=email;type=string;function=constant;value=REDACTED"
 
         result = await self.node.info_masking_list_rules("test", "demo")
 
-        expected_req = "masking-show:ns=test;set=demo;"
+        expected_req = "masking-show:namespace=test;set=demo;"
         self.info_mock.assert_called_with(expected_req, self.ip)
 
         expected = [
@@ -5915,6 +7189,21 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             },
         ]
         self.assertEqual(result, expected)
+
+    async def test_info_masking_list_rules_namespace_filter_uses_namespace_param(self):
+        """masking-show takes 'ns' only as a deprecated alias of 'namespace'."""
+        self.info_mock.return_value = ""
+
+        await self.node.info_masking_list_rules("test")
+
+        self.info_mock.assert_called_with("masking-show:namespace=test;", self.ip)
+
+    async def test_info_masking_list_rules_set_filter_alone(self):
+        self.info_mock.return_value = ""
+
+        await self.node.info_masking_list_rules(set_="demo")
+
+        self.info_mock.assert_called_with("masking-show:set=demo;", self.ip)
 
     async def test_info_masking_list_rules_no_filters(self):
         """Test masking rules listing without filters"""
@@ -5955,6 +7244,55 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to list masking rules")
         self.assertEqual(result.response, "masking not supported")
+
+    async def test_info_usage_returns_the_decoded_export(self):
+        export = b'{"data":{"cluster":"963fa489","records":[],"schema":1}}'
+        self.info_mock.return_value = base64.b64encode(export).decode()
+
+        result = await self.node.info_usage()
+
+        self.assertEqual(result, export)
+        self.info_mock.assert_called_with("usage-export", self.ip)
+
+    async def test_info_usage_error_keeps_the_raw_reply(self):
+        reply = "ERROR:11:cluster not yet formed"
+        self.info_mock.return_value = reply
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.raw_response, reply)
+
+    async def test_info_usage_reply_that_is_not_base64(self):
+        reply = "eyJkYXRhIjp7!"
+        self.info_mock.return_value = reply
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.raw_response, reply)
+
+    @parameterized.expand([("empty", ""), ("ok", "ok"), ("upper_ok", "OK")])
+    async def test_info_usage_reply_with_no_export_is_an_error(self, _, reply):
+        self.info_mock.return_value = reply
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoError)
+        self.assertEqual(
+            (result.message, result.response), ("Failed to get usage", reply)
+        )
+
+    async def test_info_usage_empty_info_body_is_an_invalid_command(self):
+        self._answer_over_a_socket({"usage-export": None})
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoError)
+        self.assertEqual(
+            (result.message, result.response),
+            ("Invalid command 'usage-export'", None),
+        )
 
 
 class SyscmdTest(unittest.TestCase):

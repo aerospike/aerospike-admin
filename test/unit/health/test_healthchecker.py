@@ -26369,3 +26369,130 @@ class HealthcheckerTest(unittest.TestCase):
         self.assertDictEqual(
             result, expected_5_7, "health_checker did not return the expected result"
         )
+
+
+def create_cluster_input(version, service_stats_by_node):
+    cl = ("C1", "CLUSTER")
+    nodes = [(host, "NODE") for host in service_stats_by_node]
+
+    return {
+        "SNAPSHOT000": {
+            "NAMESPACE": {
+                "STATISTICS": {cl: {node: {} for node in nodes}},
+                "CONFIG": {cl: {node: {} for node in nodes}},
+            },
+            "SERVICE": {
+                "STATISTICS": {
+                    cl: {
+                        (host, "NODE"): {(k, "KEY"): v for k, v in stats.items()}
+                        for host, stats in service_stats_by_node.items()
+                    }
+                },
+            },
+            "METADATA": {
+                "CLUSTER": {
+                    cl: {
+                        node: {
+                            ("version", "KEY"): version,
+                            ("edition", "KEY"): "Enterprise",
+                        }
+                        for node in nodes
+                    }
+                }
+            },
+        }
+    }
+
+
+class ClusterUuidHealthCheckTests(unittest.TestCase):
+    DIFFERENT_UUID = "Different Cluster UUID."
+    U1 = "963fa489-71bd-46a9-af70-765ce26c5a62"
+    U2 = "11111111-2222-4333-8444-555555555555"
+
+    def failed_asserts(self, service_stats_by_node):
+        hc = HealthChecker()
+        hc.set_health_input_data(create_cluster_input("8.2.1.0", service_stats_by_node))
+        result = hc.execute()
+        failed = {}
+
+        for asserts in result[HealthResultType.ASSERT].values():
+            for a in asserts:
+                if not a[AssertResultKey.SUCCESS]:
+                    failed[a[AssertResultKey.FAIL_MSG]] = a[AssertResultKey.LEVEL]
+
+        return failed
+
+    def test_a_node_with_a_different_uuid_warns(self):
+        failed = self.failed_asserts(
+            {
+                "1.1.1.1:3000": {"cluster_uuid": self.U1},
+                "2.2.2.2:3000": {"cluster_uuid": self.U1},
+                "3.3.3.3:3000": {"cluster_uuid": self.U2},
+            }
+        )
+
+        self.assertEqual(failed.get(self.DIFFERENT_UUID), AssertLevel.WARNING)
+
+    def test_the_description_names_the_clusters_it_lists(self):
+        hc = HealthChecker()
+        hc.set_health_input_data(
+            create_cluster_input(
+                "8.2.1.0",
+                {
+                    "1.1.1.1:3000": {"cluster_uuid": self.U1},
+                    "2.2.2.2:3000": {"cluster_uuid": self.U1},
+                    "3.3.3.3:3000": {"cluster_uuid": self.U2},
+                },
+            )
+        )
+        failed = [
+            a
+            for asserts in hc.execute()[HealthResultType.ASSERT].values()
+            for a in asserts
+            if a[AssertResultKey.FAIL_MSG] == self.DIFFERENT_UUID
+        ]
+
+        self.assertEqual(len(failed), 1)
+        self.assertTrue(
+            failed[0][AssertResultKey.DESCRIPTION].startswith("Listed cluster[s] "),
+            failed[0][AssertResultKey.DESCRIPTION],
+        )
+
+    def test_matching_uuids_pass(self):
+        failed = self.failed_asserts(
+            {
+                "1.1.1.1:3000": {"cluster_uuid": self.U1},
+                "2.2.2.2:3000": {"cluster_uuid": self.U1},
+            }
+        )
+
+        self.assertNotIn(self.DIFFERENT_UUID, failed)
+
+    def test_servers_without_the_statistic_are_not_flagged(self):
+        failed = self.failed_asserts(
+            {"1.1.1.1:3000": {"cluster_size": 2}, "2.2.2.2:3000": {"cluster_size": 2}}
+        )
+
+        self.assertNotIn(self.DIFFERENT_UUID, failed)
+
+    def test_a_node_on_an_older_release_is_not_flagged(self):
+        failed = self.failed_asserts(
+            {
+                "1.1.1.1:3000": {"cluster_uuid": self.U1},
+                "2.2.2.2:3000": {"cluster_uuid": self.U1},
+                "3.3.3.3:3000": {"cluster_size": 3},
+            }
+        )
+
+        self.assertNotIn(self.DIFFERENT_UUID, failed)
+
+    def test_differing_uuids_are_not_flagged_while_a_node_lacks_the_statistic(self):
+        failed = self.failed_asserts(
+            {
+                "1.1.1.1:3000": {"cluster_uuid": self.U1},
+                "2.2.2.2:3000": {"cluster_uuid": self.U2},
+                "3.3.3.3:3000": {"cluster_size": 3},
+            }
+        )
+
+        self.assertNotIn(self.DIFFERENT_UUID, failed)

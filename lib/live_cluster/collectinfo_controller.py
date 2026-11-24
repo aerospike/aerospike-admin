@@ -53,6 +53,7 @@ from lib.base_controller import (
 from lib.collectinfo_analyzer.collectinfo_root_controller import (
     CollectinfoRootController,
 )
+from lib.collectinfo_analyzer import health_check_controller as analyzer_health
 from lib.live_cluster.get_controller import (
     GetStatisticsController,
     GetConfigController,
@@ -65,13 +66,24 @@ from lib.live_cluster.get_controller import (
 )
 
 from .live_cluster_command_controller import LiveClusterCommandController
+from .collectusage_controller import (
+    UsageUnavailable,
+    fetch_usage,
+    older_servers_message,
+    unavailable_message,
+    usage_supported,
+)
 from .features_controller import FeaturesController
 from .info_controller import InfoController
 from .show_controller import ShowController
 
 logger = logging.getLogger(__name__)
 
-_COMMAND_LOGGER_NAMES = (InfoController.__module__, ShowController.__module__)
+_COMMAND_LOGGER_NAMES = (
+    InfoController.__module__,
+    ShowController.__module__,
+    analyzer_health.__name__,
+)
 
 
 def _not_a_command_warning(record: logging.LogRecord) -> bool:
@@ -80,9 +92,9 @@ def _not_a_command_warning(record: logging.LogRecord) -> bool:
 
 @contextlib.contextmanager
 def _command_warnings_silenced():
-    """Only stdout is captured from the info and show commands collectinfo runs
-    for its logs, so their warnings would land on the operator's terminal. Only
-    the stderr handler is filtered: collectinfo_debug.log still records them."""
+    """Only stdout is captured from the info, show and health commands collectinfo
+    runs for its logs, so their warnings would land on the operator's terminal.
+    Only the stderr handler is filtered: collectinfo_debug.log still records them."""
     stderr_log_handler.addFilter(_not_a_command_warning)
 
     try:
@@ -272,6 +284,7 @@ _INFO_CALL_SUBSECTIONS = {
     "info_bin_statistics": constants.STAT_BINS,
     "info_sindex": constants.STAT_SINDEX,
     "info_sindex_statistics": constants.STAT_SINDEX,
+    "info_all_sindex_statistics": constants.STAT_SINDEX,
     "info_XDR_statistics": constants.STAT_XDR,
     "info_all_dc_statistics": constants.STAT_DC,
     "info_all_xdr_namespaces_statistics": constants.STAT_XDR_NS,
@@ -397,10 +410,21 @@ class _ErrorRecordingCluster:
             return
 
         for node_key, value in result.items():
-            if isinstance(value, Exception):
-                _record_info_call_error(
-                    self._ledger, self._section, method_name, kwargs, node_key, value
-                )
+            failures = [value]
+
+            if method_name == "info_all_sindex_statistics" and isinstance(value, dict):
+                failures = value.values()
+
+            for failure in failures:
+                if isinstance(failure, Exception):
+                    _record_info_call_error(
+                        self._ledger,
+                        self._section,
+                        method_name,
+                        kwargs,
+                        node_key,
+                        failure,
+                    )
 
 
 def _retry_reported_failure(
@@ -632,6 +656,7 @@ class CollectinfoController(LiveClusterCommandController):
     def __init__(self):
         self.modifiers = set(["with"])
         self.collectinfo_root_controller = None
+        self.failed_cmds = []
 
     def _collect_local_file(self, src, dest_dir):
         logger.info("Copying file %s to %s" % (src, dest_dir))
@@ -1866,6 +1891,7 @@ class CollectinfoController(LiveClusterCommandController):
         snapshot_metas: dict[str, Any] = {}
         start_ts = time.strftime(constants.COLLECTINFO_TIMESTAMP_FORMAT, time.gmtime())
         aborted = True
+        usage = None
 
         try:
             for i in range(context.snp_count):
@@ -1893,6 +1919,7 @@ class CollectinfoController(LiveClusterCommandController):
 
                 logger.info("Data collection for Snapshot " + str(i + 1) + " finished.")
 
+            usage = await self._dump_collectinfo_usage(as_logfile_prefix)
             aborted = False
         finally:
             if snpshots:
@@ -1906,7 +1933,51 @@ class CollectinfoController(LiveClusterCommandController):
                 start_ts=start_ts,
                 context=context,
                 aborted=aborted,
+                usage=usage,
             )
+
+    async def _dump_collectinfo_usage(self, as_logfile_prefix) -> dict[str, str]:
+        """Write the usage export into the bundle, and say what happened for the
+        metadata. A cluster without usage reporting bundles as it always did."""
+        filename = as_logfile_prefix + constants.COLLECTINFO_USAGE_FILENAME
+
+        try:
+            if not await usage_supported(self.cluster):
+                logger.debug(
+                    "Usage file not written: %s",
+                    older_servers_message("collect info"),
+                )
+
+                return {
+                    "status": "unsupported",
+                    "min_version": constants.SERVER_USAGE_REPORTING_FIRST_VERSION,
+                }
+
+            export = await fetch_usage(self.cluster)
+
+            with open(filename, "wb") as f:
+                f.write(export.document)
+        except UsageUnavailable as e:
+            status = "failed" if e.supported else "unsupported"
+            logger.debug(
+                "Usage file not written: %s", unavailable_message("collect info", e)
+            )
+
+            if e.supported:
+                self.failed_cmds.append("usage-export")
+
+            return {"status": status, "node": e.node, "reply": e.reply}
+        except Exception as e:
+            logger.debug("Usage file not written: %s", e, exc_info=True)
+            self.failed_cmds.append("usage-export")
+
+            return {"status": "failed", "node": "", "reply": str(e)}
+
+        return {
+            "status": "written",
+            "node": export.node,
+            "file": path.basename(filename),
+        }
 
     async def _next_snapshot_timestamp(
         self, snpshots: dict[str, Any]
@@ -1964,6 +2035,7 @@ class CollectinfoController(LiveClusterCommandController):
         start_ts,
         context: CollectionContext,
         aborted=False,
+        usage=None,
     ) -> None:
         """Write the provenance/diagnostics sidecar.
 
@@ -1977,6 +2049,7 @@ class CollectinfoController(LiveClusterCommandController):
                 start_ts=start_ts,
                 context=context,
                 aborted=aborted,
+                usage=usage,
             )
             self._dump_in_json_file(
                 as_logfile_prefix + constants.COLLECTINFO_META_FILENAME, meta
@@ -2006,6 +2079,7 @@ class CollectinfoController(LiveClusterCommandController):
         start_ts,
         context: CollectionContext,
         aborted=False,
+        usage=None,
     ) -> dict[str, Any]:
         """Assemble collectinfo_meta.json, the bundle's provenance sidecar.
 
@@ -2028,7 +2102,7 @@ class CollectinfoController(LiveClusterCommandController):
         except Exception:
             host = ""
 
-        return {
+        meta = {
             "meta_format_version": constants.COLLECTINFO_META_FORMAT_VERSION,
             "bundle": {
                 "asadm_version": str(self.asadm_version),
@@ -2060,6 +2134,11 @@ class CollectinfoController(LiveClusterCommandController):
             },
             "snapshots": snapshot_metas,
         }
+
+        if usage is not None:
+            meta["collection"]["usage"] = usage
+
+        return meta
 
     def _dump_collectinfo_file(self, filename: str, dump: str):
         logger.info("Dumping collectinfo %s.", filename)
@@ -2233,16 +2312,29 @@ class CollectinfoController(LiveClusterCommandController):
                     except Exception as e:
                         util.write_to_file(complete_filename, str(e))
 
-            for cmd in dignostic_aerospike_info_commands:
-                logger.info(
-                    f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+            try:
+                results = await self.cluster.info(
+                    tuple(dignostic_aerospike_info_commands)
                 )
-
-                try:
-                    result = await self.cluster.info(cmd)
-                    self._write_func_output_to_file(complete_filename, [cmd], result)
-                except Exception as e:
-                    util.write_to_file(complete_filename, str(e))
+            except Exception as e:
+                util.write_to_file(complete_filename, str(e))
+            else:
+                for cmd in dignostic_aerospike_info_commands:
+                    logger.info(
+                        f"Capturing output of asinfo command '{cmd}' and writing to {file}"
+                    )
+                    self._write_func_output_to_file(
+                        complete_filename,
+                        [cmd],
+                        {
+                            node: (
+                                resp.get(cmd, ASInfoError("Invalid command '%s'" % cmd))
+                                if isinstance(resp, dict)
+                                else resp
+                            )
+                            for node, resp in results.items()
+                        },
+                    )
         except Exception as e:
             util.write_to_file(complete_filename, str(e))
             logger.warning("Failed to generate %s file.", complete_filename)
@@ -2257,7 +2349,7 @@ class CollectinfoController(LiveClusterCommandController):
         try:
             util.write_to_file(complete_filename, fileHeader)
 
-            summary_params = ["summary"]
+            summary_params = ["info summary"]
             summary_info_params = [
                 "network",
                 "memory",
@@ -2354,7 +2446,7 @@ class CollectinfoController(LiveClusterCommandController):
         )
 
         try:
-            self.failed_cmds = await asyncio.shield(worker)
+            self.failed_cmds += await asyncio.shield(worker)
         except asyncio.CancelledError:
             # The thread cannot be cancelled. Stop it before anything is archived,
             # however many more Ctrl-Cs arrive meanwhile.
@@ -2600,6 +2692,10 @@ class CollectinfoController(LiveClusterCommandController):
                         BaseController.asadm_version = live_version
                         BaseController.asadm_build = live_build
 
+                    if self.collectinfo_root_controller is not None:
+                        self.collectinfo_root_controller.close()
+                        self.collectinfo_root_controller = None
+
             common.print_collectinfo_failed_cmds(self.failed_cmds)
 
             # Archive collectinfo directory
@@ -2645,6 +2741,12 @@ class CollectinfoController(LiveClusterCommandController):
                 terminal.enable_color(True)
 
     async def _do_default(self, line):
+        if line and line[0] in ("-h", "--help"):
+            command = " ".join(self._context)
+            raise ShellException(
+                f"{command}: '{line[0]}' is not a valid option. See 'help {command}' for available options."
+            )
+
         snp_count = util.get_arg_and_delete_from_mods(
             line=line,
             arg="-n",

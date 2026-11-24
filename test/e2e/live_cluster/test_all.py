@@ -139,6 +139,7 @@ CMDS = [
     Cmd("show sindex"),
     Cmd("show stop-writes"),
     Cmd("summary"),
+    Cmd("info summary"),
 ]
 NOT_IN_CI_MODE = [
     Cmd("show mapping ip"),

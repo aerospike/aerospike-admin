@@ -231,46 +231,36 @@ def fetch_argument(
     return not success, default
 
 
-def _fetch_line_clear_dict(
-    line, arg, return_type: Type[ReturnType], default: DefaultType, keys, d
-) -> Union[DefaultType, ReturnType]:
-    if not line:
-        return default
-    try:
-        success, _val = fetch_argument(line, arg, default)
-        if _val is not None:
-            val = return_type(_val)
-        else:
-            val = None
-
-        if success and keys and d:
-            clear_val_from_list_in_dict(keys, d, arg)
-            clear_val_from_list_in_dict(keys, d, _val)
-
-    except Exception:
-        val = default
-    return val
-
-
 def get_arg_and_delete_from_mods(
     line, arg, return_type: Type[ReturnType], default: DefaultType, modifiers, mods
 ) -> Union[DefaultType, ReturnType]:
+    if not line or arg not in line:
+        return default
+
+    index = line.index(arg)
+    del line[index]
+
+    if return_type is int and index < len(line):
+        token = line[index]
+
+        if re.match(r"-\D", token) or (modifiers and token in modifiers):
+            return default
+
+        if not re.fullmatch(r"[+-]?[0-9]+", token):
+            from lib.base_controller import ShellException
+
+            raise ShellException("{} must be an integer.".format(arg))
+
     try:
-        val = _fetch_line_clear_dict(
-            line=line,
-            arg=arg,
-            return_type=return_type,
-            default=default,
-            keys=modifiers,
-            d=mods,
-        )
+        val = return_type(line[index])
 
-        line.remove(arg)
-
-        if val is not None:
-            line.remove(str(val))
+        if modifiers and mods:
+            clear_val_from_list_in_dict(modifiers, mods, arg)
+            clear_val_from_list_in_dict(modifiers, mods, line[index])
     except Exception:
-        val = default
+        return default
+
+    del line[index]
     return val
 
 
@@ -403,6 +393,9 @@ def get_value_from_dict(
     Function takes dictionary and keys to find values inside dictionary.
     Returns value of first matching key from keys which is available in d else returns default_value
     """
+
+    if not isinstance(d, dict):
+        return default_value
 
     if not isinstance(keys, tuple) and not isinstance(keys, list):
         keys = (keys,)
@@ -1346,6 +1339,7 @@ class async_cached(Generic[AwaitableType]):
     """
     Doesn't support lists, dicts and other unhashables
     Also doesn't support kwargs for reasons above.
+    A tuple after the instance is a batch: each command is cached under its own key.
     """
 
     class _CacheableCoroutine(Generic[AwaitableReturnType]):
@@ -1392,14 +1386,19 @@ class async_cached(Generic[AwaitableType]):
     def __setitem__(self, key, value: _CacheableCoroutine):
         self.cache[key] = (value, time() + self.ttl)
 
+    def _held(self, key) -> bool:
+        if key not in self.cache:
+            return False
+
+        # This effectively clear the key if the coroutine raises an exception.
+        value, eol = self.cache[key]
+        return not value.raised() and eol > time()
+
     def __getitem__(self, key) -> Awaitable[AwaitableType]:
-        if key in self.cache:
-            # This effectively clear the key if the coroutine raises an exception.
-            if not self.cache[key][0].raised():
-                value, eol = self.cache[key]
-                if eol > time():
-                    logger.debug("return cached %s: %s", key[1:], value)
-                    return value
+        if self._held(key):
+            value = self.cache[key][0]
+            logger.debug("return cached %s: %s", key[1:], value)
+            return value
 
         self[key] = self._CacheableCoroutine(self.func(*key))
         return self.cache[key][0]
@@ -1407,7 +1406,32 @@ class async_cached(Generic[AwaitableType]):
     def __call__(self, *args, **kwargs):
         if "disable_cache" in kwargs and kwargs["disable_cache"]:
             return self.func(*args)
+        if len(args) > 1 and isinstance(args[1], tuple):
+            return self._batch(*args)
         return self[args]
+
+    async def _batch(self, obj, commands, *rest):
+        """Answers each held command from the cache and asks only for the rest."""
+        answers = {}
+
+        for command in commands:
+            if self._held((obj, command, *rest)):
+                with contextlib.suppress(Exception):
+                    answers[command] = await self.cache[(obj, command, *rest)][0]
+
+        missing = tuple(command for command in commands if command not in answers)
+
+        if missing:
+            sent = await self.func(obj, missing, *rest)
+
+            for command in missing:
+                if command in sent:
+                    answer = asyncio.get_running_loop().create_future()
+                    answer.set_result(sent[command])
+                    self[(obj, command, *rest)] = self._CacheableCoroutine(answer)
+                    answers[command] = sent[command]
+
+        return {command: answers[command] for command in commands if command in answers}
 
     def __repr__(self):
         """Return the function's docstring."""
@@ -1559,36 +1583,51 @@ async def check_version_support(
     }
 
 
+def masking_word_error(fields):
+    """Return the refusal for the first (name, word) the server would split, or None.
+    A ';' starts another field and a control character such as a newline breaks it."""
+    for name, word in fields:
+        for char in word or "":
+            if char == ";":
+                return f"The {name} '{word}' cannot contain ';', which separates the fields of a masking command."
+
+            if char < " " or char == "\x7f":
+                return f"The {name} {word!r} cannot contain the control character {char!r}."
+
+    return None
+
+
+def is_complete_masking_rule(rule):
+    """Return True when a masking-show rule has a namespace (or ns), set, type and function."""
+    return ("namespace" in rule or "ns" in rule) and all(
+        k in rule for k in ("set", "type", "function")
+    )
+
+
+def masking_path_text(ael_b64):
+    """Return (text, decoded): the AEL path ael_b64 encodes and True, or the value
+    marked '(base64)' and False when it does not decode."""
+    try:
+        path = base64.b64decode(ael_b64, validate=True)
+        return path.decode("utf-8", "backslashreplace"), True
+    except (TypeError, ValueError):
+        return f"'{ael_b64}' (base64)", False
+
+
+def _masking_path_bin(ael):
+    if ael.startswith('$."'):
+        end = ael.find('"', 3)
+        return ael[3:end] if end != -1 else ""
+
+    if ael.startswith("$."):
+        return ael[2:].split(".", 1)[0]
+
+    return ""
+
+
 def normalize_masking_rule_data(rule):
-    """Normalize masking rule data from API response.
-
-    Args:
-        rule (dict): Raw masking rule data from API
-
-    Returns:
-        dict: Normalized rule data with consistent field names
-
-    Example:
-        Input dict from API response:
-        {
-            "namespace": "test",
-            "set": "demo",
-            "bin": "credit_card",
-            "type": "string",
-            "function": "redact",
-            "position": "0",
-            "length": "3"
-        }
-
-        Output normalized dict:
-        {
-            "ns": "test",
-            "set": "demo",
-            "bin": "credit_card",
-            "type": "string",
-            "function": "redact position 0 length 3"
-        }
-    """
+    """Map a masking-show rule to the show masking columns. A path rule carries no
+    bin, so its bin is read off the front of the decoded AEL path."""
     processed_rule = {}
 
     # Normalize field names (handle both "ns"/"namespace")
@@ -1596,6 +1635,13 @@ def normalize_masking_rule_data(rule):
     processed_rule["set"] = rule.get("set", "")
     processed_rule["bin"] = rule.get("bin", "")
     processed_rule["type"] = rule.get("type", "")
+
+    if rule.get("ael_b64") is not None:
+        ael, decoded = masking_path_text(rule["ael_b64"])
+        processed_rule["ael"] = ael
+
+        if decoded and not processed_rule["bin"]:
+            processed_rule["bin"] = _masking_path_bin(ael)
 
     # Parse the function string to display it properly
     # Handle both "func" and "function" field names
@@ -1606,7 +1652,17 @@ def normalize_masking_rule_data(rule):
         result = func_name
 
         # Add all function parameters except the core fields
-        core_fields = {"ns", "namespace", "set", "bin", "type", "function"}
+        core_fields = {
+            "ns",
+            "namespace",
+            "set",
+            "bin",
+            "type",
+            "function",
+            "default",
+            "ael_b64",
+            "enforced",
+        }
         for key, value in rule.items():
             if key not in core_fields and value is not None:
                 result += f" {key} {value}"
@@ -1614,5 +1670,10 @@ def normalize_masking_rule_data(rule):
         processed_rule["function"] = result
     else:
         processed_rule["function"] = ""
+
+    if "default" in rule:
+        processed_rule["default"] = rule["default"]
+
+    processed_rule["enforced"] = rule.get("enforced", "true")
 
     return processed_rule

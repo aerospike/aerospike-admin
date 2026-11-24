@@ -251,6 +251,30 @@ def create_disabled_controller(controller, command_):
     return DisableController
 
 
+def create_deprecated_controller(controller, command_, replacement):
+    """Keeps a replaced command working, with a warning each time it runs."""
+
+    @CommandHelp(
+        *CommandHelp.long_message(controller).split("\n"),
+        f"Deprecated: use '{replacement}' instead. '{command_}' will be removed in a future release.",
+        short_msg=f"{CommandHelp.short_message(controller)} (deprecated, use '{replacement}')",
+        usage=CommandHelp.usage(controller) or None,
+        modifiers=getattr(controller, "_modifiers", None),
+    )
+    class DeprecatedController(controller):
+        # override
+        async def execute(self, line):
+            logger.warning(
+                "'%s' is deprecated and will be removed in a future release. Use '%s' instead.",
+                command_,
+                replacement,
+            )
+
+            return await super().execute(line)
+
+    return DeprecatedController
+
+
 class ShellException(Exception):
     carries_its_own_message = True
 
@@ -288,7 +312,7 @@ class BaseController(object):
 
     def _set_command_contexts(self):
         for command in self.controller_map:
-            controller: BaseController = self.commands[command][0]
+            controller: BaseController = self.commands.get_exact(command)
             context_cpy = list(self._context)
             context_cpy.append(command)
             controller.set_context(context_cpy)
@@ -306,12 +330,17 @@ class BaseController(object):
         command = self.aliases.get(command, command)
         commands = self.commands.get_key(command)
 
+        if line and command in commands:
+            commands = [command]
+
         logger.debug("Auto-complete: command {}".format(command))
 
-        if not DisableAutoComplete.has_auto_complete(self.commands[commands[0]][0]):
+        if not DisableAutoComplete.has_auto_complete(
+            self.commands.get_exact(commands[0])
+        ):
             return []
 
-        if command != commands[0] and len(line) == 0:
+        if commands != [command] and len(line) == 0:
             # if user has full command name and is hitting tab,
             # the user probably wants the next level
             logger.debug("Auto-complete: results {}".format(commands))
@@ -321,7 +350,7 @@ class BaseController(object):
             logger.debug(
                 "Auto-complete: going to next controller {}".format(commands[0])
             )
-            return self.commands.get(commands[0])[0].complete(line)
+            return self.commands.get_exact(commands[0]).complete(line)
         except Exception as e:
             logger.debug(
                 "Auto-complete: command is ambiguous or exact match {}, error: {}".format(
@@ -415,7 +444,12 @@ class BaseController(object):
 
         try:
             logger.debug("Looking for {} in command_map".format(command))
-            method = self.commands[command]
+
+            if command in self.commands.keys():
+                method = [self.commands.get_exact(command)]
+            else:
+                method = self.commands[command]
+
             logger.debug("Found method {} in command_map".format(method))
 
             if len(method) > 1:

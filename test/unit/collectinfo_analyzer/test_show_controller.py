@@ -14,6 +14,11 @@
 
 import asyncio
 import base64
+import copy
+import json
+import os
+import shutil
+import tempfile
 import unittest
 from mock import create_autospec, patch, MagicMock
 from parameterized import parameterized
@@ -46,11 +51,470 @@ from lib.collectinfo_analyzer.show_controller import (
     ShowUsersController,
     ShowUsersStatsController,
 )
-from lib.base_controller import ShellException
-from lib.utils import constants
+from lib.base_controller import BaseController, ShellException
+from lib.collectinfo_analyzer.collectinfo_root_controller import (
+    CollectinfoRootController,
+)
+from lib.utils import constants, util
 from lib.utils.constants import Modifiers
+from test.unit.collectinfo_analyzer.test_log_handler import (
+    USAGE_DOCUMENT,
+    write_usage_archive,
+)
 
 NO_DATA_LOGGER = "lib.collectinfo_analyzer.collectinfo_command_controller"
+
+OLD_BUNDLE_MASKING_RULES = [
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "type": "string",
+        "function": "redact",
+        "value": "#",
+        "default": "N/A",
+        "ael_b64": "JC5wcm9maWxlLnNzbg==",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "type": "integer",
+        "function": "constant",
+        "value": "0",
+        "ael_b64": "JC5wcm9maWxlLnppcA==",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "type": "string",
+        "function": "redact",
+        "default": "x",
+        "ael_b64": "JC5wcm9maWxlLiLQuNC80Y8i",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_v",
+        "type": "string",
+        "function": "constant",
+        "value": "12",
+    },
+    {"ael_b64": "JC5yMC54"},
+    {
+        "namespace": "test",
+        "set": "tpa576_v",
+        "type": "string",
+        "function": "constant",
+        "value": "12",
+    },
+    {"ael_b64": "JC5yMC54Lnk=", "enforced": "false"},
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "bin": "salary",
+        "type": "integer",
+        "function": "constant",
+        "value": "0",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "bin": "score",
+        "type": "float",
+        "function": "constant",
+        "value": "1.5",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "bin": "flag",
+        "type": "bool",
+        "function": "constant",
+        "value": "false",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "type": "string",
+        "function": "redact",
+        "default": "x",
+        "ael_b64": "JC4ibXktYmluIi5zc24=",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "type": "string",
+        "function": "redact",
+        "position": "0",
+        "length": "-4",
+        "default": "00",
+    },
+    {"ael_b64": "JC5jYXJkcy5bMV0="},
+    {
+        "namespace": "db-2",
+        "set": "tpa576_ci",
+        "bin": "email",
+        "type": "string",
+        "function": "redact",
+        "default": "x",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "bin": "phone",
+        "type": "string",
+        "function": "redact",
+        "position": "0",
+        "length": "-4",
+    },
+    {
+        "namespace": "test",
+        "set": "tpa576_ci",
+        "bin": "t",
+        "type": "string",
+        "function": "constant",
+        "value": "12",
+    },
+    {},
+]
+
+MERGED_OLD_BUNDLE_MASKING_RULES = [
+    OLD_BUNDLE_MASKING_RULES[0],
+    OLD_BUNDLE_MASKING_RULES[1],
+    OLD_BUNDLE_MASKING_RULES[2],
+    dict(OLD_BUNDLE_MASKING_RULES[3], ael_b64="JC5yMC54"),
+    dict(OLD_BUNDLE_MASKING_RULES[5], ael_b64="JC5yMC54Lnk=", enforced="false"),
+    OLD_BUNDLE_MASKING_RULES[7],
+    OLD_BUNDLE_MASKING_RULES[8],
+    OLD_BUNDLE_MASKING_RULES[9],
+    OLD_BUNDLE_MASKING_RULES[10],
+    dict(OLD_BUNDLE_MASKING_RULES[11], ael_b64="JC5jYXJkcy5bMV0="),
+    OLD_BUNDLE_MASKING_RULES[13],
+    OLD_BUNDLE_MASKING_RULES[14],
+    OLD_BUNDLE_MASKING_RULES[15],
+]
+
+RELEASED_ASADM_BUNDLE_MASKING_RULES = [
+    {
+        "namespace": "test",
+        "set": "other",
+        "bin": "e",
+        "type": "string",
+        "function": "redact",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "n",
+        "type": "integer",
+        "function": "constant",
+        "value": "0",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "email",
+        "type": "string",
+        "function": "constant",
+        "value": "REDACTED",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "ssn",
+        "type": "string",
+        "function": "redact",
+        "position": "0",
+        "length": "4",
+        "value": "*",
+    },
+    {
+        "namespace": "test",
+        "set": "demo",
+        "bin": "t",
+        "type": "string",
+        "function": "constant",
+        "value": "12",
+    },
+    {},
+]
+
+BRANCH_BUNDLE_MASKING_RULES = [
+    OLD_BUNDLE_MASKING_RULES[0],
+    OLD_BUNDLE_MASKING_RULES[1],
+    OLD_BUNDLE_MASKING_RULES[2],
+    dict(OLD_BUNDLE_MASKING_RULES[3], value="12:30", ael_b64="JC5yMC54"),
+    dict(
+        OLD_BUNDLE_MASKING_RULES[5],
+        value="12:30",
+        ael_b64="JC5yMC54Lnk=",
+        enforced="false",
+    ),
+    OLD_BUNDLE_MASKING_RULES[7],
+    OLD_BUNDLE_MASKING_RULES[8],
+    OLD_BUNDLE_MASKING_RULES[9],
+    OLD_BUNDLE_MASKING_RULES[10],
+    dict(OLD_BUNDLE_MASKING_RULES[11], default="00:00", ael_b64="JC5jYXJkcy5bMV0="),
+    OLD_BUNDLE_MASKING_RULES[13],
+    OLD_BUNDLE_MASKING_RULES[14],
+    dict(OLD_BUNDLE_MASKING_RULES[15], value="12:30"),
+]
+
+
+class ShowUsageControllerTest(unittest.TestCase):
+    EXPORT = {
+        "data": {
+            "cluster": "963fa489-71bd-46a9-af70-765ce26c5a62",
+            "feature_key": {"account-name": "Acme Corp"},
+            "records": [],
+            "schema": 1,
+            "taken": "2026-11-16T19:11:36Z",
+        }
+    }
+
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.addCleanup(patch.stopall)
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        self.files = []
+        self.log_handler.bundle_files.side_effect = lambda suffixes: [
+            file for file in self.files if file.endswith(tuple(suffixes))
+        ]
+        self.log_handler.info_namespaces.return_value = {
+            "2026-11-16 19:11:36 UTC": {
+                "1.1.1.1:3000": ["test", "bar"],
+                "2.2.2.2:3000": ["test"],
+            }
+        }
+        self.builds("8.2.1.0")
+        self.log_handler.collectinfo_meta = {}
+        self.controller = ShowController().controller_map["usage"]()
+        self.controller.log_handler = self.log_handler
+        self.controller.mods = {}
+
+    def builds(self, *versions):
+        self.log_handler.info_meta_data.return_value = {
+            "2026-11-16 19:11:36 UTC": {
+                "%d.%d.%d.%d:3000" % ((i,) * 4): build
+                for i, build in enumerate(versions, 1)
+            }
+        }
+
+    def bundle_file(self, name, content):
+        path = os.path.join(self.work_dir, name)
+
+        with open(path, "wb") as f:
+            f.write(content)
+
+        self.files.append(path)
+
+    def test_shows_the_bundles_usage_file(self):
+        self.bundle_file("20261116_191136_usage.json", json.dumps(self.EXPORT).encode())
+
+        self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            self.EXPORT["data"], namespaces=["bar", "test"]
+        )
+        self.log_handler.info_meta_data.assert_not_called()
+
+    def test_a_bundle_from_an_older_server_names_the_version(self):
+        self.builds("8.2.1.0", "8.2.0.3")
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+        self.log_handler.info_meta_data.assert_called_once_with(stanza="asd_build")
+        self.assertEqual(
+            cm.records[0].getMessage(),
+            "'show usage' is not supported on aerospike versions < 8.2.1",
+        )
+
+    def test_bundle_without_a_usage_file(self):
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+        self.assertEqual(
+            cm.records[0].getMessage(),
+            "show usage: no usage file in this collectinfo.",
+        )
+
+    def test_a_cluster_without_usage_reporting_names_the_reply(self):
+        self.log_handler.collectinfo_meta = {
+            "collection": {
+                "usage": {
+                    "status": "unsupported",
+                    "node": "10.0.0.3:3000",
+                    "reply": "ERROR:25:enterprise only",
+                }
+            }
+        }
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            [
+                "'show usage' is not supported on this cluster "
+                "(10.0.0.3:3000 replied ERROR:25:enterprise only)."
+            ],
+        )
+
+    def test_an_older_server_recorded_in_the_meta_names_the_version(self):
+        self.builds("8.2.1.0", "8.2.0.3")
+        self.log_handler.collectinfo_meta = {
+            "collection": {"usage": {"status": "unsupported", "min_version": "8.2.1"}}
+        }
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            ["'show usage' is not supported on aerospike versions < 8.2.1"],
+        )
+
+    def test_the_old_license_usage_file_is_not_a_usage_file(self):
+        self.bundle_file("20201116_101502_aslicenseusage.json", b'{"license_usage":{}}')
+
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+
+    def test_a_path_holding_several_bundles_shows_the_newest_usage_file(self):
+        older = copy.deepcopy(self.EXPORT)
+        newer = copy.deepcopy(self.EXPORT)
+        newer["data"]["taken"] = "2026-11-23T16:02:38Z"
+
+        for name, value in (
+            ("collect_info_20261123_155835/20261123_155835_usage.json", older),
+            ("collect_info_20261123_160238/20261123_160238_usage.json", newer),
+        ):
+            os.makedirs(os.path.join(self.work_dir, os.path.dirname(name)))
+            self.bundle_file(name, json.dumps(value).encode())
+
+        self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            newer["data"], namespaces=["bar", "test"]
+        )
+
+    @parameterized.expand(
+        [
+            ("no_data_object", b'{"schema":2}', '{"schema":2}'),
+            ("not_json", b"\x1f\x8b\x08\x00", "\x1f�\x08\x00"),
+        ]
+    )
+    def test_a_file_that_is_not_an_export_is_shown_verbatim(self, _, saved, shown):
+        self.bundle_file("20261116_191136_usage.json", saved)
+
+        with self.assertNoLogs("lib", level="ERROR"):
+            self.controller._do_default([])
+
+        self.view_mock.print_result.assert_called_once_with(shown)
+        self.view_mock.show_usage.assert_not_called()
+
+
+class ShowUsageFromUsageArchiveTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        for cls, attr in (
+            (BaseController, "asadm_version"),
+            (BaseController, "asadm_build"),
+            (CollectinfoRootController, "log_handler"),
+            (CollectinfoRootController, "command"),
+        ):
+            patch.object(cls, attr, getattr(cls, attr)).start()
+
+        patch.object(
+            CollectinfoCommandController, "log_handler", None, create=True
+        ).start()
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.COLLECTINFO_DIR",
+            os.path.join(self.work_dir, "extracted") + os.sep,
+        ).start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.addCleanup(patch.stopall)
+
+    async def test_show_usage_reads_a_collect_usage_archive(self):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir)
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        await root.execute(["show", "usage"])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
+
+    async def test_show_usage_reads_a_usage_file_given_as_the_path(self):
+        path = os.path.join(self.work_dir, "20261116_191136_usage.json")
+
+        with open(path, "wb") as f:
+            f.write(USAGE_DOCUMENT)
+
+        try:
+            root = CollectinfoRootController(clinfo_path=path)
+        except ShellException as e:
+            self.fail(f"-cf refused the usage file: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="WARNING"):
+            await root.execute(["show", "usage"])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
+
+    async def test_an_archive_holding_a_reply_that_is_not_an_export_is_shown_verbatim(
+        self,
+    ):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir, b'{"schema":2}')
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="ERROR"):
+            await root.execute(["show", "usage"])
+
+        self.view_mock.print_result.assert_called_once_with('{"schema":2}')
+        self.view_mock.show_usage.assert_not_called()
+
+    @parameterized.expand(
+        [("sh_usage", ["sh", "usage"]), ("show_usa", ["show", "usa"])]
+    )
+    async def test_an_abbreviated_show_usage_reads_the_archive(self, _, command):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir)
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="WARNING"):
+            await root.execute(list(command))
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
 
 
 class ShowControllerAliasTest(unittest.TestCase):
@@ -99,6 +563,11 @@ class ShowMaskingControllerTest(unittest.TestCase):
 
     def tearDown(self):
         patch.stopall()
+
+    def test_help_first_line_ends_with_period(self):
+        help_text = " ".join(self.controller.execute_help([]).split())
+
+        self.assertIn("Display masking rules. Shows all configured", help_text)
 
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
     def test_do_default_success(self, getter_class_mock):
@@ -165,15 +634,329 @@ class ShowMaskingControllerTest(unittest.TestCase):
         self.assertIsNone(result)
         getter_mock.get_masking_rules.assert_called_once_with()
 
-    def test_do_default_set_without_namespace_raises_error(self):
-        """Test error when set is specified without namespace"""
-        line = ["set", "demo"]
+    @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
+    def test_do_default_filters_complete_path_rules_by_namespace_and_set(
+        self, getter_class_mock
+    ):
+        getter_mock = MagicMock()
+        getter_class_mock.return_value = getter_mock
+        path_rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "ael_b64": "JC5wcm9maWxlLnNzbg==",
+        }
+        other_set_rule = dict(path_rule, set="other")
+        getter_mock.get_masking_rules.return_value = {
+            "2023-01-01": {"192.168.1.1:3000": [path_rule, other_set_rule]}
+        }
 
-        with self.assertRaises(ShellException) as context:
-            self.controller._do_default(line)
+        self.controller._do_default(["namespace", "test", "set", "demo"])
 
-        self.assertIn(
-            "Set filter can only be used with namespace filter", str(context.exception)
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [path_rule], timestamp="2023-01-01", **{}
+        )
+
+    @parameterized.expand(
+        [
+            ("no_filter", [], MERGED_OLD_BUNDLE_MASKING_RULES),
+            (
+                "namespace_and_set",
+                ["namespace", "test", "set", "tpa576_v"],
+                MERGED_OLD_BUNDLE_MASKING_RULES[3:5],
+            ),
+            (
+                "namespace_and_other_set",
+                ["namespace", "test", "set", "tpa576_ci"],
+                MERGED_OLD_BUNDLE_MASKING_RULES[:3]
+                + MERGED_OLD_BUNDLE_MASKING_RULES[5:10]
+                + MERGED_OLD_BUNDLE_MASKING_RULES[11:],
+            ),
+        ]
+    )
+    def test_do_default_merges_rules_an_old_bundle_split_at_colon(
+        self, _, line, expected
+    ):
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy(OLD_BUNDLE_MASKING_RULES)}
+        }
+
+        self.controller._do_default(line)
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            expected, timestamp="2023-01-01"
+        )
+
+    def test_do_default_keeps_rules_of_a_bundle_with_whole_values(self):
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy(BRANCH_BUNDLE_MASKING_RULES)}
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            BRANCH_BUNDLE_MASKING_RULES, timestamp="2023-01-01"
+        )
+
+    @parameterized.expand(
+        [
+            ("bin_rule", {"bin": "t"}, {"namespace": "b"}, {"bin": "t"}),
+            (
+                "path_rule",
+                {},
+                {"namespace": "b", "ael_b64": "JC5wLng="},
+                {"ael_b64": "JC5wLng="},
+            ),
+            (
+                "dormant_path_rule",
+                {},
+                {"namespace": "b", "ael_b64": "JC5wLng=", "enforced": "false"},
+                {"ael_b64": "JC5wLng=", "enforced": "false"},
+            ),
+        ]
+    )
+    def test_do_default_old_bundle_piece_with_namespace_keeps_rule_namespace(
+        self, _, target, piece, exp_target
+    ):
+        before = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "u",
+            "type": "string",
+            "function": "redact",
+        }
+        after = dict(before, bin="w")
+        rule = dict(
+            namespace="test",
+            set="demo",
+            type="string",
+            function="constant",
+            value="a",
+            **target,
+        )
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy([before, rule, piece, after])
+            }
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [
+                before,
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="constant",
+                    value="a",
+                    **exp_target,
+                ),
+                after,
+            ],
+            timestamp="2023-01-01",
+        )
+
+    @parameterized.expand(
+        [
+            ("no_filter", [], RELEASED_ASADM_BUNDLE_MASKING_RULES[:4]),
+            (
+                "namespace_and_set",
+                ["namespace", "test", "set", "demo"],
+                RELEASED_ASADM_BUNDLE_MASKING_RULES[1:4],
+            ),
+        ]
+    )
+    def test_do_default_released_asadm_bundle_as_on_master(self, _, line, expected):
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy(RELEASED_ASADM_BUNDLE_MASKING_RULES[:4])
+            }
+        }
+
+        self.controller._do_default(line)
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            expected, timestamp="2023-01-01"
+        )
+
+    def test_do_default_released_asadm_bundle_with_split_value(self):
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy(RELEASED_ASADM_BUNDLE_MASKING_RULES)
+            }
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            RELEASED_ASADM_BUNDLE_MASKING_RULES[:5], timestamp="2023-01-01"
+        )
+
+    def test_do_default_old_bundle_piece_with_key_the_rule_lacks_joins_it(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "t",
+            "type": "string",
+            "function": "constant",
+            "value": "a",
+        }
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy([rule, {"b": "c"}])}
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [dict(rule, b="c")], timestamp="2023-01-01"
+        )
+        shown = self.view_mock.show_masking_rules.call_args.args[0][0]
+        self.assertEqual(
+            util.normalize_masking_rule_data(shown)["function"], "constant value a b c"
+        )
+
+    @parameterized.expand(
+        [
+            ("no_function", {"namespace": "x", "set": "y", "type": "z"}),
+            ("no_type", {"namespace": "x", "set": "y", "function": "z"}),
+        ]
+    )
+    def test_do_default_old_bundle_piece_missing_a_key_joins_the_rule_before(
+        self, _, piece
+    ):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "t",
+            "type": "string",
+            "function": "constant",
+            "value": "a",
+        }
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy([rule, piece])}
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [rule], timestamp="2023-01-01"
+        )
+
+    @parameterized.expand(
+        [
+            ("no_filter", []),
+            ("namespace_and_set", ["namespace", "test", "set", "demo"]),
+        ]
+    )
+    def test_do_default_old_bundle_rule_typed_before_namespace_is_one_rule(
+        self, _, line
+    ):
+        before = {
+            "namespace": "test",
+            "set": "demo",
+            "bin": "u",
+            "type": "string",
+            "function": "redact",
+        }
+        after = dict(before, bin="w")
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {
+                "127.0.0.1:3000": copy.deepcopy(
+                    [
+                        before,
+                        {"set": "demo", "value": "1"},
+                        {
+                            "namespace": "test",
+                            "bin": "t",
+                            "type": "string",
+                            "function": "constant",
+                        },
+                        after,
+                    ]
+                )
+            }
+        }
+
+        self.controller._do_default(line)
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            [
+                before,
+                {
+                    "set": "demo",
+                    "value": "1",
+                    "namespace": "test",
+                    "bin": "t",
+                    "type": "string",
+                    "function": "constant",
+                },
+                after,
+            ],
+            timestamp="2023-01-01",
+        )
+
+    def test_do_default_keeps_bundle_rules_keyed_by_ns_apart(self):
+        rules = [
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "u",
+                "type": "string",
+                "function": "redact",
+            },
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "w",
+                "type": "string",
+                "function": "redact",
+            },
+        ]
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy(rules)}
+        }
+
+        self.controller._do_default([])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            rules, timestamp="2023-01-01"
+        )
+
+    def test_do_default_with_set_filter(self):
+        rules = [
+            {
+                "ns": "test",
+                "set": "demo",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact",
+            },
+            {
+                "ns": "prod",
+                "set": "demo",
+                "bin": "email",
+                "type": "string",
+                "function": "redact",
+            },
+            {
+                "ns": "test",
+                "set": "other",
+                "bin": "ssn",
+                "type": "string",
+                "function": "redact",
+            },
+        ]
+        self.log_handler.info_masking_rules.return_value = {
+            "2023-01-01": {"127.0.0.1:3000": copy.deepcopy(rules)}
+        }
+
+        self.controller._do_default(["set", "demo"])
+
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            rules[:2], timestamp="2023-01-01"
         )
 
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
@@ -219,6 +1002,7 @@ class ShowMaskingControllerTest(unittest.TestCase):
         [
             (["namespace", "prod"], "namespace prod"),
             (["namespace", "test", "set", "other"], "namespace test set other"),
+            (["set", "other"], "set other"),
         ]
     )
     @patch("lib.collectinfo_analyzer.get_controller.GetMaskingRulesController")
@@ -1043,6 +1827,129 @@ class ShowStatisticsXDRDefaultTest(AnalyzerControllerTestCase):
             [
                 "show statistics xdr namespace: no XDR namespace statistics in this collectinfo."
             ],
+        )
+
+
+class ShowStatisticsXDRModifiersTest(AnalyzerControllerTestCase):
+    """`diff` is a modifier here, as in live mode."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowStatisticsXDRController()
+        self.controller.getter = MagicMock()
+        self.controller.getter.get_xdr.return_value = {"ts": {"n1": {"uptime": "1"}}}
+        self.controller.getter.get_xdr_dcs.return_value = {
+            "ts": {"n1": {"dc1": {"lag": "0"}}}
+        }
+        self.controller.getter.get_xdr_namespaces.return_value = {
+            "ts": {"n1": {"dc1": {"test": {"lag": "0"}}}}
+        }
+
+    def _shown_with(self, view_method):
+        kwargs = getattr(self.view_mock, view_method).call_args.kwargs
+        return {key: kwargs.get(key) for key in ("title_every_nth", "like", "diff")}
+
+    @parameterized.expand(
+        [
+            ("xdr", [], ["show_stats", "show_xdr_dc_stats", "show_xdr_ns_stats"]),
+            ("dc", ["dc"], ["show_xdr_dc_stats"]),
+            ("namespace", ["namespace"], ["show_xdr_ns_stats"]),
+        ]
+    )
+    def test_repeat_flag_followed_by_diff_takes_the_default(
+        self, _, command, view_methods
+    ):
+        asyncio.run(self.controller.execute([*command, "-r", "diff"]))
+
+        for view_method in view_methods:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": [], "diff": [True]},
+            )
+
+    @parameterized.expand(
+        [
+            ("xdr", [], ["show_stats", "show_xdr_dc_stats"]),
+            ("dc", ["dc"], ["show_xdr_dc_stats"]),
+        ]
+    )
+    def test_diff_reaches_the_view(self, _, command, view_methods):
+        asyncio.run(self.controller.execute([*command, "diff"]))
+
+        for view_method in view_methods:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": [], "diff": [True]},
+            )
+
+    def test_diff_after_a_like_pattern_is_not_a_pattern(self):
+        asyncio.run(self.controller.execute(["like", "lag", "diff"]))
+
+        for view_method in ["show_stats", "show_xdr_dc_stats"]:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": ["lag"], "diff": [True]},
+            )
+
+    @parameterized.expand(
+        [
+            ("dc", "dc1", "get_xdr_dcs", "show_xdr_dc_stats"),
+            ("namespace", "test", "get_xdr_namespaces", "show_xdr_ns_stats"),
+        ]
+    )
+    def test_diff_after_a_for_pattern_is_not_a_pattern(
+        self, command, pattern, getter_method, view_method
+    ):
+        asyncio.run(self.controller.execute([command, "for", pattern, "diff"]))
+
+        getattr(self.controller.getter, getter_method).assert_called_once_with(
+            for_mods=[pattern]
+        )
+        self.assertEqual(
+            self._shown_with(view_method),
+            {"title_every_nth": 0, "like": [], "diff": [True]},
+        )
+
+    @parameterized.expand(
+        [
+            ("xdr", [], ["show_stats", "show_xdr_dc_stats"]),
+            ("dc", ["dc"], ["show_xdr_dc_stats"]),
+        ]
+    )
+    def test_diff_right_after_like_is_not_a_pattern(self, _, command, view_methods):
+        asyncio.run(self.controller.execute([*command, "like", "diff"]))
+
+        for view_method in view_methods:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": [], "diff": [True]},
+            )
+
+    def test_diff_right_after_for_is_not_a_pattern(self):
+        asyncio.run(self.controller.execute(["dc", "for", "diff"]))
+
+        self.controller.getter.get_xdr_dcs.assert_called_once_with(for_mods=[])
+        self.assertEqual(
+            self._shown_with("show_xdr_dc_stats"),
+            {"title_every_nth": 0, "like": [], "diff": [True]},
+        )
+
+
+class ShowConfigRepeatFlagTest(AnalyzerControllerTestCase):
+    def test_repeat_flag_followed_by_flip_takes_the_default(self):
+        configs = {"n1": {"proto-fd-max": "15000"}}
+        self.log_handler.info_getconfig.return_value = {"ts": configs}
+
+        asyncio.run(ShowConfigController().execute(["service", "-r", "--flip"]))
+
+        self.view_mock.show_config.assert_called_once_with(
+            "Service Configuration",
+            configs,
+            self.log_handler.get_cinfo_log_at.return_value,
+            title_every_nth=0,
+            flip_output=True,
+            timestamp="ts",
+            **{"like": [], "diff": [], "for": [], "line": ["-r", "--flip"]},
         )
 
 

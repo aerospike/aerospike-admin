@@ -28,6 +28,8 @@ import unittest
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from parameterized import parameterized
+
 from lib.live_cluster.client.types import (
     ASInfoError,
     ASInfoNotAuthenticatedError,
@@ -39,10 +41,17 @@ from lib.live_cluster.client.types import (
 from lib.collectinfo_analyzer.collectinfo_handler.collectinfo_diagnostics import (
     CollectinfoDiagnostics,
 )
+from lib.collectinfo_analyzer.collectinfo_root_controller import (
+    CollectinfoRootController,
+)
 from lib.live_cluster.ssh import SSHError, SSHTimeoutError
 from lib.live_cluster.client.cluster import DownNodesResult
 from lib.live_cluster.client.node import Node
-from lib.live_cluster.get_controller import GetLatenciesController, GetPmapController
+from lib.live_cluster.get_controller import (
+    GetLatenciesController,
+    GetPmapController,
+    GetStatisticsController,
+)
 from lib.live_cluster import collectinfo_controller
 from lib.live_cluster.collectinfo_controller import (
     CollectinfoController,
@@ -54,7 +63,7 @@ from lib.live_cluster.collectinfo_controller import (
     _record_node_error,
     _severe_error_class,
 )
-from lib.base_controller import BaseController
+from lib.base_controller import BaseController, ShellException
 from lib.utils import constants
 from lib.utils import logger as logger_util
 from lib.view.sheet.render import get_style_json, set_style_json
@@ -952,6 +961,83 @@ class RunCollectinfoTimeoutTest(unittest.IsolatedAsyncioTestCase):
 
         calls = self.controller.cluster.set_timeout.call_args_list
         self.assertEqual(calls[-1], mock.call(1))
+
+
+class CollectinfoNumericFlagTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.mods = {}
+        self.run_signature = inspect.signature(CollectinfoController._run_collectinfo)
+        self.run_mock = patch.object(
+            CollectinfoController, "_run_collectinfo", AsyncMock()
+        ).start()
+        self.addCleanup(patch.stopall)
+        logger_util.set_exit_code(0)
+        self.addCleanup(logger_util.set_exit_code, 0)
+
+    def _run_args(self):
+        call = self.run_mock.await_args
+        return self.run_signature.bind(
+            self.controller, *call.args, **call.kwargs
+        ).arguments
+
+    async def _parse(self, *line):
+        with self.assertNoLogs(LOGGER_NAME, level=logging.ERROR):
+            await self.controller._do_default(list(line))
+
+        args = self._run_args()
+        return args["snp_count"], args["wait_time"]
+
+    @parameterized.expand(
+        [
+            ("snapshots_leading_zero", ["-n", "03"], (3, 5)),
+            ("wait_leading_zero", ["-t", "07"], (1, 7)),
+            ("wait_plus_sign", ["-t", "+7"], (1, 7)),
+            ("wait_zero", ["-t", "0"], (1, 0)),
+            ("wait_double_zero", ["-t", "00"], (1, 0)),
+            ("wait_negative_zero", ["-t", "-0"], (1, 0)),
+            ("value_equal_to_another_flags", ["-n", "02", "-t", "2"], (2, 2)),
+            ("sleep_double_zero", ["-n", "2", "-s", "00"], (2, 0)),
+            ("sleep_leading_zero", ["-s", "07"], (1, 7)),
+        ]
+    )
+    async def test_value_is_taken_as_written(self, _, line, expected):
+        self.assertEqual(await self._parse(*line), expected)
+
+    @parameterized.expand(
+        [
+            ("letters", ["-t", "x"], "-t"),
+            ("digit_separator", ["-n", "1_0"], "-n"),
+            ("ssh_port", ["--ssh-port", "abc"], "--ssh-port"),
+        ]
+    )
+    async def test_value_that_is_not_a_whole_number_is_an_error(self, _, line, flag):
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute(line)
+
+        self.assertEqual(str(cm.exception), f"{flag} must be an integer.")
+        self.run_mock.assert_not_awaited()
+
+    async def test_int_flag_followed_by_another_flag_takes_its_default(self):
+        self.assertEqual(await self._parse("-n", "-t", "2"), (1, 2))
+
+    async def test_flag_without_value_leaves_a_later_value_equal_to_its_default(self):
+        self.assertEqual(await self._parse("-n", "-t", "1"), (1, 1))
+
+    async def test_flag_without_value_leaves_the_previous_flags_value_alone(self):
+        self.assertEqual(await self._parse("--output-prefix", "5", "-t"), (1, 5))
+        self.assertEqual(self._run_args()["output_prefix"], "5")
+
+    async def test_ssh_password_equal_to_the_user_keeps_the_password_and_port(self):
+        await self.controller._do_default(
+            ["--ssh-pwd", "admin", "--ssh-port", "2299", "--ssh-user", "admin"]
+        )
+
+        args = self._run_args()
+        self.assertEqual(
+            (args["ssh_user"], args["ssh_pwd"], args["ssh_port"]),
+            ("admin", "admin", 2299),
+        )
 
 
 class RunCollectinfoTestCase(unittest.IsolatedAsyncioTestCase):
@@ -1880,6 +1966,8 @@ class ErrorRecordingClusterTest(unittest.IsolatedAsyncioTestCase):
 
     STATISTICS = constants.CollectinfoSection.STATISTICS
     TIMEOUT = constants.CollectinfoErrorClass.TIMEOUT
+    UNSUPPORTED = constants.CollectinfoErrorClass.UNSUPPORTED
+    SINDEX = {"ns": "test", "set": "demo", "indexname": "idx"}
 
     def setUp(self):
         self.controller = CollectinfoController()
@@ -1890,6 +1978,40 @@ class ErrorRecordingClusterTest(unittest.IsolatedAsyncioTestCase):
             setattr(self.controller.cluster, name, AsyncMock(return_value=result))
 
         return self.controller._cluster_for_section(self.STATISTICS, ledger)
+
+    async def test_a_node_failing_sindex_statistics_is_recorded_under_sindex(self):
+        """get_sindex asks each node for every sindex's statistics in one call."""
+        ledger = {}
+        cluster = self._wrapped(
+            ledger,
+            info_sindex={"A": [self.SINDEX]},
+            info_all_sindex_statistics={"A": asyncio.TimeoutError()},
+        )
+
+        await GetStatisticsController(cluster).get_sindex(nodes="all")
+
+        self.assertIn(
+            (self.STATISTICS, self.TIMEOUT, constants.STAT_SINDEX), ledger["A"]
+        )
+
+    async def test_a_sindex_one_node_lacks_is_recorded_as_unsupported(self):
+        ledger = {}
+        cluster = self._wrapped(
+            ledger,
+            info_sindex={"A": [self.SINDEX], "B": [self.SINDEX]},
+            info_all_sindex_statistics={
+                "A": {("test", "idx"): {"entries": "1"}},
+                "B": {("test", "idx"): ASInfoResponseError("err", "ERROR::no index")},
+            },
+        )
+
+        await GetStatisticsController(cluster).get_sindex(nodes="all")
+
+        self.assertIn(
+            (self.STATISTICS, self.UNSUPPORTED, constants.STAT_SINDEX),
+            ledger.get("B", {}),
+        )
+        self.assertNotIn("A", ledger)
 
     async def test_a_dropped_nested_failure_reaches_the_ledger(self):
         """A namespace whose statistics one node failed to answer: the getter
@@ -3250,19 +3372,26 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
         self.controller.collectinfo_root_controller = MagicMock()
 
         async def info(cmd, *args, **kwargs):
-            if cmd in self.fail_on:
-                raise Exception("boom: " + cmd)
+            self.info_requests.append(cmd)
 
             if cmd == "build":
                 return {"A": "8.2.0.0"}
 
-            return {"A": "test"}
+            def answer(name):
+                return "ERROR::boom" if name in self.rejected else "test"
+
+            if isinstance(cmd, str):
+                return {"A": answer(cmd)}
+
+            return {"A": {name: answer(name) for name in cmd}}
 
         self.controller.cluster = MagicMock()
         self.controller.cluster.info = info
 
         self.captured = []
         self.fail_on = set()
+        self.rejected = set()
+        self.info_requests = []
 
         async def capture(filename, func, param=None):
             name = " ".join(param or [])
@@ -3302,6 +3431,12 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
         await self.controller._dump_collectinfo_summary("prefix_", "header\n")
 
         self.assertIn("memory", self.captured)
+
+    async def test_summary_log_runs_info_summary_not_the_deprecated_command(self):
+        await self.controller._dump_collectinfo_summary("prefix_", "header\n")
+
+        self.assertIn("info summary", self.captured)
+        self.assertNotIn("summary", self.captured)
 
     async def test_one_failed_info_command_does_not_drop_the_rest(self):
         self.fail_on = {"network"}
@@ -3347,14 +3482,100 @@ class DiagnosticInfoCaptureTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("features", self.captured)
         self.assertIn("connection", self.captured)
 
-    async def test_one_failed_asinfo_command_does_not_drop_the_rest(self):
-        self.fail_on = {"connection"}
+    async def test_one_rejected_asinfo_command_does_not_drop_the_rest(self):
+        self.rejected = {"connection"}
 
         await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
 
-        self.assertNotIn("connection", self.captured)
+        self.assertIn("connection", self.captured)
         self.assertIn("service-clear-std", self.captured)
         self.assertIn("roster:", self.captured)
+
+    async def test_asinfo_commands_go_to_each_node_in_one_request(self):
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        singles = [r for r in self.info_requests if isinstance(r, str)]
+        batches = [r for r in self.info_requests if not isinstance(r, str)]
+        self.assertCountEqual(singles, ["build", "namespaces"])
+        self.assertEqual(len(batches), 1)
+        self.assertIn("connection", batches[0])
+        self.assertIn("roster:", batches[0])
+
+
+class AsinfoCaptureFormatTest(unittest.IsolatedAsyncioTestCase):
+    """Each asinfo command keeps its own section in ascollectinfo.log, with every
+    node's answer, however the commands are sent."""
+
+    async def asyncSetUp(self):
+        self.controller = CollectinfoController()
+        self.controller.nodes = "all"
+        self.timeout = asyncio.TimeoutError()
+
+        async def info(cmd, *args, **kwargs):
+            if cmd == "build":
+                return {"A": "8.2.0.0", "B": self.timeout}
+
+            if cmd == "namespaces":
+                return {"A": "test", "B": "test"}
+
+            if isinstance(cmd, str):
+                return {"A": "answer to " + cmd, "B": self.timeout}
+
+            return {
+                "A": {
+                    name: "answer to " + name
+                    for name in cmd
+                    if name not in self.unknown
+                },
+                "B": self.timeout,
+            }
+
+        self.controller.cluster = MagicMock()
+        self.controller.cluster.info = info
+        self.unknown = set()
+        self.written = []
+
+        patch.object(
+            CollectinfoController, "_collectinfo_capture_and_write_to_file", AsyncMock()
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.util.write_to_file",
+            side_effect=lambda filename, content: self.written.append(content),
+        ).start()
+        patch("lib.live_cluster.collectinfo_controller.InfoController").start()
+        patch("lib.live_cluster.collectinfo_controller.ShowController").start()
+        patch("lib.live_cluster.collectinfo_controller.FeaturesController").start()
+        self.addCleanup(patch.stopall)
+
+    async def test_each_command_has_its_section(self):
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        for cmd in ("connection", "roster:", "histogram:namespace=test;type=ttl"):
+            self.assertIn(
+                constants.COLLECTINFO_SEPERATOR
+                + cmd
+                + "\n"
+                + str({"A": "answer to " + cmd, "B": self.timeout}),
+                self.written,
+            )
+
+    def _section(self, cmd):
+        header = constants.COLLECTINFO_SEPERATOR + cmd + "\n"
+        return next(c[len(header) :] for c in self.written if c.startswith(header))
+
+    async def test_a_command_missing_from_a_node_reply_is_written_as_invalid(self):
+        self.unknown = {"connection"}
+
+        await self.controller._dump_collectinfo_ascollectinfo("prefix_", "header\n")
+
+        self.assertEqual(
+            self._section("connection"),
+            str({"A": ASInfoError("Invalid command 'connection'"), "B": self.timeout}),
+        )
+        self.assertEqual(
+            self._section("roster:"),
+            str({"A": "answer to roster:", "B": self.timeout}),
+        )
 
 
 class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
@@ -3363,6 +3584,7 @@ class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
     collectinfo_debug.log, which hangs off the same logger at DEBUG."""
 
     COMMAND_LOGGER = "lib.live_cluster.info_controller"
+    HEALTH_LOGGER = "lib.collectinfo_analyzer.health_check_controller"
 
     async def asyncSetUp(self):
         self.controller = CollectinfoController()
@@ -3422,6 +3644,33 @@ class CaptureSilencesCommandWarningsTest(unittest.IsolatedAsyncioTestCase):
     async def test_command_error_still_reaches_the_terminal(self):
         await self._capture(
             lambda: logging.getLogger(self.COMMAND_LOGGER).log(logging.ERROR, "boom")
+        )
+
+        self.stderr_emit.assert_called_once()
+
+    async def test_health_deprecation_warning_stays_off_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).warning(
+                "The 'health' command is deprecated."
+            )
+        )
+
+        self.stderr_emit.assert_not_called()
+
+    async def test_health_deprecation_warning_still_reaches_the_debug_log(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).warning(
+                "The 'health' command is deprecated."
+            )
+        )
+
+        self.assertEqual(
+            self._debug_messages(), ["The 'health' command is deprecated."]
+        )
+
+    async def test_health_error_still_reaches_the_terminal(self):
+        await self._capture(
+            lambda: logging.getLogger(self.HEALTH_LOGGER).error("health failed")
         )
 
         self.stderr_emit.assert_called_once()
@@ -3515,6 +3764,67 @@ class CaptureStyleJsonTest(unittest.IsolatedAsyncioTestCase):
             await self.controller._collectinfo_capture_and_write_to_file("f", render)
 
         self.assertTrue(get_style_json())
+
+
+class RunCollectinfoLeavesNoAnalyzerFolderTest(RunCollectinfoTestCase):
+    """The analyzer built for summary.log and health.log makes a per-process
+    folder under ~/.aerospike/collectinfo/. The run must remove that folder only,
+    leaving other processes' folders and the bundle it archives."""
+
+    SNAPSHOT = {
+        "prod": {
+            "1.1.1.1:3000": {
+                "as_stat": {
+                    "meta_data": {"node_id": "BB1", "ip": "1.1.1.1:3000"},
+                },
+            }
+        }
+    }
+
+    async def test_a_run_leaves_no_folder_in_the_collectinfo_home(self):
+        collectinfo_home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, collectinfo_home, ignore_errors=True)
+        other_pid_dir = os.path.join(collectinfo_home, "99999999")
+        os.mkdir(other_pid_dir)
+        keep_file = os.path.join(other_pid_dir, "keep.txt")
+
+        with open(keep_file, "w") as f:
+            f.write("keep")
+
+        bundle_at_archive = []
+
+        def archive_dir(path):
+            bundle_at_archive.append(
+                sorted(os.listdir(path)) if os.path.isdir(path) else []
+            )
+            return path + ".tgz", True
+
+        self.archive_mock.side_effect = archive_dir
+        patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.COLLECTINFO_DIR",
+            collectinfo_home + os.sep,
+        ).start()
+        patch(
+            "lib.live_cluster.collectinfo_controller.CollectinfoRootController",
+            CollectinfoRootController,
+        ).start()
+        patch.object(CollectinfoRootController, "log_handler", None).start()
+        patch.object(CollectinfoRootController, "command", None).start()
+        patch.object(
+            CollectinfoController,
+            "_get_collectinfo_data_json",
+            AsyncMock(return_value=(self.SNAPSHOT, {"no_data_nodes": []})),
+        ).start()
+
+        await self._run()
+
+        self.ascollectinfo_mock.assert_awaited_once()
+        self.assertEqual(
+            bundle_at_archive,
+            [["prefix_ascinfo.json", "prefix_" + constants.COLLECTINFO_META_FILENAME]],
+        )
+        self.assertTrue(os.path.isfile(keep_file))
+        self.assertEqual(sorted(os.listdir(collectinfo_home)), ["99999999"])
 
 
 class CollectinfoSnapshotWaitFlagTest(unittest.IsolatedAsyncioTestCase):

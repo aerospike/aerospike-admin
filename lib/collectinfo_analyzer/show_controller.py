@@ -13,12 +13,18 @@
 # limitations under the License.
 
 import logging
+import os
 from base64 import b64decode
 from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
     GetClusterMetadataController,
     GetConfigController,
     GetStatisticsController,
+)
+from lib.live_cluster.collectusage_controller import (
+    UsageUnavailable,
+    older_servers_message,
+    unavailable_message,
 )
 from lib.live_cluster.get_controller import (
     filter_jobs,
@@ -29,8 +35,8 @@ from lib.live_cluster.get_controller import (
     parse_jobs_mods,
     where_jobs_modifier_help,
 )
-from lib.utils import common, constants, util, version
-from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
+from lib.utils import common, constants, usage_export, util, version
+from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 from .collectinfo_command_controller import (
     CollectinfoCommandController,
     has_node_data,
@@ -100,9 +106,88 @@ class ShowController(CollectinfoCommandController):
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
             "masking": ShowMaskingController,
+            "usage": ShowUsageController,
         }
         self.aliases = {"stats": "statistics"}
         self.modifiers = set()
+
+
+@CommandHelp(
+    "Displays the bundle's usage records: one row per sample, then each namespace in the latest sample.",
+    "License Usage is data used / replication factor / compression ratio, as in 'info summary'.",
+    short_msg="Displays the bundle's usage records",
+)
+class ShowUsageController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _servers_predate_usage_reporting(self) -> bool:
+        first = version.LooseVersion(constants.SERVER_USAGE_REPORTING_FIRST_VERSION)
+
+        return any(
+            version.LooseVersion(build) < first
+            for builds in self.log_handler.info_meta_data(stanza="asd_build").values()
+            for build in util.filter_exceptions(builds).values()
+        )
+
+    def _namespaces(self) -> list[str]:
+        return sorted(
+            {
+                namespace
+                for nodes in self.log_handler.info_namespaces().values()
+                for namespaces in util.filter_exceptions(nodes).values()
+                for namespace in namespaces
+            }
+        )
+
+    def _do_default(self, line):
+        files = sorted(
+            self.log_handler.bundle_files(
+                ("_" + constants.COLLECTINFO_USAGE_FILENAME,)
+            ),
+            key=os.path.basename,
+            reverse=True,
+        )
+
+        if not files:
+            usage = (self.log_handler.collectinfo_meta.get("collection") or {}).get(
+                "usage"
+            )
+
+            if self._servers_predate_usage_reporting():
+                logger.warning(older_servers_message("show usage"))
+            elif (
+                isinstance(usage, dict)
+                and usage.get("status") == "unsupported"
+                and "reply" in usage
+            ):
+                logger.warning(
+                    unavailable_message(
+                        "show usage",
+                        UsageUnavailable(
+                            usage.get("node", ""), usage["reply"], supported=False
+                        ),
+                    )
+                )
+            else:
+                warn_no_data("show usage", "usage file")
+
+            return
+
+        try:
+            with open(files[0], "rb") as f:
+                document = f.read()
+        except OSError as e:
+            logger.error("show usage: cannot read %s: %s", files[0], e)
+            return
+
+        try:
+            data = usage_export.parse(document)
+        except ValueError:
+            self.view.print_result(document.decode("utf-8", "replace"))
+            return
+
+        self.view.show_usage(data, namespaces=self._namespaces())
 
 
 repeat_modifier_help = ModifierHelp(
@@ -1379,7 +1464,7 @@ class ShowStatisticsController(CollectinfoCommandController):
 )
 class ShowStatisticsXDRController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(["like", "for"])
+        self.modifiers = set(["like", "diff", "for"])
         self.getter = GetStatisticsController(self.log_handler)
 
     @CommandHelp(
@@ -2151,14 +2236,15 @@ class ShowUserAgentsController(CollectinfoCommandController):
 
 
 @CommandHelp(
-    "Display masking rules",
+    "Display masking rules.",
     "Shows all configured data masking rules from collectinfo. Rules can be filtered by namespace",
-    "and set.",
+    "and set. Enforced is the overlap state the principal reported: False marks a",
+    "rule that an enforced rule overlaps.",
     modifiers=(
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace> [set <set>]]",
+    usage="[namespace <namespace>] [set <set>]",
     short_msg="Display masking rules",
 )
 class ShowMaskingController(CollectinfoCommandController):
@@ -2185,10 +2271,6 @@ class ShowMaskingController(CollectinfoCommandController):
                 # Unknown argument, skip it
                 line.pop(0)
 
-        # Validate that set is only used with namespace
-        if set_name and not namespace:
-            raise ShellException("Set filter can only be used with namespace filter")
-
         getter = GetMaskingRulesController(self.log_handler)
         masking_data = getter.get_masking_rules()
 
@@ -2211,6 +2293,23 @@ class ShowMaskingController(CollectinfoCommandController):
             warn_no_data("show masking", "masking rules")
             return
 
+        # Older asadm split rules at ':' and stored the pieces as rules of their own.
+        merged_rules = []
+        pending = {}
+        for piece in reversed(masking_rules):
+            rule = dict(piece)
+            for key, value in pending.items():
+                rule.setdefault(key, value)
+            if util.is_complete_masking_rule(rule):
+                merged_rules.append(rule)
+                pending = {}
+            else:
+                pending = rule
+        if pending:
+            merged_rules.append(pending)
+        merged_rules.reverse()
+        masking_rules = merged_rules
+
         # Apply filtering if specified
         if namespace or set_name:
             filtered_rules = []
@@ -2227,9 +2326,11 @@ class ShowMaskingController(CollectinfoCommandController):
             masking_rules = filtered_rules
 
             if not masking_rules:
-                filter_desc = f"namespace {namespace}"
-                if set_name:
-                    filter_desc += f" set {set_name}"
+                filter_desc = " ".join(
+                    f"{mod} {value}"
+                    for mod, value in (("namespace", namespace), ("set", set_name))
+                    if value
+                )
                 warn_no_data("show masking", "masking rules", filter_desc)
 
         return self.view.show_masking_rules(
