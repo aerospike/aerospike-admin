@@ -30,7 +30,7 @@ from lib.live_cluster.get_controller import (
     where_jobs_modifier_help,
 )
 from lib.utils import common, constants, util, version
-from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
+from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 from .collectinfo_command_controller import (
     CollectinfoCommandController,
     has_node_data,
