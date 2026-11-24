@@ -19,24 +19,25 @@ import unittest
 
 from test.e2e import lib, util as test_util
 
-# No release has backup-admin and restore-admin yet. Master nightlies from
-# 8.2.1.0-39 do, and list them only with --preview backup-restore.
-SERVER_TAG = "8.2.1.0-45_20261112T051802Z"
+# 8.2.1 lists backup-admin and restore-admin only with --preview backup-restore.
+SERVER_TAG = lib.SERVER_8_2_1_TAG
 PREVIEW = ["backup-restore"]
 ROLE = "tools-4629-br"
 COLLECTINFO_PREFIX = "asadm_tools_4629_"
+REFUSED = "No privileges or unrecognized privileges."
 
 
-class TestBackupRestoreRoles(unittest.TestCase):
-    """TOOLS-4629: privilege codes 5 and 6 on a node started with the preview flag."""
+def start(preview_features=None):
+    lib.stop()
+    lib.start(num_nodes=1, docker_tag=SERVER_TAG, preview_features=preview_features)
 
-    @classmethod
-    def setUpClass(cls):
-        lib.stop()
-        lib.start(num_nodes=1, docker_tag=SERVER_TAG, preview_features=PREVIEW)
-        cls.args = "-h {}:{} --enable -e '{{}}' --json -Uadmin -Padmin".format(
-            lib.SERVER_IP, lib.PORT
-        )
+    return "-h {}:{} --enable -e '{{}}' --json -Uadmin -Padmin".format(
+        lib.SERVER_IP, lib.PORT
+    )
+
+
+class RolesMixin:
+    args = None
 
     @classmethod
     def tearDownClass(cls):
@@ -63,6 +64,45 @@ class TestBackupRestoreRoles(unittest.TestCase):
             record["Role"]: record["Privileges"]
             for record in (dict(zip(names, row)) for row in values)
         }
+
+
+class TestBackupRestoreRolesWithoutPreview(RolesMixin, unittest.TestCase):
+    """8.2.1 without the preview flag neither lists nor accepts codes 5 and 6."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.args = start()
+
+    def test_show_roles_leaves_out_backup_and_restore_admin(self):
+        roles = self.roles()
+
+        self.assertIn("sys-admin", roles)
+        self.assertNotIn("backup-admin", roles)
+        self.assertNotIn("restore-admin", roles)
+
+    def test_server_refuses_backup_and_restore_admin(self):
+        cp = self.run_asadm("manage acl create role {} priv backup-admin".format(ROLE))
+
+        self.assertIn("ERROR: Failed to create role : " + REFUSED, cp.stderr)
+        self.assertEqual(2, cp.returncode)
+
+        cp = self.run_asadm("manage acl create role {} priv read".format(ROLE))
+
+        self.assertEqual("Successfully created role {}.".format(ROLE), cp.stdout)
+
+        cp = self.run_asadm("manage acl grant role {} priv restore-admin".format(ROLE))
+
+        self.assertIn("ERROR: Failed to grant privilege : " + REFUSED, cp.stderr)
+        self.assertEqual(2, cp.returncode)
+        self.assertEqual({ROLE: "read"}, self.roles("show roles " + ROLE))
+
+
+class TestBackupRestoreRoles(RolesMixin, unittest.TestCase):
+    """TOOLS-4629: privilege codes 5 and 6 on a node started with the preview flag."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.args = start(PREVIEW)
 
     def wait_for_privileges(self, expected):
         cmd = "show roles " + ROLE
