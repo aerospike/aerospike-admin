@@ -1673,6 +1673,22 @@ class Node(AsyncObject):
     ###### Service End ######
 
     @async_return_exceptions
+    async def info_usage(self) -> bytes:
+        """The cluster's usage export, decoded from the base64 the server sends."""
+        resp = await self._info("usage-export")
+
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get usage", resp)
+
+        if resp.lower() in {ASINFO_RESPONSE_OK, ""}:
+            raise ASInfoError("Failed to get usage", resp)
+
+        try:
+            return base64.b64decode(resp, validate=True)
+        except ValueError:
+            raise ASInfoResponseError("Failed to get usage", resp)
+
+    @async_return_exceptions
     async def info_statistics(self):
         """
         Get statistics for this node. asinfo -v "statistics"
@@ -4152,30 +4168,27 @@ class Node(AsyncObject):
 
         result = {"is_parked": False, "park_ms": 0, "namespaces": {}}
 
-        # Entries are "<ns>:state=<state>:files_completed=<n>:files_total=<n>:
-        # is_parked=<bool>:park_ms=<ms>" joined by ";". The leading namespace has no
-        # "=", so info_to_dict_multi_level would drop it. When no namespace is
-        # checkpointing the server sends a single node-global "is_parked=..:park_ms=.."
-        # record with no namespace prefix. Park state is node-global either way; the
-        # server repeats it per namespace for the metrics exporter.
+        # The node-global is_parked/park_ms come on every namespace record before
+        # 8.2.1, and on a leading "node:" record from 8.2.1. A parked node refuses
+        # "build", so the record's shape decides: one without "state" is not a
+        # namespace.
         for entry in client_util.info_to_list(resp):
             if not entry:
                 continue
 
             head, _, rest = entry.partition(":")
+            values = client_util.info_to_dict(entry if "=" in head else rest, ":")
 
-            if "=" in head:
-                values = client_util.info_to_dict(entry, ":")
-            else:
-                values = client_util.info_to_dict(rest, ":")
+            if "state" in values:
                 result["namespaces"][head] = {
-                    "state": values.get("state", ""),
+                    "state": values["state"],
                     "files_completed": self._checkpoint_int(values, "files_completed"),
                     "files_total": self._checkpoint_int(values, "files_total"),
                 }
 
-            result["is_parked"] = values.get("is_parked") == "true"
-            result["park_ms"] = self._checkpoint_int(values, "park_ms")
+            if "is_parked" in values:
+                result["is_parked"] = values["is_parked"] == "true"
+                result["park_ms"] = self._checkpoint_int(values, "park_ms")
 
         logger.debug("info_checkpoint_status node=%s response=%s", self.ip, result)
 
@@ -4407,17 +4420,17 @@ class Node(AsyncObject):
 
     @async_return_exceptions
     async def info_masking_add_rule(
-        self, namespace, set_, bin_, bin_type, func_name, func_params
+        self, namespace, set_, bin_, bin_type, func_name, func_params, ael_b64=None
     ):
         """
-        Add a masking rule.
+        Add a masking rule on a bin, or on the element an AEL path names.
         """
-        req = "masking:namespace={};set={};bin={};type={};function={}".format(
-            namespace, set_, bin_, bin_type, func_name
+        req = "masking:namespace={};set={};{}type={};function={}".format(
+            namespace, set_, self._masking_target(bin_, ael_b64), bin_type, func_name
         )
 
         # Add function parameters to the request
-        for param_name, param_value in func_params.items():
+        for param_name, param_value in func_params:
             req += ";{}={}".format(param_name, param_value)
 
         resp = await self._info(req)
@@ -4428,19 +4441,37 @@ class Node(AsyncObject):
         return ASINFO_RESPONSE_OK
 
     @async_return_exceptions
-    async def info_masking_remove_rule(self, namespace, set_, bin_, bin_type):
+    async def info_masking_remove_rule(
+        self, namespace, set_, bin_, bin_type, ael_b64=None, func_params=()
+    ):
         """
-        Remove a masking rule.
+        Remove the masking rule on a bin, or on the element an AEL path names.
         """
-        req = "masking:namespace={};set={};bin={};type={};function=remove".format(
-            namespace, set_, bin_, bin_type
+        req = "masking:namespace={};set={};{}type={};function=remove".format(
+            namespace, set_, self._masking_target(bin_, ael_b64), bin_type
         )
+
+        for param_name, param_value in func_params:
+            req += ";{}={}".format(param_name, param_value)
+
         resp = await self._info(req)
 
         if resp.lower() != ASINFO_RESPONSE_OK:
             raise ASInfoResponseError("Failed to remove masking rule", resp)
 
         return ASINFO_RESPONSE_OK
+
+    @staticmethod
+    def _masking_target(bin_, ael_b64):
+        fields = []
+
+        if bin_:
+            fields.append("bin={}".format(bin_))
+
+        if ael_b64 is not None:
+            fields.append("ael_b64={}".format(ael_b64))
+
+        return "".join(field + ";" for field in fields)
 
     @async_return_exceptions
     async def info_masking_list_rules(self, namespace=None, set_=None):
@@ -4450,7 +4481,7 @@ class Node(AsyncObject):
         # namespace and set are optional
         masking_show_req = "masking-show:"
         if namespace is not None:
-            masking_show_req += "ns={};".format(namespace)
+            masking_show_req += "namespace={};".format(namespace)
         if set_ is not None:
             masking_show_req += "set={};".format(set_)
 
@@ -4459,11 +4490,26 @@ class Node(AsyncObject):
         if resp.startswith("error") or resp.startswith("ERROR"):
             raise ASInfoResponseError("Failed to list masking rules", resp)
 
-        result = [
-            client_util.info_to_dict(v, ";")
-            for v in client_util.info_to_list(resp, delimiter=":")
-            if v != ""
-        ]
+        result = []
+        pending = None
+        pending_rule = {}
+        # A ':' inside a value splits its rule, and the piece after it is not a
+        # complete rule on its own, so join pieces from the end until they form one.
+        for piece in reversed(client_util.info_to_list(resp, delimiter=":")):
+            pending = piece if pending is None else piece + ":" + pending
+            pending_rule = {}
+            for token in client_util.info_to_list(pending, ";"):
+                key, sep, value = token.partition("=")
+                if sep:
+                    pending_rule.setdefault(key, value)
+            if "=" in pending.split(";", 1)[0] and util.is_complete_masking_rule(
+                pending_rule
+            ):
+                result.append(pending_rule)
+                pending = None
+        if pending:
+            result.append(pending_rule)
+        result.reverse()
         logger.debug(
             "info_masking_list_rules node=%s namespace=%s set=%s response=%s",
             self.ip,

@@ -27,7 +27,7 @@ from typing import Any, TextIO, Tuple
 from lib.health import constants as health_constants
 from lib.health.util import print_dict
 from lib.live_cluster.client import Cluster, ASInfoError
-from lib.utils import file_size, constants, util
+from lib.utils import file_size, constants, usage_export, util
 from lib.utils.common import (
     StopWritesDict,
     SummaryClusterDict,
@@ -1374,6 +1374,63 @@ class CliView(object):
         CliView.print_result(sheet.render(templates.show_udfs, title, sources))
 
     @staticmethod
+    def _usage_header(data: dict[str, Any]) -> list[str]:
+        lines = [f"Cluster {data.get('cluster', '')}"]
+        account = usage_export.account(data)
+
+        if account:
+            lines.append(f"Account {account}")
+
+        lines.append(f"Days    {usage_export.days(data)}")
+
+        return lines
+
+    @staticmethod
+    def print_usage_saved(data: dict[str, Any] | None, file_path: str, size: int):
+        if data is not None:
+            for line in CliView._usage_header(data):
+                print(line)
+
+        saved_size = f"{size} B" if size < 1024 else file_size.size(size).strip()
+        print(f"Saved   {file_path} ({saved_size})")
+        print("Send this file to your Aerospike contact.")
+
+    @staticmethod
+    def show_usage(data: dict[str, Any], namespaces=(), **ignore):
+        out = CliView._usage_header(data)
+        out.append(f"Taken   {usage_export.display_time(data.get('taken', ''))}")
+        rows = usage_export.sample_rows(data)
+
+        if not rows:
+            CliView.print_result("\n".join(out))
+            return
+
+        out.append(
+            sheet.render(
+                templates.show_usage_samples,
+                "Usage Samples (UTC)",
+                dict(samples=dict(enumerate({i: row} for i, row in enumerate(rows)))),
+            )
+        )
+
+        latest = usage_export.latest_sample(data)
+        ns_rows = usage_export.namespace_rows(latest, namespaces)
+        out.append(
+            sheet.render(
+                templates.show_usage_namespaces,
+                "Usage by Namespace ({})".format(
+                    usage_export.display_time(latest.get("time", ""))
+                ),
+                dict(
+                    namespaces=dict(
+                        enumerate({i: row} for i, row in enumerate(ns_rows))
+                    )
+                ),
+            )
+        )
+        CliView.print_result("\n".join(filter(None, out)))
+
+    @staticmethod
     def show_single_udf(udf_info, filename, timestamp="", **ignore):
         """Display a single UDF with base64 decoded content in simple format."""
 
@@ -2530,6 +2587,13 @@ class CliView(object):
             numbered_lines.append(
                 CliView.SummaryLine(
                     "Cluster Name", ", ".join(cluster_dict["cluster_name"])
+                )
+            )
+
+        if cluster_dict.get("cluster_uuid"):
+            numbered_lines.append(
+                CliView.SummaryLine(
+                    "Cluster UUID", ", ".join(cluster_dict["cluster_uuid"])
                 )
             )
 

@@ -648,6 +648,7 @@ class SummaryClusterDict(TypedDict):
     os_version: list[str]
     cluster_size: list[int]
     cluster_name: list[str]
+    cluster_uuid: NotRequired[list[str]]
     device_count: int
     device_count_per_node: int
     device_count_same_across_nodes: bool
@@ -1059,6 +1060,15 @@ def create_summary(
         summary_dict["CLUSTER"]["cluster_name"] = list(
             set(metadata["cluster_name"].values()).difference(set(["null"]))
         )
+
+    cluster_uuids = {
+        stats["cluster_uuid"]
+        for stats in service_stats.values()
+        if isinstance(stats, dict) and stats.get("cluster_uuid")
+    }
+
+    if cluster_uuids:
+        summary_dict["CLUSTER"]["cluster_uuid"] = sorted(cluster_uuids)
 
     if "server_version" in metadata and metadata["server_version"]:
         summary_dict["CLUSTER"]["server_version"] = list(
@@ -3636,24 +3646,24 @@ class CollectinfoPathInfo:
     output_time = ""
 
 
-def get_collectinfo_path(timestamp, output_prefix=""):
+def _output_name_prefix(output_prefix) -> str:
+    output_prefix = str(output_prefix or "").strip()
+
+    if not output_prefix or output_prefix.endswith(("-", "_")):
+        return output_prefix
+
+    return output_prefix + "_"
+
+
+def get_usage_file_path(timestamp, output_prefix="") -> str:
     output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
 
-    if output_prefix:
-        output_prefix = str(output_prefix).strip()
+    return f"/tmp/{_output_name_prefix(output_prefix)}collect_usage_{output_time}.tgz"
 
-    aslogdir_prefix = ""
-    if output_prefix:
-        aslogdir_prefix = "%s%s" % (
-            str(output_prefix),
-            (
-                "_"
-                if output_prefix
-                and not output_prefix.endswith("-")
-                and not output_prefix.endswith("_")
-                else ""
-            ),
-        )
+
+def get_collectinfo_path(timestamp, output_prefix=""):
+    output_time = time.strftime("%Y%m%d_%H%M%S", timestamp)
+    aslogdir_prefix = _output_name_prefix(output_prefix)
 
     cf_path_info = CollectinfoPathInfo()
 

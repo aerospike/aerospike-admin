@@ -1583,36 +1583,51 @@ async def check_version_support(
     }
 
 
+def masking_word_error(fields):
+    """Return the refusal for the first (name, word) the server would split, or None.
+    A ';' starts another field and a control character such as a newline breaks it."""
+    for name, word in fields:
+        for char in word or "":
+            if char == ";":
+                return f"The {name} '{word}' cannot contain ';', which separates the fields of a masking command."
+
+            if char < " " or char == "\x7f":
+                return f"The {name} {word!r} cannot contain the control character {char!r}."
+
+    return None
+
+
+def is_complete_masking_rule(rule):
+    """Return True when a masking-show rule has a namespace (or ns), set, type and function."""
+    return ("namespace" in rule or "ns" in rule) and all(
+        k in rule for k in ("set", "type", "function")
+    )
+
+
+def masking_path_text(ael_b64):
+    """Return (text, decoded): the AEL path ael_b64 encodes and True, or the value
+    marked '(base64)' and False when it does not decode."""
+    try:
+        path = base64.b64decode(ael_b64, validate=True)
+        return path.decode("utf-8", "backslashreplace"), True
+    except (TypeError, ValueError):
+        return f"'{ael_b64}' (base64)", False
+
+
+def _masking_path_bin(ael):
+    if ael.startswith('$."'):
+        end = ael.find('"', 3)
+        return ael[3:end] if end != -1 else ""
+
+    if ael.startswith("$."):
+        return ael[2:].split(".", 1)[0]
+
+    return ""
+
+
 def normalize_masking_rule_data(rule):
-    """Normalize masking rule data from API response.
-
-    Args:
-        rule (dict): Raw masking rule data from API
-
-    Returns:
-        dict: Normalized rule data with consistent field names
-
-    Example:
-        Input dict from API response:
-        {
-            "namespace": "test",
-            "set": "demo",
-            "bin": "credit_card",
-            "type": "string",
-            "function": "redact",
-            "position": "0",
-            "length": "3"
-        }
-
-        Output normalized dict:
-        {
-            "ns": "test",
-            "set": "demo",
-            "bin": "credit_card",
-            "type": "string",
-            "function": "redact position 0 length 3"
-        }
-    """
+    """Map a masking-show rule to the show masking columns. A path rule carries no
+    bin, so its bin is read off the front of the decoded AEL path."""
     processed_rule = {}
 
     # Normalize field names (handle both "ns"/"namespace")
@@ -1620,6 +1635,13 @@ def normalize_masking_rule_data(rule):
     processed_rule["set"] = rule.get("set", "")
     processed_rule["bin"] = rule.get("bin", "")
     processed_rule["type"] = rule.get("type", "")
+
+    if rule.get("ael_b64") is not None:
+        ael, decoded = masking_path_text(rule["ael_b64"])
+        processed_rule["ael"] = ael
+
+        if decoded and not processed_rule["bin"]:
+            processed_rule["bin"] = _masking_path_bin(ael)
 
     # Parse the function string to display it properly
     # Handle both "func" and "function" field names
@@ -1630,7 +1652,17 @@ def normalize_masking_rule_data(rule):
         result = func_name
 
         # Add all function parameters except the core fields
-        core_fields = {"ns", "namespace", "set", "bin", "type", "function"}
+        core_fields = {
+            "ns",
+            "namespace",
+            "set",
+            "bin",
+            "type",
+            "function",
+            "default",
+            "ael_b64",
+            "enforced",
+        }
         for key, value in rule.items():
             if key not in core_fields and value is not None:
                 result += f" {key} {value}"
@@ -1638,5 +1670,10 @@ def normalize_masking_rule_data(rule):
         processed_rule["function"] = result
     else:
         processed_rule["function"] = ""
+
+    if "default" in rule:
+        processed_rule["default"] = rule["default"]
+
+    processed_rule["enforced"] = rule.get("enforced", "true")
 
     return processed_rule
