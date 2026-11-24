@@ -21,6 +21,11 @@ from lib.collectinfo_analyzer.get_controller import (
     GetConfigController,
     GetStatisticsController,
 )
+from lib.live_cluster.collectusage_controller import (
+    UsageUnavailable,
+    older_servers_message,
+    unavailable_message,
+)
 from lib.live_cluster.get_controller import (
     filter_jobs,
     flip_jobs_modifier_help,
@@ -145,10 +150,24 @@ class ShowUsageController(CollectinfoCommandController):
         )
 
         if not files:
+            usage = (self.log_handler.collectinfo_meta.get("collection") or {}).get(
+                "usage"
+            )
+
             if self._servers_predate_usage_reporting():
+                logger.warning(older_servers_message("show usage"))
+            elif (
+                isinstance(usage, dict)
+                and usage.get("status") == "unsupported"
+                and "reply" in usage
+            ):
                 logger.warning(
-                    "'show usage' is not supported on aerospike versions < %s",
-                    constants.SERVER_USAGE_REPORTING_FIRST_VERSION,
+                    unavailable_message(
+                        "show usage",
+                        UsageUnavailable(
+                            usage.get("node", ""), usage["reply"], supported=False
+                        ),
+                    )
                 )
             else:
                 warn_no_data("show usage", "usage file")

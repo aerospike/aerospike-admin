@@ -1391,21 +1391,21 @@ class CliView(object):
             for line in CliView._usage_header(data):
                 print(line)
 
-        print(f"Saved   {file_path} ({file_size.size(size).strip()})")
+        saved_size = f"{size} B" if size < 1024 else file_size.size(size).strip()
+        print(f"Saved   {file_path} ({saved_size})")
         print("Send this file to your Aerospike contact.")
 
     @staticmethod
     def show_usage(data: dict[str, Any], namespaces=(), **ignore):
-        for line in CliView._usage_header(data):
-            print(line)
-
-        print(f"Taken   {usage_export.display_time(data.get('taken', ''))}")
+        out = CliView._usage_header(data)
+        out.append(f"Taken   {usage_export.display_time(data.get('taken', ''))}")
         rows = usage_export.sample_rows(data)
 
         if not rows:
+            CliView.print_result("\n".join(out))
             return
 
-        CliView.print_result(
+        out.append(
             sheet.render(
                 templates.show_usage_samples,
                 "Usage Samples (UTC)",
@@ -1415,7 +1415,7 @@ class CliView(object):
 
         latest = usage_export.latest_sample(data)
         ns_rows = usage_export.namespace_rows(latest, namespaces)
-        CliView.print_result(
+        out.append(
             sheet.render(
                 templates.show_usage_namespaces,
                 "Usage by Namespace ({})".format(
@@ -1428,6 +1428,7 @@ class CliView(object):
                 ),
             )
         )
+        CliView.print_result("\n".join(filter(None, out)))
 
     @staticmethod
     def show_single_udf(udf_info, filename, timestamp="", **ignore):

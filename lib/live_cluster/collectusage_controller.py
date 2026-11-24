@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import calendar
+import contextlib
 import io
 import json
 import logging
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from lib.base_controller import CommandHelp, ModifierHelp, ShellException
-from lib.live_cluster.client.types import ASInfoResponseError
+from lib.live_cluster.client.types import ASInfoError, ASInfoResponseError
 from lib.live_cluster.get_controller import GetClusterMetadataController
 from lib.utils import common, constants, usage_export, util
 
@@ -80,7 +81,8 @@ def _usage_export(node: str, document: bytes) -> UsageExport:
 
 async def fetch_usage(cluster) -> UsageExport:
     """Any node answers for the whole cluster. The principal is asked first, then
-    each other live node until one returns an export."""
+    each other live node until one returns an export, unless the principal's reply
+    says the cluster has no usage reporting."""
     try:
         replies = await cluster.info_usage(nodes="principal")
     except Exception as e:
@@ -90,6 +92,11 @@ async def fetch_usage(cluster) -> UsageExport:
 
     if isinstance(reply, bytes):
         return _usage_export(node, reply)
+
+    if isinstance(reply, ASInfoResponseError) and reply.raw_response.startswith(
+        NO_USAGE_REPORTING
+    ):
+        raise UsageUnavailable(node, reply.raw_response, supported=False)
 
     others = sorted(
         (other for other in cluster.get_nodes() if other.key != node),
@@ -105,15 +112,11 @@ async def fetch_usage(cluster) -> UsageExport:
         if isinstance(answer, bytes):
             return _usage_export(other.key, answer)
 
-    if isinstance(reply, ValueError):
-        raise UsageUnavailable(node, f"could not decode the reply: {reply}")
-
     if isinstance(reply, ASInfoResponseError):
-        raise UsageUnavailable(
-            node,
-            reply.raw_response,
-            supported=not reply.raw_response.startswith(NO_USAGE_REPORTING),
-        )
+        raise UsageUnavailable(node, reply.raw_response)
+
+    if isinstance(reply, ASInfoError) and reply.response is not None:
+        raise UsageUnavailable(node, reply.response)
 
     raise UsageUnavailable(node, str(reply))
 
@@ -148,7 +151,7 @@ def log_unavailable(command: str, error: UsageUnavailable, hint: str = "") -> No
 @CommandHelp(
     "Exports the cluster's usage records to a .tgz archive to send to Aerospike.",
     "Open the archive with 'asadm -cf <archive>' and run 'show usage' to view it.",
-    "Needs server v. {} or later.".format(
+    "Needs Enterprise server v. {} or later.".format(
         constants.SERVER_USAGE_REPORTING_FIRST_VERSION
     ),
     usage="[--output-prefix <prefix>]",
@@ -223,6 +226,8 @@ class CollectusageController(LiveClusterCommandController):
             f"{output_time}_usage_meta.json": json.dumps(meta, indent=2).encode(),
         }
 
+        tar = None
+
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
 
@@ -234,6 +239,11 @@ class CollectusageController(LiveClusterCommandController):
                     tar.addfile(member, io.BytesIO(data))
         except OSError as e:
             logger.error("Failed to write %s: %s", path, e)
+
+            if tar is not None:
+                with contextlib.suppress(OSError):
+                    os.remove(path)
+
             return
 
         self.view.print_usage_saved(export.data, path, os.path.getsize(path))

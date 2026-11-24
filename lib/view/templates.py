@@ -2560,6 +2560,14 @@ show_usage_samples = Sheet(
     order_by=(FieldSorter("Date"), FieldSorter("Time")),
 )
 
+
+def _sum_unless_a_row_has_none(edatas: list[EntryData]):
+    if not edatas or None in edatas[0].values:
+        return None
+
+    return sum(edata.value for edata in edatas)
+
+
 show_usage_namespaces = Sheet(
     (
         Field("Namespace", Projectors.String("namespaces", "namespace")),
@@ -2575,7 +2583,7 @@ show_usage_namespaces = Sheet(
             "License Usage",
             Projectors.Number("namespaces", "license_usage"),
             converter=Converters.byte,
-            aggregator=Aggregators.sum(),
+            aggregator=ComplexAggregator(_sum_unless_a_row_has_none),
         ),
     ),
     from_source="namespaces",

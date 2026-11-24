@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
-import base64
 from contextlib import asynccontextmanager
 from ctypes import ArgumentError
 import copy
@@ -1680,6 +1679,9 @@ class Node(AsyncObject):
 
         if resp.startswith("ERROR") or resp.startswith("error"):
             raise ASInfoResponseError("Failed to get usage", resp)
+
+        if resp.lower() in {ASINFO_RESPONSE_OK, ""}:
+            raise ASInfoError("Failed to get usage", resp)
 
         try:
             return base64.b64decode(resp, validate=True)

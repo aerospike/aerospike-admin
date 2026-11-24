@@ -1988,7 +1988,7 @@ class ShowStopWritesController(LiveClusterCommandController):
 @CommandHelp(
     "Displays the cluster's usage records: one row per sample, then each namespace in the latest sample.",
     "License Usage is data used / replication factor / compression ratio, as in 'info summary'.",
-    "Needs server v. {} or later.".format(
+    "Needs Enterprise server v. {} or later.".format(
         constants.SERVER_USAGE_REPORTING_FIRST_VERSION
     ),
     short_msg="Displays the cluster's usage records",
