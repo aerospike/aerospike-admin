@@ -2143,6 +2143,214 @@ class PasswordHelpTest(unittest.TestCase):
         ):
             self.assertIn(text, out.getvalue())
 
+    def test_help_timeout_block(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        self.assertIn(
+            " --timeout=value      Set timeout value in seconds for node level"
+            " operations.\n"
+            "                      Default: 1 seconds\n",
+            out.getvalue(),
+        )
+        self.assertNotIn("TLS connection does not support timeout", out.getvalue())
+
+    def test_help_host_names_the_ipv6_forms(self):
+        out = io.StringIO()
+        with patch("sys.stdout", out):
+            conf.print_config_help()
+
+        self.assertIn(
+            "                      server. Default: localhost:3000\n"
+            '                      An IPv6 address goes in brackets: "[<ipv6>]",\n'
+            '                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".\n'
+            "                      Examples:\n",
+            out.getvalue(),
+        )
+
+
+class TimeoutOptionTest(PasswordSourcesTestCase):
+    """asinfo mode defaults to 5 s and ignores the [asadm] timeout; asadm
+    defaults to 1 s and reads it."""
+
+    ASADM_SECTION = "[asadm]\ntimeout = 3\n"
+
+    def test_asinfo_mode_defaults_to_5s(self):
+        self.assertEqual(self.load("--asinfo-mode").timeout, 5)
+
+    def test_asinfo_mode_takes_the_command_line(self):
+        self.assertEqual(self.load("--asinfo-mode", "--timeout", "0.5").timeout, 0.5)
+        self.assertEqual(
+            self.load(
+                "--asinfo-mode", "--timeout", "2", config=self.ASADM_SECTION
+            ).timeout,
+            2,
+        )
+
+    def test_asinfo_mode_ignores_the_asadm_section(self):
+        self.assertEqual(
+            self.load("--asinfo-mode", config=self.ASADM_SECTION).timeout, 5
+        )
+
+    def test_asinfo_mode_from_the_config_file_defaults_to_5s(self):
+        args = self.load(config="[asadm]\nasinfo-mode = true\ntimeout = 3\n")
+
+        self.assertTrue(args.asinfo_mode)
+        self.assertEqual(args.timeout, 5)
+
+    def test_asadm_default_section_and_command_line(self):
+        self.assertEqual(self.load().timeout, 1)
+        self.assertEqual(self.load(config=self.ASADM_SECTION).timeout, 3)
+        self.assertEqual(
+            self.load("--timeout", "2", config=self.ASADM_SECTION).timeout, 2
+        )
+
+
+class TimeoutValueTest(unittest.TestCase):
+    """A timeout that is not above zero fails every request, so it is refused."""
+
+    def parse(self, value):
+        with patch("sys.argv", ["asadm", "--timeout=" + value]):
+            return conf.get_cli_args().timeout
+
+    def test_refuses_values_not_above_zero(self):
+        for value in ("0", "-1", "nan", "-inf"):
+            with self.subTest(value=value):
+                err = io.StringIO()
+
+                with patch("sys.stderr", err), self.assertRaises(SystemExit) as cm:
+                    self.parse(value)
+
+                self.assertEqual(cm.exception.code, 2)
+                self.assertIn(
+                    'argument --timeout: invalid value "{}", expected a number'
+                    " greater than 0".format(value),
+                    err.getvalue(),
+                )
+
+    def test_accepts_values_above_zero(self):
+        for value, expected in (("0.5", 0.5), ("2", 2), ("inf", float("inf"))):
+            with self.subTest(value=value):
+                self.assertEqual(self.parse(value), expected)
+
+
+class ConfigTimeoutValueTest(PasswordSourcesTestCase):
+    """The [asadm] timeout is refused like --timeout when it is not above zero."""
+
+    def test_refuses_values_not_above_zero(self):
+        for value in ("0", "-1"):
+            with self.subTest(value=value):
+                config = "[asadm]\ntimeout = {}\n".format(value)
+
+                with patch("lib.utils.conf.logger") as logger:
+                    args = self.load(config=config)
+
+                path = os.path.join(self.tmpdir.name, "astools.conf")
+                self.assertEqual(
+                    [c.args[0] for c in logger.critical.call_args_list],
+                    [
+                        "Config file parse error: {} invalid value for timeout in"
+                        " the [asadm] config section, expected an integer greater"
+                        " than 0".format(path)
+                    ],
+                )
+                self.assertEqual(args.timeout, 1)
+
+
+class SeedTest(unittest.TestCase):
+    def test_bracketed_ipv6_takes_the_port_option(self):
+        for host in ("::1", "2001:db8::1", "fe80::1", "cafe::3102", "::ffff:127.0.0.1"):
+            with self.subTest(host=host):
+                self.assertEqual(
+                    conf._getseeds({"host": "[" + host + "]", "port": 3100}),
+                    [(host, 3100, None)],
+                )
+
+    def test_bracketed_ipv6_takes_the_tls_name_option(self):
+        self.assertEqual(
+            conf._getseeds(
+                {"host": "[::1]", "port": 4333, "tls_enable": True, "tls_name": "t1"}
+            ),
+            [("::1", 4333, "t1")],
+        )
+
+    def test_unbracketed_double_colon_is_a_host_and_a_port(self):
+        """As on master and in the C tools, an IPv6 address goes in brackets."""
+        for host, seeds in (
+            ("cafe::3102", [("cafe", 3102, "")]),
+            ("db1::3000", [("db1", 3000, "")]),
+        ):
+            with self.subTest(host=host):
+                self.assertEqual(conf._getseeds({"host": host, "port": 3100}), seeds)
+
+    def test_other_host_forms(self):
+        for host, seeds in (
+            ("[::1]", [("::1", 3100, None)]),
+            ("[::1]:3200", [("::1", 3200, None)]),
+            ("[cafe::3102]:3200", [("cafe::3102", 3200, None)]),
+            ("[::1]:t1:3200", [("::1", 3200, "t1")]),
+            ("127.0.0.1", [("127.0.0.1", 3100, None)]),
+            ("127.0.0.1:3200", [("127.0.0.1", 3200, None)]),
+            ("127.0.0.1:t1:3200", [("127.0.0.1", 3200, "t1")]),
+            ("node1:tls1:4333", [("node1", 4333, "tls1")]),
+            ("host1,host2:3200", [("host1", 3100, None), ("host2", 3200, None)]),
+        ):
+            with self.subTest(host=host):
+                self.assertEqual(conf._getseeds({"host": host, "port": 3100}), seeds)
+
+    def test_host_parse_error_goes_to_the_log(self):
+        out = io.StringIO()
+
+        with patch("sys.stdout", out), patch("lib.utils.conf.logger") as logger:
+            seeds = conf._getseeds({"host": "127.0.0.1:abc,host2", "port": 3100})
+
+        self.assertEqual(seeds, [("host2", 3100, None)])
+        self.assertEqual(out.getvalue(), "")
+        logger.critical.assert_called_once()
+        self.assertEqual(
+            logger.critical.call_args.args[0] % logger.critical.call_args.args[1:],
+            "Not able to parse host 127.0.0.1:abc: invalid literal for int() with"
+            " base 10: 'abc'",
+        )
+
+
+class HostParseErrorModeTest(PasswordSourcesTestCase):
+    """Only runs that connect use the seeds, so only they report a bad host."""
+
+    HOST = '[cluster]\nhost = "node1:tls1"\n'
+    ERROR = (
+        "Not able to parse host node1:tls1: invalid literal for int() with base 10:"
+        " 'tls1'"
+    )
+
+    def critical_messages(self, *argv, config):
+        with patch("sys.stdout", io.StringIO()), patch(
+            "lib.utils.conf.logger"
+        ) as logger:
+            self.load(*argv, config=config)
+
+        return [c.args[0] % c.args[1:] for c in logger.critical.call_args_list]
+
+    def test_collectinfo_and_log_analyzer_runs_do_not_report_it(self):
+        for flag in ("-c", "-l"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.critical_messages(flag, config=self.HOST), [])
+
+    def test_runs_that_connect_report_it(self):
+        for argv, asadm_section in (
+            ((), ""),
+            (("--asinfo-mode",), ""),
+            ((), "[asadm]\nasinfo-mode = true\n"),
+            ((), "[asadm]\ncollectinfo = true\n"),
+            ((), "[asadm]\nlog-analyzer = true\n"),
+        ):
+            with self.subTest(argv=argv, asadm_section=asadm_section):
+                self.assertEqual(
+                    self.critical_messages(*argv, config=self.HOST + asadm_section),
+                    [self.ERROR],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

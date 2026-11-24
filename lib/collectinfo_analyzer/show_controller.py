@@ -1445,7 +1445,7 @@ class ShowStatisticsController(CollectinfoCommandController):
 )
 class ShowStatisticsXDRController(CollectinfoCommandController):
     def __init__(self):
-        self.modifiers = set(["like", "for"])
+        self.modifiers = set(["like", "diff", "for"])
         self.getter = GetStatisticsController(self.log_handler)
 
     @CommandHelp(

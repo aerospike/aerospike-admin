@@ -1278,6 +1278,129 @@ class ShowStatisticsXDRDefaultTest(AnalyzerControllerTestCase):
         )
 
 
+class ShowStatisticsXDRModifiersTest(AnalyzerControllerTestCase):
+    """`diff` is a modifier here, as in live mode."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = ShowStatisticsXDRController()
+        self.controller.getter = MagicMock()
+        self.controller.getter.get_xdr.return_value = {"ts": {"n1": {"uptime": "1"}}}
+        self.controller.getter.get_xdr_dcs.return_value = {
+            "ts": {"n1": {"dc1": {"lag": "0"}}}
+        }
+        self.controller.getter.get_xdr_namespaces.return_value = {
+            "ts": {"n1": {"dc1": {"test": {"lag": "0"}}}}
+        }
+
+    def _shown_with(self, view_method):
+        kwargs = getattr(self.view_mock, view_method).call_args.kwargs
+        return {key: kwargs.get(key) for key in ("title_every_nth", "like", "diff")}
+
+    @parameterized.expand(
+        [
+            ("xdr", [], ["show_stats", "show_xdr_dc_stats", "show_xdr_ns_stats"]),
+            ("dc", ["dc"], ["show_xdr_dc_stats"]),
+            ("namespace", ["namespace"], ["show_xdr_ns_stats"]),
+        ]
+    )
+    def test_repeat_flag_followed_by_diff_takes_the_default(
+        self, _, command, view_methods
+    ):
+        asyncio.run(self.controller.execute([*command, "-r", "diff"]))
+
+        for view_method in view_methods:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": [], "diff": [True]},
+            )
+
+    @parameterized.expand(
+        [
+            ("xdr", [], ["show_stats", "show_xdr_dc_stats"]),
+            ("dc", ["dc"], ["show_xdr_dc_stats"]),
+        ]
+    )
+    def test_diff_reaches_the_view(self, _, command, view_methods):
+        asyncio.run(self.controller.execute([*command, "diff"]))
+
+        for view_method in view_methods:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": [], "diff": [True]},
+            )
+
+    def test_diff_after_a_like_pattern_is_not_a_pattern(self):
+        asyncio.run(self.controller.execute(["like", "lag", "diff"]))
+
+        for view_method in ["show_stats", "show_xdr_dc_stats"]:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": ["lag"], "diff": [True]},
+            )
+
+    @parameterized.expand(
+        [
+            ("dc", "dc1", "get_xdr_dcs", "show_xdr_dc_stats"),
+            ("namespace", "test", "get_xdr_namespaces", "show_xdr_ns_stats"),
+        ]
+    )
+    def test_diff_after_a_for_pattern_is_not_a_pattern(
+        self, command, pattern, getter_method, view_method
+    ):
+        asyncio.run(self.controller.execute([command, "for", pattern, "diff"]))
+
+        getattr(self.controller.getter, getter_method).assert_called_once_with(
+            for_mods=[pattern]
+        )
+        self.assertEqual(
+            self._shown_with(view_method),
+            {"title_every_nth": 0, "like": [], "diff": [True]},
+        )
+
+    @parameterized.expand(
+        [
+            ("xdr", [], ["show_stats", "show_xdr_dc_stats"]),
+            ("dc", ["dc"], ["show_xdr_dc_stats"]),
+        ]
+    )
+    def test_diff_right_after_like_is_not_a_pattern(self, _, command, view_methods):
+        asyncio.run(self.controller.execute([*command, "like", "diff"]))
+
+        for view_method in view_methods:
+            self.assertEqual(
+                self._shown_with(view_method),
+                {"title_every_nth": 0, "like": [], "diff": [True]},
+            )
+
+    def test_diff_right_after_for_is_not_a_pattern(self):
+        asyncio.run(self.controller.execute(["dc", "for", "diff"]))
+
+        self.controller.getter.get_xdr_dcs.assert_called_once_with(for_mods=[])
+        self.assertEqual(
+            self._shown_with("show_xdr_dc_stats"),
+            {"title_every_nth": 0, "like": [], "diff": [True]},
+        )
+
+
+class ShowConfigRepeatFlagTest(AnalyzerControllerTestCase):
+    def test_repeat_flag_followed_by_flip_takes_the_default(self):
+        configs = {"n1": {"proto-fd-max": "15000"}}
+        self.log_handler.info_getconfig.return_value = {"ts": configs}
+
+        asyncio.run(ShowConfigController().execute(["service", "-r", "--flip"]))
+
+        self.view_mock.show_config.assert_called_once_with(
+            "Service Configuration",
+            configs,
+            self.log_handler.get_cinfo_log_at.return_value,
+            title_every_nth=0,
+            flip_output=True,
+            timestamp="ts",
+            **{"like": [], "diff": [], "for": [], "line": ["-r", "--flip"]},
+        )
+
+
 class ShowDistributionDefaultTest(AnalyzerControllerTestCase):
     """Plain `show distribution` runs ttl and object size over the same
     histogram snapshot; an empty one gets one line, and a for filter that
