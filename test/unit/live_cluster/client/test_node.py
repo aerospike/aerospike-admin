@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import base64
 import gc
 import socket
 import threading
@@ -6597,6 +6598,55 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.message, "Failed to list masking rules")
         self.assertEqual(result.response, "masking not supported")
+
+    async def test_info_usage_returns_the_decoded_export(self):
+        export = b'{"data":{"cluster":"963fa489","records":[],"schema":1}}'
+        self.info_mock.return_value = base64.b64encode(export).decode()
+
+        result = await self.node.info_usage()
+
+        self.assertEqual(result, export)
+        self.info_mock.assert_called_with("usage-export", self.ip)
+
+    async def test_info_usage_error_keeps_the_raw_reply(self):
+        reply = "ERROR:11:cluster not yet formed"
+        self.info_mock.return_value = reply
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.raw_response, reply)
+
+    async def test_info_usage_reply_that_is_not_base64(self):
+        reply = "eyJkYXRhIjp7!"
+        self.info_mock.return_value = reply
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoResponseError)
+        self.assertEqual(result.raw_response, reply)
+
+    @parameterized.expand([("empty", ""), ("ok", "ok"), ("upper_ok", "OK")])
+    async def test_info_usage_reply_with_no_export_is_an_error(self, _, reply):
+        self.info_mock.return_value = reply
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoError)
+        self.assertEqual(
+            (result.message, result.response), ("Failed to get usage", reply)
+        )
+
+    async def test_info_usage_empty_info_body_is_an_invalid_command(self):
+        self._answer_over_a_socket({"usage-export": None})
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoError)
+        self.assertEqual(
+            (result.message, result.response),
+            ("Invalid command 'usage-export'", None),
+        )
 
 
 class SyscmdTest(unittest.TestCase):

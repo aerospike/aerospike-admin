@@ -14,6 +14,11 @@
 
 import asyncio
 import base64
+import copy
+import json
+import os
+import shutil
+import tempfile
 import unittest
 from mock import create_autospec, patch, MagicMock
 from parameterized import parameterized
@@ -46,11 +51,276 @@ from lib.collectinfo_analyzer.show_controller import (
     ShowUsersController,
     ShowUsersStatsController,
 )
-from lib.base_controller import ShellException
+from lib.base_controller import BaseController, ShellException
+from lib.collectinfo_analyzer.collectinfo_root_controller import (
+    CollectinfoRootController,
+)
 from lib.utils import constants
 from lib.utils.constants import Modifiers
+from test.unit.collectinfo_analyzer.test_log_handler import (
+    USAGE_DOCUMENT,
+    write_usage_archive,
+)
 
 NO_DATA_LOGGER = "lib.collectinfo_analyzer.collectinfo_command_controller"
+
+
+class ShowUsageControllerTest(unittest.TestCase):
+    EXPORT = {
+        "data": {
+            "cluster": "963fa489-71bd-46a9-af70-765ce26c5a62",
+            "feature_key": {"account-name": "Acme Corp"},
+            "records": [],
+            "schema": 1,
+            "taken": "2026-11-16T19:11:36Z",
+        }
+    }
+
+    def setUp(self):
+        self.log_handler = create_autospec(CollectinfoLogHandler)
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.addCleanup(patch.stopall)
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        self.files = []
+        self.log_handler.bundle_files.side_effect = lambda suffixes: [
+            file for file in self.files if file.endswith(tuple(suffixes))
+        ]
+        self.log_handler.info_namespaces.return_value = {
+            "2026-11-16 19:11:36 UTC": {
+                "1.1.1.1:3000": ["test", "bar"],
+                "2.2.2.2:3000": ["test"],
+            }
+        }
+        self.builds("8.2.1.0")
+        self.log_handler.collectinfo_meta = {}
+        self.controller = ShowController().controller_map["usage"]()
+        self.controller.log_handler = self.log_handler
+        self.controller.mods = {}
+
+    def builds(self, *versions):
+        self.log_handler.info_meta_data.return_value = {
+            "2026-11-16 19:11:36 UTC": {
+                "%d.%d.%d.%d:3000" % ((i,) * 4): build
+                for i, build in enumerate(versions, 1)
+            }
+        }
+
+    def bundle_file(self, name, content):
+        path = os.path.join(self.work_dir, name)
+
+        with open(path, "wb") as f:
+            f.write(content)
+
+        self.files.append(path)
+
+    def test_shows_the_bundles_usage_file(self):
+        self.bundle_file("20261116_191136_usage.json", json.dumps(self.EXPORT).encode())
+
+        self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            self.EXPORT["data"], namespaces=["bar", "test"]
+        )
+        self.log_handler.info_meta_data.assert_not_called()
+
+    def test_a_bundle_from_an_older_server_names_the_version(self):
+        self.builds("8.2.1.0", "8.2.0.3")
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+        self.log_handler.info_meta_data.assert_called_once_with(stanza="asd_build")
+        self.assertEqual(
+            cm.records[0].getMessage(),
+            "'show usage' is not supported on aerospike versions < 8.2.1",
+        )
+
+    def test_bundle_without_a_usage_file(self):
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+        self.assertEqual(
+            cm.records[0].getMessage(),
+            "show usage: no usage file in this collectinfo.",
+        )
+
+    def test_a_cluster_without_usage_reporting_names_the_reply(self):
+        self.log_handler.collectinfo_meta = {
+            "collection": {
+                "usage": {
+                    "status": "unsupported",
+                    "node": "10.0.0.3:3000",
+                    "reply": "ERROR:25:enterprise only",
+                }
+            }
+        }
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            [
+                "'show usage' is not supported on this cluster "
+                "(10.0.0.3:3000 replied ERROR:25:enterprise only)."
+            ],
+        )
+
+    def test_an_older_server_recorded_in_the_meta_names_the_version(self):
+        self.builds("8.2.1.0", "8.2.0.3")
+        self.log_handler.collectinfo_meta = {
+            "collection": {"usage": {"status": "unsupported", "min_version": "8.2.1"}}
+        }
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            ["'show usage' is not supported on aerospike versions < 8.2.1"],
+        )
+
+    def test_the_old_license_usage_file_is_not_a_usage_file(self):
+        self.bundle_file("20201116_101502_aslicenseusage.json", b'{"license_usage":{}}')
+
+        with self.assertLogs(NO_DATA_LOGGER, level="WARNING"):
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+
+    def test_a_path_holding_several_bundles_shows_the_newest_usage_file(self):
+        older = copy.deepcopy(self.EXPORT)
+        newer = copy.deepcopy(self.EXPORT)
+        newer["data"]["taken"] = "2026-11-23T16:02:38Z"
+
+        for name, value in (
+            ("collect_info_20261123_155835/20261123_155835_usage.json", older),
+            ("collect_info_20261123_160238/20261123_160238_usage.json", newer),
+        ):
+            os.makedirs(os.path.join(self.work_dir, os.path.dirname(name)))
+            self.bundle_file(name, json.dumps(value).encode())
+
+        self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            newer["data"], namespaces=["bar", "test"]
+        )
+
+    @parameterized.expand(
+        [
+            ("no_data_object", b'{"schema":2}', '{"schema":2}'),
+            ("not_json", b"\x1f\x8b\x08\x00", "\x1f�\x08\x00"),
+        ]
+    )
+    def test_a_file_that_is_not_an_export_is_shown_verbatim(self, _, saved, shown):
+        self.bundle_file("20261116_191136_usage.json", saved)
+
+        with self.assertNoLogs("lib", level="ERROR"):
+            self.controller._do_default([])
+
+        self.view_mock.print_result.assert_called_once_with(shown)
+        self.view_mock.show_usage.assert_not_called()
+
+
+class ShowUsageFromUsageArchiveTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        for cls, attr in (
+            (BaseController, "asadm_version"),
+            (BaseController, "asadm_build"),
+            (CollectinfoRootController, "log_handler"),
+            (CollectinfoRootController, "command"),
+        ):
+            patch.object(cls, attr, getattr(cls, attr)).start()
+
+        patch.object(
+            CollectinfoCommandController, "log_handler", None, create=True
+        ).start()
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.COLLECTINFO_DIR",
+            os.path.join(self.work_dir, "extracted") + os.sep,
+        ).start()
+        self.view_mock = patch("lib.base_controller.BaseController.view").start()
+        self.addCleanup(patch.stopall)
+
+    async def test_show_usage_reads_a_collect_usage_archive(self):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir)
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        await root.execute(["show", "usage"])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
+
+    async def test_show_usage_reads_a_usage_file_given_as_the_path(self):
+        path = os.path.join(self.work_dir, "20261116_191136_usage.json")
+
+        with open(path, "wb") as f:
+            f.write(USAGE_DOCUMENT)
+
+        try:
+            root = CollectinfoRootController(clinfo_path=path)
+        except ShellException as e:
+            self.fail(f"-cf refused the usage file: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="WARNING"):
+            await root.execute(["show", "usage"])
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
+
+    async def test_an_archive_holding_a_reply_that_is_not_an_export_is_shown_verbatim(
+        self,
+    ):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir, b'{"schema":2}')
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="ERROR"):
+            await root.execute(["show", "usage"])
+
+        self.view_mock.print_result.assert_called_once_with('{"schema":2}')
+        self.view_mock.show_usage.assert_not_called()
+
+    @parameterized.expand(
+        [("sh_usage", ["sh", "usage"]), ("show_usa", ["show", "usa"])]
+    )
+    async def test_an_abbreviated_show_usage_reads_the_archive(self, _, command):
+        try:
+            root = CollectinfoRootController(
+                clinfo_path=write_usage_archive(self.work_dir)
+            )
+        except ShellException as e:
+            self.fail(f"-cf refused the usage archive: {e}")
+
+        self.addCleanup(root.close)
+
+        with self.assertNoLogs("lib", level="WARNING"):
+            await root.execute(list(command))
+
+        self.view_mock.show_usage.assert_called_once_with(
+            json.loads(USAGE_DOCUMENT)["data"], namespaces=[]
+        )
 
 
 class ShowControllerAliasTest(unittest.TestCase):
