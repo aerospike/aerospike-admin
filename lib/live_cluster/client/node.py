@@ -4152,30 +4152,27 @@ class Node(AsyncObject):
 
         result = {"is_parked": False, "park_ms": 0, "namespaces": {}}
 
-        # Entries are "<ns>:state=<state>:files_completed=<n>:files_total=<n>:
-        # is_parked=<bool>:park_ms=<ms>" joined by ";". The leading namespace has no
-        # "=", so info_to_dict_multi_level would drop it. When no namespace is
-        # checkpointing the server sends a single node-global "is_parked=..:park_ms=.."
-        # record with no namespace prefix. Park state is node-global either way; the
-        # server repeats it per namespace for the metrics exporter.
+        # The node-global is_parked/park_ms come on every namespace record before
+        # 8.2.1, and on a leading "node:" record from 8.2.1. A parked node refuses
+        # "build", so the record's shape decides: one without "state" is not a
+        # namespace.
         for entry in client_util.info_to_list(resp):
             if not entry:
                 continue
 
             head, _, rest = entry.partition(":")
+            values = client_util.info_to_dict(entry if "=" in head else rest, ":")
 
-            if "=" in head:
-                values = client_util.info_to_dict(entry, ":")
-            else:
-                values = client_util.info_to_dict(rest, ":")
+            if "state" in values:
                 result["namespaces"][head] = {
-                    "state": values.get("state", ""),
+                    "state": values["state"],
                     "files_completed": self._checkpoint_int(values, "files_completed"),
                     "files_total": self._checkpoint_int(values, "files_total"),
                 }
 
-            result["is_parked"] = values.get("is_parked") == "true"
-            result["park_ms"] = self._checkpoint_int(values, "park_ms")
+            if "is_parked" in values:
+                result["is_parked"] = values["is_parked"] == "true"
+                result["park_ms"] = self._checkpoint_int(values, "park_ms")
 
         logger.debug("info_checkpoint_status node=%s response=%s", self.ip, result)
 

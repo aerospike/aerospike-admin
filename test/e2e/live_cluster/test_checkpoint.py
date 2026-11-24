@@ -17,15 +17,15 @@ import unittest
 
 from test.e2e import lib, util as test_util
 
-PREVIEW = ["index-checkpoint"]
 TERMINAL_STATES = {"done", "failed"}
 
 
 def checkpoint_template():
     """
-    'index-checkpoint-path' cannot live in the shared template: it is preview-gated,
-    so every other e2e cluster would have to boot with --preview or cf_crash_nostack.
-    It also requires an explicit node-id, which lib.py substitutes per node.
+    'index-checkpoint-path' cannot live in the shared template: before 8.2.1 it is
+    preview-gated, so every other e2e cluster would have to boot with --preview or
+    cf_crash_nostack. It also requires an explicit node-id, which lib.py substitutes
+    per node.
     """
     with open(lib.absolute_path("aerospike_latest.conf")) as f:
         content = f.read()
@@ -45,12 +45,15 @@ def checkpoint_template():
     )
 
 
-class TestCheckpoint(unittest.TestCase):
+class CheckpointTests:
     """
-    TOOLS-3976 - index checkpoint. EE only, preview-gated, and it TERMINATES the node:
-    checkpoint-save leaves the cluster, copies the shmem segments, then parks serving
-    only checkpoint-status. Every test here gets its own cluster and tears it down.
+    TOOLS-3976 - index checkpoint. EE only, and it TERMINATES the node: checkpoint-save
+    leaves the cluster, copies the shmem segments, then parks serving only
+    checkpoint-status. Every test here gets its own cluster and tears it down.
     """
+
+    DOCKER_TAG = None
+    PREVIEW = None
 
     def setUp(self):
         # lib.start() is a no-op while lib.RUNNING, so a previous test that died before
@@ -59,8 +62,9 @@ class TestCheckpoint(unittest.TestCase):
         # node out from under the rest of the suite. Guarantee our own.
         lib.stop()
         lib.start(
+            docker_tag=self.DOCKER_TAG,
             template_content=checkpoint_template(),
-            preview_features=PREVIEW,
+            preview_features=self.PREVIEW,
             ckpt_dir=lib.CKPT_DIR,
         )
         self.args = "-h {}:{} --enable -e '{{}}' -Uadmin -Padmin".format(
@@ -101,6 +105,7 @@ class TestCheckpoint(unittest.TestCase):
         namespaces = {record["Namespace"] for record in records}
 
         self.assertIn(lib.NAMESPACE, namespaces)
+        self.assertNotIn("node", namespaces)
 
         for record in records:
             self.assertEqual(record["State"], "none")
@@ -187,6 +192,16 @@ class TestCheckpoint(unittest.TestCase):
             self.assertEqual(done, total)
             self.assertNotEqual(total, "0")
 
+    def test_status_reports_the_park(self):
+        self.require_checkpoint_configured()
+
+        self.run_asadm(
+            "manage checkpoint save --no-warn --no-wait with {}".format(self.node)
+        )
+
+        for record in self.wait_for_terminal_state():
+            self.assertEqual(record["Parked"], "True", record)
+
     def test_save_polls_through_the_copy_to_done(self):
         """
         The poll itself, against a real node. Every other test here passes --no-wait
@@ -271,6 +286,17 @@ class TestCheckpoint(unittest.TestCase):
         combined = cp.stdout + cp.stderr
 
         self.assertIn("checkpoint-save already", combined, combined)
+
+
+class TestCheckpoint(CheckpointTests, unittest.TestCase):
+    DOCKER_TAG = lib.SERVER_8_2_0_TAG
+    PREVIEW = ["index-checkpoint"]
+
+
+class TestCheckpoint821(CheckpointTests, unittest.TestCase):
+    """TOOLS-4692: GA in 8.2.1, which reports the park state on a 'node' record."""
+
+    DOCKER_TAG = lib.SERVER_8_2_1_TAG
 
 
 if __name__ == "__main__":

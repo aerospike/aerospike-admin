@@ -19,8 +19,8 @@ import unittest
 
 from test.e2e import lib, util as test_util
 
-SERVER_TAG = "8.2.1.0-45_20261112T051802Z"
-OLDER_SERVER_TAG = "8.2.0.0_20260918T215052Z"
+SERVER_TAG = lib.SERVER_8_2_1_TAG
+OLDER_SERVER_TAG = lib.SERVER_8_2_0_TAG
 PREVIEW = ["backup-restore"]
 OPS = ("put", "get", "list", "delete")
 BACKUP_PATH = "/opt/aerospike/backup-e2e"
@@ -104,9 +104,9 @@ def by_histogram(records):
 
 class TestObjectStoreLatencies(unittest.TestCase):
     """
-    TOOLS-4583. The {ns}-object-store-* histograms (SERVER-698) need
-    --preview backup-restore, which no release image has yet, so this class pins a
-    server master build. Security is off since the e2e admin user lacks backup-admin.
+    TOOLS-4583. The {ns}-object-store-* histograms (SERVER-698) need 8.2.1 with
+    --preview backup-restore. Security is off since the e2e admin user lacks
+    backup-admin.
     """
 
     @classmethod

@@ -6012,6 +6012,81 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(actual, {"is_parked": True, "park_ms": 987, "namespaces": {}})
 
+    async def test_info_checkpoint_status_8_2_1_node_record_is_not_a_namespace(self):
+        self.info_mock.return_value = (
+            "node:is_parked=false:park_ms=0;"
+            "test:state=none:files_completed=0:files_total=0;"
+            "bar:state=none:files_completed=0:files_total=0"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            self._checkpoint_status(
+                test={"state": "none", "files_completed": 0, "files_total": 0},
+                bar={"state": "none", "files_completed": 0, "files_total": 0},
+            ),
+        )
+
+    async def test_info_checkpoint_status_8_2_1_park_state_from_node_record(self):
+        self.info_mock.return_value = (
+            "node:is_parked=true:park_ms=10001;"
+            "test:state=done:files_completed=11:files_total=11;"
+            "bar:state=done:files_completed=11:files_total=11"
+        )
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            {
+                "is_parked": True,
+                "park_ms": 10001,
+                "namespaces": {
+                    "test": {"state": "done", "files_completed": 11, "files_total": 11},
+                    "bar": {"state": "done", "files_completed": 11, "files_total": 11},
+                },
+            },
+        )
+
+    async def test_info_checkpoint_status_8_2_1_no_namespace_checkpointing(self):
+        self.info_mock.return_value = "node:is_parked=true:park_ms=987"
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(actual, {"is_parked": True, "park_ms": 987, "namespaces": {}})
+
+    @parameterized.expand(
+        [
+            (
+                "8_2_0",
+                "node:state=done:files_completed=2:files_total=2:is_parked=true:"
+                "park_ms=40",
+            ),
+            (
+                "8_2_1",
+                "node:is_parked=true:park_ms=40;"
+                "node:state=done:files_completed=2:files_total=2",
+            ),
+        ]
+    )
+    async def test_info_checkpoint_status_namespace_named_node(self, _, resp):
+        self.info_mock.return_value = resp
+
+        actual = await self.node.info_checkpoint_status()
+
+        self.assertEqual(
+            actual,
+            {
+                "is_parked": True,
+                "park_ms": 40,
+                "namespaces": {
+                    "node": {"state": "done", "files_completed": 2, "files_total": 2}
+                },
+            },
+        )
+
     async def test_info_checkpoint_status_malformed_files(self):
         self.info_mock.return_value = "test:state=copying:files_completed=bogus:files_total=:is_parked=false:park_ms=x"
 
