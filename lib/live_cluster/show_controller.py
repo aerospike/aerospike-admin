@@ -2052,7 +2052,7 @@ class ShowUserAgentsController(LiveClusterCommandController):
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace>] [set <set>]",
+    usage="[namespace <namespace>] [set <set>]",
     short_msg="Display masking rules",
 )
 class ShowMaskingController(LiveClusterCommandController):
