@@ -2263,6 +2263,11 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         self.controller.nodes = "principal"
         self.addCleanup(patch.stopall)
 
+    def test_help_first_line_ends_with_period(self):
+        help_text = " ".join(self.controller.execute_help([]).split())
+
+        self.assertIn("Display masking rules. Shows all configured", help_text)
+
     async def test_do_default_success(self):
         """Test successful masking rules display"""
         line = []
@@ -2346,15 +2351,77 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
             nodes="principal", namespace="test", set_="demo"
         )
 
-    async def test_do_default_set_without_namespace_raises_error(self):
-        """Test that using set filter without namespace raises error"""
+    async def test_do_default_with_set_filter(self):
         line = ["set", "demo"]
+        masking_data = {
+            "node1": [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                }
+            ]
+        }
+        self.getter_mock.get_masking_rules.return_value = masking_data
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_masking_rules.assert_called_once_with(
+            nodes="principal", namespace=None, set_="demo"
+        )
+        self.view_mock.show_masking_rules.assert_called_once_with(
+            masking_data["node1"], **self.controller.mods
+        )
+
+    @parameterized.expand(
+        [
+            (
+                ["namespace", "test;set=other"],
+                "The namespace 'test;set=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                ["namespace", "test", "set", "demo;set=other"],
+                "The set 'demo;set=other' cannot contain ';', which separates the fields of a masking command.",
+            ),
+            (
+                ["namespace", "test\nlog-set:id=0"],
+                "The namespace 'test\\nlog-set:id=0' cannot contain the control character '\\n'.",
+            ),
+            (
+                ["namespace", "test", "set", "demo\tx"],
+                "The set 'demo\\tx' cannot contain the control character '\\t'.",
+            ),
+        ]
+    )
+    async def test_do_default_refuses_filter_word_the_server_would_split(
+        self, line, exp_error
+    ):
+        self.getter_mock.get_masking_rules.return_value = {"node1": []}
 
         with self.assertRaises(ShellException) as context:
             await self.controller.execute(line)
 
-        self.assertEqual(
-            str(context.exception), "Set filter can only be used with namespace filter"
+        self.assertEqual(str(context.exception), exp_error)
+        self.getter_mock.get_masking_rules.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (["namespace", "test-ns", "set", "my_set"], "test-ns", "my_set"),
+            (["namespace", "test", "set", "my set"], "test", "my set"),
+            (["namespace", "test", "set", "café"], "test", "café"),
+        ]
+    )
+    async def test_do_default_sends_filter_words_master_sends(
+        self, line, exp_namespace, exp_set
+    ):
+        self.getter_mock.get_masking_rules.return_value = {"node1": []}
+
+        await self.controller.execute(line)
+
+        self.getter_mock.get_masking_rules.assert_called_once_with(
+            nodes="principal", namespace=exp_namespace, set_=exp_set
         )
 
     async def test_do_default_protocol_error(self):
@@ -2402,6 +2469,7 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         [
             (["namespace", "test"], "namespace test"),
             (["namespace", "test", "set", "demo"], "namespace test set demo"),
+            (["set", "demo"], "set demo"),
         ]
     )
     async def test_do_default_filter_matches_nothing(self, line, filter_desc):

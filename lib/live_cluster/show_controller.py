@@ -2089,14 +2089,15 @@ class ShowUserAgentsController(LiveClusterCommandController):
 
 
 @CommandHelp(
-    "Display masking rules",
+    "Display masking rules.",
     "Shows all configured data masking rules. Rules can be filtered by namespace",
-    "and set.",
+    "and set. Enforced is the overlap state the principal reports: False marks a",
+    "rule that an enforced rule overlaps.",
     modifiers=(
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace> [set <set>]]",
+    usage="[namespace <namespace>] [set <set>]",
     short_msg="Display masking rules",
 )
 class ShowMaskingController(LiveClusterCommandController):
@@ -2121,9 +2122,10 @@ class ShowMaskingController(LiveClusterCommandController):
                 # Unknown argument, skip it
                 line.pop(0)
 
-        # Validate that set is only used with namespace
-        if set_name and not namespace:
-            raise ShellException("Set filter can only be used with namespace filter")
+        error = util.masking_word_error([("namespace", namespace), ("set", set_name)])
+
+        if error:
+            raise ShellException(error)
 
         masking_data = await self.getter.get_masking_rules(
             nodes="principal", namespace=namespace, set_=set_name
@@ -2137,10 +2139,13 @@ class ShowMaskingController(LiveClusterCommandController):
             raise resp
 
         if not resp:
-            if namespace:
-                filter_desc = f"namespace {namespace}"
-                if set_name:
-                    filter_desc += f" set {set_name}"
+            filter_desc = " ".join(
+                f"{mod} {value}"
+                for mod, value in (("namespace", namespace), ("set", set_name))
+                if value
+            )
+
+            if filter_desc:
                 logger.warning(
                     "show masking: no masking rules matching %s.", filter_desc
                 )

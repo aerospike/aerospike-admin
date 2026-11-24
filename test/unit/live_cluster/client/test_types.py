@@ -18,6 +18,7 @@ from parameterized import parameterized
 
 from lib.live_cluster.client.config_handler import BoolConfigType, IntConfigType
 from lib.live_cluster.client.node import (
+    ASInfoCheckpointError,
     ASInfoConfigError,
     ASInfoResponseError,
     ASResponse,
@@ -76,6 +77,144 @@ class ASInfoErrorTest(unittest.TestCase):
             self.assertEqual(
                 str(error), exp_string, "Fail caused by {}".format(response)
             )
+
+    @parameterized.expand(
+        [
+            (
+                "ERROR:4:bad path, at offset 0: unresolved bin type, use $.bin:LIST or $.bin:MAP",
+                "bad path, at offset 0: unresolved bin type, use $.bin:LIST or $.bin:MAP",
+            ),
+            (
+                "ERROR:4:bad path, negative list index - spell the index from the front",
+                "bad path, negative list index - spell the index from the front",
+            ),
+            (
+                "error::a=b:c",
+                "a=b:c",
+            ),
+            (
+                "FAIL:1:a:b",
+                "a:b",
+            ),
+            (
+                "ERROR=something;more-data",
+                "something;more-data",
+            ),
+            (
+                "error=bad=value:x",
+                "bad=value:x",
+            ),
+            (
+                "ERROR:4:invalid parameter 'value' (expected key=value)",
+                "invalid parameter 'value' (expected key=value)",
+            ),
+            (
+                "error:bad=value",
+                "bad=value",
+            ),
+            (
+                "ERROR:bad: path",
+                "bad: path",
+            ),
+            (
+                "FAIL:bad: path",
+                "bad: path",
+            ),
+            (
+                "error:bad",
+                "bad",
+            ),
+        ]
+    )
+    def test_keeps_delimiters_inside_message(self, response, exp_msg):
+        error = ASInfoResponseError("test message", response)
+
+        self.assertEqual(str(error), "test message : {}.".format(exp_msg))
+
+    @parameterized.expand(
+        [
+            ("ERROR:4:invalid set-config parameter", "invalid set-config parameter"),
+            ("ERROR:20:namespace not found on node", "namespace not found on node"),
+            ("ERROR:4:invalid context", "invalid context"),
+            (
+                "ERROR:4:bad 'type' - must be one of 'numeric', 'string', 'blob', 'geo2dsphere'",
+                "bad 'type' - must be one of 'numeric', 'string', 'blob', 'geo2dsphere'",
+            ),
+            (
+                "ERROR:4:bad 'type' - must be one of 'integer', 'string', 'blob', 'geo2dsphere'",
+                "bad 'type' - must be one of 'integer', 'string', 'blob', 'geo2dsphere'",
+            ),
+            ("ERROR:2:id not active", "id not active"),
+            ("ERROR:4:unrecognized command", "unrecognized command"),
+            ("error=not_found", "not_found"),
+            (
+                "ERROR:4:invalid state or set-config parameter",
+                "invalid state or set-config parameter",
+            ),
+            ("ERROR:4:bad parameter", "bad parameter"),
+            ("ERROR:7:cluster not specified size", "cluster not specified size"),
+            (
+                "ERROR:4:invalid parameter 'ns' for function 'constant'",
+                "invalid parameter 'ns' for function 'constant'",
+            ),
+            (
+                "ERROR:4:bad 'type' - must be one of 'bool', 'integer', 'string', 'float'",
+                "bad 'type' - must be one of 'bool', 'integer', 'string', 'float'",
+            ),
+            (
+                "ERROR:4:function 'nope' for type 'string' not found",
+                "function 'nope' for type 'string' not found",
+            ),
+            (
+                "ERROR:4:invalid parameter 'piece' for function 'constant'",
+                "invalid parameter 'piece' for function 'constant'",
+            ),
+            ("ERROR:20:missing 'namespace'", "missing 'namespace'"),
+            ("ERROR:4:missing 'bin'", "missing 'bin'"),
+            (
+                "ERROR:4:invalid parameter 'default' for function 'redact'",
+                "invalid parameter 'default' for function 'redact'",
+            ),
+            ("ERROR::unknown", "unknown"),
+            ("ERROR::3 cleared, 0 not found", "3 cleared, 0 not found"),
+        ]
+    )
+    def test_released_server_error_replies_render_as_on_master(self, response, exp_msg):
+        error = ASInfoResponseError("test message", response)
+
+        self.assertEqual(str(error), "test message : {}.".format(exp_msg))
+
+    @parameterized.expand([("ERROR:4",), ("FAIL:4",), ("ERROR:",), ("FAIL:",)])
+    def test_code_with_no_text_is_unknown_error(self, response):
+        error = ASInfoResponseError("test message", response)
+
+        self.assertEqual(str(error), "test message : Unknown error occurred.")
+
+    @parameterized.expand(
+        [
+            ("ERROR:bad: path", "bad: path"),
+            ("ERROR:4:bad: path", "bad: path"),
+            (
+                "ERROR:4:checkpoint-save takes only an optional 'timeout' of 1..3600 seconds (got 'x=1')",
+                "checkpoint-save takes only an optional 'timeout' of 1..3600 seconds (got 'x=1')",
+            ),
+        ]
+    )
+    def test_checkpoint_error_keeps_the_same_text_as_response_error(
+        self, response, exp_msg
+    ):
+        self.assertEqual(
+            (
+                ASInfoCheckpointError("test message", response).response,
+                ASInfoResponseError("test message", response).response,
+            ),
+            (exp_msg, exp_msg),
+        )
+
+    def test_checkpoint_error_with_no_text_is_unknown_error(self):
+        error = ASInfoCheckpointError("test message", "ERROR:")
+
+        self.assertEqual(str(error), "test message : Unknown error occurred.")
 
     def test_create_unknow_error_str(self):
         message = "test message"

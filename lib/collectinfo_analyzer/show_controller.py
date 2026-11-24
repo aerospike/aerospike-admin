@@ -36,7 +36,7 @@ from lib.live_cluster.get_controller import (
     where_jobs_modifier_help,
 )
 from lib.utils import common, constants, usage_export, util, version
-from lib.base_controller import CommandHelp, CommandName, ModifierHelp, ShellException
+from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 from .collectinfo_command_controller import (
     CollectinfoCommandController,
     has_node_data,
@@ -2236,14 +2236,15 @@ class ShowUserAgentsController(CollectinfoCommandController):
 
 
 @CommandHelp(
-    "Display masking rules",
+    "Display masking rules.",
     "Shows all configured data masking rules from collectinfo. Rules can be filtered by namespace",
-    "and set.",
+    "and set. Enforced is the overlap state the principal reported: False marks a",
+    "rule that an enforced rule overlaps.",
     modifiers=(
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace> [set <set>]]",
+    usage="[namespace <namespace>] [set <set>]",
     short_msg="Display masking rules",
 )
 class ShowMaskingController(CollectinfoCommandController):
@@ -2270,10 +2271,6 @@ class ShowMaskingController(CollectinfoCommandController):
                 # Unknown argument, skip it
                 line.pop(0)
 
-        # Validate that set is only used with namespace
-        if set_name and not namespace:
-            raise ShellException("Set filter can only be used with namespace filter")
-
         getter = GetMaskingRulesController(self.log_handler)
         masking_data = getter.get_masking_rules()
 
@@ -2296,6 +2293,23 @@ class ShowMaskingController(CollectinfoCommandController):
             warn_no_data("show masking", "masking rules")
             return
 
+        # Older asadm split rules at ':' and stored the pieces as rules of their own.
+        merged_rules = []
+        pending = {}
+        for piece in reversed(masking_rules):
+            rule = dict(piece)
+            for key, value in pending.items():
+                rule.setdefault(key, value)
+            if util.is_complete_masking_rule(rule):
+                merged_rules.append(rule)
+                pending = {}
+            else:
+                pending = rule
+        if pending:
+            merged_rules.append(pending)
+        merged_rules.reverse()
+        masking_rules = merged_rules
+
         # Apply filtering if specified
         if namespace or set_name:
             filtered_rules = []
@@ -2312,9 +2326,11 @@ class ShowMaskingController(CollectinfoCommandController):
             masking_rules = filtered_rules
 
             if not masking_rules:
-                filter_desc = f"namespace {namespace}"
-                if set_name:
-                    filter_desc += f" set {set_name}"
+                filter_desc = " ".join(
+                    f"{mod} {value}"
+                    for mod, value in (("namespace", namespace), ("set", set_name))
+                    if value
+                )
                 warn_no_data("show masking", "masking rules", filter_desc)
 
         return self.view.show_masking_rules(

@@ -779,3 +779,212 @@ class InfoMemoryIndexSheetTest(unittest.TestCase):
             with self.subTest(subgroup=subgroup):
                 self.assertEqual(record[subgroup]["Alloc"]["raw"], alloc)
                 self.assertEqual(record[subgroup]["Used"]["raw"], used)
+
+
+class ShowMaskingRulesSheetTest(unittest.TestCase):
+    def render(self, rules):
+        data = {i: util.normalize_masking_rule_data(r) for i, r in enumerate(rules)}
+        render = sheet.render(
+            templates.show_masking_rules,
+            "Masking Rules",
+            dict(data=data),
+            style=SheetStyle.json,
+        )
+        return json.loads(render)["groups"][0]["records"]
+
+    def test_path_rule_shows_decoded_path_and_its_bin(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "ael_b64": "JC5wcm9maWxlLnNzbg==",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [
+                (
+                    r["Bin"]["converted"],
+                    r["AEL"]["converted"],
+                    r["Function"]["raw"],
+                )
+                for r in records
+            ],
+            [("profile", "$.profile.ssn", "redact"), ("ssn", "--", "redact")],
+        )
+
+    def test_dormant_rule_shows_not_enforced(self):
+        rule = {
+            "namespace": "test",
+            "set": "demo",
+            "type": "string",
+            "function": "redact",
+            "default": "x",
+        }
+        records = self.render(
+            [
+                dict(rule, ael_b64="JC5wcm9maWxlLnNzbg==", enforced="false"),
+                dict(rule, ael_b64="JC5wcm9maWxl"),
+            ]
+        )
+
+        self.assertEqual(
+            [
+                (
+                    r["AEL"]["converted"],
+                    r["Function"]["raw"],
+                    r["Enforced"]["raw"],
+                )
+                for r in records
+            ],
+            [
+                ("$.profile", "redact", True),
+                ("$.profile.ssn", "redact", False),
+            ],
+        )
+
+    def test_default_shows_in_its_own_column(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "type": "string",
+                    "function": "redact",
+                    "position": "0",
+                    "default": "N/A",
+                    "ael_b64": "JC5wcm9maWxlLnNzbg==",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                    "position": "0",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [(r["Function"]["raw"], r["Default"]["converted"]) for r in records],
+            [("redact position 0", "N/A"), ("redact position 0", "--")],
+        )
+
+    def test_default_column_sits_between_function_and_enforced(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                    "default": "N/A",
+                },
+            ]
+        )
+
+        self.assertEqual(list(records[0])[-3:], ["Function", "Default", "Enforced"])
+        self.assertNotIn("AEL", records[0])
+
+    def test_released_server_rules_show_without_ael_and_default(self):
+        records = self.render(
+            [
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "n",
+                    "type": "integer",
+                    "function": "constant",
+                    "value": "0",
+                },
+                {
+                    "namespace": "test",
+                    "set": "demo",
+                    "bin": "ssn",
+                    "type": "string",
+                    "function": "redact",
+                    "position": "0",
+                    "length": "4",
+                    "value": "*",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [
+                (
+                    list(r),
+                    r["Bin"]["raw"],
+                    r["Function"]["raw"],
+                    r["Enforced"]["raw"],
+                )
+                for r in records
+            ],
+            [
+                (
+                    ["Namespace", "Set", "Bin", "Type", "Function", "Enforced"],
+                    "n",
+                    "constant value 0",
+                    True,
+                ),
+                (
+                    ["Namespace", "Set", "Bin", "Type", "Function", "Enforced"],
+                    "ssn",
+                    "redact position 0 length 4 value *",
+                    True,
+                ),
+            ],
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "bin_rule",
+                {"bin": "ssn"},
+                ["Namespace", "Set", "Bin", "Type", "Function", "Enforced"],
+            ),
+            (
+                "path_rule_with_default",
+                {"ael_b64": "JC5wcm9maWxlLnNzbg==", "default": "N/A"},
+                [
+                    "Namespace",
+                    "Set",
+                    "Bin",
+                    "Type",
+                    "AEL",
+                    "Function",
+                    "Default",
+                    "Enforced",
+                ],
+            ),
+        ]
+    )
+    def test_empty_columns_hide_and_the_rest_keep_their_order(
+        self, _, target, exp_columns
+    ):
+        records = self.render(
+            [
+                dict(
+                    namespace="test",
+                    set="demo",
+                    type="string",
+                    function="redact",
+                    **target,
+                )
+            ]
+        )
+
+        self.assertEqual(list(records[0]), exp_columns)
