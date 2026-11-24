@@ -242,14 +242,16 @@ class ASInfoError(Exception):
 
 
 def _error_text(server_resp: str) -> str:
-    """Return what follows 'PREFIX:', minus a '<code>:' field that is empty or digits."""
+    """Return what follows 'PREFIX:', minus a '<code>:' field that is empty or digits.
+    Raise IndexError when only that field is there."""
     text = server_resp.split(":", 1)[1]
     code, sep, rest = text.partition(":")
+    is_code = not code or (code.isascii() and code.isdigit())
 
-    if sep and (not code or (code.isascii() and code.isdigit())):
-        return rest
+    if is_code and not sep:
+        raise IndexError(server_resp)
 
-    return text
+    return rest if is_code else text
 
 
 class ASInfoResponseError(ASInfoError):

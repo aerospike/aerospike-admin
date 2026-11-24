@@ -121,10 +121,6 @@ class ASInfoErrorTest(unittest.TestCase):
                 "bad: path",
             ),
             (
-                "ERROR:4",
-                "4",
-            ),
-            (
                 "error:bad",
                 "bad",
             ),
@@ -188,10 +184,11 @@ class ASInfoErrorTest(unittest.TestCase):
 
         self.assertEqual(str(error), "test message : {}.".format(exp_msg))
 
-    def test_one_colon_with_no_text_shows_no_server_text(self):
-        error = ASInfoResponseError("test message", "ERROR:")
+    @parameterized.expand([("ERROR:4",), ("FAIL:4",), ("ERROR:",), ("FAIL:",)])
+    def test_code_with_no_text_is_unknown_error(self, response):
+        error = ASInfoResponseError("test message", response)
 
-        self.assertEqual(str(error), "test message.")
+        self.assertEqual(str(error), "test message : Unknown error occurred.")
 
     @parameterized.expand(
         [
