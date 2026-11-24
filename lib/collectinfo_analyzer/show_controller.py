@@ -13,12 +13,18 @@
 # limitations under the License.
 
 import logging
+import os
 from base64 import b64decode
 from lib.collectinfo_analyzer.get_controller import (
     GetAclController,
     GetClusterMetadataController,
     GetConfigController,
     GetStatisticsController,
+)
+from lib.live_cluster.collectusage_controller import (
+    UsageUnavailable,
+    older_servers_message,
+    unavailable_message,
 )
 from lib.live_cluster.get_controller import (
     filter_jobs,
@@ -29,7 +35,7 @@ from lib.live_cluster.get_controller import (
     parse_jobs_mods,
     where_jobs_modifier_help,
 )
-from lib.utils import common, constants, util, version
+from lib.utils import common, constants, usage_export, util, version
 from lib.base_controller import CommandHelp, CommandName, ModifierHelp
 from .collectinfo_command_controller import (
     CollectinfoCommandController,
@@ -100,9 +106,88 @@ class ShowController(CollectinfoCommandController):
             "latencies": ShowLatenciesController,
             "statistics": ShowStatisticsController,
             "masking": ShowMaskingController,
+            "usage": ShowUsageController,
         }
         self.aliases = {"stats": "statistics"}
         self.modifiers = set()
+
+
+@CommandHelp(
+    "Displays the bundle's usage records: one row per sample, then each namespace in the latest sample.",
+    "License Usage is data used / replication factor / compression ratio, as in 'info summary'.",
+    short_msg="Displays the bundle's usage records",
+)
+class ShowUsageController(CollectinfoCommandController):
+    def __init__(self):
+        self.modifiers = set()
+
+    def _servers_predate_usage_reporting(self) -> bool:
+        first = version.LooseVersion(constants.SERVER_USAGE_REPORTING_FIRST_VERSION)
+
+        return any(
+            version.LooseVersion(build) < first
+            for builds in self.log_handler.info_meta_data(stanza="asd_build").values()
+            for build in util.filter_exceptions(builds).values()
+        )
+
+    def _namespaces(self) -> list[str]:
+        return sorted(
+            {
+                namespace
+                for nodes in self.log_handler.info_namespaces().values()
+                for namespaces in util.filter_exceptions(nodes).values()
+                for namespace in namespaces
+            }
+        )
+
+    def _do_default(self, line):
+        files = sorted(
+            self.log_handler.bundle_files(
+                ("_" + constants.COLLECTINFO_USAGE_FILENAME,)
+            ),
+            key=os.path.basename,
+            reverse=True,
+        )
+
+        if not files:
+            usage = (self.log_handler.collectinfo_meta.get("collection") or {}).get(
+                "usage"
+            )
+
+            if self._servers_predate_usage_reporting():
+                logger.warning(older_servers_message("show usage"))
+            elif (
+                isinstance(usage, dict)
+                and usage.get("status") == "unsupported"
+                and "reply" in usage
+            ):
+                logger.warning(
+                    unavailable_message(
+                        "show usage",
+                        UsageUnavailable(
+                            usage.get("node", ""), usage["reply"], supported=False
+                        ),
+                    )
+                )
+            else:
+                warn_no_data("show usage", "usage file")
+
+            return
+
+        try:
+            with open(files[0], "rb") as f:
+                document = f.read()
+        except OSError as e:
+            logger.error("show usage: cannot read %s: %s", files[0], e)
+            return
+
+        try:
+            data = usage_export.parse(document)
+        except ValueError:
+            self.view.print_result(document.decode("utf-8", "replace"))
+            return
+
+        self.view.show_usage(data, namespaces=self._namespaces())
 
 
 repeat_modifier_help = ModifierHelp(

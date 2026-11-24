@@ -385,6 +385,99 @@ class NoSnapshotReasonTest(unittest.TestCase):
         self._assert_no_snapshot_names_the_file(archive)
 
 
+USAGE_DOCUMENT = (
+    b'{"data":{"cluster":"963fa489-71bd-46a9-af70-765ce26c5a62",'
+    b'"records":[],"schema":1,"taken":"2026-11-16T19:11:36Z"}}'
+)
+
+
+def write_tgz(work_dir, name, members):
+    """Members under one top directory named after the archive, as asadm writes."""
+    path = os.path.join(work_dir, name + ".tgz")
+
+    with tarfile.open(path, "w:gz") as tar:
+        for member, data in members.items():
+            info = tarfile.TarInfo(f"{name}/{member}")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+    return path
+
+
+def write_usage_archive(work_dir, document=USAGE_DOCUMENT):
+    """Laid out the way 'collect usage' writes it."""
+    return write_tgz(
+        work_dir,
+        "collect_usage_20261116_191136",
+        {
+            "20261116_191136_usage.json": document,
+            "20261116_191136_usage_meta.json": b'{"meta_format_version":1}',
+        },
+    )
+
+
+class UsageArchiveTest(unittest.TestCase):
+    def setUp(self):
+        self.work_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.work_dir, ignore_errors=True)
+        patch(
+            "lib.collectinfo_analyzer.collectinfo_handler.log_handler.COLLECTINFO_DIR",
+            os.path.join(self.work_dir, "extracted") + os.sep,
+        ).start()
+        self.addCleanup(patch.stopall)
+
+    def test_a_collect_usage_archive_opens_without_a_cluster_snapshot(self):
+        archive = write_usage_archive(self.work_dir)
+
+        try:
+            handler = CollectinfoLogHandler(archive)
+        except LogHandlerException as e:
+            self.fail(f"the usage archive did not open: {e}")
+
+        self.addCleanup(handler.close)
+        usage = handler.bundle_files(("_usage.json",))
+
+        self.assertEqual(
+            [os.path.basename(file) for file in usage], ["20261116_191136_usage.json"]
+        )
+
+        with open(usage[0], "rb") as usage_file:
+            self.assertEqual(usage_file.read(), USAGE_DOCUMENT)
+
+        self.assertEqual(handler.all_cinfo_logs, {})
+
+    def test_the_intro_names_a_usage_archive_and_points_to_show_usage(self):
+        archive = write_usage_archive(self.work_dir)
+
+        try:
+            handler = CollectinfoLogHandler(archive)
+        except LogHandlerException as e:
+            self.fail(f"the usage archive did not open: {e}")
+
+        self.addCleanup(handler.close)
+        intro = str(handler).lower()
+
+        self.assertIn("usage archive", intro)
+        self.assertIn("show usage", intro)
+
+    def test_a_bundle_with_no_cluster_data_is_refused_with_a_usage_file(self):
+        bundle = write_tgz(
+            self.work_dir,
+            "collect_info_20261116_191136",
+            {
+                "20261116_191136_ascinfo.json": b'{"not": "cluster data"}',
+                "20261116_191136_usage.json": USAGE_DOCUMENT,
+            },
+        )
+
+        with self.assertRaises(LogHandlerException) as raised:
+            handler = CollectinfoLogHandler(bundle)
+            self.addCleanup(handler.close)
+
+        self.assertIn("Could not read a cluster snapshot", str(raised.exception))
+        self.assertIn("20261116_191136_ascinfo.json", str(raised.exception))
+
+
 class NodeIdMappingTest(unittest.TestCase):
     """TOOLS-3596: a bundle node whose meta_data has no usable node_id (its info calls
     failed during collection) must be skipped instead of crashing the mapping."""

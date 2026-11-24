@@ -1409,6 +1409,51 @@ class CreateStopWritesSummaryTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class CreateSummaryClusterUuidTest(unittest.TestCase):
+    U1 = "963fa489-71bd-46a9-af70-765ce26c5a62"
+    U2 = "11111111-2222-4333-8444-555555555555"
+
+    def cluster(self, service_stats):
+        summary = common.create_summary(
+            service_stats=service_stats,
+            namespace_stats={},
+            xdr_dc_stats={},
+            metadata={"server_build": {host: "8.2.1.0" for host in service_stats}},
+        )
+
+        return summary["CLUSTER"]
+
+    def test_every_node_agreeing(self):
+        cluster = self.cluster(
+            {"1.1.1.1": {"cluster_uuid": self.U1}, "2.2.2.2": {"cluster_uuid": self.U1}}
+        )
+
+        self.assertEqual(cluster["cluster_uuid"], [self.U1])
+
+    def test_each_value_once_when_nodes_disagree(self):
+        cluster = self.cluster(
+            {
+                "1.1.1.1": {"cluster_uuid": self.U2},
+                "2.2.2.2": {"cluster_uuid": self.U1},
+                "3.3.3.3": {"cluster_uuid": self.U1},
+            }
+        )
+
+        self.assertEqual(cluster["cluster_uuid"], sorted([self.U1, self.U2]))
+
+    def test_a_node_without_one_is_skipped(self):
+        cluster = self.cluster(
+            {"1.1.1.1": {"cluster_uuid": self.U1}, "2.2.2.2": {"cluster_size": "2"}}
+        )
+
+        self.assertEqual(cluster["cluster_uuid"], [self.U1])
+
+    def test_left_out_when_no_node_reports_one(self):
+        cluster = self.cluster({"1.1.1.1": {"cluster_size": "1"}})
+
+        self.assertNotIn("cluster_uuid", cluster)
+
+
 class CreateSummaryTests(unittest.TestCase):
     maxDiff = None
 

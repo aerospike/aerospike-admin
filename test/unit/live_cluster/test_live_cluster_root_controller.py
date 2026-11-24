@@ -13,7 +13,10 @@
 # limitations under the License.
 
 import inspect
+import os
 import re
+import shutil
+import tempfile
 import unittest
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -21,14 +24,16 @@ from parameterized import parameterized
 
 from lib.base_controller import ShellException
 from lib.utils import logger as logger_util
-from lib.live_cluster import live_cluster_root_controller
+from lib.live_cluster import collectusage_controller, live_cluster_root_controller
 from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.live_cluster.collectlogs_controller import CollectlogsController
+from lib.live_cluster.collectusage_controller import UsageExport
 from lib.live_cluster.live_cluster_command_controller import (
     LiveClusterCommandController,
 )
 from lib.live_cluster.live_cluster_root_controller import LiveClusterRootController
 from lib.live_cluster.summary_controller import SummaryController
+from lib.view.view import CliView
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -201,6 +206,45 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
         help_line(help_text, "info")
         help_line(help_text, "logs")
 
+    def test_help_collect_lists_usage(self):
+        help_line(self.root.execute_help(["collect"]), "usage")
+
+    def test_help_collect_usage_names_its_option_and_no_privilege(self):
+        help_text = " ".join(
+            ANSI.sub("", self.root.execute_help(["collect", "usage"])).split()
+        )
+
+        self.assertIn("collect usage [--output-prefix <prefix>]", help_text)
+        self.assertIn("Needs Enterprise server v. 8.2.1 or later.", help_text)
+        self.assertNotIn("user-admin", help_text)
+        self.assertNotIn("privilege", help_text)
+
+    @parameterized.expand([("full", "usage"), ("prefix", "u")])
+    async def test_collect_usage_runs_the_usage_export(self, _, name):
+        usage = patch(
+            "lib.live_cluster.collectusage_controller.CollectusageController._do_default",
+            autospec=True,
+        ).start()
+
+        await self.root.execute(["collect", name, "--output-prefix", "pre"])
+
+        usage.assert_awaited_once()
+        self.assertEqual(usage.call_args.args[1], ["--output-prefix", "pre"])
+        self.collectinfo.assert_not_awaited()
+
+    def test_help_show_lists_usage(self):
+        help_line(self.root.execute_help(["show"]), "usage")
+
+    def test_help_show_usage_names_no_privilege(self):
+        help_text = " ".join(
+            ANSI.sub("", self.root.execute_help(["show", "usage"])).split()
+        )
+
+        self.assertIn("Needs Enterprise server v. 8.2.1 or later.", help_text)
+        self.assertNotIn("user-admin", help_text)
+        self.assertNotIn("privilege", help_text)
+        self.assertIn("License Usage", help_text)
+
     def test_help_info_lists_summary(self):
         help_line(self.root.execute_help(["info"]), "summary")
 
@@ -228,11 +272,12 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
 RUN_COLLECTINFO = CollectinfoController._run_collectinfo
 COLLECT_INFO_NAMES = [(["collectinfo"],), (["collect", "info"],), (["collect"],)]
 COLLECT_LOGS_NAMES = [(["collectlogs"],), (["collect", "logs"],)]
+USAGE_NODE = "10.0.0.1:3000"
 
 
 class CollectOptionsTest(unittest.IsolatedAsyncioTestCase):
-    """collect info and collect logs parse their own options here. Only the
-    collection and the log download are stubbed."""
+    """collect info, logs and usage parse their own options here. Only the
+    collection, the log download and the usage fetch are stubbed."""
 
     async def asyncSetUp(self):
         patch.object(LiveClusterCommandController, "cluster", None).start()
@@ -253,10 +298,28 @@ class CollectOptionsTest(unittest.IsolatedAsyncioTestCase):
         ).start()
         patch.object(CollectlogsController, "setup_loggers").start()
         patch.object(CollectlogsController, "teardown_loggers").start()
+        patch.object(
+            collectusage_controller, "usage_supported", AsyncMock(return_value=True)
+        ).start()
+        self.fetch_usage = patch.object(
+            collectusage_controller,
+            "fetch_usage",
+            AsyncMock(return_value=UsageExport(USAGE_NODE, b"{}", {})),
+        ).start()
+        usage_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, usage_dir, ignore_errors=True)
+        self.usage_path = patch.object(
+            collectusage_controller.common,
+            "get_usage_file_path",
+            return_value=os.path.join(usage_dir, "collect_usage.tgz"),
+        ).start()
+        patch.object(CliView, "print_usage_saved").start()
         self.addCleanup(patch.stopall)
         self.addCleanup(logger_util.set_exit_code, 0)
 
         self.root = await LiveClusterRootController()
+        self.root.cluster.info_build = AsyncMock(return_value={USAGE_NODE: "8.2.1.0"})
+        self.root.cluster.info = AsyncMock(return_value={USAGE_NODE: "prod"})
 
     @parameterized.expand(
         [
@@ -300,6 +363,52 @@ class CollectOptionsTest(unittest.IsolatedAsyncioTestCase):
 
         self.gather_logs.assert_not_awaited()
         self.makedirs.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (["collect", "usage", "-h"], "-h"),
+            (["collect", "usage", "--help"], "--help"),
+            (["collect", "u", "-h"], "-h"),
+        ]
+    )
+    async def test_help_flag_is_refused_without_exporting_usage(self, line, flag):
+        with self.assertRaisesRegex(
+            ShellException,
+            re.escape(
+                f"collect usage: '{flag}' is not a valid option. "
+                "See 'help collect usage' for available options."
+            ),
+        ):
+            await self.root.execute(line)
+
+        self.fetch_usage.assert_not_awaited()
+        self.root.cluster.info_build.assert_not_awaited()
+        self.usage_path.assert_not_called()
+
+    @parameterized.expand(
+        [
+            ("no_options", [], ""),
+            ("output_prefix", ["--output-prefix", "pre"], "pre"),
+        ]
+    )
+    async def test_collect_usage_options_still_reach_the_export(
+        self, _, options, prefix
+    ):
+        with self.assertNoLogs("lib", level="ERROR"):
+            await self.root.execute(["collect", "usage"] + options)
+
+        self.fetch_usage.assert_awaited_once()
+        self.usage_path.assert_called_once_with(ANY, prefix)
+
+    async def test_collect_usage_unknown_option_is_reported_and_still_exports(self):
+        with self.assertLogs("lib", level="ERROR") as logs:
+            await self.root.execute(["collect", "usage", "--no-such-option"])
+
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            ["Unrecognized option(s): --no-such-option"],
+        )
+        self.fetch_usage.assert_awaited_once()
 
     @parameterized.expand(COLLECT_INFO_NAMES)
     async def test_collect_info_options_still_reach_the_collection(self, command):

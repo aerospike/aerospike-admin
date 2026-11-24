@@ -1673,6 +1673,22 @@ class Node(AsyncObject):
     ###### Service End ######
 
     @async_return_exceptions
+    async def info_usage(self) -> bytes:
+        """The cluster's usage export, decoded from the base64 the server sends."""
+        resp = await self._info("usage-export")
+
+        if resp.startswith("ERROR") or resp.startswith("error"):
+            raise ASInfoResponseError("Failed to get usage", resp)
+
+        if resp.lower() in {ASINFO_RESPONSE_OK, ""}:
+            raise ASInfoError("Failed to get usage", resp)
+
+        try:
+            return base64.b64decode(resp, validate=True)
+        except ValueError:
+            raise ASInfoResponseError("Failed to get usage", resp)
+
+    @async_return_exceptions
     async def info_statistics(self):
         """
         Get statistics for this node. asinfo -v "statistics"
