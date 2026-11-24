@@ -111,7 +111,7 @@
 #------------------------------------------------------------------------------
 # Aerospike Secret Agent
 #
-# Used by asadm, asbackup, asrestore and aql to fetch values given as
+# Used by asadm and aql to fetch values given as
 # "secrets:<resource>:<key>". With --instance, a [secret-agent_<instance>]
 # section in the same file replaces this one if it exists.
 #
@@ -161,73 +161,6 @@
 [asadm_secure]
 # services-alternate = true
 # timeout = 1000
-
-
-#------------------------------------------------------------------------------
-# asbackup specific options
-#------------------------------------------------------------------------------
-[asbackup]
-
-# estimate = true
-
-# directory = "./test_backup"
-# output-file = "test_backup"
-# machine = "run.out"
-
-
-#------------- Data Options ------------------------
-# namespace = "test"
-# set = "demo"
-# bin_list = "bin1,bin2"
-# node-list = ""
-# percent = 100
-
-#-----------Performance and throttling--------------
-# file-limit = 1
-# priority = 2
-# records-per-second = 10000
-# parallel = 4
-# bandwidth = 1
-# compact = true
-
-
-#----------- Meta data options ---------------------
-# no-records = false
-# no-udfs = false
-
-# no-cluster-change = true
-
-#------------------------------------------------------------------------------
-# asrestore specific options
-#------------------------------------------------------------------------------
-[asrestore]
-
-# directory = "./test_backup"
-# input-file = "test_backup"
-# machine = "run.out"
-
-#------------- Data Options ------------------------
-# namespace = "test"
-# bin-list = "bin1,bin2"
-# set-list = "demo"
-
-#----- Mutually exclusive record update options-----
-# unique = true
-# replace = true
-# no-generation = true
-
-
-#----------- Meta data options ---------------------
-# no-udfs = false
-# no-indexes = false
-# no-records = false
-# indexes-last = false
-# wait = false
-
-#-----------Performance and throttling--------------
-# nice-list = "1,10000"
-# threads = 32
-
 
 
 #------------------------------------------------------------------------------
