@@ -6626,6 +6626,28 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, ASInfoResponseError)
         self.assertEqual(result.raw_response, reply)
 
+    @parameterized.expand([("empty", ""), ("ok", "ok"), ("upper_ok", "OK")])
+    async def test_info_usage_reply_with_no_export_is_an_error(self, _, reply):
+        self.info_mock.return_value = reply
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoError)
+        self.assertEqual(
+            (result.message, result.response), ("Failed to get usage", reply)
+        )
+
+    async def test_info_usage_empty_info_body_is_an_invalid_command(self):
+        self._answer_over_a_socket({"usage-export": None})
+
+        result = await self.node.info_usage()
+
+        self.assertIsInstance(result, ASInfoError)
+        self.assertEqual(
+            (result.message, result.response),
+            ("Invalid command 'usage-export'", None),
+        )
+
 
 class SyscmdTest(unittest.TestCase):
     def setUp(self) -> None:

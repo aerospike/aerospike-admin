@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import binascii
 import contextlib
+import errno
 import io
 import json
 import os
@@ -28,7 +28,8 @@ from parameterized import parameterized
 
 from lib.base_controller import BaseController
 from lib.live_cluster import collectinfo_controller, collectusage_controller
-from lib.live_cluster.client.types import ASInfoResponseError
+from lib.live_cluster.client.node import Node
+from lib.live_cluster.client.types import ASInfoError, ASInfoResponseError
 from lib.live_cluster.collectinfo_controller import CollectinfoController
 from lib.live_cluster.collectusage_controller import (
     CollectusageController,
@@ -40,7 +41,7 @@ from lib.live_cluster.collectusage_controller import (
 from lib.live_cluster.live_cluster_command_controller import (
     LiveClusterCommandController,
 )
-from lib.utils import constants, file_size
+from lib.utils import constants
 from lib.utils import logger as logger_util
 from test.unit.live_cluster.test_collectinfo_controller import RunCollectinfoTestCase
 
@@ -52,6 +53,7 @@ ARCHIVE = "collect_usage_20261116_191136.tgz"
 TS = time.strptime("20261116_191136", "%Y%m%d_%H%M%S")
 NO_COMMAND = "ERROR:4:unrecognized command"
 NOT_FORMED = "ERROR:11:cluster not yet formed"
+INVALID_COMMAND = "Invalid command 'usage-export'"
 OLDER_SERVERS = "'collect usage' is not supported on aerospike versions < 8.2.1"
 
 
@@ -76,6 +78,16 @@ def document(value):
 
 def info_error(reply):
     return ASInfoResponseError("Failed to get usage", reply)
+
+
+async def node_reply(server_reply):
+    return await Node.info_usage(MagicMock(_info=AsyncMock(return_value=server_reply)))
+
+
+async def empty_info_body():
+    return await Node.info_usage(
+        MagicMock(_info=AsyncMock(side_effect=ASInfoError(INVALID_COMMAND)))
+    )
 
 
 def archive_members(path):
@@ -144,10 +156,23 @@ class UsageSupportedTest(unittest.IsolatedAsyncioTestCase):
 class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.cluster = MagicMock()
-        self.cluster.info_usage = AsyncMock()
+        self.cluster.get_nodes.return_value = [
+            MagicMock(key=PRINCIPAL, node_id="C3"),
+            MagicMock(key=OTHER, node_id="A1"),
+        ]
+        self.node_replies = {}
+        self.cluster.info_usage = AsyncMock(
+            side_effect=lambda nodes: {
+                node: self.node_replies[node]
+                for node in ([PRINCIPAL] if nodes == "principal" else nodes)
+            }
+        )
 
-    def replies(self, principal):
-        self.cluster.info_usage.return_value = {PRINCIPAL: principal}
+    def replies(self, principal, other=None):
+        self.node_replies = {
+            PRINCIPAL: principal,
+            OTHER: principal if other is None else other,
+        }
 
     async def unavailable(self):
         with self.assertRaises(UsageUnavailable) as cm:
@@ -166,7 +191,10 @@ class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
         self.cluster.info_usage.assert_awaited_once_with(nodes="principal")
 
     async def test_a_build_without_the_command_means_no_usage_reporting(self):
-        self.replies(info_error(NO_COMMAND))
+        self.replies(
+            info_error(NO_COMMAND),
+            info_error("ERROR:11:1 of 2 nodes run a version without usage reporting"),
+        )
 
         error = await self.unavailable()
 
@@ -196,22 +224,48 @@ class FetchUsageTest(unittest.IsolatedAsyncioTestCase):
         ]
     )
     async def test_server_errors_pass_through_verbatim(self, _, reply):
-        self.replies(info_error(reply))
+        self.replies(info_error(reply), TimeoutError("info timed out after 3s"))
 
         error = await self.unavailable()
 
         self.assertEqual(
             (error.node, error.reply, error.supported), (PRINCIPAL, reply, True)
         )
-        self.cluster.info_usage.assert_awaited_once_with(nodes="principal")
+        self.assertEqual(
+            self.cluster.info_usage.await_args_list,
+            [call(nodes="principal"), call(nodes=[OTHER])],
+        )
 
-    async def test_a_reply_that_is_not_base64(self):
-        self.replies(binascii.Error("Incorrect padding"))
+    @parameterized.expand(
+        [("not_base64", "eyJkYXRhIjp7!"), ("ok", "ok"), ("upper_ok", "OK")]
+    )
+    async def test_a_reply_that_is_not_base64_gives_the_reply(self, _, server_reply):
+        self.replies(await node_reply(server_reply))
 
         error = await self.unavailable()
 
-        self.assertEqual(error.reply, "could not decode the reply: Incorrect padding")
-        self.assertIs(error.supported, True)
+        self.assertEqual(
+            (error.node, error.reply, error.supported), (PRINCIPAL, server_reply, True)
+        )
+
+    async def test_an_empty_reply_is_not_an_export(self):
+        self.replies(await node_reply(""))
+
+        error = await self.unavailable()
+
+        self.assertEqual(
+            (error.node, error.reply, error.supported), (PRINCIPAL, "", True)
+        )
+
+    async def test_an_empty_info_body_gives_the_invalid_command_error(self):
+        self.replies(await empty_info_body())
+
+        error = await self.unavailable()
+
+        self.assertEqual(
+            (error.node, error.reply, error.supported),
+            (PRINCIPAL, f"{INVALID_COMMAND}.", True),
+        )
 
     async def test_a_reply_that_is_not_an_export(self):
         self.replies(b"[]")
@@ -394,7 +448,6 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
         self.exports(export(["2026-10-02", "2026-10-03"]))
 
         lines = await self.run_command()
-        size = file_size.size(os.path.getsize(self.path))
 
         self.assertEqual(
             lines[:4],
@@ -402,7 +455,7 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
                 f"Cluster {CLUSTER}",
                 "Account Acme Corp (12345)",
                 "Days    2026-10-02 to 2026-10-03, 2 days",
-                f"Saved   {self.path} ({size.strip()})",
+                f"Saved   {self.path} ({os.path.getsize(self.path)} B)",
             ],
         )
         self.assertEqual(logger_util.get_exit_code(), 0)
@@ -512,6 +565,47 @@ class CollectUsageCommandTest(unittest.IsolatedAsyncioTestCase):
         with open(self.path, "rb") as f:
             self.assertEqual(f.read(), b"old")
 
+    async def test_a_failed_write_leaves_no_partial_archive(self):
+        self.exports(export(["2026-10-03"]))
+
+        with patch.object(
+            tarfile.TarFile,
+            "addfile",
+            side_effect=OSError(errno.ENOSPC, "No space left on device"),
+        ):
+            with self.assertLogs("lib", level="ERROR") as cm:
+                lines = await self.run_command()
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            [f"Failed to write {self.path}: [Errno 28] No space left on device"],
+        )
+        self.assertEqual(lines, [])
+        self.assertFalse(os.path.exists(self.path), f"{self.path} left behind")
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
+    async def test_a_partial_archive_that_cannot_be_removed_is_still_one_error(self):
+        self.exports(export(["2026-10-03"]))
+
+        with patch.object(
+            tarfile.TarFile,
+            "addfile",
+            side_effect=OSError(errno.ENOSPC, "No space left on device"),
+        ), patch.object(
+            collectusage_controller.os,
+            "remove",
+            side_effect=PermissionError(errno.EACCES, "Permission denied"),
+        ):
+            with self.assertLogs("lib", level="ERROR") as cm:
+                lines = await self.run_command()
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            [f"Failed to write {self.path}: [Errno 28] No space left on device"],
+        )
+        self.assertEqual(lines, [])
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
     async def test_unrecognized_option_is_reported(self):
         self.exports(export())
 
@@ -612,6 +706,29 @@ class CollectUsageMetaFileTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(archived_export(self.path), reply)
 
+    @parameterized.expand(
+        [("not_base64", "eyJkYXRhIjp7!"), ("ok", "ok"), ("empty", "")]
+    )
+    async def test_a_reply_that_is_no_base64_export_is_an_error(self, _, server_reply):
+        self.cluster.info_usage.return_value = {
+            PRINCIPAL: await node_reply(server_reply)
+        }
+        logger_util.set_exit_code(0)
+        self.addCleanup(logger_util.set_exit_code, 0)
+        out = io.StringIO()
+
+        with self.assertLogs("lib", level="ERROR") as cm:
+            with contextlib.redirect_stdout(out):
+                await CollectusageController().execute([])
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            [f"Failed to get usage from {PRINCIPAL}: {server_reply}"],
+        )
+        self.assertEqual(out.getvalue(), "")
+        self.assertFalse(os.path.exists(self.path), f"{self.path} written")
+        self.assertEqual(logger_util.get_exit_code(), 2)
+
 
 class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
     async def asyncSetUp(self):
@@ -709,6 +826,21 @@ class CollectinfoBundleUsageFileTest(RunCollectinfoTestCase):
         self.assertIn("usage-export", self.reported_failures())
         self.assertEqual(logger_util.get_exit_code(), 0)
         self.archive_mock.assert_called_once_with(self.work_dir)
+
+    async def test_an_empty_info_body_is_recorded_as_the_invalid_command(self):
+        self.fetch.side_effect = fetch_usage
+        self.controller.cluster.info_usage = AsyncMock(
+            return_value={PRINCIPAL: await empty_info_body()}
+        )
+        self.controller.cluster.get_nodes.return_value = []
+
+        await self._run()
+
+        self.assertEqual(
+            self.meta()["collection"]["usage"],
+            {"status": "failed", "node": PRINCIPAL, "reply": f"{INVALID_COMMAND}."},
+        )
+        self.assertIn("usage-export", self.reported_failures())
 
     async def test_a_failed_fetch_stays_listed_when_localhost_is_a_node(self):
         self.controller.cluster.is_localhost_a_node.return_value = True

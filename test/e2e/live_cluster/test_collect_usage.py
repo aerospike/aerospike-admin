@@ -32,7 +32,7 @@ import unittest
 from lib.utils import version
 from test.e2e import lib, util
 
-USAGE_SERVER_TAG = "8.2.1.0-64_20261123T174538Z"
+USAGE_SERVER_TAG = lib.SERVER_8_2_1_TAG
 PREFIX = "asadm_collect_usage_test_"
 NO_ROLES_USER = f"{PREFIX}no_roles"
 BASE64_VALUE = re.compile(r"^(eyJ[A-Za-z0-9+/=]+|ERROR\S*.*)$", re.M)

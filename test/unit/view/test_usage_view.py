@@ -94,6 +94,16 @@ class UsageSavedTest(unittest.TestCase):
             "Saved   /tmp/collect_usage_x.json (2.000 KiB)", self.lines(export_data())
         )
 
+    def test_a_size_under_1_kib_is_whole_bytes(self):
+        out = io.StringIO()
+
+        with redirect_stdout(out):
+            CliView.print_usage_saved(export_data(), "/tmp/collect_usage_x.json", 752)
+
+        self.assertIn(
+            "Saved   /tmp/collect_usage_x.json (752 B)", out.getvalue().splitlines()
+        )
+
     def test_leaves_out_the_account_when_the_feature_key_names_none(self):
         lines = self.lines(export_data(feature_key={"serial-number": "1"}))
 
@@ -186,9 +196,14 @@ class SummaryClusterUuidTest(unittest.TestCase):
 
 
 class ShowUsageTest(unittest.TestCase):
+    SAMPLES = "Usage Samples (UTC)"
+    NAMESPACES = "Usage by Namespace"
+
     def setUp(self):
-        self.print_result = patch.object(CliView, "print_result").start()
+        self.addCleanup(setattr, CliView, "pager", CliView.pager)
+        CliView.pager = CliView.NO_PAGER
         self.addCleanup(patch.stopall)
+        self.output = ""
 
     def show(self, data, namespaces=()):
         out = io.StringIO()
@@ -196,15 +211,20 @@ class ShowUsageTest(unittest.TestCase):
         with redirect_stdout(out):
             CliView.show_usage(data, namespaces=namespaces)
 
-        return out.getvalue().splitlines()
+        self.output = out.getvalue()
 
-    def table(self, index):
-        return ANSI.sub("", self.print_result.call_args_list[index].args[0])
+        return ANSI.sub("", self.output).splitlines()
 
-    def rows(self, index):
+    def table(self, title):
+        text = ANSI.sub("", self.output)
+        start = text.index(title)
+
+        return text[start : text.index("Number of rows", start)]
+
+    def rows(self, title):
         return [
             [cell.strip() for cell in line.split("|")]
-            for line in self.table(index).splitlines()
+            for line in self.table(title).splitlines()
             if re.match(r"\s*(\d{4}-|[0-9a-z]+\s*\||\s*\|)", line)
         ]
 
@@ -243,17 +263,14 @@ class ShowUsageTest(unittest.TestCase):
             )
         )
 
-        table = self.table(0)
-
-        self.assertIn("Usage Samples (UTC)", table)
-        self.assertNotIn("Slot", table)
+        self.assertNotIn("Slot", self.table(self.SAMPLES))
         self.assertIn(
             ["2026-10-03", "00:00:05", "3", "3", "False", "2.000 KiB", "1.000 KiB"],
-            self.rows(0),
+            self.rows(self.SAMPLES),
         )
         self.assertIn(
             ["2026-10-03", "16:00:05", "3", "2", "True", "4.000 KiB", "2.000 KiB"],
-            self.rows(0),
+            self.rows(self.SAMPLES),
         )
 
     def test_namespace_table_names_the_latest_samples_namespaces(self):
@@ -275,13 +292,48 @@ class ShowUsageTest(unittest.TestCase):
             namespaces=["bar", "test"],
         )
 
-        rows = {row[0]: row for row in self.rows(1)}
+        rows = {row[0]: row for row in self.rows(self.NAMESPACES)}
 
-        self.assertIn("Usage by Namespace (2026-10-03 16:00:05 UTC)", self.table(1))
+        self.assertIn(
+            "Usage by Namespace (2026-10-03 16:00:05 UTC)", self.table(self.NAMESPACES)
+        )
         self.assertEqual(rows["test"][1:], ["2", "1.0", "4.000 KiB", "2.000 KiB"])
         self.assertEqual(rows["bar"][1:], ["1", "0.5", "8.000 KiB", "16.000 KiB"])
         self.assertIn(ns_hash("gone"), rows)
         self.assertEqual(rows[""][-2:], ["13.000 KiB", "19.000 KiB"])
+
+    def test_namespace_total_license_usage_is_blank_when_a_row_has_none(self):
+        no_rf = {"data_used": 8192, "ns": ns_hash("bar"), "ratio": 1000, "rf": 0}
+
+        self.show(
+            export_data(
+                [("2026-10-03", [sample("2026-10-03", 1, 4096, extra_rows=(no_rf,))])]
+            ),
+            namespaces=["bar", "test"],
+        )
+
+        rows = {row[0]: row for row in self.rows(self.NAMESPACES)}
+
+        self.assertEqual(rows["test"][-1], "2.000 KiB")
+        self.assertEqual(rows["bar"][-1], "--")
+        self.assertEqual(rows[""][-2], "12.000 KiB")
+        self.assertIn(rows[""][-1], ("", "--"))
+
+    def test_with_the_pager_on_the_header_and_both_tables_page_together(self):
+        CliView.pager = CliView.LESS
+        pipepager = patch("lib.view.view.pipepager").start()
+
+        lines = self.show(
+            export_data([("2026-10-03", [sample("2026-10-03", 1, 2048)])])
+        )
+
+        self.assertEqual(lines, [])
+        pipepager.assert_called_once()
+        paged = ANSI.sub("", pipepager.call_args.args[0])
+        self.assertTrue(paged.startswith(f"Cluster {CLUSTER}\n"), paged)
+        self.assertIn("Taken   2026-10-04 10:15:02 UTC", paged)
+        self.assertIn(self.SAMPLES, paged)
+        self.assertIn(self.NAMESPACES, paged)
 
     def test_partial_and_migrating_samples_are_red(self):
         self.addCleanup(
@@ -305,9 +357,12 @@ class ShowUsageTest(unittest.TestCase):
             )
         )
 
+        samples = self.output[
+            self.output.index(self.SAMPLES) : self.output.index(self.NAMESPACES)
+        ]
         red_cells = {
             time: re.findall(r"\x1b\[31;91m\s*([^\s\x1b]+)\s*\x1b\[0;m", line)
-            for line in self.print_result.call_args_list[0].args[0].splitlines()
+            for line in samples.splitlines()
             for time in ("00:00:05", "08:00:05", "16:00:05")
             if time in line
         }
@@ -320,4 +375,5 @@ class ShowUsageTest(unittest.TestCase):
         lines = self.show(export_data())
 
         self.assertIn("Days    none closed yet", lines)
-        self.print_result.assert_not_called()
+        self.assertNotIn(self.SAMPLES, self.output)
+        self.assertNotIn(self.NAMESPACES, self.output)

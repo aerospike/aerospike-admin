@@ -268,13 +268,9 @@ class NamespaceRowsTest(unittest.TestCase):
 
 
 class NsHashTest(unittest.TestCase):
-    def test_is_the_first_16_hex_digits_of_sha256_of_uuid_then_name(self):
-        self.assertEqual(
-            usage_export.ns_hash(CLUSTER, "test"),
-            hashlib.sha256(b"3f2b8c1e-9a4d-4e7b-8c21-5d6f7a8b9c0dtest").hexdigest()[
-                :16
-            ],
-        )
+    @parameterized.expand([("test", "864f21805ef85437"), ("bar", "79f7abd171e32b56")])
+    def test_matches_the_servers_hash(self, name, expected):
+        self.assertEqual(usage_export.ns_hash(CLUSTER, name), expected)
 
 
 class DisplayTimeTest(unittest.TestCase):

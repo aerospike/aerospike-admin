@@ -215,7 +215,7 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn("collect usage [--output-prefix <prefix>]", help_text)
-        self.assertIn("Needs server v. 8.2.1 or later.", help_text)
+        self.assertIn("Needs Enterprise server v. 8.2.1 or later.", help_text)
         self.assertNotIn("user-admin", help_text)
         self.assertNotIn("privilege", help_text)
 
@@ -240,7 +240,7 @@ class LiveClusterRootControllerTest(unittest.IsolatedAsyncioTestCase):
             ANSI.sub("", self.root.execute_help(["show", "usage"])).split()
         )
 
-        self.assertIn("Needs server v. 8.2.1 or later.", help_text)
+        self.assertIn("Needs Enterprise server v. 8.2.1 or later.", help_text)
         self.assertNotIn("user-admin", help_text)
         self.assertNotIn("privilege", help_text)
         self.assertIn("License Usage", help_text)

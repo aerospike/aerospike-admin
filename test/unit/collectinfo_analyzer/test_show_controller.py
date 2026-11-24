@@ -93,6 +93,7 @@ class ShowUsageControllerTest(unittest.TestCase):
             }
         }
         self.builds("8.2.1.0")
+        self.log_handler.collectinfo_meta = {}
         self.controller = ShowController().controller_map["usage"]()
         self.controller.log_handler = self.log_handler
         self.controller.mods = {}
@@ -144,6 +145,43 @@ class ShowUsageControllerTest(unittest.TestCase):
         self.assertEqual(
             cm.records[0].getMessage(),
             "show usage: no usage file in this collectinfo.",
+        )
+
+    def test_a_cluster_without_usage_reporting_names_the_reply(self):
+        self.log_handler.collectinfo_meta = {
+            "collection": {
+                "usage": {
+                    "status": "unsupported",
+                    "node": "10.0.0.3:3000",
+                    "reply": "ERROR:25:enterprise only",
+                }
+            }
+        }
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.view_mock.show_usage.assert_not_called()
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            [
+                "'show usage' is not supported on this cluster "
+                "(10.0.0.3:3000 replied ERROR:25:enterprise only)."
+            ],
+        )
+
+    def test_an_older_server_recorded_in_the_meta_names_the_version(self):
+        self.builds("8.2.1.0", "8.2.0.3")
+        self.log_handler.collectinfo_meta = {
+            "collection": {"usage": {"status": "unsupported", "min_version": "8.2.1"}}
+        }
+
+        with self.assertLogs("lib", level="WARNING") as cm:
+            self.controller._do_default([])
+
+        self.assertEqual(
+            [r.getMessage() for r in cm.records],
+            ["'show usage' is not supported on aerospike versions < 8.2.1"],
         )
 
     def test_the_old_license_usage_file_is_not_a_usage_file(self):
