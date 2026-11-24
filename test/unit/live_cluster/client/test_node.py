@@ -3552,6 +3552,27 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertDictEqual(actual, expected)
 
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_all_dc_statistics_dcs_error(self, info_dcs_mock: AsyncMock):
+        info_dcs_mock.return_value = Exception("boom")
+
+        actual = await self.node.info_all_dc_statistics()
+
+        self.assertIsInstance(actual, Exception)
+        self.assertEqual(str(actual), "Unable to get dcs : boom")
+
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_all_xdr_namespaces_statistics_dcs_error(
+        self, info_dcs_mock: AsyncMock
+    ):
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0"
+        info_dcs_mock.return_value = Exception("boom")
+
+        actual = await self.node.info_all_xdr_namespaces_statistics()
+
+        self.assertIsInstance(actual, Exception)
+        self.assertEqual(str(actual), "Could not retrieve dcs: boom")
+
     async def test_info_udf_list(self):
         self.info_mock.return_value = "filename=basic_udf.lua,hash=706c57cb29e027221560a3cb4b693573ada98bf2,type=LUA;"
         expected = {

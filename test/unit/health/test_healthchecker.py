@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
 import unittest
 
 from lib.health.constants import AssertLevel, AssertResultKey, HealthResultType
@@ -397,7 +396,7 @@ class HealthcheckerTest(unittest.TestCase):
     def test_health_checker(self):
         self.hc = HealthChecker()
         self.maxDiff = None
-        data = {
+        data = {  # noqa: F841
             "SNAPSHOT000": {
                 "BIN": {
                     "STATISTICS": {
@@ -21835,7 +21834,7 @@ class HealthcheckerTest(unittest.TestCase):
                 },
             }
         }
-        expected = {
+        expected = {  # noqa: F841
             "status_counters": {
                 "queries": 1005,
                 "queries_success": 823,

@@ -179,7 +179,8 @@ clean:
 
 
 .PHONY: format-check
-format-check: black-check lint
+format-check:
+	@status=0; $(MAKE) black-check || status=1; $(MAKE) lint || status=1; exit $$status
 
 .PHONY: black-check
 black-check:
