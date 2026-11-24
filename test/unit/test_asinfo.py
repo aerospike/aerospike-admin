@@ -14,9 +14,13 @@
 
 import base64
 import os
+import re
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 
 from lib.secret_agent.testing import FakeSecretAgent
@@ -25,10 +29,17 @@ from test.unit.utils.test_conf import KEYFILE_PASSWORD_HELP, SECRET_AGENT_HELP
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 ASINFO = os.path.join(ROOT, "asinfo", "asinfo.py")
+ASADM = os.path.join(ROOT, "asadm.py")
 
 FAKE_ASADM = """#!/bin/sh
 printf '%s' "$FAKE_ASADM_STDERR" >&2
-printf '%s\\n' "$FAKE_ASADM_STDOUT"
+if [ -n "$FAKE_ASADM_STDOUT" ]; then printf '%s\\n' "$FAKE_ASADM_STDOUT"; fi
+exit "${FAKE_ASADM_EXIT:-0}"
+"""
+
+SLEEPING_ASADM = """#!/bin/sh
+echo $$ > "$FAKE_ASADM_PIDFILE"
+exec sleep 30
 """
 
 ECHO_ASADM = """#!/bin/sh
@@ -47,6 +58,10 @@ exec "$ASADM_PYTHON" "$ASADM_SCRIPT" "$@"
 NO_USER_WARNING = "WARNING: --password: ignored because no user is set"
 READ_WARNING = (
     "WARNING: Config file read error : /etc/aerospike/astools.conf Permission denied"
+)
+REFUSED_CONNECT_ERROR = (
+    r"ERROR: Not able to connect any cluster with \('127\.0\.0\.1', 1, None\):"
+    r" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', 1\)\n\Z"
 )
 
 
@@ -70,12 +85,13 @@ class AsinfoStderrTest(unittest.TestCase):
     def setUp(self):
         self.bindir = install_asadm(self, FAKE_ASADM)
 
-    def run_asinfo(self, stderr):
+    def run_asinfo(self, stderr, stdout="build-output", exit_code=0):
         env = dict(
             os.environ,
             PATH=self.bindir + os.pathsep + os.environ.get("PATH", ""),
-            FAKE_ASADM_STDOUT="build-output",
+            FAKE_ASADM_STDOUT=stdout,
             FAKE_ASADM_STDERR=stderr,
+            FAKE_ASADM_EXIT=str(exit_code),
         )
         return subprocess.run(
             [sys.executable, ASINFO, "-P", "env:ASINFO_TEST_PW", "-v", "build"],
@@ -99,6 +115,17 @@ class AsinfoStderrTest(unittest.TestCase):
                 self.assertEqual(cp.stdout, "build-output\n")
                 self.assertEqual(cp.stderr, warning + "\n")
 
+    def test_security_not_enabled_warning_is_passed_through(self):
+        """asadm's normal mode only warns when credentials meet a server without
+        security, and asinfo follows it."""
+        warning = "WARNING: Login failed : Security not enabled.\n"
+
+        cp = self.run_asinfo(warning)
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "build-output\n")
+        self.assertEqual(cp.stderr, warning)
+
     def test_other_stderr_still_fails(self):
         for stderr in (
             "ERROR: Not able to connect any cluster with [('127.0.0.1', 1, None)].\n",
@@ -108,8 +135,56 @@ class AsinfoStderrTest(unittest.TestCase):
                 cp = self.run_asinfo(stderr)
 
                 self.assertEqual(cp.returncode, 1)
-                self.assertIn(stderr.strip(), cp.stdout)
+                self.assertEqual(cp.stdout, "build-output\n")
+                self.assertEqual(cp.stderr, stderr)
+
+    def test_reply_mentioning_error_succeeds(self):
+        reply = "ns=test:set=app_error:objects=0:tombstones=0"
+
+        cp = self.run_asinfo("", stdout=reply)
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, reply + "\n")
+        self.assertEqual(cp.stderr, "")
+
+    def test_reply_mentioning_a_connect_failure_succeeds(self):
+        for reply in (
+            "ns=test:set=Could not connect to node:objects=100:tombstones=0",
+            "ns=test:set=Not able to connect any cluster:objects=100:tombstones=0",
+        ):
+            with self.subTest(reply=reply):
+                cp = self.run_asinfo("", stdout=reply)
+
+                self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+                self.assertEqual(cp.stdout, reply + "\n")
                 self.assertEqual(cp.stderr, "")
+
+    def test_error_reply_fails(self):
+        for reply in (
+            "ERROR:4:unrecognized command",
+            "error::bad-namespace",
+            "Error: Invalid command 'bogus'",
+            "8.2.0.0\nERROR:4:unrecognized command",
+        ):
+            with self.subTest(reply=reply):
+                cp = self.run_asinfo("", stdout=reply)
+
+                self.assertEqual(cp.returncode, 1)
+                self.assertEqual(cp.stdout, reply + "\n")
+
+    def test_failed_asadm_without_output_fails(self):
+        cp = self.run_asinfo("", stdout="", exit_code=3)
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, "ERROR: asadm exited with code 3\n")
+
+    def test_failed_asadm_with_only_output_fails(self):
+        cp = self.run_asinfo("", exit_code=3)
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "build-output\n")
+        self.assertEqual(cp.stderr, "ERROR: asadm exited with code 3\n")
 
     def test_error_with_a_warning_fails(self):
         for warning, error in (
@@ -128,9 +203,8 @@ class AsinfoStderrTest(unittest.TestCase):
                 cp = self.run_asinfo(warning + "\n" + error + "\n")
 
                 self.assertEqual(cp.returncode, 1)
-                self.assertIn(error, cp.stdout)
-                self.assertNotIn(warning, cp.stdout)
-                self.assertEqual(cp.stderr, warning + "\n")
+                self.assertEqual(cp.stdout, "build-output\n")
+                self.assertEqual(cp.stderr, warning + "\n" + error + "\n")
 
 
 @unittest.skipIf(sys.platform == "win32", "needs a POSIX shell")
@@ -157,9 +231,10 @@ class AsinfoRealAsadmTest(unittest.TestCase):
         )
 
         self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
-        self.assertEqual(cp.stderr, NO_USER_WARNING + "\n")
-        self.assertIn("Not able to connect any cluster", cp.stdout)
-        self.assertNotIn("ignored because no user is set", cp.stdout)
+        self.assertEqual(cp.stdout, "")
+        self.assertRegex(
+            cp.stderr, r"\A" + re.escape(NO_USER_WARNING + "\n") + REFUSED_CONNECT_ERROR
+        )
 
     def test_read_warning_from_asadm_is_passed_through(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -195,9 +270,10 @@ class AsinfoRealAsadmTest(unittest.TestCase):
                 link
             )
         )
-        self.assertEqual(cp.stderr, warning + "\n", cp.stdout)
-        self.assertNotIn(warning, cp.stdout)
-        self.assertIn("Not able to connect any cluster", cp.stdout)
+        self.assertEqual(cp.stdout, "")
+        self.assertRegex(
+            cp.stderr, r"\A" + re.escape(warning + "\n") + REFUSED_CONNECT_ERROR
+        )
 
 
 class AsinfoSecretAgentOptionsTest(unittest.TestCase):
@@ -312,7 +388,7 @@ class AsinfoRealAsadmSecretTest(unittest.TestCase):
 
         self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
         self.assertEqual(self.requests, [{"SecretKey": "pw", "Resource": "aql"}])
-        self.assertIn("Not able to connect any cluster", cp.stdout)
+        self.assertIn("Not able to connect any cluster", cp.stderr)
         self.assertNotIn(SECRET, cp.stdout + cp.stderr)
 
     def test_agent_error_stops_before_connecting(self):
@@ -321,7 +397,7 @@ class AsinfoRealAsadmSecretTest(unittest.TestCase):
         self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
         self.assertIn("agent error", cp.stdout + cp.stderr)
         self.assertIn(self.agent.address, cp.stdout + cp.stderr)
-        self.assertNotIn("Not able to connect any cluster", cp.stdout)
+        self.assertNotIn("Not able to connect any cluster", cp.stdout + cp.stderr)
 
 
 class AsinfoBadSecretAgentSectionTest(unittest.TestCase):
@@ -424,6 +500,486 @@ class AsinfoHelpTest(unittest.TestCase):
     def test_asinfo_txt_holds_the_help(self):
         with open(os.path.join(ROOT, "asinfo", "asinfo.txt")) as f:
             self.assertIn(self.help, f.read())
+
+    def test_help_timeout_block(self):
+        self.assertIn(
+            " --timeout=value      Set timeout value in seconds.\n"
+            "                      Default: 5 seconds\n",
+            self.help,
+        )
+        self.assertNotIn("TLS connection does not support timeout", self.help)
+
+    def test_help_host_names_the_ipv6_forms(self):
+        self.assertIn(
+            "                      server. Default: localhost:3000\n"
+            '                      An IPv6 address goes in brackets: "[<ipv6>]",\n'
+            '                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".\n'
+            "                      Examples:\n",
+            self.help,
+        )
+
+
+class AsinfoModeSilentNodeTest(unittest.TestCase):
+    """A node that takes the connection and never answers, like a paused server."""
+
+    def setUp(self):
+        release = threading.Event()
+        self.node = FakeSecretAgent(handler=lambda sock: release.wait(60)).start()
+        self.addCleanup(self.node.stop)
+        self.addCleanup(release.set)
+
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.env = dict(os.environ, HOME=home.name)
+        self.seed = "('127.0.0.1', {}, None)".format(self.node.port)
+
+    def run_timed(self, argv):
+        start = time.monotonic()
+        cp = subprocess.run(
+            argv, capture_output=True, text=True, env=self.env, timeout=60
+        )
+        return cp, time.monotonic() - start
+
+    def run_asadm(self, *argv):
+        return self.run_timed(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", self.node.address, *argv, "-e", "build"]
+        )
+
+    def test_timeout_bounds_the_wait(self):
+        cp, elapsed = self.run_asadm("--timeout", "0.5")
+
+        self.assertLess(elapsed, 4, cp.stderr)
+
+    def test_info_timeout_is_one_error_line(self):
+        cp, _ = self.run_asadm("--timeout", "0.5")
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to get info from {}: info timed out after 0.5s\n".format(
+                self.seed
+            ),
+        )
+
+    def test_login_timeout_is_one_error_line(self):
+        cp, _ = self.run_asadm("--timeout", "0.5", "-U", "admin", "-P", "admin")
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to login and authenticate any cluster with {}:"
+            " login timed out after 0.5s\n".format(self.seed),
+        )
+
+    def test_asinfo_forwards_the_timeout(self):
+        bindir = install_asadm(self, REAL_ASADM)
+        self.env.update(
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=ASADM,
+        )
+
+        cp, elapsed = self.run_timed(
+            [sys.executable, ASINFO, "--no-config-file", "-h", self.node.host]
+            + ["-p", str(self.node.port), "--timeout", "0.5", "-v", "build"]
+        )
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertLess(elapsed, 4, cp.stderr)
+        self.assertIn("info timed out after 0.5s", cp.stderr)
+
+
+class AsinfoModeClosedConnectionTest(unittest.TestCase):
+    """A node that reads the request and closes the connection, like one that
+    restarts mid-run."""
+
+    def setUp(self):
+        self.node = FakeSecretAgent(handler=lambda sock: sock.recv(65536)).start()
+        self.addCleanup(self.node.stop)
+
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.env = dict(os.environ, HOME=home.name)
+        self.seed = "('127.0.0.1', {}, None)".format(self.node.port)
+
+    def run_asadm(self, *argv):
+        return subprocess.run(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", self.node.address, *argv, "-e", "build"],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            timeout=60,
+        )
+
+    def test_closed_at_info_is_one_error_line(self):
+        cp = self.run_asadm()
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to get info from {}: Error: Connection closed by"
+            " server.\n".format(self.seed),
+        )
+
+    def test_closed_at_login_is_one_error_line(self):
+        cp = self.run_asadm("-U", "admin", "-P", "admin")
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to login and authenticate any cluster with {}:"
+            " Error: Connection closed by server.\n".format(self.seed),
+        )
+
+
+def _close_with_notify(sock):
+    sock.recv(65536)
+    sock.unwrap()
+
+
+def _close_without_notify(sock):
+    sock.recv(65536)
+
+
+class AsinfoModeTLSClosedConnectionTest(unittest.TestCase):
+    """The same over TLS, where pyOpenSSL raises its own errors instead of
+    OSErrors."""
+
+    def setUp(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.env = dict(os.environ, HOME=home.name)
+
+        directory = os.path.join(home.name, "ca")
+        os.mkdir(directory)
+        self.pki = pki.generate(directory)
+
+    def run_asadm(self, handler, *argv):
+        node = FakeSecretAgent(
+            handler=handler, ssl_context=self.pki.server_context()
+        ).start()
+        self.addCleanup(node.stop)
+        self.seed = "('127.0.0.1', {}, 'localhost')".format(node.port)
+
+        return subprocess.run(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", "127.0.0.1:localhost:{}".format(node.port), "--tls-enable"]
+            + ["--tls-cafile", self.pki.ca_file, "--timeout", "3", *argv]
+            + ["-e", "build"],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            timeout=60,
+        )
+
+    def test_close_notify_at_login_is_one_error_line(self):
+        cp = self.run_asadm(_close_with_notify, "-U", "admin", "-P", "admin")
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to login and authenticate any cluster with {}:"
+            " Error: Connection closed by server.\n".format(self.seed),
+        )
+
+    def test_close_notify_at_info_is_one_error_line(self):
+        cp = self.run_asadm(_close_with_notify)
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to get info from {}: Error: Connection closed by"
+            " server.\n".format(self.seed),
+        )
+
+    def test_closed_without_notify_at_login_is_one_error(self):
+        """A source run also prints asyncio's "Fatal read error" block here, so
+        only the ERROR lines are checked."""
+        cp = self.run_asadm(_close_without_notify, "-U", "admin", "-P", "admin")
+        errors = [line for line in cp.stderr.splitlines() if line.startswith("ERROR:")]
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(len(errors), 1, cp.stderr)
+        self.assertTrue(
+            errors[0].startswith(
+                "ERROR: Not able to login and authenticate any cluster with {}:"
+                " Error: ".format(self.seed)
+            ),
+            cp.stderr,
+        )
+
+
+class AsinfoWrapperTest(unittest.TestCase):
+    def setUp(self):
+        self.env = dict(os.environ)
+
+    def install(self, script):
+        bindir = install_asadm(self, script)
+        self.env["PATH"] = bindir + os.pathsep + os.environ.get("PATH", "")
+
+    def test_timeout_not_above_zero_is_refused(self):
+        self.install(ECHO_ASADM)
+
+        for value in ("0", "-1", "nan"):
+            with self.subTest(value=value):
+                cp = subprocess.run(
+                    [sys.executable, ASINFO, "--timeout=" + value, "-v", "build"],
+                    capture_output=True,
+                    text=True,
+                    env=self.env,
+                    timeout=30,
+                )
+
+                self.assertEqual(cp.returncode, 2)
+                self.assertEqual(cp.stdout, "")
+                self.assertIn(
+                    'argument --timeout: invalid value "{}", expected a number'
+                    " greater than 0".format(value),
+                    cp.stderr,
+                )
+
+    def test_interrupt_exits_130_and_stops_asadm(self):
+        self.install(SLEEPING_ASADM)
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        pidfile = os.path.join(tmpdir.name, "asadm.pid")
+        self.env["FAKE_ASADM_PIDFILE"] = pidfile
+
+        proc = subprocess.Popen(
+            [sys.executable, ASINFO, "-v", "build"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self.env,
+            preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL),
+        )
+        self.addCleanup(proc.kill)
+
+        deadline = time.monotonic() + 30
+        while not (os.path.exists(pidfile) and os.path.getsize(pidfile)):
+            self.assertLess(time.monotonic(), deadline, "asadm never started")
+            time.sleep(0.05)
+
+        with open(pidfile) as f:
+            asadm_pid = int(f.read())
+
+        self.addCleanup(self.kill_quietly, asadm_pid)
+        proc.send_signal(signal.SIGINT)
+        _, stderr = proc.communicate(timeout=30)
+
+        self.assertEqual(proc.returncode, 130, stderr)
+        self.assertNotIn("Traceback", stderr)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(asadm_pid, 0)
+
+    @staticmethod
+    def kill_quietly(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+class AsinfoModeExitCodeTest(unittest.TestCase):
+    def test_refused_connect_exits_1(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+
+        cp = subprocess.run(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", "127.0.0.1:1", "-e", "build"],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, HOME=home.name),
+            timeout=60,
+        )
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertRegex(cp.stderr, r"\A" + REFUSED_CONNECT_ERROR)
+
+    def test_bad_host_is_reported_without_a_traceback(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+
+        cp = subprocess.run(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", "127.0.0.1:abc", "-e", "build"],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, HOME=home.name),
+            timeout=60,
+        )
+
+        self.assertEqual(cp.returncode, 1)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr,
+            "ERROR: Not able to parse host 127.0.0.1:abc: invalid literal for int()"
+            " with base 10: 'abc'\n"
+            "ERROR: Not able to connect any cluster with [].\n",
+        )
+
+
+def _recv_exact(sock, size):
+    data = b""
+
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            return None
+        data += chunk
+
+    return data
+
+
+def _answer_info(received):
+    """Replies "<name>\\t8.2.0.0" to each name asked for, and to build when the
+    request names none."""
+
+    def handler(sock):
+        while True:
+            header = _recv_exact(sock, 8)
+            if header is None:
+                return
+
+            names = _recv_exact(sock, int.from_bytes(header[2:], "big")).split()
+            received.append([name.decode() for name in names])
+            reply = b"".join(name + b"\t8.2.0.0\n" for name in names or [b"build"])
+            header = ((2 << 56) | (1 << 48) | len(reply)).to_bytes(8, "big")
+            sock.sendall(header + reply)
+
+    return handler
+
+
+class AsinfoAnsweringNodeTest(unittest.TestCase):
+    """asinfo and the real asadm against a node that answers info requests."""
+
+    def setUp(self):
+        self.received = []
+        self.node = FakeSecretAgent(handler=_answer_info(self.received)).start()
+        self.addCleanup(self.node.stop)
+
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        self.home = os.path.join(tmpdir.name, "home")
+        self.cwd = os.path.join(tmpdir.name, "cwd")
+        os.mkdir(self.home)
+        os.mkdir(self.cwd)
+
+        bindir = install_asadm(self, REAL_ASADM)
+        self.env = dict(
+            os.environ,
+            HOME=self.home,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=ASADM,
+        )
+
+    def run_asinfo(self, *argv):
+        return subprocess.run(
+            [sys.executable, ASINFO, "--no-config-file", "-h", self.node.host]
+            + ["-p", str(self.node.port), *argv],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            cwd=self.cwd,
+            timeout=60,
+        )
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_all_values_on_a_read_only_home_succeeds(self):
+        """TOOLS-4655: asinfo mode has no history, so it makes no ~/.aerospike."""
+        os.chmod(self.home, 0o500)
+        self.addCleanup(os.chmod, self.home, 0o700)
+
+        cp = self.run_asinfo()
+
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "1 :  build\n     8.2.0.0\n")
+        self.assertEqual(cp.stderr, "")
+
+    def test_value_naming_a_file_in_the_cwd_is_sent_as_given(self):
+        with open(os.path.join(self.cwd, "build"), "w") as f:
+            f.write("statistics\n")
+
+        cp = self.run_asinfo("-v", "build")
+
+        self.assertEqual(self.received, [["build"]])
+        self.assertEqual(cp.returncode, 0, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "8.2.0.0\n")
+        self.assertEqual(cp.stderr, "")
+
+
+def _answer_with(reply):
+    def handler(sock):
+        while True:
+            header = _recv_exact(sock, 8)
+            if header is None:
+                return
+
+            _recv_exact(sock, int.from_bytes(header[2:], "big"))
+            header = ((2 << 56) | (1 << 48) | len(reply)).to_bytes(8, "big")
+            sock.sendall(header + reply)
+
+    return handler
+
+
+class AsinfoAllValuesErrorLineTest(unittest.TestCase):
+    """An ERROR line in the all-values reply fails the run in asadm itself."""
+
+    ERROR = "ERROR: Server returned an error response for info command : timeout.\n"
+
+    def setUp(self):
+        self.node = FakeSecretAgent(
+            handler=_answer_with(b"build\t8.2.0.0\nERROR:9:timeout\n")
+        ).start()
+        self.addCleanup(self.node.stop)
+
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+
+        bindir = install_asadm(self, REAL_ASADM)
+        self.env = dict(
+            os.environ,
+            HOME=home.name,
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+            ASADM_PYTHON=sys.executable,
+            ASADM_SCRIPT=ASADM,
+        )
+
+    def run_command(self, argv):
+        return subprocess.run(
+            argv, capture_output=True, text=True, env=self.env, timeout=60
+        )
+
+    def test_asinfo_mode_exits_1(self):
+        cp = self.run_command(
+            [sys.executable, ASADM, "--asinfo-mode", "--no-config-file"]
+            + ["-h", self.node.address]
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, self.ERROR)
+
+    def test_asinfo_exits_1(self):
+        cp = self.run_command(
+            [sys.executable, ASINFO, "--no-config-file", "-h", self.node.host]
+            + ["-p", str(self.node.port)]
+        )
+
+        self.assertEqual(cp.returncode, 1, cp.stdout + cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, self.ERROR)
 
 
 if __name__ == "__main__":

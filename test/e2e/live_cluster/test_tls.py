@@ -14,6 +14,8 @@
 
 import os
 import re
+import socket
+import time
 import unittest
 
 from test.e2e import util as test_util, lib
@@ -291,6 +293,97 @@ class TestTLS(unittest.TestCase):
             cp.stdout,
             "Should have failed – server cert is revoked (crl-check-all)",
         )
+
+    def test_asinfo_mode_frozen_node_honors_timeout(self):
+        """TOOLS-4655: --timeout bounds the TLS handshake too."""
+        node = lib.NODES[0]
+        node.pause()
+
+        try:
+            start = time.monotonic()
+            cp = test_util.run_asadm(
+                f"-h {self.host} --tls-enable --tls-name localhost "
+                f"--tls-cafile {self.ca} -Uadmin -Padmin --asinfo-mode --timeout 1"
+                " -e build",
+                strip_header=False,
+            )
+            elapsed = time.monotonic() - start
+        finally:
+            node.unpause()
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(
+            cp.stderr.splitlines(),
+            [
+                "ERROR: Not able to connect any cluster with"
+                f" ('{lib.SERVER_IP}', {lib.TLS_PORT}, 'localhost'):"
+                " TLS handshake timed out after 1s"
+            ],
+        )
+        self.assertLess(elapsed, 4.5)
+
+    def test_asinfo_mode_clear_client_on_the_tls_port(self):
+        """TOOLS-4655: the server drops the clear connection, which is one error
+        line."""
+        cp = test_util.run_asadm(
+            f"-h {self.host} -Uadmin -Padmin --asinfo-mode --timeout 1 -e build",
+            strip_header=False,
+        )
+
+        lines = cp.stderr.splitlines()
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(len(lines), 1, cp.stderr)
+        self.assertTrue(
+            lines[0].startswith(
+                "ERROR: Not able to login and authenticate any cluster with"
+                f" ('{lib.SERVER_IP}', {lib.TLS_PORT}, None): "
+            ),
+            cp.stderr,
+        )
+
+    def test_asinfo_mode_clear_info_on_the_tls_port(self):
+        """TOOLS-4655: without a user the info call is the first read, and the
+        server drops it. The reason depends on whether it closes or resets."""
+        cp = test_util.run_asadm(
+            f"-h {self.host} --asinfo-mode --timeout 1 -e build",
+            strip_header=False,
+        )
+
+        lines = cp.stderr.splitlines()
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(len(lines), 1, cp.stderr)
+        self.assertTrue(
+            lines[0].startswith(
+                "ERROR: Not able to get info from"
+                f" ('{lib.SERVER_IP}', {lib.TLS_PORT}, None): Error: "
+            ),
+            cp.stderr,
+        )
+        self.assertNotIn("unpack_from", lines[0])
+
+    def test_asinfo_mode_bracketed_ipv6_with_and_without_a_port(self):
+        """TOOLS-4655: an IPv6 address goes in brackets, as in the C tools."""
+        try:
+            socket.create_connection(("::1", lib.TLS_PORT), 1).close()
+        except OSError as e:
+            self.skipTest(f"::1 is not reachable: {e}")
+
+        for host in (
+            f"[::1] -p {lib.TLS_PORT} -t localhost",
+            f"[::1]:localhost:{lib.TLS_PORT}",
+        ):
+            with self.subTest(host=host):
+                cp = test_util.run_asadm(
+                    f"-h {host} --tls-enable --tls-cafile {self.ca}"
+                    " -Uadmin -Padmin --asinfo-mode -e build",
+                    strip_header=False,
+                )
+
+                self.assertEqual(cp.returncode, 0, cp.stderr)
+                self.assertIn(lib.server_build(), cp.stdout)
+                self.assertEqual(cp.stderr, "")
 
 
 class TestPKI(unittest.TestCase):

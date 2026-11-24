@@ -459,10 +459,9 @@ async def _authenticate(
             reader, writer, send_buf
         )
         return return_code
+    except OSError:
+        raise
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
         raise IOError("Error: %s" % str(e))
 
 
@@ -1215,7 +1214,7 @@ async def login(
 
         return 0, session_token, session_expiration
 
-    except SocketError as e:
+    except Exception as e:
         raise IOError("Error: %s" % str(e))
 
 
@@ -1244,7 +1243,7 @@ async def _info_request(
         writer.write(buf)
         await writer.drain()
         # get response
-        rsp_hdr = await reader.read(8)
+        rsp_hdr = await _receive_data(reader, _PROTOCOL_HEADER_SIZE)
         _, _, data_size, _ = _unpack_protocol_header(rsp_hdr)
 
         if data_size > 0:

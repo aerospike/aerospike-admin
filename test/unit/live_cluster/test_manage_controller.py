@@ -2122,6 +2122,36 @@ class ManageSIndexCreateControllerTest(unittest.IsolatedAsyncioTestCase):
             "Use 'show sindex' to confirm a-index was created successfully."
         )
 
+    async def test_create_where_the_set_has_the_namespace_name(self):
+        line = "string i set test bin b ns test".split()
+        self.cluster_mock.info_sindex_create.return_value = {
+            "1.1.1.1": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "7.0.0.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_sindex_create.assert_called_once_with(
+            "i",
+            "test",
+            "b",
+            "string",
+            None,
+            "test",
+            None,
+            None,
+            None,
+            None,
+            {
+                "cdt_indexing": True,
+                "expression_indexing": False,
+                "namespace_query_selector_support": False,
+                "integer_type_support": False,
+                "ael_indexing": False,
+            },
+            nodes="principal",
+        )
+
     @parameterized.expand([("integer",), ("numeric",)])
     async def test_create_integer_type_on_new_server(self, bin_type):
         """On server >= 8.2, both 'integer' and its deprecated 'numeric' alias
@@ -4934,6 +4964,19 @@ class ManageMaskingAddControllerTest(unittest.IsolatedAsyncioTestCase):
             nodes="principal",
         )
 
+    async def test_add_rule_where_the_set_has_the_namespace_name(self):
+        line = "redact set test bin b namespace test".split()
+        self.cluster_mock.info_masking_add_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+        self.meta_mock.get_builds.return_value = {"principal": "8.1.1.0"}
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_add_rule.assert_called_once_with(
+            "test", "test", "b", "string", "redact", {}, nodes="principal"
+        )
+
     async def test_add_rule_version_not_supported(self):
         """Test error when server version doesn't support masking"""
         line = "redact namespace test set demo bin ssn".split()
@@ -5983,6 +6026,18 @@ class ManageMaskingDropControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.view_mock.print_result.assert_called_once_with(
             "Successfully dropped masking rule."
+        )
+
+    async def test_drop_rule_where_the_set_has_the_namespace_name(self):
+        line = "set test bin b namespace test".split()
+        self.cluster_mock.info_masking_remove_rule.return_value = {
+            "principal": ASINFO_RESPONSE_OK
+        }
+
+        await self.controller.execute(line)
+
+        self.cluster_mock.info_masking_remove_rule.assert_called_once_with(
+            "test", "test", "b", "string", nodes="principal"
         )
 
     async def test_drop_rule_missing_required_params(self):
@@ -7241,7 +7296,10 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
             ("--timeout 0", "--timeout must be between 1 and 3600."),
             ("--timeout 3601", "--timeout must be between 1 and 3600."),
             ("--timeout abc", "--timeout must be an integer."),
+            ("--timeout 1_0", "--timeout must be an integer."),
+            ("--timeout --poll-interval 5", "--timeout must be an integer."),
             ("--poll-interval 0", "--poll-interval must be between 1 and 300."),
+            ("--poll-interval 1_0", "--poll-interval must be an integer."),
             (
                 "--timeout 60 --poll-interval 120",
                 "--poll-interval must be between 1 and 60.",
@@ -7249,14 +7307,16 @@ class ManageCheckpointSaveControllerTest(unittest.IsolatedAsyncioTestCase):
         ]
     )
     async def test_rejects_bad_flag_values(self, flag, message):
-        await test_util.assert_exception_async(
-            self,
-            ShellException,
-            message,
-            self.controller.execute,
-            "{} --no-warn with 1.1.1.1:3000".format(flag).split(),
+        self.node_mock.info_checkpoint_status.side_effect = self._responses(
+            [self._status("done", 11, 11)]
         )
 
+        with self.assertRaises(ShellException) as cm:
+            await self.controller.execute(
+                "{} --no-warn with 1.1.1.1:3000".format(flag).split()
+            )
+
+        self.assertEqual(str(cm.exception), message)
         self.cluster_mock.info_checkpoint_save.assert_not_called()
 
     async def test_warn_is_on_by_default(self):

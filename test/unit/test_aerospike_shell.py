@@ -5,6 +5,8 @@ import asyncio
 import io
 import os
 import socket
+import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -13,8 +15,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from parameterized import parameterized
 from lib.base_controller import ShellException
+from lib.live_cluster.client.types import ASProtocolExcFactory, ASResponse
 from lib.utils import async_object
 from lib.utils.constants import AdminMode, AuthMode
+from lib.utils.exit_code import set_exit_code
 
 
 class AerospikeShellTest(unittest.IsolatedAsyncioTestCase):
@@ -477,6 +481,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.password = None
                 mock_args.tls_enable = False
                 mock_args.sagent_config_errors = []
+                mock_args.asinfo_mode = False
+                mock_args.out_file = None
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -486,7 +492,9 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                         with patch("asadm.conf.loadconfig") as mock_loadconfig:
                             mock_loadconfig.return_value = (mock_args, [])
 
-                            with patch("asadm.AerospikeShell") as mock_shell:
+                            with patch(
+                                "asadm.AerospikeShell", new_callable=AsyncMock
+                            ) as mock_shell:
                                 mock_shell.return_value = AsyncMock()
                                 mock_shell.return_value.connected = False
 
@@ -517,6 +525,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.password = None
                 mock_args.tls_enable = False
                 mock_args.sagent_config_errors = []
+                mock_args.asinfo_mode = False
+                mock_args.out_file = None
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -531,7 +541,9 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                             with patch("asadm.conf.loadconfig") as mock_loadconfig:
                                 mock_loadconfig.return_value = (mock_args, [])
 
-                                with patch("asadm.AerospikeShell") as mock_shell:
+                                with patch(
+                                    "asadm.AerospikeShell", new_callable=AsyncMock
+                                ) as mock_shell:
                                     mock_shell.return_value = AsyncMock()
                                     mock_shell.return_value.connected = False
 
@@ -570,6 +582,8 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                 mock_args.password = None
                 mock_args.tls_enable = False
                 mock_args.sagent_config_errors = []
+                mock_args.asinfo_mode = False
+                mock_args.out_file = None
                 mock_get_cli_args.return_value = mock_args
 
                 with patch("os.path.isdir") as mock_isdir:
@@ -577,7 +591,9 @@ class AdminHomeDirTest(unittest.IsolatedAsyncioTestCase):
                         with patch("asadm.conf.loadconfig") as mock_loadconfig:
                             mock_loadconfig.return_value = (mock_args, [])
 
-                            with patch("asadm.AerospikeShell") as mock_shell:
+                            with patch(
+                                "asadm.AerospikeShell", new_callable=AsyncMock
+                            ) as mock_shell:
                                 mock_shell.return_value = AsyncMock()
                                 mock_shell.return_value.connected = False
 
@@ -964,6 +980,8 @@ class PasswordSourceStartupTest(unittest.IsolatedAsyncioTestCase):
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop("ASADM_TEST_UNSET", None)
+        set_exit_code(0)
+        self.addCleanup(set_exit_code, 0)
 
     def _make_args(self, **overrides):
         args = SimpleNamespace(
@@ -1410,6 +1428,397 @@ class AsinfoCredentialTest(unittest.IsolatedAsyncioTestCase):
             rf"^Not able to connect any cluster with \('127\.0\.0\.1', {port}, None\):"
             rf" \[Errno \d+\] Connect call failed \('127\.0\.0\.1', {port}\)$",
         )
+
+
+class AsinfoModeMainTest(unittest.IsolatedAsyncioTestCase):
+    """asinfo mode end to end through main(), with the real logger, so the exit
+    code and everything printed to stderr are checked."""
+
+    SEED = ("1.1.1.1", 3000, None)
+
+    def setUp(self):
+        set_exit_code(0)
+        self.addCleanup(set_exit_code, 0)
+
+        log_stream = patch.object(asadm.stderr_log_handler, "stream", io.StringIO())
+        self.log = log_stream.start()
+        self.addCleanup(log_stream.stop)
+
+        stderr = patch("sys.stderr", io.StringIO())
+        self.stderr = stderr.start()
+        self.addCleanup(stderr.stop)
+
+    def _make_args(self, **overrides):
+        args = SimpleNamespace(
+            execute="build",
+            debug=False,
+            help=False,
+            version=False,
+            no_color=False,
+            collectinfo=False,
+            log_analyzer=False,
+            json=False,
+            asinfo_mode=True,
+            services_alumni=False,
+            services_alternate=False,
+            tls_enable=False,
+            tls_keyfile=None,
+            tls_keyfile_password=None,
+            auth=AuthMode.INTERNAL,
+            user=None,
+            password=asadm.conf.DEFAULTPASSWORD,
+            config_file_options=[],
+            line_separator=False,
+            timeout=2.5,
+        )
+        args.__dict__.update(overrides)
+        return args
+
+    def _socket(self, connect=True, login=True, info=("8.1.0.0",)):
+        assock = Mock()
+        assock.connect = AsyncMock(return_value=connect)
+        assock.login = AsyncMock(side_effect=[login])
+        assock.info = AsyncMock(side_effect=list(info))
+        return assock
+
+    async def _run_main(self, assock, **overrides):
+        args = self._make_args(**overrides)
+
+        with patch("asadm.conf.get_cli_args", return_value=args), patch(
+            "asadm.conf.loadconfig", return_value=(args, [self.SEED])
+        ), patch("asadm.parse_tls_input", return_value=None), patch(
+            "asadm.ASSocket", return_value=assock
+        ) as assock_cls, patch(
+            "asadm.view.CliView.asinfo"
+        ) as view, patch(
+            "os.path.isfile", return_value=False
+        ):
+            with self.assertRaises(SystemExit) as cm:
+                await asadm.main()
+
+        return cm.exception.code, assock_cls, view
+
+    async def test_timeout_reaches_the_socket(self):
+        _, assock_cls, _ = await self._run_main(self._socket(), timeout=2.5)
+
+        self.assertEqual(assock_cls.call_args.kwargs.get("timeout"), 2.5)
+
+    async def test_success_exits_0(self):
+        code, _, view = await self._run_main(self._socket())
+
+        self.assertEqual(code, 0)
+        self.assertEqual(view.call_args.args[0], {"1.1.1.1:3000": "8.1.0.0"})
+        self.assertEqual(self.log.getvalue() + self.stderr.getvalue(), "")
+
+    async def test_connect_failure_exits_1(self):
+        code, _, _ = await self._run_main(self._socket(connect=False))
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            self.log.getvalue(),
+            "ERROR: Not able to connect any cluster with ('1.1.1.1', 3000, None).\n",
+        )
+
+    async def test_login_failure_exits_1(self):
+        code, _, _ = await self._run_main(
+            self._socket(login=False), user="admin", password="admin"
+        )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            self.log.getvalue(),
+            "ERROR: Not able to login and authenticate any cluster with"
+            " ('1.1.1.1', 3000, None).\n",
+        )
+
+    async def test_login_timeout_is_one_error_line(self):
+        timeout = asyncio.TimeoutError("login timed out after 2.5s")
+
+        code, _, view = await self._run_main(
+            self._socket(login=timeout), user="admin", password="admin"
+        )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            self.log.getvalue(),
+            "ERROR: Not able to login and authenticate any cluster with"
+            " ('1.1.1.1', 3000, None): login timed out after 2.5s\n",
+        )
+        self.assertEqual(self.stderr.getvalue(), "")
+        view.assert_not_called()
+
+    async def test_info_timeout_stops_the_run(self):
+        timeout = asyncio.TimeoutError("info timed out after 2.5s")
+        assock = self._socket(info=("8.1.0.0", timeout, "never"))
+
+        code, _, view = await self._run_main(assock, execute="build;statistics;status")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            self.log.getvalue(),
+            "ERROR: Not able to get info from ('1.1.1.1', 3000, None):"
+            " info timed out after 2.5s\n",
+        )
+        self.assertEqual(self.stderr.getvalue(), "")
+        self.assertEqual(assock.info.await_count, 2)
+        self.assertEqual(view.call_args.args[0], {"1.1.1.1:3000": "8.1.0.0"})
+
+    async def test_connection_closed_at_login_is_one_error_line(self):
+        closed = IOError("Error: Connection closed by server.")
+
+        code, _, view = await self._run_main(
+            self._socket(login=closed), user="admin", password="admin"
+        )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            self.log.getvalue(),
+            "ERROR: Not able to login and authenticate any cluster with"
+            " ('1.1.1.1', 3000, None): Error: Connection closed by server.\n",
+        )
+        self.assertEqual(self.stderr.getvalue(), "")
+        view.assert_not_called()
+
+    async def test_connection_closed_at_info_stops_the_run(self):
+        closed = IOError("Error: Connection closed by server.")
+        assock = self._socket(info=("8.1.0.0", closed, "never"))
+
+        code, _, view = await self._run_main(assock, execute="build;statistics;status")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            self.log.getvalue(),
+            "ERROR: Not able to get info from ('1.1.1.1', 3000, None):"
+            " Error: Connection closed by server.\n",
+        )
+        self.assertEqual(self.stderr.getvalue(), "")
+        self.assertEqual(assock.info.await_count, 2)
+        self.assertEqual(view.call_count, 1)
+
+    async def test_security_not_enabled_warns_and_runs(self):
+        """As in normal mode, credentials sent to a server without security only
+        warn."""
+        not_enabled = ASProtocolExcFactory.create_exc(
+            ASResponse.SECURITY_NOT_ENABLED, "Login failed"
+        )
+
+        code, _, view = await self._run_main(
+            self._socket(login=not_enabled), user="admin", password="admin"
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            self.log.getvalue(), "WARNING: Login failed : Security not enabled.\n"
+        )
+        self.assertEqual(view.call_args.args[0], {"1.1.1.1:3000": "8.1.0.0"})
+
+    async def test_other_login_failures_still_fail(self):
+        bad_password = ASProtocolExcFactory.create_exc(
+            ASResponse.NO_CREDENTIAL_OR_BAD_CREDENTIAL, "Login failed"
+        )
+
+        code, _, view = await self._run_main(
+            self._socket(login=bad_password), user="admin", password="admin"
+        )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            self.log.getvalue(),
+            "ERROR: Login failed : No credential or bad credential.\n",
+        )
+        view.assert_not_called()
+
+
+class TopLevelErrorTest(unittest.TestCase):
+    """An error nothing else handled must not end in a silent exit 0. asadm.py
+    runs as __main__ with asyncio.run raising what main() would."""
+
+    SCRIPT = """
+import asyncio, runpy, sys
+def run(coro):
+    coro.close()
+    raise {error}
+asyncio.run = run
+sys.path.insert(0, {root!r})
+sys.argv = [{asadm!r}]
+runpy.run_path({asadm!r}, run_name="__main__")
+"""
+
+    def run_asadm_raising(self, error):
+        root = os.path.dirname(os.path.abspath(asadm.__file__))
+        script = self.SCRIPT.format(
+            error=error, root=root, asadm=os.path.join(root, "asadm.py")
+        )
+
+        return subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=root,
+            timeout=60,
+        )
+
+    def test_unexpected_error_exits_1_with_its_message(self):
+        cp = self.run_asadm_raising('RuntimeError("boom")')
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stderr.splitlines()[0], "ERROR: boom")
+        self.assertIn("RuntimeError: boom", cp.stderr)
+
+    def test_exit_code_from_main_is_kept(self):
+        cp = self.run_asadm_raising("SystemExit(3)")
+
+        self.assertEqual(cp.returncode, 3, cp.stderr)
+        self.assertEqual(cp.stderr, "")
+
+    def test_keyboard_interrupt_exits_130(self):
+        cp = self.run_asadm_raising("KeyboardInterrupt()")
+
+        self.assertEqual(cp.returncode, 130, cp.stderr)
+        self.assertEqual(cp.stderr, "")
+
+
+class CommandFileTest(unittest.TestCase):
+    """A -e command file asadm cannot read is an error, in both modes."""
+
+    def setUp(self):
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        self.home = tmpdir.name
+        self.path = os.path.join(tmpdir.name, "commands.txt")
+
+        with open(self.path, "wb") as f:
+            f.write(b"build\n\xff\n")
+
+        self.error = (
+            "ERROR: Not able to read the command file {}: 'utf-8' codec can't decode"
+            " byte 0xff in position 6: invalid start byte".format(self.path)
+        )
+
+    def run_asadm(self, *argv):
+        root = os.path.dirname(os.path.abspath(asadm.__file__))
+
+        return subprocess.run(
+            [sys.executable, os.path.join(root, "asadm.py"), "--no-config-file"]
+            + ["-h", "127.0.0.1:1", *argv, "-e", self.path],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, HOME=self.home, PYTHONUTF8="1"),
+            timeout=60,
+        )
+
+    def test_undecodable_file_in_asinfo_mode(self):
+        cp = self.run_asadm("--asinfo-mode")
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, self.error + "\n")
+
+    def test_undecodable_file_in_execute_mode(self):
+        cp = self.run_asadm()
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn(self.error, cp.stderr.splitlines())
+
+    def make_unreadable(self):
+        os.chmod(self.path, 0o000)
+        self.addCleanup(os.chmod, self.path, 0o600)
+
+        return (
+            "ERROR: Not able to read the command file {0}: [Errno 13] Permission"
+            " denied: '{0}'".format(self.path)
+        )
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_unreadable_file_in_asinfo_mode(self):
+        error = self.make_unreadable()
+
+        cp = self.run_asadm("--asinfo-mode")
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertEqual(cp.stdout, "")
+        self.assertEqual(cp.stderr, error + "\n")
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_unreadable_file_in_execute_mode(self):
+        error = self.make_unreadable()
+
+        cp = self.run_asadm()
+
+        self.assertEqual(cp.returncode, 1, cp.stderr)
+        self.assertIn(error, cp.stderr.splitlines())
+        self.assertNotIn("Traceback", cp.stderr)
+
+
+class OfflineModeBadHostTest(unittest.TestCase):
+    """Collectinfo and log-analyzer runs use no seeds, so a [cluster] host that
+    does not parse leaves their exit code at 0, as on master."""
+
+    BUNDLE = (
+        '{"2026-07-20 10:00:00 UTC": {"prod": {"1.1.1.1:3000": {"as_stat": {'
+        '"statistics": {"service": {"cluster_size": "1"}, "namespace": {}},'
+        ' "config": {"service": {"proto-fd-max": "15000"}, "namespace": {}},'
+        ' "meta_data": {"node_id": "BB1", "asd_build": "8.0.0.0", "edition":'
+        ' "Aerospike Enterprise Edition", "ip": "1.1.1.1:3000",'
+        ' "node_names": "host1"}}, "sys_stat": {"uname": {"nodename": "host1"}}}}}}'
+    )
+    LOG = (
+        "Nov 19 2026 10:00:00 GMT: INFO (as): (as.c:100) service ready: soon there"
+        " will be cake!\n"
+    )
+
+    def setUp(self):
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        self.tmpdir = tmpdir.name
+        self.config = self.write("astools.conf", '[cluster]\nhost = "node1:tls1"\n')
+
+        for name in ("home", "bundle", "logs"):
+            os.mkdir(os.path.join(self.tmpdir, name))
+
+        self.write("bundle/20261120_000000_ascinfo.json", self.BUNDLE)
+        self.write("logs/aerospike.log", self.LOG)
+
+    def write(self, name, content):
+        path = os.path.join(self.tmpdir, name)
+        with open(path, "w") as f:
+            f.write(content)
+        return path
+
+    def run_asadm(self, *argv):
+        root = os.path.dirname(os.path.abspath(asadm.__file__))
+
+        return subprocess.run(
+            [sys.executable, os.path.join(root, "asadm.py")]
+            + ["--only-config-file", self.config, *argv],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, HOME=os.path.join(self.tmpdir, "home")),
+            timeout=60,
+        )
+
+    def test_collectinfo_run_exits_0(self):
+        """The bundle diagnostics that follow on stderr depend on today's date."""
+        bundle = os.path.join(self.tmpdir, "bundle")
+
+        cp = self.run_asadm("-c", "-f", bundle, "-e", "summary")
+        lines = cp.stderr.splitlines()
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(lines[0], "Config_file: {}".format(self.config))
+        self.assertEqual([line for line in lines if "ERROR" in line], [])
+        self.assertIn("~Cluster Summary~", cp.stdout)
+
+    def test_log_analyzer_run_exits_0(self):
+        logs = os.path.join(self.tmpdir, "logs")
+
+        cp = self.run_asadm("-l", "-f", logs, "-e", "list")
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertEqual(
+            cp.stderr, "Seed:        []\nConfig_file: {}\n".format(self.config)
+        )
+        self.assertIn(os.path.join(logs, "aerospike.log"), cp.stdout)
 
 
 class PromptedKeyfilePasswordTest(unittest.TestCase):

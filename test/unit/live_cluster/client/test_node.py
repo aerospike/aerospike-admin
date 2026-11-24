@@ -25,6 +25,7 @@ from ctypes import ArgumentError
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
+from OpenSSL import SSL
 from parameterized import parameterized
 
 import lib
@@ -1030,6 +1031,32 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(await self.node.info("statistics"), "uptime=1")
         self.assertTrue(self.node.alive)
+
+    async def test_tls_drop_at_login_marks_node_not_alive(self):
+        """TOOLS-4655: a pyOpenSSL error at login is an OSError, as on a clear
+        socket."""
+        patch.object(Node, "_info_cinfo", _REAL_INFO_CINFO).start()
+        self.node.user = "admin"
+        self.node.credential = b"hash"
+        self.node.alive = True
+        self.node._timeout = 1
+        self.node._initialize_socket_pool()
+
+        async def connect(sock):
+            sock.sock = Mock()
+            sock.reader = AsyncMock()
+            sock.reader.read.side_effect = SSL.SysCallError(-1, "Unexpected EOF")
+            sock.writer = Mock()
+            sock.writer.drain = AsyncMock()
+            sock.writer.wait_closed = AsyncMock()
+            return True
+
+        with patch.object(ASSocket, "connect", connect):
+            result = await self.node.info("statistics")
+
+        self.assertFalse(self.node.alive)
+        self.assertIsInstance(result, OSError)
+        self.assertEqual(str(result), "Error: (-1, 'Unexpected EOF')")
 
     def _answer_over_a_socket(self, responses):
         patch.object(Node, "_info_cinfo", _REAL_INFO_CINFO).start()

@@ -29,6 +29,7 @@ from lib.utils import password_source, secret_agent_conf
 from lib.utils.constants import ADMIN_HOME, AuthMode
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
+ASINFO_DEFAULT_TIMEOUT = 5
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ _confspec = """{
             "type" : "object",
             "properties" : {
                 "services-alumni" : { "type" : "boolean" },
-                "timeout" : { "type" : "integer" },
+                "timeout" : { "type" : "integer", "minimum" : 0, "exclusiveMinimum" : true },
 
                 "line-separator": { "type" : "boolean" },
                 "no-color": { "type" : "boolean" },
@@ -203,6 +204,12 @@ def _schema_error(e):
     if e.validator == "type" and str(e.validator_value) in _EXPECTED_TYPE:
         expected = _EXPECTED_TYPE[str(e.validator_value)]
         return "invalid value for {}, expected {}".format(where, expected)
+
+    if e.validator == "minimum" and e.schema.get("exclusiveMinimum"):
+        expected = _EXPECTED_TYPE[e.schema["type"]]
+        return "invalid value for {}, expected {} greater than {}".format(
+            where, expected, e.validator_value
+        )
 
     return "invalid value for " + where
 
@@ -391,7 +398,7 @@ def _merge(dct, merge_dct, ignore_false=False):
                 dct[k] = merge_dct[k]
 
 
-def _getseeds(conf):
+def _getseeds(conf, report=True):
     re_ipv6host = re.compile(r"^(\[.*\])$")
     re_ipv6hostport = re.compile(r"^(\[.*\]):(.*)$")
     re_ipv6hostnameport = re.compile(r"^(\[.*\]):(.*):(.*)$")
@@ -465,11 +472,26 @@ def _getseeds(conf):
                 seeds.append((str(host), port, tls_name))
 
             except Exception as e:
-                print("host parse error " + str(e) + " " + str(hosts))
+                if report:
+                    logger.critical("Not able to parse host %s: %s", host, e)
 
         return seeds
     else:
         return []
+
+
+def _positive_seconds(value):
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = None
+
+    if seconds is None or not seconds > 0:
+        raise argparse.ArgumentTypeError(
+            'invalid value "{}", expected a number greater than 0'.format(value)
+        )
+
+    return seconds
 
 
 def loadconfig(cli_args):
@@ -541,6 +563,9 @@ def loadconfig(cli_args):
     # For boolean arguments, false is default value... so ignore it
     _merge(asadm_dict, cli_dict, ignore_false=True)
 
+    if asadm_dict["asinfo_mode"] and cli_args.timeout is None:
+        asadm_dict["timeout"] = ASINFO_DEFAULT_TIMEOUT
+
     asadm_dict["config_file_options"] = [
         key.replace("_", "-")
         for key in ("password", "tls_keyfile_password")
@@ -558,8 +583,12 @@ def loadconfig(cli_args):
     asadm_dict["sagent_config_errors"] = agent.errors
     asadm_dict["secret_agent_unparsed_files"] = agent.unparsed
 
+    connects = asadm_dict["asinfo_mode"] or not (
+        cli_args.collectinfo or cli_args.log_analyzer
+    )
+
     # Find seed nods
-    seeds = _getseeds(asadm_dict)
+    seeds = _getseeds(asadm_dict, report=connects)
     args = _Namespace(asadm_dict)
 
     # debug
@@ -701,6 +730,8 @@ def print_config_file_option():
         "                      Server seed hostnames or IP addresses. The tlsname is \n"
         "                      only used when connecting with a secure TLS enabled \n"
         "                      server. Default: localhost:3000\n"
+        '                      An IPv6 address goes in brackets: "[<ipv6>]",\n'
+        '                      "[<ipv6>]:<port>" or "[<ipv6>]:<tlsname>:<port>".\n'
         "                      Examples:\n"
         "                        host1\n"
         "                        host1:3000,host2:3000\n"
@@ -821,8 +852,8 @@ def print_config_file_option():
         "                      Enable use of services-alumni-list instead of services-list"
     )
     print(
-        " --timeout=value      Set timeout value in seconds for node level operations. \n"
-        "                      TLS connection does not support timeout. Default: 1 seconds"
+        " --timeout=value      Set timeout value in seconds for node level operations.\n"
+        "                      Default: 1 seconds"
     )
     print(
         " --enable             Run commands in privileged mode.  Must be used with the\n"
@@ -955,7 +986,7 @@ def get_cli_args():
 
     add_fn("-t", "--tls-name")
     add_fn("-s", "--services-alumni", action="store_true")
-    add_fn("--timeout", type=float)
+    add_fn("--timeout", type=_positive_seconds)
 
     add_fn("--sa-address")
     add_fn("--sa-port")

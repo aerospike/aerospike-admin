@@ -62,6 +62,7 @@ from lib.live_cluster.live_cluster_root_controller import LiveClusterRootControl
 from lib.live_cluster.client import info
 from lib.live_cluster.client.assocket import ASSocket
 from lib.live_cluster.client.ssl_context import SSLContext
+from lib.live_cluster.client.types import ASProtocolError, ASResponse
 from lib.log_analyzer.log_analyzer_root_controller import LogAnalyzerRootController
 from lib.utils import common, util, conf
 from lib.utils.password_source import (
@@ -771,6 +772,7 @@ async def execute_asinfo_commands(
     auth_mode=AuthMode.INTERNAL,
     ssl_context=None,
     line_separator=False,
+    timeout=conf.ASINFO_DEFAULT_TIMEOUT,
 ):
     cmds = [None]
 
@@ -806,6 +808,7 @@ async def execute_asinfo_commands(
         password,
         auth_mode,
         ssl_context,
+        timeout=timeout,
         credential=credential,
     )
     try:
@@ -818,7 +821,20 @@ async def execute_asinfo_commands(
         logger.critical("Not able to connect any cluster with " + str(seed) + ".")
         return
 
-    if not await assock.login():
+    try:
+        logged_in = await assock.login()
+    except OSError as e:
+        logger.critical(
+            "Not able to login and authenticate any cluster with %s: %s", seed, e
+        )
+        return
+    except ASProtocolError as e:
+        if e.as_response != ASResponse.SECURITY_NOT_ENABLED:
+            raise
+        logger.warning(e)
+        logged_in = True
+
+    if not logged_in:
         logger.critical(
             "Not able to login and authenticate any cluster with " + str(seed) + "."
         )
@@ -830,7 +846,11 @@ async def execute_asinfo_commands(
         if command:
             command = util.strip_string(command)
 
-        result = await assock.info(command)
+        try:
+            result = await assock.info(command)
+        except OSError as e:
+            logger.critical("Not able to get info from %s: %s", seed, e)
+            return
 
         if result is None:
             result = IOError("Error: Invalid command '%s'" % command)
@@ -890,8 +910,12 @@ async def main():
     if cli_args.execute is not None:
         execute_only_mode = True
 
-    # Only create ADMIN_HOME if not in execute mode (avoids issues on read-only filesystems)
-    if not execute_only_mode and not os.path.isdir(ADMIN_HOME):
+    # Only create ADMIN_HOME if not in execute or asinfo mode (avoids issues on read-only filesystems)
+    if (
+        not execute_only_mode
+        and not cli_args.asinfo_mode
+        and not os.path.isdir(ADMIN_HOME)
+    ):
         try:
             os.makedirs(ADMIN_HOME)
         except (OSError, PermissionError) as e:
@@ -939,6 +963,10 @@ async def main():
         if commands_arg and os.path.isfile(commands_arg):
             commands_arg = parse_commands(commands_arg)
 
+        if not seeds:
+            logger.critical("Not able to connect any cluster with [].")
+            sys.exit(1)
+
         try:
             await execute_asinfo_commands(
                 commands_arg,
@@ -948,8 +976,9 @@ async def main():
                 auth_mode=cli_args.auth,
                 ssl_context=ssl_context,
                 line_separator=cli_args.line_separator,
+                timeout=cli_args.timeout,
             )
-            sys.exit(0)
+            sys.exit(get_exit_code())
         except Exception as e:
             logger.error(e)
             sys.exit(1)
@@ -1098,9 +1127,16 @@ async def cmdloop(
 
 
 def parse_commands(file):
+    try:
+        with open(file, "r") as f:
+            lines = f.readlines()
+    except (OSError, UnicodeDecodeError) as e:
+        logger.critical("Not able to read the command file %s: %s", file, e)
+        sys.exit(1)
+
     commands = ""
     commented = False
-    for line in open(file, "r").readlines():
+    for line in lines:
         if not line or not line.strip():
             continue
         if commented:
@@ -1137,5 +1173,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         sys.exit(130)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.critical(e)
+        sys.exit(1)
