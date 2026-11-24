@@ -526,7 +526,7 @@ class CollectinfoLogHandler(object):
 
         """
         Asadm 2.1 stored user data as {user: [role1, role2, . . .]} which had to be
-        changed to {user: {roles: [role1, role2], connections: int, . . .}} in 
+        changed to {user: {roles: [role1, role2], connections: int, . . .}} in
         Asadm 2.2.  This snippet can be removed when 2.1 is considered old enough :)
         """
         if stanza == "users":

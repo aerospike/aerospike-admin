@@ -35,6 +35,12 @@ jobs:
         python -m pip install pipenv
         pipenv install --dev
 
-    - name: Run Format Check
+    - name: Run Black Check
+      id: black
       run: |
-        make format-check
+        make black-check
+
+    - name: Run Flake8
+      if: success() || steps.black.conclusion == 'failure'
+      run: |
+        make lint

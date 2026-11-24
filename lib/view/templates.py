@@ -2205,7 +2205,7 @@ class StopWritesUsagePctProjector(Projectors.Number):
 
 
 sw_row_yellow_format = (
-    Formatters.yellow_alert(lambda edata: edata.record["Stop-Writes"] == True),
+    Formatters.yellow_alert(lambda edata: edata.record["Stop-Writes"] is True),
 )
 sw_val_red_format = (
     Formatters.red_alert(lambda edata: edata.record["Usage%"] >= 0.90),  # 90%

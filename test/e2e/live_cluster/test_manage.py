@@ -122,9 +122,7 @@ class TestManageACLUsers(TestManage):
     async def test_fail_to_delete_user_if_one_does_not_exist(self):
         exp_stdout_resp = ""
         exp_stderr_resp = "ERROR: Failed to delete user : No user or unrecognized user."
-        actual = test_util.run_asadm(
-            self.get_args("manage acl delete user dne".format(self.exp_user))
-        )
+        actual = test_util.run_asadm(self.get_args("manage acl delete user dne"))
 
         self.assertEqual(exp_stdout_resp, actual.stdout)
         self.assertStdErrEqual(exp_stderr_resp, actual.stderr)
@@ -1234,7 +1232,7 @@ class ManageConfigXDRTests(unittest.TestCase):
             ),
             (
                 f"manage config xdr dc {DC} param period-ms to 100",
-                f"Set XDR DC param period-ms to 100",
+                "Set XDR DC param period-ms to 100",
                 ["Node", "Response"],
             ),
             (
@@ -1249,7 +1247,7 @@ class ManageConfigXDRTests(unittest.TestCase):
             ),
             (
                 f"manage config xdr dc {DC} namespace {lib.NAMESPACE} param ship-bin-luts to false",
-                f"Set XDR Namespace Param ship-bin-luts to false",
+                "Set XDR Namespace Param ship-bin-luts to false",
                 ["Node", "Response"],
             ),
             (
@@ -1304,11 +1302,11 @@ class ManageTruncateTest(TestManage):
     @parameterized.expand(
         [
             (
-                f"manage truncate ns test --no-warn",
+                "manage truncate ns test --no-warn",
                 "Successfully started truncation for namespace test",
             ),
             (
-                f"manage truncate ns test set testset --no-warn",
+                "manage truncate ns test set testset --no-warn",
                 "Successfully started truncation for set testset of namespace test",
             ),
         ]

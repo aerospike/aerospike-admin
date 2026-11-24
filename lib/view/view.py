@@ -2496,7 +2496,7 @@ class CliView(object):
                 self.line_index += 1
                 return s
 
-            return (add_line_num(l) for l in super().__iter__())
+            return (add_line_num(line) for line in super().__iter__())
 
         def __str__(self) -> str:
             return "\n".join(self)
@@ -2742,7 +2742,7 @@ class CliView(object):
                 ns_lines.append(
                     CliView.SummaryUsageLine("Pmem Index", ns_stats["pmem_index"])
                 )
-            except:
+            except Exception:
                 pass
 
             try:
@@ -2751,14 +2751,14 @@ class CliView(object):
                 ns_lines.append(
                     CliView.SummaryUsageLine("Flash Index", ns_stats["flash_index"])
                 )
-            except:
+            except Exception:
                 pass
 
             try:
                 ns_lines.append(
                     CliView.SummaryUsageLine("Shmem Index", ns_stats["shmem_index"])
                 )
-            except:
+            except Exception:
                 pass
 
             if "pmem_sindex" in ns_stats:
@@ -2812,7 +2812,7 @@ class CliView(object):
                             "Data Device", ns_stats["data_device"], contiguous=True
                         )
                     )
-                except:
+                except Exception:
                     pass
 
             if "data_pmem" in ns_stats:
@@ -2822,7 +2822,7 @@ class CliView(object):
                             "Data Pmem", ns_stats["data_pmem"], contiguous=True
                         )
                     )
-                except:
+                except Exception:
                     pass
 
             if "license_data" in ns_stats:

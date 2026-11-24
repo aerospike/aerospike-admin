@@ -728,7 +728,6 @@ class ClusterTest(unittest.IsolatedAsyncioTestCase):
 
         async def admin_info_side_effect(*args, **kwargs):
             cmd = args[0]
-            ip = args[1] if len(args) > 1 else "127.0.0.1"
 
             # First call - node and build for admin port detection
             if cmd == ["node", "build", "peers-generation"]:
@@ -1628,8 +1627,6 @@ class ClusterRefreshTest(unittest.IsolatedAsyncioTestCase):
             node.needs_refresh = AsyncMock(return_value=needs_refresh)
 
             def make_refresh_mock():
-                nonlocal refresh_call_count
-
                 async def refresh_mock():
                     nonlocal refresh_call_count
                     refresh_call_count += 1
@@ -1859,7 +1856,7 @@ class ConnectionFlowEdgeCasesTest(unittest.IsolatedAsyncioTestCase):
             AsyncMock(side_effect=info_side_effect),
         ):
             try:
-                node = await Node("127.0.0.1", timeout=0)
+                await Node("127.0.0.1", timeout=0)
                 # Should either fail or fall back gracefully
             except Exception as e:
                 # Expected to fail if admin address can't be fetched

@@ -134,7 +134,7 @@ class ASSocket:
             allow asyncio create the socket (ssl or not) by passing the ssl_context (or None) to asyncio.open_connection. However, ssl_context must
             be an instance of ssl.SSLContext, which is not compatible with SSL.Context which is what we use. SSL.Context enables a higher level
             of control over certificate verification which we need (see ./ssl_context.py). Another solution might be to create a custom implementation
-            of the asyncio Transport that uses pyOpenSSL.SSL.Context (or use https://github.com/horazont/aioopenssl) but that would be a 
+            of the asyncio Transport that uses pyOpenSSL.SSL.Context (or use https://github.com/horazont/aioopenssl) but that would be a
             considerable amount of work.
             """
             await asyncio.wait_for(

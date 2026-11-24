@@ -432,7 +432,7 @@ class Node(AsyncObject):
                 external IP is different than the internal IP.
                 """
                 self.localhost = self._is_any_my_ip(await _get_host_ips())
-            except Exception as e:
+            except Exception:
                 pass
 
         # configurations from conf file
@@ -1943,7 +1943,7 @@ class Node(AsyncObject):
             dcs = await self.info_dcs()
 
             if isinstance(dcs, Exception):
-                err = Exception("Unable to get dcs : ".format(dcs))
+                err = Exception("Unable to get dcs : {}".format(dcs))
                 return err
 
         stat_list = await asyncio.gather(*[self.info_dc_statistics(dc) for dc in dcs])
@@ -2019,7 +2019,7 @@ class Node(AsyncObject):
             dcs = await self.info_dcs()
 
             if isinstance(dcs, Exception):
-                err = Exception("Could not retrieve dcs: %s".format(dcs))
+                err = Exception("Could not retrieve dcs: {}".format(dcs))
                 logger.error(err)
                 raise err
 
@@ -2616,7 +2616,7 @@ class Node(AsyncObject):
         ):
             try:
                 configs = await self._info("get-dc-config")
-            except Exception as e:
+            except Exception:
                 configs = await self._info("get-dc-config:")
 
             result = client_util.info_to_dict_multi_level(

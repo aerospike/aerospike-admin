@@ -20,7 +20,6 @@ from mock import patch, MagicMock
 from mock.mock import AsyncMock
 from lib.base_controller import ShellException
 from lib.live_cluster.client import ASInfoResponseError
-from lib.live_cluster.client.cluster import Cluster
 
 from lib.live_cluster.get_controller import (
     GetAclController,

@@ -2613,7 +2613,7 @@ class CollectinfoController(LiveClusterCommandController):
 
                                 interrupt = e
                                 break
-                            except:
+                            except BaseException:
                                 # close remaining coroutines.  An error will be raised if they are not
                                 # awaited.
                                 for c in coroutines:

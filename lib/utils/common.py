@@ -780,7 +780,7 @@ class AggregateLicenseUsage:
         ) / self.count  # get old average first
         self.latest = val
 
-        if time != None:
+        if time is not None:
             self.latest_time = date_parser.isoparse(time)
 
     def __dict__(self) -> SummaryClusterLicenseAggDict:
@@ -2028,7 +2028,7 @@ def active_stop_writes(stop_writes_dict: StopWritesDict):
     """
     for node_entry in stop_writes_dict.values():
         for sw_entry in node_entry.values():
-            if sw_entry["stop_writes"] == True:
+            if sw_entry["stop_writes"] is True:
                 return True
 
     return False

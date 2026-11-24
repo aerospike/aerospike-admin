@@ -1618,7 +1618,7 @@ class ShowPmapController(CollectinfoCommandController):
 
 @CommandHelp(
     "A collection of commands that display user configuration and statistics",
-    usage=f"[<username>]",
+    usage="[<username>]",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
 )
 class ShowUsersController(CollectinfoCommandController):
@@ -1666,7 +1666,7 @@ class ShowUsersController(CollectinfoCommandController):
     "Displays users, open connections, and quota usage for the Aerospike cluster.",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
     short_msg="Displays users, open connections, and quota usage",
-    usage=f"[<username>]",
+    usage="[<username>]",
 )
 class ShowUsersStatsController(CollectinfoCommandController):
     def __init__(self):
@@ -2158,7 +2158,7 @@ class ShowUserAgentsController(CollectinfoCommandController):
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace> [set <set>]]",
+    usage="[namespace <namespace> [set <set>]]",
     short_msg="Display masking rules",
 )
 class ShowMaskingController(CollectinfoCommandController):

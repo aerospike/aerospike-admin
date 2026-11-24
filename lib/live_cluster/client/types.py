@@ -146,10 +146,10 @@ class ASResponse(IntEnum):
     ROLE_OR_PRIVILEGE_VIOLATION = 81
     NOT_WHITELISTED = 82
     RATE_QUOTA_EXCEEDED = 83
-    ERROR_IN_LDAP_SETUP = 91  # 	Error in LDAP setup.	EE 4.1.0.1
-    ERROR_IN_LDAP_TLS_SETUP = 92  # 	Error in LDAP TLS setup.	EE 4.1.0.1
-    UNABLE_TO_AUTHENTICATE_LDAP_USER = 93  # 	Error authenticating LDAP user.	EE 4.1.0.1
-    ERROR_QUERYING_LDAP_SERVER = 94  # 	Error querying LDAP server.
+    ERROR_IN_LDAP_SETUP = 91  # Error in LDAP setup. EE 4.1.0.1
+    ERROR_IN_LDAP_TLS_SETUP = 92  # Error in LDAP TLS setup. EE 4.1.0.1
+    UNABLE_TO_AUTHENTICATE_LDAP_USER = 93  # Error authenticating LDAP user. EE 4.1.0.1
+    ERROR_QUERYING_LDAP_SERVER = 94  # Error querying LDAP server.
 
     @classmethod
     def _missing_(cls, value):

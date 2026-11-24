@@ -1501,7 +1501,7 @@ class ShowPmapController(LiveClusterCommandController):
 
 @CommandHelp(
     "A collection of commands that display user configuration and statistics",
-    usage=f"[<username>]",
+    usage="[<username>]",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
 )
 class ShowUsersController(LiveClusterCommandController):
@@ -1540,7 +1540,7 @@ class ShowUsersController(LiveClusterCommandController):
     "Displays users, open connections, and quota usage for the Aerospike cluster.",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
     short_msg="Displays users, open connections, and quota usage",
-    usage=f"[<username>]",
+    usage="[<username>]",
 )
 class ShowUsersStatsController(LiveClusterCommandController):
     def __init__(self):
@@ -2051,7 +2051,7 @@ class ShowUserAgentsController(LiveClusterCommandController):
         ModifierHelp("namespace", "Filter by namespace"),
         ModifierHelp("set", "Filter by set"),
     ),
-    usage=f"[namespace <namespace> [set <set>]]",
+    usage="[namespace <namespace> [set <set>]]",
     short_msg="Display masking rules",
 )
 class ShowMaskingController(LiveClusterCommandController):

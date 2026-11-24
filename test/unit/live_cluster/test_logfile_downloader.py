@@ -1,5 +1,3 @@
-import asyncio
-import datetime
 import unittest
 from asyncio.subprocess import Process
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -111,10 +109,10 @@ class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.shell_cmd_mock.assert_has_calls(
             [
                 call(
-                    f"journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
+                    "journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
                 ),
-                call(f"gzip -c path/0stderr.log > path/0stderr.log.gz"),
-                call(f"gzip -c log2.log > path/0log2.log.gz"),
+                call("gzip -c path/0stderr.log > path/0stderr.log.gz"),
+                call("gzip -c log2.log > path/0log2.log.gz"),
             ]
         )
 
@@ -122,7 +120,7 @@ class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.shell_cmd_mock.side_effect = self.return_error_for_cmd("journalctl")
         self.shell_cmd_mock.return_value.returncode = 1
 
-        with self.assertRaises(LogFileDownloaderException) as context:
+        with self.assertRaises(LogFileDownloaderException):
             await LogFileDownloader(self.cluster_mock).download(self.path_gen_func)  # type: ignore
 
         self.path_gen_func.assert_has_calls(
@@ -132,7 +130,7 @@ class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.shell_cmd_mock.assert_has_calls(
             [
                 call(
-                    f"journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
+                    "journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
                 ),
             ]
         )
@@ -141,7 +139,7 @@ class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.shell_cmd_mock.side_effect = self.return_error_for_cmd("gzip")
         self.shell_cmd_mock.return_value.returncode = 1
 
-        with self.assertRaises(LogFileDownloaderException) as context:
+        with self.assertRaises(LogFileDownloaderException):
             await LogFileDownloader(self.cluster_mock).download(self.path_gen_func)  # type: ignore
 
         self.path_gen_func.assert_has_calls(
@@ -151,10 +149,10 @@ class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.shell_cmd_mock.assert_has_calls(
             [
                 call(
-                    f"journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
+                    "journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
                 ),
-                call(f"gzip -c path/0stderr.log > path/0stderr.log.gz"),
-                call(f"gzip -c log2.log > path/0log2.log.gz"),
+                call("gzip -c path/0stderr.log > path/0stderr.log.gz"),
+                call("gzip -c log2.log > path/0log2.log.gz"),
             ]
         )
 
@@ -176,9 +174,9 @@ class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.shell_cmd_mock.assert_has_calls(
             [
                 call(
-                    f"journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
+                    "journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
                 ),
-                call(f"gzip -c log2.log > path/0log2.log.gz"),
+                call("gzip -c log2.log > path/0log2.log.gz"),
             ]
         )
 
@@ -210,10 +208,10 @@ class LocalLogFileDownloaderNoExcHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.shell_cmd_mock.assert_has_calls(
             [
                 call(
-                    f"journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
+                    "journalctl -u aerospike -a -o cat --since '1 day ago' | grep GMT > path/0stderr.log"
                 ),
-                call(f"gzip -c path/0stderr.log > path/0stderr.log.gz"),
-                call(f"gzip -c log2.log > path/0log2.log.gz"),
+                call("gzip -c path/0stderr.log > path/0stderr.log.gz"),
+                call("gzip -c log2.log > path/0log2.log.gz"),
             ]
         )
 
@@ -288,12 +286,12 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
         self.conn_mock.run.assert_has_calls(
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
                 call(
-                    f"gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
+                    "gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
                 ),
-                call(f"gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
+                call("gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
             ]
         )
         self.file_transfer_mock.remote_to_local.assert_called_once_with(
@@ -309,7 +307,7 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
     async def test_remote_node_journalctl_fails(self):
         self.conn_mock.run.side_effect = self.return_error_for_cmd("journalctl")
 
-        with self.assertRaises(SSHError) as context:
+        with self.assertRaises(SSHError):
             await LogFileDownloader(self.cluster_mock, self.factory_mock).download(self.path_gen_func)  # type: ignore
 
         self.path_gen_func.assert_has_calls(
@@ -319,7 +317,7 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
         self.conn_mock.run.assert_has_calls(
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
             ]
         )
@@ -329,7 +327,7 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
     async def test_remote_node_gzip_fails(self):
         self.conn_mock.run.side_effect = self.return_error_for_cmd("gzip")
 
-        with self.assertRaises(SSHError) as context:
+        with self.assertRaises(SSHError):
             await LogFileDownloader(self.cluster_mock, self.factory_mock).download(self.path_gen_func)  # type: ignore
 
         self.path_gen_func.assert_has_calls(
@@ -339,12 +337,12 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
         self.conn_mock.run.assert_has_calls(
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
                 call(
-                    f"gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
+                    "gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
                 ),
-                call(f"gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
+                call("gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
             ]
         )
         self.file_transfer_mock.assert_not_called()
@@ -365,12 +363,12 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
         self.conn_mock.run.assert_has_calls(
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
                 call(
-                    f"gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
+                    "gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
                 ),
-                call(f"gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
+                call("gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
             ]
         )
         self.file_transfer_mock.remote_to_local.assert_called_once_with(
@@ -399,7 +397,7 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
         self.conn_mock.run.assert_has_calls(
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
             ]
         )
@@ -425,12 +423,12 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
         self.conn_mock.run.assert_has_calls(
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
                 call(
-                    f"gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
+                    "gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
                 ),
-                call(f"gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
+                call("gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
             ]
         )
         self.file_transfer_mock.assert_not_called()
@@ -459,9 +457,9 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
             self.conn_mock.run.mock_calls,
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
-                call(f"gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
+                call("gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
             ],
         )
         self.sftp_mock.rmtree.assert_called_once_with("/tmp/time_prefix/0/")
@@ -493,7 +491,7 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
             nonlocal err_count
             if cmd.startswith("gzip") and err_count < 1:
                 err_count += 1
-                raise SSHError(f"gzip error")
+                raise SSHError("gzip error")
             else:
                 p = MagicMock(Process)
                 p.returncode = 0
@@ -511,12 +509,12 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
             self.conn_mock.run.mock_calls,
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
                 call(
-                    f"gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
+                    "gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
                 ),
-                call(f"gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
+                call("gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
             ],
         )
         self.file_transfer_mock.remote_to_local.assert_called_once_with(
@@ -557,12 +555,12 @@ class RemoteLogFileDownloadersTest(unittest.IsolatedAsyncioTestCase):
             self.conn_mock.run.mock_calls,
             [
                 call(
-                    f'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
+                    'journalctl -u aerospike -a -o cat --since "1 day ago" | grep GMT > /tmp/time_prefix/0/stderr.log'
                 ),
                 call(
-                    f"gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
+                    "gzip -c /tmp/time_prefix/0/stderr.log > /tmp/time_prefix/0/stderr.log.gz"
                 ),
-                call(f"gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
+                call("gzip -c log2.log > /tmp/time_prefix/0/log2.log.gz"),
             ],
         )
         self.file_transfer_mock.remote_to_local.assert_called_once_with(

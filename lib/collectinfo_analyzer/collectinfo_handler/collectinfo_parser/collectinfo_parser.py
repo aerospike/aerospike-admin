@@ -28,7 +28,6 @@ def parse_collectinfo_files(file_paths, parsed_map, ignore_exception=False):
     """
     Parses on files in the collectinfo.tgz to run in collectinfo (-cf) mode.
     """
-    UNKNOWN_NODE = "UNKNOWN_NODE"
 
     # Get imap
     # imap = {}

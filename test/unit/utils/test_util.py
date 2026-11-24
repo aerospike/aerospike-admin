@@ -20,7 +20,6 @@ import signal
 import tempfile
 import threading
 import time
-import warnings
 
 import unittest
 from unittest.mock import patch
