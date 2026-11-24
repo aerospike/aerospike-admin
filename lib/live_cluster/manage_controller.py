@@ -4388,6 +4388,9 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
             mod = line.pop(0)
 
             if not line and mod in self.required_modifiers:
+                if groups[mod]:
+                    groups["line"].append(mod)
+
                 return groups
 
             value = line.pop(0) if line else ""
@@ -4442,7 +4445,7 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
 
         if len(self.mods["ael"]) > 1:
             raise ShellException(
-                f"The 'ael' modifier takes one quoted path, but '{' '.join(self.mods['ael'][1:])}' follows it. Surround the AEL path with single quotes, e.g. ael '$.profile.ssn'."
+                f"The 'ael' modifier takes one quoted path, but '{' '.join(self.mods['ael'][1:])}' follows it. Quote a path that has spaces, and put parameters before 'namespace' or after 'type'."
             )
 
         if len(self.mods["ael_b64"]) > 1:
@@ -4503,8 +4506,11 @@ class ManageMaskingLeafCommandController(ManageLeafCommandController):
             "function-args",
             "Function parameters in key-value pairs (e.g. position 0 length 4 value *)."
             " 'default' is what redact returns for a value of another type, and a redact"
-            " rule on an AEL path requires it. Quote a value containing '#', e.g."
-            " value '#', since an unquoted '#' starts a comment.",
+            " rule on an AEL path requires it. 'default' requires every node at server"
+            f" v. {constants.SERVER_MASKING_ON_AEL_FIRST_VERSION} or later. Quote a"
+            " value containing '#', e.g. value '#', since an unquoted '#' starts a"
+            " comment. Parameters may go before 'namespace' or after any modifier's"
+            " value, but not directly after an 'ael' path.",
         ),
         ModifierHelp("namespace", "The namespace to apply the rule to"),
         ModifierHelp("set", "The set to apply the rule to"),
@@ -4594,7 +4600,6 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
         feature_support = await util.check_version_support(
             feature_versions={
                 "data_masking": constants.SERVER_DATA_MASKING_FIRST_VERSION,
-                "masking_ael": constants.SERVER_MASKING_ON_AEL_FIRST_VERSION,
             },
             builds=builds,
         )
@@ -4606,12 +4611,21 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
                 )
             )
 
-        if path_mod is not None and builds and not feature_support["masking_ael"]:
-            raise ShellException(
-                "The '{}' modifier requires every node at server v. {} or later.".format(
-                    path_mod, constants.SERVER_MASKING_ON_AEL_FIRST_VERSION
-                )
+        if path_mod is not None:
+            principal_builds = await self.meta_getter.get_builds(nodes="principal")
+            principal_support = await util.check_version_support(
+                feature_versions={
+                    "masking_ael": constants.SERVER_MASKING_ON_AEL_FIRST_VERSION,
+                },
+                builds=principal_builds,
             )
+
+            if principal_builds and not principal_support["masking_ael"]:
+                raise ShellException(
+                    "The '{}' modifier requires every node at server v. {} or later.".format(
+                        path_mod, constants.SERVER_MASKING_ON_AEL_FIRST_VERSION
+                    )
+                )
 
         # Build function string for display
         function_str = self._build_function_string(function_name, function_params)
@@ -4668,7 +4682,7 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
     "Drop masking rules. Removes the masking rule on the specified bin, or on the",
     "element the specified AEL path names. Dropping a bin rule does not drop the",
     "path rules on that bin.",
-    usage="namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <base64>) [type <type>]",
+    usage="namespace <namespace> set <set> (bin <bin> | ael '<path>' | ael_b64 <base64>) [type <type>] [<param> <value> ...]",
     modifiers=(
         ModifierHelp("namespace", "The namespace to remove the rule from"),
         ModifierHelp("set", "The set to remove the rule from"),
@@ -4690,6 +4704,12 @@ class ManageMaskingAddController(ManageMaskingLeafCommandController):
             "type",
             "The type of the bin, or of the element the AEL path names",
             default="string",
+        ),
+        ModifierHelp(
+            "param",
+            "Parameters in key-value pairs, sent as typed after function=remove."
+            " Parameters may go before 'namespace' or after any modifier's value, but"
+            " not directly after an 'ael' path.",
         ),
     ),
     short_msg="Drop masking rules",
@@ -4728,8 +4748,11 @@ class ManageMaskingDropController(ManageMaskingLeafCommandController):
             self.mods["params"],
         )
 
+        params = " ".join(f"{name} {value}" for name, value in self.mods["params"])
+        with_params = f" with parameters '{params}'" if params else ""
+
         if self.warn and not self.prompt_challenge(
-            f"You're about to drop the masking rule for {target} in namespace '{namespace}', set '{set_name}'."
+            f"You're about to drop the masking rule for {target} in namespace '{namespace}', set '{set_name}'{with_params}."
         ):
             return
 

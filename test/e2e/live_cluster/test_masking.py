@@ -396,7 +396,7 @@ class MaskingRulesTest(unittest.TestCase):
 
 
 class MaskingMixedClusterTest(unittest.TestCase):
-    """Node 1 runs RC1, node 2 a release without path rules."""
+    """Node 1 runs RC1, node 2 (the principal) a release without path rules."""
 
     @classmethod
     def setUpClass(cls):
@@ -414,7 +414,7 @@ class MaskingMixedClusterTest(unittest.TestCase):
     def tearDownClass(cls):
         lib.stop()
 
-    def test_add_by_path_is_refused_before_sending(self):
+    def test_add_by_path_is_refused_before_sending_when_the_principal_is_older(self):
         cp = asadm(
             self.args,
             "manage masking add constant value X namespace {} set mixed ael '$.p.x'".format(
@@ -427,6 +427,7 @@ class MaskingMixedClusterTest(unittest.TestCase):
             "ERROR: The 'ael' modifier requires every node at server v. 8.2.1 or later.",
             cp.stderr,
         )
+        self.assertNotIn("Failed to add masking rule", cp.stderr)
         self.assertEqual(show.returncode, 0, show.stderr)
         self.assertEqual(rows, [])
 
