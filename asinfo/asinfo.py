@@ -31,10 +31,13 @@ __version__ = "$$__version__$$"
 
 DEFAULTPASSWORD = "SomeRandomDefaultPassword"
 
+# The last is cryptography's Python warning when the host OpenSSL can't load its
+# legacy provider; asadm still runs.
 WARNINGS = re.compile(
     r"WARNING: .+: ignored because no user is set"
     r"|WARNING: Config file read error : .+"
     r"|WARNING: Login failed : Security not enabled\."
+    r"|.+: Warning: OpenSSL 3's legacy provider failed to load\. .+"
 )
 
 
