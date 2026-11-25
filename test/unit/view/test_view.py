@@ -26,6 +26,7 @@ from lib.view.view import CliView
 from lib.view.sheet.const import SheetStyle
 from lib.view.sheet.decleration import Subgroup
 from lib.live_cluster.client.node import ASInfoResponseError
+from test.unit.utils.test_common import DAY, N1, OLD, summarize_compression
 
 
 class CliViewTest(unittest.TestCase):
@@ -2551,30 +2552,108 @@ class SummaryLicenseLineTest(unittest.TestCase):
         self.assertIn("1.000 MiB", line_str)
 
 
+def summary_namespace(enabled=False, unverified=False):
+    ns = {
+        "devices_total": 0,
+        "devices_per_node": 0,
+        "device_count_same_across_nodes": True,
+        "repl_factor": [1],
+        "master_objects": 0,
+        "migrations_in_progress": False,
+        "license_data": {"latest": 4096},
+        "compression_enabled": enabled,
+    }
+
+    if unverified:
+        ns["compression_unverified"] = True
+
+    return ns
+
+
+def summary_with_namespaces(**namespaces):
+    return {
+        "CLUSTER": {
+            "active_features": [],
+            "ns_count": len(namespaces),
+            "migrations_in_progress": False,
+            "cluster_name": ["test"],
+            "server_version": ["8.2.0.0"],
+            "os_version": ["Linux"],
+            "cluster_size": [1],
+            "device_count": 0,
+            "device_count_per_node": 0,
+            "device_count_same_across_nodes": True,
+            "license_data": {"latest": 4096},
+            "compression_enabled": any(
+                ns["compression_enabled"] for ns in namespaces.values()
+            ),
+            "active_ns": len(namespaces),
+        },
+        "NAMESPACES": namespaces,
+    }
+
+
+UNVERIFIED_MESSAGE = (
+    "License usage may be understated for namespace(s) {}: compression is off, "
+    "but this server version cannot show whether records written earlier were "
+    "compressed."
+)
+
+
 class PrintSummaryCompressionWarningTest(unittest.TestCase):
     """Test cases for compression warning in print_summary"""
+
+    def printed(self, summary):
+        out = io.StringIO()
+
+        with redirect_stdout(out):
+            CliView.print_summary(summary, list_view=True)
+
+        return out.getvalue()
+
+    def test_unverified_namespaces_get_their_own_message(self):
+        out = self.printed(
+            summary_with_namespaces(
+                test=summary_namespace(enabled=True, unverified=True),
+                bar=summary_namespace(enabled=True, unverified=True),
+                foo=summary_namespace(),
+            )
+        )
+
+        self.assertIn(terminal.fg_red() + UNVERIFIED_MESSAGE.format("bar, test"), out)
+        self.assertNotIn("inaccurate due to compression", out)
+
+    def test_configured_and_unverified_namespaces_print_both_messages(self):
+        out = self.printed(
+            summary_with_namespaces(
+                test=summary_namespace(enabled=True),
+                bar=summary_namespace(enabled=True, unverified=True),
+            )
+        )
+
+        self.assertIn(
+            "The license usage calculation is inaccurate due to compression.", out
+        )
+        self.assertIn(UNVERIFIED_MESSAGE.format("bar"), out)
+
+    def test_only_the_namespace_with_a_codec_shows_the_question_mark(self):
+        summary = summarize_compression(
+            {N1: (OLD, DAY, {"a": ("lz4", "0.400"), "b": ("none", "1.000")})}
+        )
+
+        out = self.printed(summary)
+
+        license_lines = [line for line in out.splitlines() if "License Usage" in line]
+        self.assertEqual(
+            ["?" in line for line in license_lines], [True, True, False], license_lines
+        )
+        self.assertIn("inaccurate due to compression", out)
+        self.assertNotIn("License usage may be understated", out)
 
     @patch("builtins.print")
     def test_print_summary_with_compression_warning(self, mock_print):
         """Test that compression warning is displayed when compression is enabled"""
-        summary = {
-            "CLUSTER": {
-                "active_features": [],
-                "ns_count": 1,
-                "migrations_in_progress": False,
-                "cluster_name": ["test"],
-                "server_version": ["7.0.0"],
-                "os_version": ["Linux"],
-                "cluster_size": [1],
-                "device_count": 0,
-                "device_count_per_node": 0,
-                "device_count_same_across_nodes": True,
-                "license_data": {"latest": 0},
-                "compression_enabled": True,
-                "active_ns": 1,
-            },
-            "NAMESPACES": {},
-        }
+        summary = summary_with_namespaces(test=summary_namespace(enabled=True))
 
         CliView.print_summary(summary, list_view=True)
 

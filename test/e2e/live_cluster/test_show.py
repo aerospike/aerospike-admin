@@ -1375,40 +1375,32 @@ class TestSummaryCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Cluster Size", actual_out)
         self.assertIn("License Usage", actual_out)
 
-    async def test_summary_compression_warning_display(self):
-        """Test that compression warning is displayed when asdb-compression is enabled"""
-        # Get summary output
+    UNVERIFIED = (
+        "License usage may be understated for namespace(s) {}: compression is "
+        "off, but this server version cannot show whether records written "
+        "earlier were compressed."
+    )
+
+    async def test_summary_on_a_fresh_cluster_without_a_codec(self):
         summary_out = await util.capture_stdout(self.rc.execute, ["summary"])
 
-        # E2E test cluster has asdb-compression enabled, so warning should always appear
-        self.assertIn(
-            "inaccurate due to compression",
-            summary_out,
-            "Compression warning should be displayed when asdb-compression is enabled",
-        )
-
-        # Summary should contain license usage section
+        self.assertIn(self.UNVERIFIED.format("test, test_sc"), summary_out)
+        self.assertNotIn("inaccurate due to compression", summary_out)
         self.assertIn("License Usage", summary_out)
-
-        # Check that license values are displayed with compression indicators
-        self.assertIn("Latest", summary_out)
-
-        # Basic validation - summary should have required sections
-        self.assertIn("Cluster", summary_out)
-        self.assertIn("Server Version", summary_out)
 
     async def test_summary_with_list_view(self):
-        """Test summary command with list view option and compression warning"""
-        summary_out = await util.capture_stdout(self.rc.execute, ["summary", "--list"])
+        summary_out = await util.capture_stdout(self.rc.execute, ["summary", "-l"])
 
-        # E2E test cluster has asdb-compression enabled, warning should appear in list view too
-        self.assertIn(
-            "inaccurate due to compression",
-            summary_out,
-            "Compression warning should be displayed in list view when asdb-compression is enabled",
+        self.assertIn(self.UNVERIFIED.format("test, test_sc"), summary_out)
+        self.assertNotIn("inaccurate due to compression", summary_out)
+        self.assertIn("License Usage", summary_out)
+
+    async def test_summary_with_a_codec_on_one_namespace(self):
+        lib.CLIENT.info_all(
+            "set-config:context=namespace;id=%s;compression=lz4" % lib.NAMESPACE
         )
 
-        # Should have same key sections
-        self.assertIn("Cluster", summary_out)
-        self.assertIn("License Usage", summary_out)
-        self.assertIn("Server Version", summary_out)
+        summary_out = await util.capture_stdout(self.rc.execute, ["summary"])
+
+        self.assertIn("inaccurate due to compression", summary_out)
+        self.assertIn(self.UNVERIFIED.format("test_sc"), summary_out)
