@@ -57,9 +57,13 @@ function assert_system_openssl() {
 
 	case "$ENV_DISTRO" in
 	el9 | el10 | amzn2023)
+		if ! command -v objdump >/dev/null; then
+			echo "objdump (binutils) is needed to read the OpenSSL symbol versions the bundle imports" >&2
+			return 1
+		fi
 		local above_floor
-		above_floor=$(find "$bundle" -name '*.so*' -type f -exec objdump -T {} + 2>/dev/null |
-			grep -oE 'OPENSSL_3\.[0-9]+' | sort -u | awk -F. '$2 > 2' | tr '\n' ' ')
+		above_floor=$({ find "$bundle" -name '*.so*' -type f -exec objdump -T {} + 2>/dev/null || true; } |
+			{ grep -oE 'OPENSSL_3\.[0-9]+' || true; } | sort -u | awk -F. '$2 > 2' | tr '\n' ' ')
 		if [ -n "$above_floor" ]; then
 			echo "the bundle needs OpenSSL symbols above 3.2 ($above_floor), but the rpm requires only openssl-libs >= 1:3.2.2. Build against OpenSSL 3.2 (on el9 and el10, run pin_build_repos.sh before install_deps), or raise both the requirement in pkg/Makefile and the 3.2 floor in assert_system_openssl" >&2
 			fail=1
@@ -71,6 +75,28 @@ function assert_system_openssl() {
 		echo "assert_system_openssl: asadm loads the host's OpenSSL"
 	fi
 	return $fail
+}
+
+# pip's isolated build environment would fetch cryptography's build tools unpinned,
+# so install them as Pipfile.lock pins them and build without isolation.
+# PIP_NO_BUILD_ISOLATION=0 turns isolation off (pip reads it as "build isolation:
+# no"), and the venv's bin goes on PATH, as an isolated build would put maturin there.
+function install_cryptography_build_requirements() {
+	pipenv --venv >/dev/null 2>&1 || pipenv --python 3.12
+	local reqs
+	reqs=$(mktemp)
+	pipenv run python -c '
+import json, sys
+lock = json.load(open(sys.argv[1]))
+for name in sys.argv[2:]:
+    spec = lock["develop"].get(name) or lock["default"][name]
+    print(name + spec["version"] + "".join(" --hash=" + h for h in spec["hashes"]))
+' "$GIT_DIR/Pipfile.lock" maturin setuptools cffi pycparser >"$reqs"
+	pipenv run python -m pip install --no-deps --require-hashes -r "$reqs"
+	rm -f "$reqs"
+	export PIP_NO_BUILD_ISOLATION=0
+	PATH="$(pipenv --venv)/bin:$PATH"
+	export PATH
 }
 
 function build_packages() {
@@ -105,6 +131,9 @@ function build_packages() {
 	# build
 	cd "$GIT_DIR" || exit 1
 	make clean
+	if builds_cryptography_from_source "$ENV_DISTRO"; then
+		install_cryptography_build_requirements
+	fi
 	make
 
 	assert_dynamic_deps
