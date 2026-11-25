@@ -32,7 +32,7 @@
 # password = "env-b64:ASPWD_B64"
 # Base64 encoded string: "b64:<BASE64>"
 # password = "b64:c2VjcmV0"
-# File: "file:<PATH>", the whole file less one trailing "\n" or "\r\n".
+# File: "file:<PATH>", the whole file minus one trailing "\n" or "\r\n".
 # PATH should name a regular file.
 # password = "file:/etc/aerospike/aspwd.txt"
 # Aerospike Secret Agent: "secrets:<resource>:<key>", see [secret-agent] below
@@ -111,9 +111,10 @@
 #------------------------------------------------------------------------------
 # Aerospike Secret Agent
 #
-# Used by asadm, asbackup, asrestore and aql to fetch values given as
-# "secrets:<resource>:<key>". With --instance, a [secret-agent_<instance>]
-# section in the same file replaces this one if it exists.
+# Used by asadm, aql and asconfig, and by the standalone asbackup and
+# asrestore, to fetch values given as "secrets:<resource>:<key>". With
+# --instance, a [secret-agent_<instance>] section in the same file replaces
+# this one if it exists.
 #
 # Keys merge one at a time across config files, and a later file wins. A later
 # sa-address still uses an earlier file's sa-ca-file, and a later
@@ -164,71 +165,9 @@
 
 
 #------------------------------------------------------------------------------
-# asbackup specific options
+# asbackup and asrestore options are documented in the astools.conf.sample
+# shipped with the standalone aerospike-asbackup package.
 #------------------------------------------------------------------------------
-[asbackup]
-
-# estimate = true
-
-# directory = "./test_backup"
-# output-file = "test_backup"
-# machine = "run.out"
-
-
-#------------- Data Options ------------------------
-# namespace = "test"
-# set = "demo"
-# bin_list = "bin1,bin2"
-# node-list = ""
-# percent = 100
-
-#-----------Performance and throttling--------------
-# file-limit = 1
-# priority = 2
-# records-per-second = 10000
-# parallel = 4
-# bandwidth = 1
-# compact = true
-
-
-#----------- Meta data options ---------------------
-# no-records = false
-# no-udfs = false
-
-# no-cluster-change = true
-
-#------------------------------------------------------------------------------
-# asrestore specific options
-#------------------------------------------------------------------------------
-[asrestore]
-
-# directory = "./test_backup"
-# input-file = "test_backup"
-# machine = "run.out"
-
-#------------- Data Options ------------------------
-# namespace = "test"
-# bin-list = "bin1,bin2"
-# set-list = "demo"
-
-#----- Mutually exclusive record update options-----
-# unique = true
-# replace = true
-# no-generation = true
-
-
-#----------- Meta data options ---------------------
-# no-udfs = false
-# no-indexes = false
-# no-records = false
-# indexes-last = false
-# wait = false
-
-#-----------Performance and throttling--------------
-# nice-list = "1,10000"
-# threads = 32
-
-
 
 #------------------------------------------------------------------------------
 # CONFIG FILE INCLUDES
