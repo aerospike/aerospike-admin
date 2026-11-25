@@ -1,7 +1,7 @@
 name: FIPS Tests
 on:
   push:
-    branches: ["*"]
+    branches: ["**"]
   pull_request:
     branches: ["dependabot/**"]
 jobs:

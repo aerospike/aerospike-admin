@@ -47,11 +47,20 @@ if [ "$(uname)" = Linux ]; then
 	fi
 fi
 
-if command -v openssl >/dev/null &&
-	OPENSSL_FORCE_FIPS_MODE=1 openssl sha256 /dev/null >/dev/null 2>&1 &&
-	! OPENSSL_FORCE_FIPS_MODE=1 openssl md5 /dev/null >/dev/null 2>&1; then
-	for tool in asadm asinfo; do
-		OPENSSL_FORCE_FIPS_MODE=1 "$tool" --version >/dev/null
-		echo "$tool starts with OpenSSL in FIPS mode"
-	done
-fi
+case "${ASADM_DISTRO:-}" in
+el9 | el10 | amzn2023)
+	if ! OPENSSL_FORCE_FIPS_MODE=1 openssl sha256 /dev/null >/dev/null 2>&1 ||
+		OPENSSL_FORCE_FIPS_MODE=1 openssl md5 /dev/null >/dev/null 2>&1; then
+		echo "error: the host OpenSSL does not enforce FIPS mode under OPENSSL_FORCE_FIPS_MODE=1" >&2
+		exit 1
+	fi
+	chacha=(-h 127.0.0.1:localhost:3000 --tls-enable --tls-protocols TLSv1.2
+		--tls-cipher-suite ECDHE-RSA-CHACHA20-POLY1305 -e info)
+	out="$(OPENSSL_FORCE_FIPS_MODE=1 asadm "${chacha[@]}" 2>&1 || true)"
+	if [[ "$out" != *"no cipher match"* ]]; then
+		echo "error: asadm accepted ChaCha20 with the host OpenSSL in FIPS mode: $out" >&2
+		exit 1
+	fi
+	echo "asadm's TLS refuses ChaCha20 with the host OpenSSL in FIPS mode"
+	;;
+esac

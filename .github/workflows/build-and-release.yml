@@ -684,6 +684,7 @@ jobs:
       - name: Verify installation
         env:
           EXPECTED_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
+          ASADM_DISTRO: ${{ matrix.distro }}
         run: bats .github/bin/test/test_execute.bats
 
       - name: Verify astools.conf lifecycle

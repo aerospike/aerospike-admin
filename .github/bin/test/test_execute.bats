@@ -87,19 +87,26 @@ setup() {
   [ "$declared" -ge "$needed" ]
 }
 
-@test "asadm and asinfo start when the host's OpenSSL is in FIPS mode" {
-  command -v openssl >/dev/null || skip "no openssl CLI to confirm FIPS mode can be forced"
-  OPENSSL_FORCE_FIPS_MODE=1 openssl sha256 /dev/null >/dev/null 2>&1 \
-    || skip "this host has no OpenSSL FIPS provider"
-  if OPENSSL_FORCE_FIPS_MODE=1 openssl md5 /dev/null >/dev/null 2>&1; then
-    skip "this host's OpenSSL ignores OPENSSL_FORCE_FIPS_MODE"
-  fi
+@test "asadm's TLS refuses a cipher FIPS does not approve when the host OpenSSL is in FIPS mode" {
+  case "${ASADM_DISTRO:-}" in
+    el9 | el10 | amzn2023) ;;
+    *) skip "no FIPS provider to test on ${ASADM_DISTRO:-this host} (Ubuntu needs Ubuntu Pro)" ;;
+  esac
 
-  run env OPENSSL_FORCE_FIPS_MODE=1 asadm --version
-  echo "$output"
+  run env OPENSSL_FORCE_FIPS_MODE=1 openssl sha256 /dev/null
   [ "$status" -eq 0 ]
+  run env OPENSSL_FORCE_FIPS_MODE=1 openssl md5 /dev/null
+  [ "$status" -ne 0 ]
 
-  run env OPENSSL_FORCE_FIPS_MODE=1 asinfo --version
+  local chacha=(-h 127.0.0.1:localhost:3000 --tls-enable --tls-protocols TLSv1.2
+    --tls-cipher-suite ECDHE-RSA-CHACHA20-POLY1305 -e info)
+
+  run env OPENSSL_FORCE_FIPS_MODE=1 asadm "${chacha[@]}"
   echo "$output"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no cipher match"* ]]
+
+  run asadm "${chacha[@]}"
+  echo "$output"
+  [[ "$output" != *"no cipher match"* ]]
 }
