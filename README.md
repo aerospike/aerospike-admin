@@ -118,33 +118,33 @@ make unit
 
 ### Running e2e/integration Tests
 ```
-FEATKEY=(base64 -i path/to/features.conf) make integration
+FEATKEY=$(base64 < path/to/features.conf | tr -d '\n') make integration
 ```
 to test the bundled app run:
 ```
-ASADM_TEST_BUNDLE=true FEATKEY=(base64 -i path/to/features.conf) make integration
+ASADM_TEST_BUNDLE=true FEATKEY=$(base64 < path/to/features.conf | tr -d '\n') make integration
 ```
 
 **Note for Mac users**: If you encounter Docker networking issues on macOS, enable localhost networking:
 ```
-E2E_TEST_USE_LOCALHOST=true FEATKEY=(base64 -i path/to/features.conf) make integration
+E2E_TEST_USE_LOCALHOST=true FEATKEY=$(base64 < path/to/features.conf | tr -d '\n') make integration
 ```
 
 **Debugging with Docker logs**: To capture and save Docker container logs during e2e tests for debugging:
 ```
-DUMP_DOCKER_LOGS=true FEATKEY=(base64 -i path/to/features.conf) make integration
+DUMP_DOCKER_LOGS=true FEATKEY=$(base64 < path/to/features.conf | tr -d '\n') make integration
 ```
 This will save container logs to the `docker_logs/` directory when containers are stopped.
 
 ### Running FIPS Tests
 ```
-FEATKEY=(base64 -i path/to/features.conf) make fips
+FEATKEY=$(base64 < path/to/features.conf | tr -d '\n') make fips
 ```
 Runs asadm from the working tree in a RHEL 9 container whose OpenSSL is forced into FIPS mode, against a TLS cluster that also runs sshd. The first run builds the client image, which compiles `cryptography` against the container's OpenSSL.
 
 ### Running all tests with coverage
 ```
-FEATKEY=(base64 -i path/to/features.conf) make coverage
+FEATKEY=$(base64 < path/to/features.conf | tr -d '\n') make coverage
 ```
 
 ## Profiling
