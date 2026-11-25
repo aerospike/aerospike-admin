@@ -180,7 +180,15 @@ clean:
 
 .PHONY: format-check
 format-check:
+	@status=0; $(MAKE) black-check || status=1; $(MAKE) lint || status=1; exit $$status
+
+.PHONY: black-check
+black-check:
 	pipenv run black . --check --diff
+
+.PHONY: lint
+lint:
+	pipenv run flake8
 
 .PHONY: format
 format:

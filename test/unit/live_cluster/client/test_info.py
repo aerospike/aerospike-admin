@@ -54,11 +54,6 @@ from lib.live_cluster.client.info import (
     _receive_data,
     _STRUCT_PROTOCOL_HEADER,
 )
-from lib.live_cluster.client.constants import ErrorsMsgs
-from lib.live_cluster.client.types import (
-    ASInfoNotAuthenticatedError,
-    ASInfoResponseError,
-)
 
 
 class ASPrivilegeTest(unittest.TestCase):

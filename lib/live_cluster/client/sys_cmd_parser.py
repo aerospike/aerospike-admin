@@ -15,7 +15,6 @@
 import logging
 import re
 import math
-import logging
 from datetime import datetime
 from typing import Any
 
@@ -302,10 +301,10 @@ def parse_uname_section(cmd_raw_output: str) -> dict[str, Any]:
         if re.search("uname -a", line) or line.strip() == "":
             continue
         # "Linux e-asmem-01.ame.admarketplace.net 2.6.32-279.el6.x86_64 #1 SMP Fri Jun 22 12:19:21 UTC 2012 x86_64 x86_64 x86_64 GNU/Linux\n"
-        l = re.split(r"\ +", (line.split("#")[0]))
-        unamedata["kernel_name"] = l[0]
-        unamedata["nodename"] = l[1]
-        unamedata["kernel_release"] = l[2]
+        fields = re.split(r"\ +", (line.split("#")[0]))
+        unamedata["kernel_name"] = fields[0]
+        unamedata["nodename"] = fields[1]
+        unamedata["kernel_release"] = fields[2]
         break
 
     return unamedata
@@ -794,15 +793,15 @@ def parse_scheduler_section(cmd_raw_output: str) -> dict[str, Any]:
             continue
 
         if "scheduler" in line:
-            l = line.split("/sys/block/")
-            if not l:
+            parts = line.split("/sys/block/")
+            if not parts:
                 continue
 
-            l = l[1].split("/queue/scheduler")
-            if not l:
+            parts = parts[1].split("/queue/scheduler")
+            if not parts:
                 continue
 
-            device = l[0].strip()
+            device = parts[0].strip()
             continue
 
         if not device:
@@ -862,7 +861,7 @@ def parse_ethtool_section(cmd_raw_output: str) -> dict[str, Any]:
 
         try:
             ethtool_data[current_device][key] = int(val)
-        except:
+        except ValueError:
             ethtool_data[current_device][key] = val
 
     return ethtool_data

@@ -348,9 +348,9 @@ class _CollectinfoSnapshot:
 
                         """
                         Handles a collectinfo model that was first introduced when XDR5
-                        was released. Similar to the above code. It placed XDR DC stats 
+                        was released. Similar to the above code. It placed XDR DC stats
                         (what is under the 'dc' stanza) also the "xdr" key. This broke
-                        backwards compatibility. For servers < 4.9 'xdr' should be a 
+                        backwards compatibility. For servers < 4.9 'xdr' should be a
                         single level dictionary. For servers > 5.0 'xdr' should be empty
                         because top level xdr stats no longer exist.
                         """

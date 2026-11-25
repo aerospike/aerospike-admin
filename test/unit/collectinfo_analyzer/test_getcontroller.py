@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import unittest
-import warnings
-from pytest import PytestUnraisableExceptionWarning
 from mock import create_autospec, patch
 from mock.mock import MagicMock
 from lib.collectinfo_analyzer.collectinfo_handler.log_handler import (

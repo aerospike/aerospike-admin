@@ -59,7 +59,7 @@ def size(bytes, system=byte):
         if bytes >= factor:
             break
     amount = bytes / factor
-    if type(amount) == float:
+    if type(amount) is float:
         return "%0.3f%s" % (amount, suffix)
     else:
         return str(amount) + suffix

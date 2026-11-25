@@ -20,8 +20,6 @@ from lib.collectinfo_analyzer.get_controller import (
 from lib.utils import constants, util, version
 import logging
 
-logger = logging.getLogger(__name__)
-
 from .collectinfo_command_controller import (
     CollectinfoCommandController,
     has_node_data,
@@ -29,6 +27,8 @@ from .collectinfo_command_controller import (
 )
 from .summary_controller import SummaryController
 from lib.base_controller import ShellException
+
+logger = logging.getLogger(__name__)
 
 Modifiers = constants.Modifiers
 ModifierUsageHelp = constants.ModifierUsage
@@ -207,7 +207,7 @@ class InfoController(CollectinfoCommandController):
 
     @CommandHelp(
         "Displays summary information for each datacenter",
-        usage=f"[for <dc-substring>]",
+        usage="[for <dc-substring>]",
         modifiers=(
             ModifierHelp(Modifiers.FOR, "Filter datacenters using a substring match"),
         ),
@@ -315,9 +315,9 @@ class InfoController(CollectinfoCommandController):
                 except Exception:
                     pass
 
-            for version in builds.values():
+            for build in builds.values():
                 try:
-                    node_xdr_build_major_version = int(version[0])
+                    node_xdr_build_major_version = int(build[0])
                 except Exception:
                     continue
 

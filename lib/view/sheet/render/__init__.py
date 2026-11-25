@@ -40,7 +40,6 @@ def set_style_json(value=True):
 
 
 def get_style_json():
-    global use_json
     return use_json
 
 

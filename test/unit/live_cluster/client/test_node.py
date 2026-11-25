@@ -2889,10 +2889,10 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
         info_namespaces_mock.return_value = ["test", "bar"]
         expected = {
             "test": {"a": "false", "b": "10000"},
-            "bar": {"c": "true", "b": "10000"},
+            "bar": {"c": "true", "d": "10000"},
         }
 
-        await self.node.info_get_config("namespace")
+        actual = await self.node.info_get_config("namespace")
 
         self.info_mock.assert_has_calls(
             [
@@ -2900,6 +2900,7 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
                 call("get-config:context=namespace;id=bar", self.ip),
             ]  # type: ignore
         )
+        self.assertDictEqual(expected, actual)
 
     async def test_info_get_config_xdr(self):
         def side_effect(req, ip):
@@ -2926,8 +2927,8 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(self.logger_mock.debug.call_args_list)
 
-        for call in self.logger_mock.debug.call_args_list:
-            msg, *args = call.args
+        for debug_call in self.logger_mock.debug.call_args_list:
+            msg, *args = debug_call.args
             rendered = msg % tuple(args)
 
             for secret in ("S3CRET-PWD", "K3Y-PWD"):
@@ -3550,6 +3551,27 @@ class NodeTest(unittest.IsolatedAsyncioTestCase):
             namespaces=["test", "zip"]
         )
         self.assertDictEqual(actual, expected)
+
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_all_dc_statistics_dcs_error(self, info_dcs_mock: AsyncMock):
+        info_dcs_mock.return_value = Exception("boom")
+
+        actual = await self.node.info_all_dc_statistics()
+
+        self.assertIsInstance(actual, Exception)
+        self.assertEqual(str(actual), "Unable to get dcs : boom")
+
+    @patch("lib.live_cluster.client.node.Node.info_dcs")
+    async def test_info_all_xdr_namespaces_statistics_dcs_error(
+        self, info_dcs_mock: AsyncMock
+    ):
+        lib.live_cluster.client.node.Node.info_build.return_value = "5.0"
+        info_dcs_mock.return_value = Exception("boom")
+
+        actual = await self.node.info_all_xdr_namespaces_statistics()
+
+        self.assertIsInstance(actual, Exception)
+        self.assertEqual(str(actual), "Could not retrieve dcs: boom")
 
     async def test_info_udf_list(self):
         self.info_mock.return_value = "filename=basic_udf.lua,hash=706c57cb29e027221560a3cb4b693573ada98bf2,type=LUA;"
@@ -7681,7 +7703,7 @@ class NeedsRefreshTest(unittest.IsolatedAsyncioTestCase):
         # We need to mock the _get_admin_info_call method that exists on the node
         with patch.object(
             self.node, "_get_admin_info_call", return_value="admin-clear-std"
-        ) as admin_call_mock:
+        ):
             self.info_mock.return_value = {
                 "node": "A00000000000000",
                 "admin-clear-std": "192.1.1.1:3000",
@@ -8222,7 +8244,7 @@ class SocketLeakPreventionTest(unittest.IsolatedAsyncioTestCase):
             get_conn_mock.return_value = mock_sock
 
             with self.assertRaises(IOError):
-                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                async with self.node._borrow_socket(self.ip, self.port):
                     raise IOError("Connection lost")
 
         # Socket should be closed, not in pool
@@ -8266,7 +8288,7 @@ class SocketLeakPreventionTest(unittest.IsolatedAsyncioTestCase):
             get_conn_mock.return_value = None  # Connection failed
 
             with self.assertRaises(IOError) as context:
-                async with self.node._borrow_socket(self.ip, self.port) as sock:
+                async with self.node._borrow_socket(self.ip, self.port):
                     pass  # Should not reach here
 
             self.assertIn("Could not connect to node", str(context.exception))
@@ -8949,7 +8971,6 @@ class NodeBuildCachingTest(unittest.IsolatedAsyncioTestCase):
 
         # Track calls to _info
         call_count = {"_info": 0}
-        original_info = self.node._info
 
         async def mock_info(cmd):
             call_count["_info"] += 1

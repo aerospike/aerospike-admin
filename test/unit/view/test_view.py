@@ -917,8 +917,6 @@ class CliViewTest(unittest.TestCase):
 
     def test_summary_cluster_list_view(self):
         cluster_data: SummaryClusterDict = {
-            "active_features": ["Compression"],
-            "ns_count": 1,
             "migrations_in_progress": True,
             "cluster_name": ["test-cluster"],
             "server_version": ["7.0.0.0"],
@@ -1266,9 +1264,9 @@ class CliViewTest(unittest.TestCase):
    13.  Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B Max: 4.000 B Avg: 5.000 B
    15.  Replication Factor       :  1
-   16.  Post-Write-Queue Hit-Rate:  1.000  
+   16.  Post-Write-Queue Hit-Rate:  1.000{'  '}
    17.  Rack-aware               :  True
-   18.  Master Objects           :  2.000  
+   18.  Master Objects           :  2.000{'  '}
    19.  Compression-ratio        :  0.5
 
    {terminal.fg_red()}bar{terminal.fg_clear()}
@@ -1288,9 +1286,9 @@ class CliViewTest(unittest.TestCase):
    13.  Data Pmem                :  Total 7.000 B, 4.00% used (2.000 B), 5.00% available contiguous space (3.000 B)
    14.  License Usage            :  Latest (2023-10-04T20:35:42+00:00): 2.000 B  Min: 3.000 B Max: 4.000 B Avg: 5.000 B
    15.  Replication Factor       :  1
-   16.  Post-Write-Queue Hit-Rate:  1.000  
+   16.  Post-Write-Queue Hit-Rate:  1.000{'  '}
    17.  Rack-aware               :  False
-   18.  Master Objects           :  2.000  
+   18.  Master Objects           :  2.000{'  '}
    19.  Compression-ratio        :  0.5
 """
 
@@ -1864,7 +1862,6 @@ class CliViewTest(unittest.TestCase):
 
     def test_info_transactions_monitors_with_with_modifier(self):
         ns_stats = {"1.1.1.1": {"test": {"mrt_monitors": 100}}}
-        set_stats = {"1.1.1.1": {("test", "<ERO~MRT"): {"data_used_bytes": 1024}}}
 
         node_names = {"1.1.1.1": "node1"}
         node_ids = {"1.1.1.1": "ABCD"}
@@ -1981,33 +1978,6 @@ class CliViewTest(unittest.TestCase):
     @patch("lib.view.view.CliView._get_timestamp_suffix")
     def test_info_transactions_monitors_multiple_namespaces_nodes(self, mock_timestamp):
         mock_timestamp.return_value = " (test-timestamp)"
-
-        ns_stats = {
-            "1.1.1.1": {
-                "strong_ns_1": {
-                    "mrt_monitors": 100,
-                    "stop-writes-count": 1000,
-                    "stop-writes-size": 100000,
-                },
-                "normal_ns_2": {  # Should be filtered out by controller's get_strong_consistency_namespace
-                    "mrt_monitors": 50,
-                    "strong-consistency": "false",
-                },
-            },
-            "2.2.2.2": {
-                "strong_ns_1": {
-                    "mrt_monitors": 150,
-                    "stop-writes-count": 1500,
-                    "stop-writes-size": 150000,
-                },
-                "strong_ns_3": {
-                    "mrt_monitors": 200,
-                    "stop-writes-count": 2000,
-                    "stop-writes-size": 200000,
-                },
-            },
-            "3.3.3.3": Exception("Node down"),  # Node with exception
-        }
 
         # Mock the info_set_statistics call that happens in the controller
         # This simulates the controller already filtering for strong consistency namespaces

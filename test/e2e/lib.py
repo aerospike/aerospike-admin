@@ -76,7 +76,7 @@ else:
 # Fixes issue where call fails during vscode pytest discovery causing not tests to be found
 try:
     DOCKER_CLIENT = docker.from_env()
-except:
+except Exception:
     pass
 
 # a list of docker instances running server nodes
@@ -404,9 +404,9 @@ def cleanup_tls_certs():
 def temporary_path(extension):
     global FILE_COUNT
     """
-	Generates a path to a temporary file in the work directory using the
-	given extension.
-	"""
+    Generates a path to a temporary file in the work directory using the
+    given extension.
+    """
     FILE_COUNT += 1
     file_name = "tmp-" + ("%05d" % FILE_COUNT) + "." + extension
     return absolute_path(os.path.join(WORK_DIRECTORY, file_name))
@@ -529,17 +529,13 @@ def start_server(
     mesh_over_bridge=False,
     enable_security=True,
 ):
-    global CLIENT
-    global NODES
-    global RUNNING
-    global SERVER_IP
     global FIRST_NODE_BRIDGE_IP
 
     mount_dir = absolute_path(WORK_DIRECTORY)
 
     try:
         feat_key = os.environ["FEATKEY"]
-    except:
+    except KeyError:
         raise Exception(
             "Env var FEATKEY must be set with a base64 encoded feature key file."
         )
@@ -597,7 +593,7 @@ def start_server(
     try:
         container = DOCKER_CLIENT.containers.get("aerospike-%d" % (index))
         container.remove(force=True)
-    except:
+    except Exception:
         pass
 
     image_name = f"{IMAGE_REPO}:{docker_tag}"
@@ -676,8 +672,6 @@ def start(
 ):
     """mesh_over_bridge seeds the mesh with node 1's bridge IP. With SERVER_IP
     127.0.0.1, each container would seed itself and form a single-node cluster."""
-    global CLIENT
-    global NODES
     global RUNNING
     global SERVER_IP
 
@@ -863,7 +857,7 @@ def dump_docker_logs():
                 with open(log_file, "wb") as f:
                     f.write(logs)
 
-            except Exception as e:
+            except Exception:
                 # Silent failure - don't spam output during tests
                 pass
 
@@ -887,11 +881,10 @@ def dump_logs_on_failure():
 def stop():
     global CLIENT
     global RUNNING
-    global NODES
 
     """
-	Disconnects the client and stops the running asd process.
-	"""
+    Disconnects the client and stops the running asd process.
+    """
     if RUNNING:
         print("Disconnecting client")
 
@@ -922,8 +915,8 @@ def reset():
     global UDFS
     global INDEXES
     """
-	Nukes the server, removing all records, indexes, udfs, etc.
-	"""
+    Nukes the server, removing all records, indexes, udfs, etc.
+    """
     print("resetting the database")
 
     # truncate the set
@@ -961,14 +954,13 @@ def stop_silent():
         stop()
         sys.stdout = stdout_tmp
         sys.stderr = stderr_tmp
-    except:
+    except BaseException:
         sys.stdout = stdout_tmp
         sys.stderr = stderr_tmp
         raise
 
 
 def populate_db(set_name: str, namespace: str = "test"):
-    global CLIENT
     write_policy = {"key": aerospike.POLICY_KEY_SEND}
     keys = []
 
@@ -987,7 +979,7 @@ def populate_db(set_name: str, namespace: str = "test"):
             }
             keys.append(key)
             CLIENT.put(key, bins, {"ttl": 3600 * (idx + 1)}, policy=write_policy)
-    except:
+    except BaseException:
         print("Failed to fully populate the DB")
         raise
 
@@ -995,7 +987,6 @@ def populate_db(set_name: str, namespace: str = "test"):
 
 
 def create_sindex(name, type_, ns, bin, set_: str | None = None):
-    global CLIENT
     req = "sindex-create:namespace={};indexname={};bin={};type={}".format(
         ns, name, bin, type_
     )
@@ -1010,7 +1001,6 @@ def create_sindex(name, type_, ns, bin, set_: str | None = None):
 
 
 def server_build():
-    global CLIENT
     builds = set()
 
     for response in CLIENT.info_all("build").values():
@@ -1021,7 +1011,6 @@ def server_build():
 
 
 def create_xdr_filter(ns, dc, exp):
-    global CLIENT
     req = f"xdr-set-filter:namespace={ns};dc={dc};exp={exp}".format(ns, dc, exp)
 
     CLIENT.info_all(req)

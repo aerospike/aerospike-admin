@@ -22,7 +22,6 @@
 
 import os
 import re
-import shlex
 import sys
 from subprocess import Popen, PIPE
 import argparse

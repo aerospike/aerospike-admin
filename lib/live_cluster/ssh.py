@@ -179,7 +179,7 @@ class FileTransfer:
                     )
 
                 logger.debug(
-                    f"{src_conn._conn.get_extra_info('peername')}: Initiating transfer of {src[0] if len(src)> 0 else src} to {dst}"
+                    f"{src_conn._conn.get_extra_info('peername')}: Initiating transfer of {src[0] if len(src) > 0 else src} to {dst}"
                 )
                 tasks.append(
                     sftp_session.get(

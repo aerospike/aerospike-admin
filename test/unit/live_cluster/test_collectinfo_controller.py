@@ -14,7 +14,6 @@
 
 import asyncio
 import contextlib
-import copy
 import gc
 import inspect
 import json

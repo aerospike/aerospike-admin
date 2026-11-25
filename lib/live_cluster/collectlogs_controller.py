@@ -101,7 +101,7 @@ class CollectlogsController(LiveClusterCommandController):
             await LogFileDownloader(
                 self.cluster, ssh_conn_factory, exception_handler=error_handler
             ).download(local_path_generator)
-        except Exception as e:
+        except Exception:
             raise
 
         if not connect_errors and not download_errors:

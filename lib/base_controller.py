@@ -55,7 +55,7 @@ class CommandHelp:
     ):
         if not long_msg:
             logger.fatal(
-                f"long_msg is required for CommandHelp",
+                "long_msg is required for CommandHelp",
                 stack_info=True,
             )
 

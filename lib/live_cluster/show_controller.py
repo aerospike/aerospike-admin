@@ -1509,7 +1509,7 @@ class ShowPmapController(LiveClusterCommandController):
 
 @CommandHelp(
     "A collection of commands that display user configuration and statistics",
-    usage=f"[<username>]",
+    usage="[<username>]",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
 )
 class ShowUsersController(LiveClusterCommandController):
@@ -1548,7 +1548,7 @@ class ShowUsersController(LiveClusterCommandController):
     "Displays users, open connections, and quota usage for the Aerospike cluster.",
     modifiers=(ModifierHelp("user", "Display output for a single user."),),
     short_msg="Displays users, open connections, and quota usage",
-    usage=f"[<username>]",
+    usage="[<username>]",
 )
 class ShowUsersStatsController(LiveClusterCommandController):
     def __init__(self):

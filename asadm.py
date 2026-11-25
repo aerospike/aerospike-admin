@@ -18,7 +18,7 @@ try:
     import coverage
 
     coverage.process_startup()
-except:
+except Exception:
     pass
 
 from typing import Any, Callable

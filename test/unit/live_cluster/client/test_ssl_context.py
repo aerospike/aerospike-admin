@@ -21,8 +21,6 @@ import unittest
 import unittest.mock
 from unittest.mock import patch
 
-UTC = datetime.timezone.utc
-
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -30,6 +28,8 @@ from cryptography.x509.oid import NameOID
 from OpenSSL import crypto, SSL
 
 from lib.live_cluster.client.ssl_context import SSLContext
+
+UTC = datetime.timezone.utc
 
 
 def _generate_key():
@@ -524,7 +524,7 @@ class TestSetContextOptions(unittest.TestCase):
         mock_ssl.OP_NO_SSLv3 = 0x02000000
         mock_ssl.OP_NO_TLSv1 = 0x04000000
         mock_ctx = unittest.mock.MagicMock()
-        result = self.ssl_ctx._set_context_options(mock_ctx, ["TLSv1"])
+        self.ssl_ctx._set_context_options(mock_ctx, ["TLSv1"])
         mock_ctx.set_options.assert_any_call(0x04000000)
 
     @patch("lib.live_cluster.client.ssl_context.SSL")

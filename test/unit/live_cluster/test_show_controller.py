@@ -663,7 +663,6 @@ class ShowStatisticsControllerTest(unittest.IsolatedAsyncioTestCase):
         line = [
             "bins",
         ]
-        mods = {"like": [], "with": [], "for": [], "line": []}
         stats = {
             "ns1": "stats1",
             "ns2": "stats2",
@@ -1714,13 +1713,9 @@ class ShowStopWritesControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_for_mod(self):
-        self.config_getter_mock.get_namespace.return_value = conf_ns_resp = {
-            "1.1.1.1": "a"
-        }
+        self.config_getter_mock.get_namespace.return_value = {"1.1.1.1": "a"}
         self.config_getter_mock.get_sets.return_value = conf_set_resp = {"1.1.1.1": "b"}
-        self.stat_getter_mock.get_namespace.return_value = stat_ns_resp = {
-            "1.1.1.1": "c"
-        }
+        self.stat_getter_mock.get_namespace.return_value = {"1.1.1.1": "c"}
         self.stat_getter_mock.get_sets.return_value = stat_set_resp = {"1.1.1.1": "d"}
         self.stat_getter_mock.get_service.return_value = stat_service_resp = {
             "1.1.1.1": "e"
@@ -2454,7 +2449,7 @@ class ShowMaskingControllerTest(unittest.IsolatedAsyncioTestCase):
         self.getter_mock.get_masking_rules.return_value = {"node1": []}
 
         with self.assertLogs("lib.live_cluster.show_controller", "WARNING") as cm:
-            result = await self.controller._do_default(line)
+            await self.controller._do_default(line)
 
         # Should call view with empty list
         self.view_mock.show_masking_rules.assert_called_once_with(
@@ -2553,7 +2548,7 @@ class InfoControllerTest(unittest.IsolatedAsyncioTestCase):
 
         with patch("lib.utils.util.filter_exceptions", return_value=build_data):
             with patch("lib.utils.util.callable") as callable_mock:
-                result = await self.controller.do_release("")
+                await self.controller.do_release("")
 
                 # Verify cluster methods were called
                 self.cluster_mock.info_build.assert_called_once_with(
@@ -2600,7 +2595,7 @@ class InfoControllerTest(unittest.IsolatedAsyncioTestCase):
         self.cluster_mock.info_version = AsyncMock(return_value=versions_data)
 
         with patch("lib.utils.util.callable") as callable_mock:
-            result = await self.controller.do_network("")
+            await self.controller.do_network("")
 
             # Verify all required data was fetched
             self.cluster_mock.info_statistics.assert_called_once_with(

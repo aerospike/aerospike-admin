@@ -24,7 +24,6 @@ from pytest import PytestUnraisableExceptionWarning
 from asadm import AerospikeShell
 from lib.base_controller import (
     BaseController,
-    CommandController,
     CommandHelp,
     ModifierHelp,
     ShellException,
@@ -42,7 +41,6 @@ from lib.live_cluster.client import (
 )
 from lib.live_cluster.client.config_handler import JsonDynamicConfigHandler
 from lib.live_cluster.client.ctx import ASValues, CDTContext, CTXItems
-from lib.live_cluster.client.node import Node
 from lib.live_cluster.get_controller import GetClusterMetadataController
 from lib.live_cluster.live_cluster_command_controller import (
     LiveClusterCommandController,
@@ -3999,7 +3997,6 @@ class ManageRosterAddControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_raises_warn_from_invalid_ns(self):
-        error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": {}}
         self.cluster_mock.info_namespace_statistics.return_value = {"1.1.1.1": {}}
@@ -4016,7 +4013,6 @@ class ManageRosterAddControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_raises_warn_from_ap_ns(self):
-        error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {"1.1.1.1": {}}
         self.cluster_mock.info_namespace_statistics.return_value = {
@@ -4296,7 +4292,6 @@ class ManageRosterRemoveControllerTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_raises_warn_from_invalid_ns(self):
-        error = Exception("test exception")
         line = "nodes ABC@rack1 DEF@rack2 ns test --no-warn"
         self.cluster_mock.info_roster.return_value = {
             "1.1.1.1": {

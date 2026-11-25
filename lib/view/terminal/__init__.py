@@ -13,4 +13,7 @@
 # limitations under the License.
 
 from .get_terminal_size import get_terminal_size
-from .terminal import *
+from .terminal import *  # noqa: F401,F403
+from .terminal import __all__ as _terminal_all
+
+__all__ = ["get_terminal_size", *_terminal_all]

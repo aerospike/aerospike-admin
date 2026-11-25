@@ -21,10 +21,9 @@ import unittest
 import lib.live_cluster.live_cluster_root_controller as controller
 import lib.utils.util as util
 from test.e2e import lib, util as test_util
+from lib.view.sheet import set_style_json
 
 sys.path.insert(1, os.getcwd())
-
-from lib.view.sheet import set_style_json
 
 set_style_json()
 
@@ -322,7 +321,6 @@ class TestShowLatenciesWithArguments(unittest.IsolatedAsyncioTestCase):
             float,
         ]
 
-        exp_no_of_rows = len(self.rc.cluster._live_nodes)
         actual_out = await util.capture_stdout(
             self.rc.execute,
             ["show", "latencies", "-e", "0", "-b", "17"],
@@ -342,7 +340,6 @@ class TestShowLatenciesWithArguments(unittest.IsolatedAsyncioTestCase):
                 test_util.check_for_types(actual_data, exp_data_types),
                 "returned the wrong data types",
             )
-            # self.assertEqual(exp_no_of_rows, actual_no_of_rows)
 
     async def test_latencies_e_17_b_1(self):
         """

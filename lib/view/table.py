@@ -153,7 +153,7 @@ class Table:
             if isinstance(name, str):
                 self._column_names.append(name)
                 self._column_display_names.append(title_format(name))
-            elif type(name) == tuple or type(name) == list:
+            elif type(name) is tuple or type(name) is list:
                 self._column_names.append(name[0])
                 self._column_display_names.append(name[1])
 
@@ -291,9 +291,7 @@ class Table:
         return data
 
     def _do_sort(self):
-        if self._need_sort == True and self._n_last_columns_ignore_sort < len(
-            self._data
-        ):
+        if self._need_sort and self._n_last_columns_ignore_sort < len(self._data):
             if self._n_last_columns_ignore_sort > 0:
                 data_len = len(self._data)
                 data_to_process = self._data[
@@ -374,8 +372,8 @@ class Table:
                 lines.append(line)
 
         description = [
-            "%s%s%s" % (terminal.dim(), l.center(line_width), terminal.reset())
-            for l in lines
+            "%s%s%s" % (terminal.dim(), text.center(line_width), terminal.reset())
+            for text in lines
         ]
         description = "\n".join(description)
 

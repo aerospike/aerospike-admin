@@ -20,7 +20,7 @@ from .collectinfo_command_controller import CollectinfoCommandController
 
 @CommandHelp(
     "Displays summary of Aerospike cluster.",
-    usage=f"[-l]",
+    usage="[-l]",
     modifiers=(
         ModifierHelp(
             "-l",
