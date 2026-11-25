@@ -29,6 +29,7 @@ coverage = "*"
 macholib = {version = "*", sys_platform = "== 'darwin'"}
 aerospike = "*"
 docker = "*"
+maturin = "==1.16.0"
 
 [requires]
 python_version = "3.12"

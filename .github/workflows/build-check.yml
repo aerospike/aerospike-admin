@@ -65,7 +65,7 @@ jobs:
       # These stub otool and file, so the guards' failure paths run here rather
       # than only on a macOS runner, where CI only exercises the passing one.
       - name: Test the macOS build guards
-        run: bats .github/bin/test/check_crypto_static_openssl.bats .github/bin/test/check_min_os.bats .github/bin/test/macos_min_version.bats
+        run: bats .github/bin/test/check_crypto_static_openssl.bats .github/bin/test/check_min_os.bats .github/bin/test/macos_min_version.bats .github/bin/test/openssl_floor.bats
 
       # The .deb/.rpm legs below only count that a package appeared; nothing
       # asserts the NAME. Assert it here, where the expected name is derived
@@ -138,6 +138,10 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends git ca-certificates
+              ;;
+            el9|el10)
+              # hold_el_openssl.sh, which runs after checkout, expects the base image's OpenSSL.
+              dnf -y install --exclude='openssl*' --nobest git ca-certificates
               ;;
             el*|amzn*)
               dnf -y install git ca-certificates

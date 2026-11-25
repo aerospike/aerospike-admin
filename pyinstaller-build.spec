@@ -62,6 +62,8 @@ excludes_binaries = [
     'libdl.so',
     'librt.so',
     'libz.so',
+    'libssl.so',
+    'libcrypto.so',
     'libstdc++.so',
 ]
 
@@ -77,7 +79,10 @@ def should_exclude_library(binary_tuple):
     """
     if not binary_tuple or not binary_tuple[0]:
         return False
-    
+
+    if binary_tuple[0].startswith('ossl-modules'):
+        return True
+
     binary_name = path.basename(binary_tuple[0])
     
     for exclude_pattern in excludes_binaries:

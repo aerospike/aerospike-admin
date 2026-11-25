@@ -56,6 +56,11 @@ exec "$ASADM_PYTHON" "$ASADM_SCRIPT" "$@"
 """
 
 NO_USER_WARNING = "WARNING: --password: ignored because no user is set"
+LEGACY_PROVIDER_WARNING = (
+    "<frozen importlib._bootstrap>:488: Warning: OpenSSL 3's legacy provider failed"
+    " to load. Legacy algorithms will not be available. If you need those"
+    " algorithms, check your OpenSSL configuration."
+)
 READ_WARNING = (
     "WARNING: Config file read error : /etc/aerospike/astools.conf Permission denied"
 )
@@ -107,6 +112,7 @@ class AsinfoStderrTest(unittest.TestCase):
             "WARNING: password in config file: ignored because no user is set",
             READ_WARNING,
             "WARNING: Config file read error : /x.conf No such file",
+            LEGACY_PROVIDER_WARNING,
         ):
             with self.subTest(warning=warning):
                 cp = self.run_asinfo(warning + "\n")

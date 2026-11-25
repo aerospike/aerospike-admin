@@ -22,19 +22,20 @@ export GOLANG_VERSION="${GOLANG_VERSION:-1.24.6}"
 
 export CURL_RETRY_OPTS=(--retry 5 --retry-delay 5)
 
-DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
-DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils less"
+DEBIAN_12_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev pkg-config lzma lzma-dev libffi-dev build-essential gcc g++ less"
+DEBIAN_13_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev pkg-config lzma liblzma-dev libffi-dev libsqlite3-dev build-essential gcc g++ zlib1g-dev libbz2-dev libreadline-dev libncursesw5-dev libnss3-dev uuid-dev tk-dev xz-utils less"
 UBUNTU_2004_DEPS="libreadline8 libreadline-dev ruby make rpm git snapd curl binutils rsync libssl1.1 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
-UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
-UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev lzma lzma-dev libffi-dev build-essential gcc g++ less"
+UBUNTU_2204_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev pkg-config lzma lzma-dev libffi-dev build-essential gcc g++ less"
+UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd curl binutils rsync libssl3 libssl-dev pkg-config lzma lzma-dev libffi-dev build-essential gcc g++ less"
 # Ubuntu 26.04 (resolute): lzma-dev was dropped — use liblzma-dev. Do not pin libreadline8
 # (t64 / readline major varies); libreadline-dev pulls the correct runtime (see aerospike/aql#70).
 # Extra pyenv-style -dev packages keep CPython stdlib modules complete.
 UBUNTU_2604_DEPS="${UBUNTU_2404_DEPS/lzma-dev/liblzma-dev} zlib1g-dev libbz2-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev uuid-dev"
 UBUNTU_2604_DEPS="${UBUNTU_2604_DEPS/libreadline8 /}"
 EL8_DEPS="ruby rubygems redhat-rpm-config rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
-EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
-EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
+# hold_el_openssl.sh installs openssl-devel at the held openssl-libs version.
+EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
+EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 AMZN2023_DEPS="readline-devel ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 
 _pkg_list_for() {
@@ -93,10 +94,13 @@ _install_distro_packages() {
       dnf -y install $deps
       ;;
     el9|el10)
-      dnf -y update
+      bash "$(dirname "${BASH_SOURCE[0]}")/hold_el_openssl.sh" "$distro" openssl-devel
+      # --nobest: a package whose newest build needs a newer OpenSSL stays put
+      # (systemd) or comes from the Rocky vault (ruby, rpm-build).
+      dnf -y update --nobest
       yum install -y "$(_readline_url_for "$distro")"
       # shellcheck disable=SC2086
-      dnf -y install $deps
+      dnf -y install --nobest $deps
       ;;
     amzn2023)
       dnf -y update
@@ -143,6 +147,15 @@ _install_python_via_asdf_and_fpm() {
   gem install fpm -v 1.17.0
 }
 
+# cryptography links the host's OpenSSL 3, so it is built from source. el8 and
+# ubuntu20.04 ship OpenSSL 1.1.1, which current cryptography cannot build against.
+builds_cryptography_from_source() {
+  case "$1" in
+    el8|ubuntu20.04) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 _post_install_cleanup() {
   case "$1" in
     ubuntu*|debian*) rm -rf /var/lib/apt/lists/* ;;
@@ -156,5 +169,8 @@ install_deps() {
 
   _install_go
   _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")"
+  if builds_cryptography_from_source "$distro"; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/install_rust.sh"
+  fi
   _post_install_cleanup "$distro"
 }

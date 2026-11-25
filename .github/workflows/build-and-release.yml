@@ -265,6 +265,10 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update && apt-get install -y git ca-certificates
               ;;
+            el9|el10)
+              # hold_el_openssl.sh, which runs after checkout, expects the base image's OpenSSL.
+              dnf -y install --exclude='openssl*' --nobest git ca-certificates
+              ;;
             el*|amzn*)
               command -v dnf >/dev/null || yum install -y dnf
               dnf -y install git ca-certificates
@@ -618,6 +622,10 @@ jobs:
               apt-get update -qq
               apt-get install -y --no-install-recommends git ca-certificates curl tar
               ;;
+            el9|el10)
+              # hold_el_openssl.sh, which runs after checkout, expects the base image's OpenSSL.
+              dnf -y install --exclude='openssl*' --nobest findutils git ca-certificates tar gzip
+              ;;
             el*|amzn*)
               dnf -y install findutils git ca-certificates tar gzip
               ;;
@@ -628,6 +636,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+
+      # EL9/EL10: test on the base image's OpenSSL, the oldest the rpm accepts,
+      # with the openssl CLI at the same version; no-op elsewhere.
+      - name: Hold EL OpenSSL at the base image's version
+        run: bash .github/bin/hold_el_openssl.sh "${{ matrix.distro }}" openssl
+
+      - name: Install the openssl CLI and objdump for the OpenSSL tests
+        run: |
+          case "${{ matrix.distro }}" in
+            el9|el10) dnf -y install binutils ;;
+            el*|amzn*) dnf -y install openssl binutils ;;
+          esac
 
       - name: Download signed artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -670,6 +690,7 @@ jobs:
       - name: Verify installation
         env:
           EXPECTED_VERSION: ${{ needs.get-version.outputs.BUILD_VERSION }}
+          ASADM_DISTRO: ${{ matrix.distro }}
         run: bats .github/bin/test/test_execute.bats
 
       - name: Verify astools.conf lifecycle
