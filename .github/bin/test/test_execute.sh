@@ -22,7 +22,7 @@ done
 
 if [ "$(uname)" = Linux ]; then
 	bundle="$(dirname "$(readlink -f "$(command -v asadm)")")"
-	bundled="$(find "$bundle" \( -name 'libssl.so*' -o -name 'libcrypto.so*' -o -path '*/ossl-modules/*' \))"
+	bundled="$(find "$bundle" \( -name 'libssl*.so*' -o -name 'libcrypto*.so*' -o -path '*/ossl-modules/*' \))"
 	if [ -n "$bundled" ]; then
 		echo "error: asadm ships its own OpenSSL: $bundled" >&2
 		exit 1
@@ -54,6 +54,11 @@ el9 | el10 | amzn2023)
 		echo "error: the host OpenSSL does not enforce FIPS mode under OPENSSL_FORCE_FIPS_MODE=1" >&2
 		exit 1
 	fi
+	for tool in asadm asinfo; do
+		out="$(OPENSSL_FORCE_FIPS_MODE=1 "$tool" --version 2>&1)"
+		assert_version_output "$out" "$expected"
+		echo "$tool starts with the host OpenSSL in FIPS mode"
+	done
 	chacha=(-h 127.0.0.1:localhost:3000 --tls-enable --tls-protocols TLSv1.2
 		--tls-cipher-suite ECDHE-RSA-CHACHA20-POLY1305 -e info)
 	out="$(OPENSSL_FORCE_FIPS_MODE=1 asadm "${chacha[@]}" 2>&1 || true)"
@@ -62,5 +67,12 @@ el9 | el10 | amzn2023)
 		exit 1
 	fi
 	echo "asadm's TLS refuses ChaCha20 with the host OpenSSL in FIPS mode"
+	status=0
+	out="$(asadm "${chacha[@]}" 2>&1)" || status=$?
+	if [[ "$out" == *"no cipher match"* || "$out" == *Traceback* ]] ||
+		{ [ "$status" -ne 0 ] && [[ "$out" != *"Not able to connect any cluster"* ]]; }; then
+		echo "error: without FIPS mode asadm failed before connecting: $out" >&2
+		exit 1
+	fi
 	;;
 esac

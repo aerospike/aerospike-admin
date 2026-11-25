@@ -59,7 +59,7 @@ setup() {
   local bundle
   bundle="$(dirname "$(readlink -f "$(command -v asadm)")")"
 
-  run find "$bundle" \( -name 'libssl.so*' -o -name 'libcrypto.so*' -o -path '*/ossl-modules/*' \)
+  run find "$bundle" \( -name 'libssl*.so*' -o -name 'libcrypto*.so*' -o -path '*/ossl-modules/*' \)
   [ "$status" -eq 0 ]
   echo "bundled OpenSSL: $output"
   [ -z "$output" ]
@@ -87,7 +87,8 @@ setup() {
   [ "$declared" -ge "$needed" ]
 }
 
-@test "asadm's TLS refuses a cipher FIPS does not approve when the host OpenSSL is in FIPS mode" {
+# Fails rather than skips on el9, el10 and amzn2023, which have a FIPS provider.
+require_host_fips_mode() {
   case "${ASADM_DISTRO:-}" in
     el9 | el10 | amzn2023) ;;
     *) skip "no FIPS provider to test on ${ASADM_DISTRO:-this host} (Ubuntu needs Ubuntu Pro)" ;;
@@ -97,6 +98,23 @@ setup() {
   [ "$status" -eq 0 ]
   run env OPENSSL_FORCE_FIPS_MODE=1 openssl md5 /dev/null
   [ "$status" -ne 0 ]
+}
+
+@test "asadm and asinfo start when the host's OpenSSL is in FIPS mode" {
+  require_host_fips_mode
+  local expected
+  expected="$(expected_version "$VERSION_FILE")"
+
+  for tool in asadm asinfo; do
+    run env OPENSSL_FORCE_FIPS_MODE=1 "$tool" --version
+    echo "$tool: $output"
+    [ "$status" -eq 0 ]
+    assert_version_output "$output" "$expected"
+  done
+}
+
+@test "asadm's TLS refuses a cipher FIPS does not approve when the host OpenSSL is in FIPS mode" {
+  require_host_fips_mode
 
   local chacha=(-h 127.0.0.1:localhost:3000 --tls-enable --tls-protocols TLSv1.2
     --tls-cipher-suite ECDHE-RSA-CHACHA20-POLY1305 -e info)
@@ -106,7 +124,10 @@ setup() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"no cipher match"* ]]
 
+  # Without FIPS mode the same arguments get as far as connecting.
   run asadm "${chacha[@]}"
   echo "$output"
   [[ "$output" != *"no cipher match"* ]]
+  [[ "$output" != *Traceback* ]]
+  [ "$status" -eq 0 ] || [[ "$output" == *"Not able to connect any cluster"* ]]
 }

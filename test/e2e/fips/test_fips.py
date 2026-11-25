@@ -116,7 +116,16 @@ class TestFIPS(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_client_image()
-        lib.start(num_nodes=1, template_file="aerospike_tls.conf")
+        with open(lib.absolute_path("aerospike_tls.conf")) as f:
+            template = f.read().replace(
+                "tls-authenticate-client false", "tls-authenticate-client any"
+            )
+        lib.start(
+            num_nodes=1, template_file="aerospike_tls.conf", template_content=template
+        )
+        lib.CLIENT.admin_create_user(
+            "asadm-client", "unused-password", ["sys-admin", "read-write"]
+        )
 
         cls.server = server = lib.NODES[0]
         server.reload()
@@ -162,9 +171,11 @@ class TestFIPS(unittest.TestCase):
             raise Exception("ssh-keyscan failed: %s" % cp.stderr)
 
         cls.tls = (
-            "-h %s:localhost:%d --tls-enable --tls-cafile %s/ca.pem -Uadmin -Padmin"
-            % (cls.server_ip, lib.TLS_PORT, CLIENT_CERTS)
-        )
+            "-h {ip}:localhost:{port} --tls-enable --tls-cafile {certs}/ca.pem "
+            "--tls-certfile {certs}/client.pem --tls-keyfile {certs}/client.key"
+        ).format(ip=cls.server_ip, port=lib.TLS_PORT, certs=CLIENT_CERTS)
+        cls.password_login = cls.tls + " -Uadmin -Padmin"
+        cls.pki_login = cls.tls + " --auth PKI"
 
     @classmethod
     def tearDownClass(cls):
@@ -190,23 +201,35 @@ class TestFIPS(unittest.TestCase):
         self.assertNotEqual(self._run("openssl md5 /dev/null").returncode, 0)
 
     def test_tls_connection(self):
-        cp = self._run("asadm %s -e 'info network'" % self.tls)
+        cp = self._run("asadm %s -e 'info network'" % self.password_login)
 
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertIn("Network Information", cp.stdout)
+
+    def test_pki_login(self):
+        cp = self._run("asadm %s -e 'info network'" % self.pki_login)
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertIn("Network Information", cp.stdout)
+
+    def test_asinfo_pki_login(self):
+        cp = self._run("asinfo %s -v build" % self.pki_login)
+
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        self.assertRegex(cp.stdout, r"^\d+\.\d+")
 
     def test_tls_refuses_a_cipher_fips_does_not_approve(self):
         cp = self._run(
             "asadm %s --tls-protocols TLSv1.2 "
             "--tls-cipher-suite ECDHE-RSA-CHACHA20-POLY1305 -e 'info network'"
-            % self.tls
+            % self.password_login
         )
 
         self.assertNotEqual(cp.returncode, 0)
         self.assertIn("no cipher match", cp.stdout + cp.stderr)
 
     def test_asinfo_over_tls(self):
-        cp = self._run("asinfo %s -v build" % self.tls)
+        cp = self._run("asinfo %s -v build" % self.password_login)
 
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertRegex(cp.stdout, r"^\d+\.\d+")
@@ -216,7 +239,7 @@ class TestFIPS(unittest.TestCase):
         cp = self._run(
             "cd /tmp && asadm %s -e 'collectinfo --enable-ssh --ssh-user root "
             "--ssh-key %s/id_rsa --output-prefix asadm_fips_ssh_'"
-            % (self.tls, CLIENT_WORK)
+            % (self.password_login, CLIENT_WORK)
         )
         self.assertEqual(cp.returncode, 0, cp.stderr)
 
