@@ -4071,6 +4071,248 @@ class CreateSummaryTests(unittest.TestCase):
         self.assertFalse(actual["NAMESPACES"]["test"]["compression_enabled"])
 
 
+DAY = 86400
+OLD = "8.1.2.1"
+NEW = "8.2.1.0"
+N1 = "1.1.1.1:3000"
+N2 = "2.2.2.2:3000"
+
+
+def summarize_compression(nodes, feature_key="true", storage_engine="device"):
+    service_stats, ns_stats, ns_configs, builds, keys = {}, {}, {}, {}, {}
+
+    for node, (build, uptime, namespaces) in nodes.items():
+        service_stats[node] = {} if uptime is None else {"uptime": str(uptime)}
+        keys[node] = {"asdb-compression": feature_key}
+        ns_stats[node] = {}
+        ns_configs[node] = {}
+
+        if build is not None:
+            builds[node] = build
+
+        for ns, (compression, ratio) in namespaces.items():
+            ns_stats[node][ns] = {
+                "replication-factor": "1",
+                "data_used_bytes": "4096",
+            }
+            ns_configs[node][ns] = {"storage-engine": storage_engine}
+
+            if ratio is not None:
+                ns_stats[node][ns]["data_compression_ratio"] = ratio
+
+            if compression is not None:
+                ns_configs[node][ns]["storage-engine.compression"] = compression
+
+    return common.create_summary(
+        service_stats,
+        ns_stats,
+        {node: {} for node in nodes},
+        {"server_build": builds},
+        ns_configs=ns_configs,
+        feature_keys=keys,
+    )
+
+
+def compression_flags(summary):
+    return {
+        ns: (
+            ("unverified" if stats.get("compression_unverified") else "configured")
+            if stats["compression_enabled"]
+            else None
+        )
+        for ns, stats in summary["NAMESPACES"].items()
+    }
+
+
+class CreateSummaryCompressionFlagTest(unittest.TestCase):
+    def assertFlags(self, summary, expected):
+        self.assertEqual(compression_flags(summary), expected)
+        self.assertEqual(
+            summary["CLUSTER"]["compression_enabled"],
+            any(expected.values()),
+        )
+
+    def test_none_with_ratio_one_and_a_day_of_uptime_on_an_older_node(self):
+        summary = summarize_compression(
+            {
+                N1: (NEW, DAY, {"test": ("none", "1.000")}),
+                N2: (OLD, DAY, {"test": ("none", "1.000")}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": None})
+
+    def test_none_with_a_node_up_less_than_a_day_is_unverified(self):
+        summary = summarize_compression(
+            {
+                N1: (OLD, DAY, {"test": ("none", "1.000")}),
+                N2: (OLD, DAY - 1, {"test": ("none", "1.000")}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    def test_none_with_a_ratio_below_one_before_8_2_1_is_unverified(self):
+        summary = summarize_compression(
+            {
+                N1: (OLD, DAY, {"test": ("none", "0.512")}),
+                N2: (OLD, DAY, {"test": ("none", "1.000")}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    def test_a_codec_on_one_node_flags_the_namespace(self):
+        summary = summarize_compression(
+            {
+                N1: (NEW, DAY, {"test": ("lz4", "0.400")}),
+                N2: (NEW, DAY, {"test": ("none", "1.000")}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "configured"})
+
+    def test_only_the_namespace_with_a_codec_is_flagged(self):
+        summary = summarize_compression(
+            {
+                N1: (OLD, DAY, {"a": ("lz4", "0.400"), "b": ("none", "1.000")}),
+                N2: (OLD, DAY, {"a": ("lz4", "0.400"), "b": ("none", "1.000")}),
+            }
+        )
+
+        self.assertFlags(summary, {"a": "configured", "b": None})
+
+    def test_without_the_feature_key_nothing_is_flagged(self):
+        summary = summarize_compression(
+            {N1: (OLD, 1, {"test": ("lz4", "0.400")})}, feature_key="false"
+        )
+
+        self.assertFlags(summary, {"test": None})
+        self.assertNotIn("compression_unverified", summary["NAMESPACES"]["test"])
+
+    def test_none_on_8_2_1_with_a_day_of_uptime_ignores_the_ratio(self):
+        summary = summarize_compression(
+            {
+                N1: (NEW, DAY, {"test": ("none", "0.400")}),
+                N2: ("8.2.2.0", DAY, {"test": ("none", "0.400")}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": None})
+
+    def test_none_on_8_2_1_with_a_node_up_less_than_a_day_is_unverified(self):
+        summary = summarize_compression(
+            {
+                N1: (NEW, DAY, {"test": ("none", "1.000")}),
+                N2: (NEW, 60, {"test": ("none", "1.000")}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    @parameterized.expand(
+        [
+            ("ratio_one_everywhere", "1.000", None),
+            ("ratio_below_one_on_the_older_node", "0.999", "unverified"),
+        ]
+    )
+    def test_mixed_versions_with_a_day_of_uptime(self, _, old_ratio, expected):
+        summary = summarize_compression(
+            {
+                N1: (NEW, DAY, {"test": ("none", "1.000")}),
+                N2: (OLD, DAY, {"test": ("none", old_ratio)}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": expected})
+
+    @parameterized.expand(
+        [
+            ("missing_uptime", (NEW, None, ("none", "1.000"))),
+            ("non_numeric_uptime", (NEW, "abc", ("none", "1.000"))),
+            ("missing_ratio", (OLD, DAY, ("none", None))),
+            ("non_numeric_ratio", (OLD, DAY, ("none", "abc"))),
+            ("missing_compression_config", (NEW, DAY, (None, "1.000"))),
+            ("missing_build", (None, DAY, ("none", "1.000"))),
+            ("unparseable_build", ("8.2.x", DAY, ("none", "1.000"))),
+        ]
+    )
+    def test_unreadable_input_on_one_node_is_unverified(self, _, node):
+        build, uptime, ns = node
+        summary = summarize_compression(
+            {
+                N1: (NEW, DAY, {"test": ("none", "1.000")}),
+                N2: (build, uptime, {"test": ns}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    def test_an_unparseable_build_next_to_an_older_one_is_unverified(self):
+        summary = summarize_compression(
+            {
+                N1: (OLD, DAY, {"test": ("none", "1.000")}),
+                N2: ("8.2.x", DAY, {"test": ("none", "1.000")}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    def test_an_older_node_without_the_namespace_still_counts(self):
+        summary = summarize_compression(
+            {
+                N1: (NEW, DAY, {"test": ("none", "0.400")}),
+                N2: (NEW, DAY, {"test": ("none", "0.400")}),
+                "3.3.3.3:3000": (OLD, DAY, {}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    def test_a_node_whose_namespace_config_failed_is_unverified(self):
+        stats = {"replication-factor": "1", "data_compression_ratio": "1.000"}
+
+        summary = common.create_summary(
+            {N1: {"uptime": str(DAY)}, N2: {"uptime": str(DAY)}},
+            {N1: {"test": stats}, N2: {"test": stats}},
+            {N1: {}, N2: {}},
+            {"server_build": {N1: NEW, N2: NEW}},
+            ns_configs={
+                N1: {
+                    "test": {
+                        "storage-engine": "device",
+                        "storage-engine.compression": "none",
+                    }
+                },
+                N2: Exception("timeout"),
+            },
+            feature_keys={N1: {"asdb-compression": "true"}},
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    def test_none_before_7_0_is_unverified_because_the_server_hides_the_ratio(self):
+        summary = summarize_compression(
+            {
+                N1: ("6.4.0.0", DAY, {"test": ("none", None)}),
+                N2: ("6.4.0.0", DAY, {"test": ("none", None)}),
+            }
+        )
+
+        self.assertFlags(summary, {"test": "unverified"})
+
+    def test_memory_namespace_before_7_0_cannot_compress(self):
+        summary = summarize_compression(
+            {
+                N1: ("6.4.0.0", 60, {"test": (None, None)}),
+                N2: ("6.4.0.0", 60, {"test": (None, None)}),
+            },
+            storage_engine="memory",
+        )
+
+        self.assertFlags(summary, {"test": None})
+
+
 class CollectInstalledPackagesTest(unittest.TestCase):
     """Test cases for _collect_installed_packages function"""
 

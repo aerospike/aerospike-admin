@@ -690,6 +690,7 @@ class SummaryNamespaceDict(TypedDict):
     index_type: NotRequired[str]
     compression_ratio: NotRequired[float]
     compression_enabled: NotRequired[bool]
+    compression_unverified: NotRequired[bool]
     cache_read_pct: NotRequired[int]
     memory_data_and_indexes: NotRequired[SummaryStorageUsageDict]  # pre 7.0
     data_memory: NotRequired[SummaryStorageUsageDict]  # post 7.0; storage-engine memory
@@ -945,6 +946,76 @@ def compute_license_data_size(
     summary_dict["CLUSTER"]["license_data"]["latest"] = int(round(cl_unique_data))
 
 
+# A restart under `compression none` resets the ratio to 1.000 while records
+# written under a codec stay compressed. Assumes nobody runs uncompressed for a
+# day just to lower license usage: a screen, not a clearance.
+COMPRESSION_NONE_MIN_UPTIME_SEC = 86400
+
+
+def _compression_license_flag(ns_stats, ns_configs, service_stats, server_builds):
+    """Returns "configured" or "unverified" when compression may skew the
+    namespace's license usage, else None."""
+    compressions = {}
+
+    for node in set(ns_stats) | set(ns_configs):
+        config = ns_configs.get(node)
+        compression = util.get_value_from_dict(config, "storage-engine.compression")
+
+        # Memory namespaces before 7.0 cannot compress and report no setting.
+        if (
+            compression is None
+            and util.get_value_from_dict(config, "storage-engine") == "memory"
+        ):
+            continue
+
+        compressions[node] = compression
+
+    if any(c not in (None, "none") for c in compressions.values()):
+        return "configured"
+
+    if not compressions:
+        return None
+
+    nodes = set(service_stats) | set(compressions)
+    uptimes = [
+        util.get_value_from_dict(service_stats.get(node), "uptime", return_type=int)
+        for node in nodes
+    ]
+    builds = [server_builds.get(node) for node in nodes]
+
+    if (
+        None in compressions.values()
+        or not all(builds)
+        or any(u is None or u < COMPRESSION_NONE_MIN_UPTIME_SEC for u in uptimes)
+    ):
+        return "unverified"
+
+    first = version.LooseVersion(constants.SERVER_USAGE_REPORTING_FIRST_VERSION)
+
+    try:
+        reporting_usage = [version.LooseVersion(build) >= first for build in builds]
+    except TypeError:
+        return "unverified"
+
+    if all(reporting_usage):
+        return None
+
+    ratios = [
+        util.get_value_from_dict(
+            ns_stats.get(node),
+            (
+                "data_compression_ratio",
+                "device_compression_ratio",
+                "pmem_compression_ratio",
+            ),
+            return_type=float,
+        )
+        for node in compressions
+    ]
+
+    return None if all(ratio == 1.0 for ratio in ratios) else "unverified"
+
+
 def create_summary(
     service_stats,
     namespace_stats,
@@ -1034,18 +1105,11 @@ def create_summary(
         namespace_stats, summary_dict["CLUSTER"], summary_dict["NAMESPACES"]
     )
 
-    # Check if compression is enabled based on config settings
-    compression_enabled = False
-
-    for node_features_keys in feature_keys.values():
-        if (
-            isinstance(node_features_keys, dict)
-            and node_features_keys.get("asdb-compression") == "true"
-        ):
-            compression_enabled = True
-            break
-
-    summary_dict["CLUSTER"]["compression_enabled"] = compression_enabled
+    compression_licensed = any(
+        isinstance(node_feature_keys, dict)
+        and node_feature_keys.get("asdb-compression") == "true"
+        for node_feature_keys in feature_keys.values()
+    )
 
     summary_dict["CLUSTER"]["active_features"] = features
     summary_dict["CLUSTER"]["cluster_size"] = list(
@@ -1427,7 +1491,20 @@ def create_summary(
         if compression_ratio > 0:
             summary_dict["NAMESPACES"][ns]["compression_ratio"] = compression_ratio
 
-        summary_dict["NAMESPACES"][ns]["compression_enabled"] = compression_enabled
+        compression_flag = (
+            _compression_license_flag(
+                ns_stats,
+                ns_configs.get(ns, {}),
+                service_stats,
+                metadata["server_build"],
+            )
+            if compression_licensed
+            else None
+        )
+        summary_dict["NAMESPACES"][ns]["compression_enabled"] = bool(compression_flag)
+
+        if compression_flag == "unverified":
+            summary_dict["NAMESPACES"][ns]["compression_unverified"] = True
 
         summary_dict["NAMESPACES"][ns]["repl_factor"] = list(
             set(
@@ -1479,6 +1556,11 @@ def create_summary(
             if len(rack_ids) > 1 or rack_ids[0] is not None:
                 if any((i is not None and i > 0) for i in rack_ids):
                     summary_dict["NAMESPACES"][ns]["rack_aware"] = True
+
+    summary_dict["CLUSTER"]["compression_enabled"] = any(
+        ns_summary.get("compression_enabled", False)
+        for ns_summary in summary_dict["NAMESPACES"].values()
+    )
 
     cl_device_counts = sum(cl_nodewise_device_counts.values())
     if cl_device_counts:

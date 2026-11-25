@@ -2956,11 +2956,33 @@ class CliView(object):
             CliView._summary_cluster_table_view(summary["CLUSTER"])
             CliView._summary_namespace_table_view(summary["NAMESPACES"])
 
-        if summary["CLUSTER"].get("compression_enabled", False):
+        namespaces = summary["NAMESPACES"].items()
+        unverified = sorted(
+            ns for ns, stats in namespaces if stats.get("compression_unverified")
+        )
+        warnings = []
+
+        if any(
+            stats.get("compression_enabled") and not stats.get("compression_unverified")
+            for _, stats in namespaces
+        ):
+            warnings.append(
+                "The license usage calculation is inaccurate due to compression."
+            )
+
+        if unverified:
+            warnings.append(
+                "License usage may be understated for namespace(s) %s: compression "
+                "is off, but this server version cannot show whether records "
+                "written earlier were compressed." % ", ".join(unverified)
+            )
+
+        if warnings:
             print(
                 "\n"
                 + terminal.fg_red()
-                + "The license usage calculation is inaccurate due to compression.\n\n"
+                + "\n".join(warnings)
+                + "\n\n"
                 + terminal.fg_clear()
             )
 
