@@ -19,8 +19,6 @@ set -euo pipefail
 export PYTHON_VERSION="${PYTHON_VERSION:-3.12.11}"
 export ASDF_VERSION="${ASDF_VERSION:-v0.18.0}"
 export GOLANG_VERSION="${GOLANG_VERSION:-1.24.6}"
-export RUST_VERSION="${RUST_VERSION:-1.95.0}"
-export RUSTUP_VERSION="1.29.3"
 
 export CURL_RETRY_OPTS=(--retry 5 --retry-delay 5)
 
@@ -35,8 +33,9 @@ UBUNTU_2404_DEPS="libreadline8 libreadline-dev ruby-rubygems make rpm git snapd 
 UBUNTU_2604_DEPS="${UBUNTU_2404_DEPS/lzma-dev/liblzma-dev} zlib1g-dev libbz2-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev uuid-dev"
 UBUNTU_2604_DEPS="${UBUNTU_2604_DEPS/libreadline8 /}"
 EL8_DEPS="ruby rubygems redhat-rpm-config rpm-build make git rsync gcc gcc-c++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
-EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
-EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
+# hold_el_openssl.sh installs openssl-devel at the held openssl-libs version.
+EL9_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
+EL10_DEPS="ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 AMZN2023_DEPS="readline-devel ruby rpmdevtools make git rsync gcc g++ make automake zlib zlib-devel libffi-devel openssl-devel bzip2-devel xz-devel xz xz-libs sqlite sqlite-devel sqlite-libs less"
 
 _pkg_list_for() {
@@ -95,11 +94,13 @@ _install_distro_packages() {
       dnf -y install $deps
       ;;
     el9|el10)
-      # No `dnf -y update`: pin_build_repos.sh holds OpenSSL at the GA floor the
-      # host-linked extensions must load on.
+      bash "$(dirname "${BASH_SOURCE[0]}")/hold_el_openssl.sh" "$distro" openssl-devel
+      # --nobest: a package whose newest build needs a newer OpenSSL stays put
+      # (systemd) or comes from the Rocky vault (ruby, rpm-build).
+      dnf -y update --nobest
       yum install -y "$(_readline_url_for "$distro")"
       # shellcheck disable=SC2086
-      dnf -y install $deps
+      dnf -y install --nobest $deps
       ;;
     amzn2023)
       dnf -y update
@@ -155,19 +156,6 @@ builds_cryptography_from_source() {
   esac
 }
 
-_install_rust() {
-  local rustup_init="/tmp/rustup-init" sha256
-  case "$(uname -m)" in
-    x86_64) sha256=b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55 ;;
-    aarch64) sha256=9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282 ;;
-    *) echo "no pinned rustup-init for $(uname -m)" >&2; return 1 ;;
-  esac
-  curl -fL "${CURL_RETRY_OPTS[@]}" "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/$(uname -m)-unknown-linux-gnu/rustup-init" -o "$rustup_init"
-  echo "${sha256}  ${rustup_init}" | sha256sum -c -
-  chmod +x "$rustup_init"
-  "$rustup_init" -y --no-modify-path --profile minimal --default-toolchain "$RUST_VERSION"
-}
-
 _post_install_cleanup() {
   case "$1" in
     ubuntu*|debian*) rm -rf /var/lib/apt/lists/* ;;
@@ -182,7 +170,7 @@ install_deps() {
   _install_go
   _install_python_via_asdf_and_fpm "$(_pip_flags_for "$distro")"
   if builds_cryptography_from_source "$distro"; then
-    _install_rust
+    bash "$(dirname "${BASH_SOURCE[0]}")/install_rust.sh"
   fi
   _post_install_cleanup "$distro"
 }

@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -30,32 +31,29 @@ CLIENT_IMAGE = "asadm-e2e-fips-client"
 CLIENT_NAME = "asadm-e2e-fips-client"
 FIPS_ENV = {"OPENSSL_FORCE_FIPS_MODE": "1"}
 REPO_ROOT = lib.absolute_path("..", "..")
+BIN = os.path.join(REPO_ROOT, ".github", "bin")
 WORK = lib.absolute_path(lib.WORK_DIRECTORY, "fips")
 CLIENT_WORK = "/asadm/test/e2e/%s/fips" % lib.WORK_DIRECTORY
 CLIENT_CERTS = "/asadm/test/e2e/certs"
 SSHD_LOG = "/var/log/sshd.log"
 
 
-def requirements_from_lock(lock_path):
-    """asadm's runtime packages from Pipfile.lock, as hashed pip requirements."""
-    with open(lock_path) as f:
-        packages = json.load(f)["default"]
-
-    lines = []
-    for name, spec in sorted(packages.items()):
-        line = name + spec["version"]
-        if spec.get("markers"):
-            line += "; " + spec["markers"]
-        lines.append(line + "".join(" --hash=" + h for h in spec["hashes"]))
-
-    return "\n".join(lines) + "\n"
-
-
 def build_client_image():
     with tempfile.TemporaryDirectory() as context:
         shutil.copy(os.path.join(os.path.dirname(__file__), "Dockerfile"), context)
+        shutil.copy(os.path.join(BIN, "install_rust.sh"), context)
         with open(os.path.join(context, "requirements.txt"), "w") as f:
-            f.write(requirements_from_lock(os.path.join(REPO_ROOT, "Pipfile.lock")))
+            f.write(
+                subprocess.check_output(
+                    [
+                        sys.executable,
+                        "-I",
+                        os.path.join(BIN, "lock_requirements.py"),
+                        os.path.join(REPO_ROOT, "Pipfile.lock"),
+                    ],
+                    text=True,
+                )
+            )
 
         for chunk in lib.DOCKER_CLIENT.api.build(
             path=context, tag=CLIENT_IMAGE, rm=True, decode=True

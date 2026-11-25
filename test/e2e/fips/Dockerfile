@@ -2,15 +2,12 @@
 # host's OpenSSL, so OPENSSL_FORCE_FIPS_MODE=1 reaches every crypto path asadm uses.
 FROM redhat/ubi9:9.6
 
-ARG RUST_VERSION=1.95.0
-
+COPY install_rust.sh /tmp/install_rust.sh
 RUN dnf -y install python3.12 python3.12-pip python3.12-devel gcc libffi-devel \
       openssl openssl-devel pkgconf-pkg-config openssh-clients findutils \
  && dnf clean all \
- && curl -fsSL --retry 5 "https://static.rust-lang.org/rustup/dist/$(uname -m)-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
- && chmod +x /tmp/rustup-init \
- && /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain "$RUST_VERSION" \
- && rm /tmp/rustup-init
+ && bash /tmp/install_rust.sh \
+ && rm /tmp/install_rust.sh
 
 COPY requirements.txt /tmp/requirements.txt
 RUN PATH="/root/.cargo/bin:$PATH" PIP_NO_BINARY=cryptography \

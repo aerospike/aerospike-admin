@@ -68,8 +68,13 @@ ARCH = $(shell uname -m)
 # reports arm64 -- the dpkg spelling, but not rpm's.
 DEB_ARCH = $(patsubst noarch,all,$(patsubst aarch64,arm64,$(patsubst x86_64,amd64,$(ARCH))))
 RPM_ARCH = $(patsubst arm64,aarch64,$(ARCH))
-# Keep the 1: epoch: without it any 1:3.x openssl-libs satisfies the version.
-RPM_OPENSSL_DEPENDS = $(if $(filter el9 el10 amzn2023,$(BUILD_DISTRO)),openssl-libs >= 1:3.2.2,openssl-libs)
+# The oldest OpenSSL the el9/el10/amzn2023 bundles may import symbols from;
+# scripts read it through openssl_floor.sh. Keep the 1: epoch below: without it
+# any 1:3.x openssl-libs satisfies the version.
+OPENSSL_FLOOR = 3.2.2
+RPM_OPENSSL_DEPENDS = $(if $(filter el9 el10 amzn2023,$(BUILD_DISTRO)),openssl-libs >= 1:$(OPENSSL_FLOOR),openssl-libs)
+# Focal's Python links libssl.so.1.1, and it has no libssl3.
+DEB_OPENSSL_DEPENDS = $(if $(filter ubuntu20 ubuntu20.04,$(BUILD_DISTRO)),libssl1.1,libssl3 | libssl3t64)
 
 
 .PHONY: all
@@ -87,7 +92,7 @@ deb: prep
 		--version $(PKG_VERSION) \
 		--iteration $(DEB_ITERATION) \
 		--maintainer $(MAINTAINER) \
-		--depends "libssl3 | libssl3t64" \
+		--depends "$(DEB_OPENSSL_DEPENDS)" \
 		--description $(DESCRIPTION) \
 		--license $(LICENSE) \
 		--url $(URL) \

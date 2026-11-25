@@ -265,6 +265,10 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update && apt-get install -y git ca-certificates
               ;;
+            el9|el10)
+              # hold_el_openssl.sh, which runs after checkout, expects the base image's OpenSSL.
+              dnf -y install --exclude='openssl*' --nobest git ca-certificates
+              ;;
             el*|amzn*)
               command -v dnf >/dev/null || yum install -y dnf
               dnf -y install git ca-certificates
@@ -278,10 +282,6 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           submodules: recursive
-
-      # EL9/EL10: build against the oldest-stable (GA) OpenSSL; no-op elsewhere.
-      - name: Pin EL build repos to frozen vault
-        run: bash .github/bin/pin_build_repos.sh "${{ matrix.distro }}"
 
       - name: Install build dependencies
         env:
@@ -622,6 +622,10 @@ jobs:
               apt-get update -qq
               apt-get install -y --no-install-recommends git ca-certificates curl tar
               ;;
+            el9|el10)
+              # hold_el_openssl.sh, which runs after checkout, expects the base image's OpenSSL.
+              dnf -y install --exclude='openssl*' --nobest findutils git ca-certificates tar gzip
+              ;;
             el*|amzn*)
               dnf -y install findutils git ca-certificates tar gzip
               ;;
@@ -633,13 +637,15 @@ jobs:
         with:
           fetch-depth: 1
 
-      # EL9/EL10: install/run against the same GA OpenSSL the build used; no-op elsewhere.
-      - name: Pin EL build repos to frozen vault
-        run: bash .github/bin/pin_build_repos.sh "${{ matrix.distro }}"
+      # EL9/EL10: test on the base image's OpenSSL, the oldest the rpm accepts,
+      # with the openssl CLI at the same version; no-op elsewhere.
+      - name: Hold EL OpenSSL at the base image's version
+        run: bash .github/bin/hold_el_openssl.sh "${{ matrix.distro }}" openssl
 
       - name: Install the openssl CLI and objdump for the OpenSSL tests
         run: |
           case "${{ matrix.distro }}" in
+            el9|el10) dnf -y install binutils ;;
             el*|amzn*) dnf -y install openssl binutils ;;
           esac
 
